@@ -2,6 +2,7 @@
 resolver = "2"
 members = [
     "rafter",
+    "rafter-derive",
     "dataverse-lib",
     "dataverse-cli",
     "dataverse-tui",
