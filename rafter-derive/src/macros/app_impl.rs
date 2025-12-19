@@ -1,6 +1,299 @@
 use proc_macro2::TokenStream;
+use quote::{format_ident, quote};
+use syn::{Attribute, Ident, ImplItem, ImplItemFn, ItemImpl, Type, parse2};
 
-pub fn expand(_attr: TokenStream, item: TokenStream) -> TokenStream {
-    // TODO: implement
-    item
+/// Attributes for the #[app_impl] macro
+struct AppImplAttrs {
+    // Currently no attributes supported
+}
+
+impl AppImplAttrs {
+    fn parse(_attr: TokenStream) -> syn::Result<Self> {
+        Ok(Self {})
+    }
+}
+
+/// Information about a keybinds method
+struct KeybindsMethod {
+    /// Method name
+    name: Ident,
+    /// Scope (None = app-level, Some(view) = view-scoped)
+    #[allow(dead_code)]
+    scope: Option<KeybindScope>,
+}
+
+#[derive(Clone)]
+#[allow(dead_code)]
+enum KeybindScope {
+    View(Ident),
+    Modal(Ident),
+    Global,
+}
+
+/// Information about a handler method
+#[allow(dead_code)]
+struct HandlerMethod {
+    /// Method name
+    name: Ident,
+    /// Is async handler
+    is_async: bool,
+    /// Supersedes previous calls
+    supersedes: bool,
+    /// Queues calls
+    queues: bool,
+    /// Debounce milliseconds
+    debounce_ms: u64,
+}
+
+/// Check if a method has the #[keybinds] attribute
+fn is_keybinds_method(method: &ImplItemFn) -> bool {
+    method.attrs.iter().any(|a| a.path().is_ident("keybinds"))
+}
+
+/// Parse keybinds scope from attributes
+fn parse_keybinds_scope(attrs: &[Attribute]) -> Option<KeybindScope> {
+    for attr in attrs {
+        if attr.path().is_ident("keybinds") {
+            // Try to parse scope: #[keybinds(view = SomeView)] or #[keybinds(global)]
+            {
+                let meta: syn::Meta = attr.meta.clone();
+                if let syn::Meta::List(list) = meta {
+                    let mut scope = None;
+                    let _ = list.parse_nested_meta(|meta| {
+                        if meta.path.is_ident("view") {
+                            let value: syn::Expr = meta.value()?.parse()?;
+                            if let syn::Expr::Path(path) = value
+                                && let Some(ident) = path.path.get_ident()
+                            {
+                                scope = Some(KeybindScope::View(ident.clone()));
+                            }
+                        } else if meta.path.is_ident("modal") {
+                            let value: syn::Expr = meta.value()?.parse()?;
+                            if let syn::Expr::Path(path) = value
+                                && let Some(ident) = path.path.get_ident()
+                            {
+                                scope = Some(KeybindScope::Modal(ident.clone()));
+                            }
+                        } else if meta.path.is_ident("global") {
+                            scope = Some(KeybindScope::Global);
+                        }
+                        Ok(())
+                    });
+                    return scope;
+                }
+            }
+        }
+    }
+    None
+}
+
+/// Check if method is a handler (has __rafter_handler doc attribute)
+fn parse_handler_metadata(method: &ImplItemFn) -> Option<HandlerMethod> {
+    for attr in &method.attrs {
+        if attr.path().is_ident("doc")
+            && let syn::Meta::NameValue(nv) = &attr.meta
+            && let syn::Expr::Lit(syn::ExprLit {
+                lit: syn::Lit::Str(s),
+                ..
+            }) = &nv.value
+        {
+            let value = s.value();
+            if value.starts_with("__rafter_handler:") {
+                // Parse: __rafter_handler:is_async:supersedes:queues:debounce_ms
+                let parts: Vec<&str> = value.split(':').collect();
+                if parts.len() >= 5 {
+                    return Some(HandlerMethod {
+                        name: method.sig.ident.clone(),
+                        is_async: parts[1] == "true",
+                        supersedes: parts[2] == "true",
+                        queues: parts[3] == "true",
+                        debounce_ms: parts[4].parse().unwrap_or(0),
+                    });
+                }
+            }
+        }
+    }
+    None
+}
+
+/// Check if method is named "view"
+fn is_view_method(method: &ImplItemFn) -> bool {
+    method.sig.ident == "view"
+}
+
+/// Extract the type name from a Type
+fn get_type_name(ty: &Type) -> Option<Ident> {
+    if let Type::Path(path) = ty {
+        path.path.get_ident().cloned()
+    } else {
+        None
+    }
+}
+
+pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
+    let _attrs = match AppImplAttrs::parse(attr) {
+        Ok(a) => a,
+        Err(e) => return e.to_compile_error(),
+    };
+
+    let mut impl_block: ItemImpl = match parse2(item) {
+        Ok(i) => i,
+        Err(e) => return e.to_compile_error(),
+    };
+
+    // Get the type we're implementing for
+    let self_ty = &impl_block.self_ty;
+    let type_name = match get_type_name(self_ty) {
+        Some(n) => n,
+        None => {
+            return syn::Error::new_spanned(self_ty, "Expected a simple type name")
+                .to_compile_error();
+        }
+    };
+
+    let metadata_mod = format_ident!(
+        "__rafter_app_metadata_{}",
+        type_name.to_string().to_lowercase()
+    );
+
+    // Collect method information
+    let mut keybinds_methods = Vec::new();
+    let mut handlers = Vec::new();
+    let mut has_view = false;
+
+    for item in &impl_block.items {
+        if let ImplItem::Fn(method) = item {
+            if is_keybinds_method(method) {
+                let scope = parse_keybinds_scope(&method.attrs);
+                keybinds_methods.push(KeybindsMethod {
+                    name: method.sig.ident.clone(),
+                    scope,
+                });
+            }
+
+            if let Some(handler) = parse_handler_metadata(method) {
+                handlers.push(handler);
+            }
+
+            if is_view_method(method) {
+                has_view = true;
+            }
+        }
+    }
+
+    // Strip our custom attributes from methods
+    for item in &mut impl_block.items {
+        if let ImplItem::Fn(method) = item {
+            method.attrs.retain(|a| !a.path().is_ident("keybinds"));
+            // Remove our metadata doc attributes
+            method.attrs.retain(|a| {
+                if a.path().is_ident("doc")
+                    && let syn::Meta::NameValue(nv) = &a.meta
+                    && let syn::Expr::Lit(syn::ExprLit {
+                        lit: syn::Lit::Str(s),
+                        ..
+                    }) = &nv.value
+                {
+                    return !s.value().starts_with("__rafter_handler:");
+                }
+                true
+            });
+        }
+    }
+
+    // Generate keybinds method
+    let keybinds_impl = if keybinds_methods.is_empty() {
+        quote! {
+            fn keybinds(&self) -> rafter::keybinds::Keybinds {
+                rafter::keybinds::Keybinds::new()
+            }
+        }
+    } else {
+        let merge_calls: Vec<_> = keybinds_methods
+            .iter()
+            .map(|m| {
+                let name = &m.name;
+                quote! { __keybinds.merge(Self::#name()); }
+            })
+            .collect();
+
+        quote! {
+            fn keybinds(&self) -> rafter::keybinds::Keybinds {
+                let mut __keybinds = rafter::keybinds::Keybinds::new();
+                #(#merge_calls)*
+                __keybinds
+            }
+        }
+    };
+
+    // Generate view method (delegate to user's view if present)
+    let view_impl = if has_view {
+        quote! {
+            fn view(&self) -> rafter::node::Node {
+                #self_ty::view(self)
+            }
+        }
+    } else {
+        quote! {
+            fn view(&self) -> rafter::node::Node {
+                rafter::node::Node::empty()
+            }
+        }
+    };
+
+    // Generate name method
+    let type_name_str = type_name.to_string();
+    let name_impl = quote! {
+        fn name(&self) -> &'static str {
+            #type_name_str
+        }
+    };
+
+    // Generate is_dirty and clear_dirty methods
+    let dirty_impl = quote! {
+        fn is_dirty(&self) -> bool {
+            #metadata_mod::is_dirty(self)
+        }
+
+        fn clear_dirty(&mut self) {
+            #metadata_mod::clear_dirty(self)
+        }
+    };
+
+    // Generate panic_behavior method
+    let panic_impl = quote! {
+        fn panic_behavior(&self) -> rafter::app::PanicBehavior {
+            #metadata_mod::PANIC_BEHAVIOR
+        }
+    };
+
+    // Output the impl block plus App trait implementation
+    let impl_generics = &impl_block.generics;
+
+    // Determine which methods the user already implements
+    let user_has_keybinds = impl_block.items.iter().any(|item| {
+        if let ImplItem::Fn(m) = item {
+            m.sig.ident == "keybinds"
+        } else {
+            false
+        }
+    });
+
+    let keybinds_final = if user_has_keybinds {
+        quote! {}
+    } else {
+        keybinds_impl
+    };
+
+    quote! {
+        #impl_block
+
+        impl #impl_generics rafter::app::App for #self_ty {
+            #name_impl
+            #keybinds_final
+            #view_impl
+            #dirty_impl
+            #panic_impl
+        }
+    }
 }
