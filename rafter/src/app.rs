@@ -1,5 +1,4 @@
 use crate::context::AppContext;
-use crate::focus::FocusState;
 use crate::keybinds::{HandlerId, Keybinds};
 use crate::node::Node;
 
@@ -27,33 +26,13 @@ pub trait App: Send + 'static {
         Keybinds::new()
     }
 
-    /// Render the app's view
+    /// Render the app's view.
+    ///
+    /// The view tree is used by the runtime to:
+    /// - Determine focusable elements (buttons, inputs)
+    /// - Get handler references (on_click, on_change, on_submit)
+    /// - Sync input values when focus changes
     fn view(&self) -> Node;
-
-    /// Render the app's view with focus state.
-    /// Override this to make interactive elements focus-aware.
-    fn view_with_focus(&self, _focus: &FocusState) -> Node {
-        self.view()
-    }
-
-    /// Collect focusable element IDs from the view.
-    /// Returns IDs in tab order. Override for custom tab order.
-    fn focusable_ids(&self) -> Vec<String> {
-        Vec::new()
-    }
-
-    /// Check if a focusable element captures text input.
-    /// Elements that capture input (like text fields) will receive character
-    /// keypresses instead of triggering keybinds.
-    fn captures_input(&self, _id: &str) -> bool {
-        false
-    }
-
-    /// Get the current value of an input field by ID.
-    /// Used by the runtime to sync the input buffer when focus changes.
-    fn input_value(&self, _id: &str) -> Option<String> {
-        None
-    }
 
     /// Called when the app starts
     fn on_start(&mut self, _cx: &mut AppContext) {}

@@ -133,12 +133,10 @@ pub enum Node {
         on_change: Option<HandlerId>,
         /// Handler for submit (Enter)
         on_submit: Option<HandlerId>,
-        /// Element ID for focus
-        id: Option<String>,
+        /// Element ID for focus (auto-generated if not specified)
+        id: String,
         /// Style
         style: Style,
-        /// Whether this input is focused
-        focused: bool,
     },
 
     /// Clickable button
@@ -147,12 +145,10 @@ pub enum Node {
         label: String,
         /// Click handler
         on_click: Option<HandlerId>,
-        /// Element ID for focus
-        id: Option<String>,
+        /// Element ID for focus (auto-generated if not specified)
+        id: String,
         /// Style
         style: Style,
-        /// Whether this button is focused
-        focused: bool,
     },
 }
 
@@ -226,9 +222,8 @@ impl Node {
             placeholder: String::new(),
             on_change: None,
             on_submit: None,
-            id: None,
+            id: String::new(),
             style: Style::new(),
-            focused: false,
         }
     }
 
@@ -237,9 +232,8 @@ impl Node {
         Self::Button {
             label: label.into(),
             on_click: None,
-            id: None,
+            id: String::new(),
             style: Style::new(),
-            focused: false,
         }
     }
 
@@ -251,21 +245,96 @@ impl Node {
     /// Get the element ID if any
     pub fn id(&self) -> Option<&str> {
         match self {
-            Self::Input { id, .. } | Self::Button { id, .. } => id.as_deref(),
+            Self::Input { id, .. } | Self::Button { id, .. } => {
+                if id.is_empty() {
+                    None
+                } else {
+                    Some(id.as_str())
+                }
+            }
             _ => None,
-        }
-    }
-
-    /// Check if this node is focused
-    pub fn is_focused(&self) -> bool {
-        match self {
-            Self::Input { focused, .. } | Self::Button { focused, .. } => *focused,
-            _ => false,
         }
     }
 
     /// Check if this node captures text input when focused
     pub fn captures_input(&self) -> bool {
         matches!(self, Self::Input { .. })
+    }
+
+    /// Collect all focusable element IDs from this node and its children (in tree order)
+    pub fn collect_focusable_ids(&self, ids: &mut Vec<String>) {
+        match self {
+            Self::Input { id, .. } | Self::Button { id, .. } if !id.is_empty() => {
+                ids.push(id.clone());
+            }
+            Self::Column { children, .. }
+            | Self::Row { children, .. }
+            | Self::Stack { children, .. } => {
+                for child in children {
+                    child.collect_focusable_ids(ids);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// Get all focusable element IDs in tree order
+    pub fn focusable_ids(&self) -> Vec<String> {
+        let mut ids = Vec::new();
+        self.collect_focusable_ids(&mut ids);
+        ids
+    }
+
+    /// Check if an element with the given ID captures text input
+    pub fn element_captures_input(&self, target_id: &str) -> bool {
+        match self {
+            Self::Input { id, .. } if id == target_id => true,
+            Self::Column { children, .. }
+            | Self::Row { children, .. }
+            | Self::Stack { children, .. } => {
+                children.iter().any(|c| c.element_captures_input(target_id))
+            }
+            _ => false,
+        }
+    }
+
+    /// Get the current value of an input element by ID
+    pub fn input_value(&self, target_id: &str) -> Option<String> {
+        match self {
+            Self::Input { id, value, .. } if id == target_id => Some(value.clone()),
+            Self::Column { children, .. }
+            | Self::Row { children, .. }
+            | Self::Stack { children, .. } => {
+                children.iter().find_map(|c| c.input_value(target_id))
+            }
+            _ => None,
+        }
+    }
+
+    /// Get the handler for a focusable element (on_click for buttons, on_submit for inputs)
+    pub fn get_submit_handler(&self, target_id: &str) -> Option<HandlerId> {
+        match self {
+            Self::Button { id, on_click, .. } if id == target_id => on_click.clone(),
+            Self::Input { id, on_submit, .. } if id == target_id => on_submit.clone(),
+            Self::Column { children, .. }
+            | Self::Row { children, .. }
+            | Self::Stack { children, .. } => {
+                children.iter().find_map(|c| c.get_submit_handler(target_id))
+            }
+            _ => None,
+        }
+    }
+
+    /// Get the on_change handler for an input element by ID
+    pub fn get_change_handler(&self, target_id: &str) -> Option<HandlerId> {
+        match self {
+            Self::Input { id, on_change, .. } if id == target_id => on_change.clone(),
+            Self::Column { children, .. }
+            | Self::Row { children, .. }
+            | Self::Stack { children, .. } => {
+                children.iter().find_map(|c| c.get_change_handler(target_id))
+            }
+            _ => None,
+        }
     }
 }

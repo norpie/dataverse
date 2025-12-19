@@ -452,8 +452,7 @@ fn generate_input_element(elem: &ElementNode) -> TokenStream {
     let style = generate_style(&elem.attrs);
     let mut value = quote! { String::new() };
     let mut placeholder = quote! { String::new() };
-    let mut id = quote! { None };
-    let mut focused = quote! { false };
+    let mut id = quote! { String::new() };
     let mut on_change = quote! { None };
     let mut on_submit = quote! { None };
 
@@ -478,21 +477,9 @@ fn generate_input_element(elem: &ElementNode) -> TokenStream {
             }
             "id" => {
                 if let Some(AttrValue::Str(s)) = &attr.value {
-                    id = quote! { Some(#s.to_string()) };
+                    id = quote! { #s.to_string() };
                 } else if let Some(AttrValue::Expr(e)) = &attr.value {
-                    id = quote! { Some(#e.to_string()) };
-                }
-            }
-            "focused" => {
-                if let Some(AttrValue::Bool(b)) = &attr.value {
-                    focused = quote! { #b };
-                } else if let Some(AttrValue::Expr(e)) = &attr.value {
-                    focused = quote! { #e };
-                } else if let Some(AttrValue::Ident(i)) = &attr.value {
-                    // Variable reference like step_focused
-                    focused = quote! { #i };
-                } else {
-                    focused = quote! { true };
+                    id = quote! { #e.to_string() };
                 }
             }
             "on_change" => {
@@ -521,7 +508,6 @@ fn generate_input_element(elem: &ElementNode) -> TokenStream {
             on_submit: #on_submit,
             id: #id,
             style: #style,
-            focused: #focused,
         }
     }
 }
@@ -529,8 +515,7 @@ fn generate_input_element(elem: &ElementNode) -> TokenStream {
 fn generate_button_element(elem: &ElementNode) -> TokenStream {
     let style = generate_style(&elem.attrs);
     let mut label = quote! { String::new() };
-    let mut id = quote! { None };
-    let mut focused = quote! { false };
+    let mut id = quote! { String::new() };
     let mut on_click = quote! { None };
 
     for attr in &elem.attrs {
@@ -545,21 +530,9 @@ fn generate_button_element(elem: &ElementNode) -> TokenStream {
             }
             "id" => {
                 if let Some(AttrValue::Str(s)) = &attr.value {
-                    id = quote! { Some(#s.to_string()) };
+                    id = quote! { #s.to_string() };
                 } else if let Some(AttrValue::Expr(e)) = &attr.value {
-                    id = quote! { Some(#e.to_string()) };
-                }
-            }
-            "focused" => {
-                if let Some(AttrValue::Bool(b)) = &attr.value {
-                    focused = quote! { #b };
-                } else if let Some(AttrValue::Expr(e)) = &attr.value {
-                    focused = quote! { #e };
-                } else if let Some(AttrValue::Ident(i)) = &attr.value {
-                    // Variable reference like inc_focused
-                    focused = quote! { #i };
-                } else {
-                    focused = quote! { true };
+                    id = quote! { #e.to_string() };
                 }
             }
             "on_click" => {
@@ -579,7 +552,6 @@ fn generate_button_element(elem: &ElementNode) -> TokenStream {
             on_click: #on_click,
             id: #id,
             style: #style,
-            focused: #focused,
         }
     }
 }

@@ -80,6 +80,7 @@ pub fn render_node(
     area: Rect,
     hit_map: &mut HitTestMap,
     theme: &dyn Theme,
+    focused_id: Option<&str>,
 ) {
     // Constrain area for auto-sized containers
     let area = constrain_area(node, area);
@@ -103,6 +104,7 @@ pub fn render_node(
                 false,
                 hit_map,
                 theme,
+                focused_id,
             );
         }
         Node::Row {
@@ -119,6 +121,7 @@ pub fn render_node(
                 true,
                 hit_map,
                 theme,
+                focused_id,
             );
         }
         Node::Stack {
@@ -134,39 +137,40 @@ pub fn render_node(
                 area,
                 hit_map,
                 theme,
+                focused_id,
             );
         }
         Node::Input {
             value,
             placeholder,
             style,
-            focused,
             id,
             ..
         } => {
+            let is_focused = focused_id == Some(id.as_str());
             render_input(
                 frame,
                 value,
                 placeholder,
                 style_to_ratatui(style, theme),
-                *focused,
+                is_focused,
                 area,
             );
             // Register hit box for input
-            if let Some(id) = id {
+            if !id.is_empty() {
                 hit_map.register(id.clone(), area, true);
             }
         }
         Node::Button {
             label,
             style,
-            focused,
             id,
             ..
         } => {
-            render_button(frame, label, style_to_ratatui(style, theme), *focused, area);
+            let is_focused = focused_id == Some(id.as_str());
+            render_button(frame, label, style_to_ratatui(style, theme), is_focused, area);
             // Register hit box for button
-            if let Some(id) = id {
+            if !id.is_empty() {
                 hit_map.register(id.clone(), area, false);
             }
         }
@@ -231,6 +235,7 @@ fn render_container(
     horizontal: bool,
     hit_map: &mut HitTestMap,
     theme: &dyn Theme,
+    focused_id: Option<&str>,
 ) {
     if children.is_empty() {
         return;
@@ -265,7 +270,7 @@ fn render_container(
     let mut chunk_idx = 0;
     for child in children {
         if chunk_idx < chunks.len() {
-            render_node(frame, child, chunks[chunk_idx], hit_map, theme);
+            render_node(frame, child, chunks[chunk_idx], hit_map, theme, focused_id);
             chunk_idx += 1;
             // Skip gap chunks
             if layout.gap > 0 && chunk_idx < chunks.len() {
@@ -276,6 +281,7 @@ fn render_container(
 }
 
 /// Render a stack (z-index layering)
+#[allow(clippy::too_many_arguments)]
 fn render_stack(
     frame: &mut Frame,
     children: &[Node],
@@ -284,6 +290,7 @@ fn render_stack(
     area: Rect,
     hit_map: &mut HitTestMap,
     theme: &dyn Theme,
+    focused_id: Option<&str>,
 ) {
     // Apply border if specified
     let (inner_area, block) = apply_border(area, &layout.border, style);
@@ -297,7 +304,7 @@ fn render_stack(
 
     // Render all children in the same area (stacked)
     for child in children {
-        render_node(frame, child, padded_area, hit_map, theme);
+        render_node(frame, child, padded_area, hit_map, theme, focused_id);
     }
 }
 

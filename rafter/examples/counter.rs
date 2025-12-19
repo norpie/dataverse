@@ -105,41 +105,7 @@ impl Counter {
         cx.exit();
     }
 
-    // Button handlers (named {id}_submit to match button ids)
-    #[handler]
-    fn inc_submit(&mut self, cx: &mut AppContext) {
-        self.increment(cx);
-    }
-
-    #[handler]
-    fn dec_submit(&mut self, cx: &mut AppContext) {
-        self.decrement(cx);
-    }
-
-    #[handler]
-    fn reset_submit(&mut self, cx: &mut AppContext) {
-        self.reset(cx);
-    }
-
-    #[handler]
-    fn load_submit(&mut self, cx: &mut AppContext) {
-        self.load_data(cx);
-    }
-
-    fn focusable_ids(&self) -> Vec<String> {
-        // Tab order: dec, inc, reset, load (left to right)
-        vec!["dec".into(), "inc".into(), "reset".into(), "load".into()]
-    }
-
-    fn captures_input(&self, _id: &str) -> bool {
-        false
-    }
-
-    fn input_value(&self, _id: &str) -> Option<String> {
-        None
-    }
-
-    fn view_with_focus(&self, focus: &FocusState) -> Node {
+    fn view(&self) -> Node {
         let value_str = self.value.to_string();
         let step_str = self.step.to_string();
 
@@ -165,10 +131,10 @@ impl Counter {
                 }
 
                 row (gap: 1) {
-                    button(label: "−", id: "dec", focused: focus.is_focused("dec"))
-                    button(label: "+", id: "inc", focused: focus.is_focused("inc"))
-                    button(label: "Reset", id: "reset", focused: focus.is_focused("reset"))
-                    button(label: "Load", id: "load", focused: focus.is_focused("load"))
+                    button(label: "−", id: "dec", on_click: decrement)
+                    button(label: "+", id: "inc", on_click: increment)
+                    button(label: "Reset", id: "reset", on_click: reset)
+                    button(label: "Load", id: "load", on_click: load_data)
                 }
 
                 row (gap: 1) {
@@ -197,9 +163,6 @@ impl Counter {
         }
     }
 
-    fn view(&self) -> Node {
-        self.view_with_focus(&FocusState::new())
-    }
 }
 
 #[tokio::main]

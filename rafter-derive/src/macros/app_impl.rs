@@ -109,26 +109,6 @@ fn is_view_method(method: &ImplItemFn) -> bool {
     method.sig.ident == "view"
 }
 
-/// Check if method is named "view_with_focus"
-fn is_view_with_focus_method(method: &ImplItemFn) -> bool {
-    method.sig.ident == "view_with_focus"
-}
-
-/// Check if method is named "focusable_ids"
-fn is_focusable_ids_method(method: &ImplItemFn) -> bool {
-    method.sig.ident == "focusable_ids"
-}
-
-/// Check if method is named "captures_input"
-fn is_captures_input_method(method: &ImplItemFn) -> bool {
-    method.sig.ident == "captures_input"
-}
-
-/// Check if method is named "input_value"
-fn is_input_value_method(method: &ImplItemFn) -> bool {
-    method.sig.ident == "input_value"
-}
-
 /// Check if method is named "on_start"
 fn is_on_start_method(method: &ImplItemFn) -> bool {
     method.sig.ident == "on_start"
@@ -173,10 +153,6 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
     let mut keybinds_methods = Vec::new();
     let mut handlers = Vec::new();
     let mut has_view = false;
-    let mut has_view_with_focus = false;
-    let mut has_focusable_ids = false;
-    let mut has_captures_input = false;
-    let mut has_input_value = false;
     let mut has_on_start = false;
 
     for item in &impl_block.items {
@@ -195,22 +171,6 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
 
             if is_view_method(method) {
                 has_view = true;
-            }
-
-            if is_view_with_focus_method(method) {
-                has_view_with_focus = true;
-            }
-
-            if is_focusable_ids_method(method) {
-                has_focusable_ids = true;
-            }
-
-            if is_captures_input_method(method) {
-                has_captures_input = true;
-            }
-
-            if is_input_value_method(method) {
-                has_input_value = true;
             }
 
             if is_on_start_method(method) {
@@ -279,50 +239,6 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
                 rafter::node::Node::empty()
             }
         }
-    };
-
-    // Generate view_with_focus method (delegate to user's implementation if present)
-    let view_with_focus_impl = if has_view_with_focus {
-        quote! {
-            fn view_with_focus(&self, focus: &rafter::focus::FocusState) -> rafter::node::Node {
-                #self_ty::view_with_focus(self, focus)
-            }
-        }
-    } else {
-        quote! {}
-    };
-
-    // Generate focusable_ids method (delegate to user's implementation if present)
-    let focusable_ids_impl = if has_focusable_ids {
-        quote! {
-            fn focusable_ids(&self) -> Vec<String> {
-                #self_ty::focusable_ids(self)
-            }
-        }
-    } else {
-        quote! {}
-    };
-
-    // Generate captures_input method (delegate to user's implementation if present)
-    let captures_input_impl = if has_captures_input {
-        quote! {
-            fn captures_input(&self, id: &str) -> bool {
-                #self_ty::captures_input(self, id)
-            }
-        }
-    } else {
-        quote! {}
-    };
-
-    // Generate input_value method (delegate to user's implementation if present)
-    let input_value_impl = if has_input_value {
-        quote! {
-            fn input_value(&self, id: &str) -> Option<String> {
-                #self_ty::input_value(self, id)
-            }
-        }
-    } else {
-        quote! {}
     };
 
     // Generate on_start method (delegate to user's implementation if present)
@@ -425,10 +341,6 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
             #name_impl
             #keybinds_final
             #view_impl
-            #view_with_focus_impl
-            #focusable_ids_impl
-            #captures_input_impl
-            #input_value_impl
             #on_start_impl
             #dirty_impl
             #panic_impl

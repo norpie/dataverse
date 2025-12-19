@@ -164,18 +164,24 @@ impl Runtime {
             let now = Instant::now();
             active_toasts.retain(|(_, expiry)| *expiry > now);
 
-            // Update focusable IDs from app
-            let focusable_ids: Vec<FocusId> =
-                app.focusable_ids().into_iter().map(FocusId::new).collect();
+            // Get the view tree (used for focus, input values, and rendering)
+            let view = app.view();
+
+            // Update focusable IDs from view tree
+            let focusable_ids: Vec<FocusId> = view
+                .focusable_ids()
+                .into_iter()
+                .map(FocusId::new)
+                .collect();
             let focus_changed = focus_state.take_focus_changed();
             focus_state.set_focusable_ids(focusable_ids);
 
             // Sync input buffer if focus changed to an input
             if (focus_changed || focus_state.take_focus_changed())
                 && let Some(focused_id) = focus_state.current()
-                && app.captures_input(&focused_id.0)
+                && view.element_captures_input(&focused_id.0)
                 && input_buffer.is_empty()
-                && let Some(value) = app.input_value(&focused_id.0)
+                && let Some(value) = view.input_value(&focused_id.0)
             {
                 input_buffer = value;
                 debug!("Initial sync input buffer: {}", input_buffer);
@@ -184,10 +190,17 @@ impl Runtime {
             // Render and build hit test map
             let mut hit_map = HitTestMap::new();
             let theme = &self.theme;
+            let focused_id = focus_state.current().map(|f| f.0.clone());
             term_guard.terminal().draw(|frame| {
                 let area = frame.area();
-                let node = app.view_with_focus(&focus_state);
-                render_node(frame, &node, area, &mut hit_map, theme.as_ref());
+                render_node(
+                    frame,
+                    &view,
+                    area,
+                    &mut hit_map,
+                    theme.as_ref(),
+                    focused_id.as_deref(),
+                );
 
                 // Render toasts in bottom-right corner
                 render_toasts(frame, &active_toasts, theme.as_ref());
@@ -225,8 +238,8 @@ impl Runtime {
                                 // Sync input buffer with new focused element's value
                                 input_buffer.clear();
                                 if let Some(focused_id) = focus_state.current()
-                                    && app.captures_input(&focused_id.0)
-                                    && let Some(value) = app.input_value(&focused_id.0)
+                                    && view.element_captures_input(&focused_id.0)
+                                    && let Some(value) = view.input_value(&focused_id.0)
                                 {
                                     input_buffer = value;
                                     debug!("Synced input buffer: {}", input_buffer);
@@ -239,16 +252,17 @@ impl Runtime {
                                 && let Some(current) = focus_state.current()
                             {
                                 debug!("Enter on focused element: {:?}", current);
-                                // Dispatch to on_submit or on_click handler
-                                let handler_id = HandlerId(format!("{}_submit", current.0));
-                                cx.set_input_text(input_buffer.clone());
-                                dispatch_handler(&mut app, &handler_id, &mut cx);
-                                cx.clear_input_text();
-                                input_buffer.clear();
+                                // Get handler from view tree
+                                if let Some(handler_id) = view.get_submit_handler(&current.0) {
+                                    cx.set_input_text(input_buffer.clone());
+                                    dispatch_handler(&mut app, &handler_id, &mut cx);
+                                    cx.clear_input_text();
+                                    input_buffer.clear();
 
-                                if cx.is_exit_requested() {
-                                    info!("Exit requested by handler");
-                                    break;
+                                    if cx.is_exit_requested() {
+                                        info!("Exit requested by handler");
+                                        break;
+                                    }
                                 }
                                 continue;
                             }
@@ -264,16 +278,17 @@ impl Runtime {
                             // Check if currently focused element captures text input
                             let is_text_input_focused = focus_state
                                 .current()
-                                .map(|id| app.captures_input(&id.0))
+                                .map(|id| view.element_captures_input(&id.0))
                                 .unwrap_or(false);
 
                             // Handle Backspace for text input
                             if key_combo.key == Key::Backspace && is_text_input_focused {
                                 input_buffer.pop();
                                 debug!("Backspace, buffer: {}", input_buffer);
-                                // Notify app of change
-                                if let Some(current) = focus_state.current() {
-                                    let handler_id = HandlerId(format!("{}_change", current.0));
+                                // Notify app of change via on_change handler
+                                if let Some(current) = focus_state.current()
+                                    && let Some(handler_id) = view.get_change_handler(&current.0)
+                                {
                                     cx.set_input_text(input_buffer.clone());
                                     dispatch_handler(&mut app, &handler_id, &mut cx);
                                     cx.clear_input_text();
@@ -289,9 +304,10 @@ impl Runtime {
                             {
                                 input_buffer.push(c);
                                 debug!("Char input '{}', buffer: {}", c, input_buffer);
-                                // Notify app of change
-                                if let Some(current) = focus_state.current() {
-                                    let handler_id = HandlerId(format!("{}_change", current.0));
+                                // Notify app of change via on_change handler
+                                if let Some(current) = focus_state.current()
+                                    && let Some(handler_id) = view.get_change_handler(&current.0)
+                                {
                                     cx.set_input_text(input_buffer.clone());
                                     dispatch_handler(&mut app, &handler_id, &mut cx);
                                     cx.clear_input_text();
@@ -338,18 +354,19 @@ impl Runtime {
                                 // If it's an input, sync the buffer with the current value
                                 if hit_box.captures_input {
                                     input_buffer.clear();
-                                    if let Some(value) = app.input_value(&hit_box.id) {
+                                    if let Some(value) = view.input_value(&hit_box.id) {
                                         input_buffer = value;
                                         debug!("Synced input buffer on click: {}", input_buffer);
                                     }
                                 } else {
-                                    // It's a button - dispatch click handler
-                                    let handler_id = HandlerId(format!("{}_submit", hit_box.id));
-                                    dispatch_handler(&mut app, &handler_id, &mut cx);
+                                    // It's a button - dispatch click handler from view
+                                    if let Some(handler_id) = view.get_submit_handler(&hit_box.id) {
+                                        dispatch_handler(&mut app, &handler_id, &mut cx);
 
-                                    if cx.is_exit_requested() {
-                                        info!("Exit requested by handler");
-                                        break;
+                                        if cx.is_exit_requested() {
+                                            info!("Exit requested by handler");
+                                            break;
+                                        }
                                     }
                                 }
                             }
