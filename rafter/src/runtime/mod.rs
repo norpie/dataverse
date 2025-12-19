@@ -259,6 +259,12 @@ impl Runtime {
             } else {
                 app_focus_state.current().map(|f| f.0.clone())
             };
+            // Cache app view (computed once per frame)
+            let app_view = app.view();
+
+            // Cache modal views (computed once per frame)
+            let modal_views: Vec<_> = modal_stack.iter().map(|e| e.modal.view()).collect();
+
             let modal_stack_ref = &modal_stack;
             term_guard.terminal().draw(|frame| {
                 let area = frame.area();
@@ -269,7 +275,6 @@ impl Runtime {
                 }
 
                 // Always render the app first
-                let app_view = app.view();
                 let app_focused = if modal_stack_ref.is_empty() {
                     focused_id.as_deref()
                 } else {
@@ -285,7 +290,9 @@ impl Runtime {
                 );
 
                 // Render modals on top with backdrop dimming
-                for (i, entry) in modal_stack_ref.iter().enumerate() {
+                for (i, (entry, modal_view)) in
+                    modal_stack_ref.iter().zip(modal_views.iter()).enumerate()
+                {
                     // Dim the backdrop
                     dim_backdrop(frame.buffer_mut(), 0.4);
 
@@ -294,7 +301,7 @@ impl Runtime {
                         area,
                         entry.modal.position(),
                         entry.modal.size(),
-                        &entry.modal.view(),
+                        modal_view,
                     );
 
                     // Clear the modal area
@@ -308,10 +315,9 @@ impl Runtime {
                     };
 
                     // Render modal view
-                    let modal_view = entry.modal.view();
                     render_node(
                         frame,
-                        &modal_view,
+                        modal_view,
                         modal_area,
                         &mut hit_map,
                         theme.as_ref(),
@@ -346,13 +352,6 @@ impl Runtime {
                         }
                         Event::Key(ref key_combo) => {
                             debug!("Key event: {:?}", key_combo);
-
-                            // Get the current view
-                            let view = if let Some(entry) = modal_stack.last() {
-                                entry.modal.view()
-                            } else {
-                                app.view()
-                            };
 
                             // Handle Tab/Shift+Tab for focus navigation
                             if key_combo.key == Key::Tab {
@@ -560,13 +559,6 @@ impl Runtime {
                         Event::Click(ref click) => {
                             debug!("Click at ({}, {})", click.position.x, click.position.y);
 
-                            // Get the current view
-                            let view = if let Some(entry) = modal_stack.last() {
-                                entry.modal.view()
-                            } else {
-                                app.view()
-                            };
-
                             // Hit test to find clicked element
                             if let Some(hit_box) =
                                 hit_map.hit_test(click.position.x, click.position.y)
@@ -605,13 +597,6 @@ impl Runtime {
                             }
                         }
                         Event::Hover(ref position) => {
-                            // Get the current view
-                            let view = if let Some(entry) = modal_stack.last() {
-                                entry.modal.view()
-                            } else {
-                                app.view()
-                            };
-
                             // Hit test to find hovered element
                             if let Some(hit_box) = hit_map.hit_test(position.x, position.y) {
                                 // Only update focus if hovering a different element
