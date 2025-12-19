@@ -7,3 +7,6 @@ members = [
     "dataverse-cli",
     "dataverse-tui",
 ]
+
+[workspace.lints.clippy]
+all = "warn"
