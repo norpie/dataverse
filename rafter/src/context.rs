@@ -1,5 +1,6 @@
+use std::any::Any;
 use std::future::Future;
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 use std::time::Duration;
 
 use tokio::task::JoinHandle;
@@ -48,12 +49,12 @@ impl Toast {
     }
 }
 
-/// Context passed to app handlers, providing access to framework functionality.
-pub struct AppContext {
+/// Inner state for AppContext
+struct AppContextInner {
     /// Request to exit the app
     exit_requested: bool,
     /// Request to navigate to a different view
-    navigate_to: Option<Box<dyn std::any::Any + Send>>,
+    navigate_to: Option<Box<dyn Any + Send + Sync>>,
     /// Request to focus a specific element
     focus_request: Option<FocusId>,
     /// Pending toasts to show
@@ -64,111 +65,129 @@ pub struct AppContext {
     theme_request: Option<Arc<dyn Theme>>,
 }
 
+/// Context passed to app handlers, providing access to framework functionality.
+///
+/// `AppContext` uses interior mutability, so all methods take `&self`.
+/// This allows it to be cloned and used across async boundaries.
+///
+/// # Example
+///
+/// ```ignore
+/// #[handler]
+/// async fn my_handler(&self, cx: &AppContext) {
+///     cx.toast("Hello!");
+///     
+///     // Can be used across .await points
+///     some_async_operation().await;
+///     
+///     cx.toast("Done!");
+/// }
+/// ```
+#[derive(Clone)]
+pub struct AppContext {
+    inner: Arc<RwLock<AppContextInner>>,
+}
+
 impl AppContext {
     /// Create a new app context
     pub fn new() -> Self {
         Self {
-            exit_requested: false,
-            navigate_to: None,
-            focus_request: None,
-            pending_toasts: Vec::new(),
-            input_text: None,
-            theme_request: None,
+            inner: Arc::new(RwLock::new(AppContextInner {
+                exit_requested: false,
+                navigate_to: None,
+                focus_request: None,
+                pending_toasts: Vec::new(),
+                input_text: None,
+                theme_request: None,
+            })),
         }
     }
 
     /// Request to exit the current app
-    pub fn exit(&mut self) {
-        self.exit_requested = true;
-    }
-
-    /// Check if exit was requested
-    pub fn is_exit_requested(&self) -> bool {
-        self.exit_requested
+    pub fn exit(&self) {
+        if let Ok(mut inner) = self.inner.write() {
+            inner.exit_requested = true;
+        }
     }
 
     /// Navigate to a different view
-    pub fn navigate<V: 'static + Send>(&mut self, view: V) {
-        self.navigate_to = Some(Box::new(view));
-    }
-
-    /// Take the navigation request
-    pub fn take_navigation(&mut self) -> Option<Box<dyn std::any::Any + Send>> {
-        self.navigate_to.take()
+    pub fn navigate<V: 'static + Send + Sync>(&self, view: V) {
+        if let Ok(mut inner) = self.inner.write() {
+            inner.navigate_to = Some(Box::new(view));
+        }
     }
 
     /// Set focus to a specific element by ID
-    pub fn focus(&mut self, id: impl Into<FocusId>) {
-        self.focus_request = Some(id.into());
-    }
-
-    /// Take the focus request
-    pub fn take_focus_request(&mut self) -> Option<FocusId> {
-        self.focus_request.take()
+    pub fn focus(&self, id: impl Into<FocusId>) {
+        if let Ok(mut inner) = self.inner.write() {
+            inner.focus_request = Some(id.into());
+        }
     }
 
     /// Show a toast notification
-    pub fn toast(&mut self, message: impl Into<String>) {
-        self.pending_toasts.push(Toast::info(message));
+    pub fn toast(&self, message: impl Into<String>) {
+        if let Ok(mut inner) = self.inner.write() {
+            inner.pending_toasts.push(Toast::info(message));
+        }
     }
 
     /// Show a configured toast
-    pub fn show_toast(&mut self, toast: Toast) {
-        self.pending_toasts.push(toast);
-    }
-
-    /// Take pending toasts
-    pub fn take_toasts(&mut self) -> Vec<Toast> {
-        std::mem::take(&mut self.pending_toasts)
+    pub fn show_toast(&self, toast: Toast) {
+        if let Ok(mut inner) = self.inner.write() {
+            inner.pending_toasts.push(toast);
+        }
     }
 
     /// Set the current input text (called by runtime for input events)
-    pub fn set_input_text(&mut self, text: String) {
-        self.input_text = Some(text);
+    pub fn set_input_text(&self, text: String) {
+        if let Ok(mut inner) = self.inner.write() {
+            inner.input_text = Some(text);
+        }
     }
 
     /// Get the current input text
-    pub fn input_text(&self) -> Option<&str> {
-        self.input_text.as_deref()
+    pub fn input_text(&self) -> Option<String> {
+        self.inner
+            .read()
+            .ok()
+            .and_then(|inner| inner.input_text.clone())
     }
 
     /// Clear the input text
-    pub fn clear_input_text(&mut self) {
-        self.input_text = None;
+    pub fn clear_input_text(&self) {
+        if let Ok(mut inner) = self.inner.write() {
+            inner.input_text = None;
+        }
     }
 
     /// Publish an event to the event bus
-    pub fn publish<E: 'static + Send>(&mut self, _event: E) {
+    pub fn publish<E: 'static + Send>(&self, _event: E) {
         // TODO: implement pub/sub
     }
 
     /// Set the current theme
     ///
     /// The theme change will take effect on the next render.
-    pub fn set_theme<T: Theme>(&mut self, theme: T) {
-        self.theme_request = Some(Arc::new(theme));
-    }
-
-    /// Take the theme change request
-    pub fn take_theme_request(&mut self) -> Option<Arc<dyn Theme>> {
-        self.theme_request.take()
+    pub fn set_theme<T: Theme>(&self, theme: T) {
+        if let Ok(mut inner) = self.inner.write() {
+            inner.theme_request = Some(Arc::new(theme));
+        }
     }
 
     /// Spawn an async task.
     ///
-    /// Use this for fire-and-forget async work. The spawned task can mutate
-    /// `AsyncResource<T>` and `AsyncState<T>` fields (after cloning them).
+    /// The spawned task runs independently and can use cloned state.
     ///
     /// # Example
     ///
     /// ```ignore
     /// #[handler]
-    /// fn load_data(&mut self, cx: &mut AppContext) {
-    ///     let data = self.data.clone(); // AsyncResource<T>
+    /// async fn load_data(&self, cx: &AppContext) {
+    ///     let data = self.data.clone();
     ///     cx.spawn(async move {
-    ///         data.set(Resource::Loading);
+    ///         data.set_loading();
     ///         let result = fetch_data().await;
-    ///         data.set(Resource::Ready(result));
+    ///         data.set_ready(result);
     ///     });
     /// }
     /// ```
@@ -179,6 +198,42 @@ impl AppContext {
     {
         tokio::spawn(future)
     }
+
+    // -------------------------------------------------------------------------
+    // Internal methods for runtime use
+    // -------------------------------------------------------------------------
+
+    /// Check if exit was requested (runtime use)
+    pub(crate) fn is_exit_requested(&self) -> bool {
+        self.inner
+            .read()
+            .map(|inner| inner.exit_requested)
+            .unwrap_or(false)
+    }
+
+    /// Take the navigation request (runtime use)
+    pub(crate) fn take_navigation(&self) -> Option<Box<dyn Any + Send + Sync>> {
+        self.inner.write().ok().and_then(|mut inner| inner.navigate_to.take())
+    }
+
+    /// Take the focus request (runtime use)
+    pub(crate) fn take_focus_request(&self) -> Option<FocusId> {
+        self.inner.write().ok().and_then(|mut inner| inner.focus_request.take())
+    }
+
+    /// Take pending toasts (runtime use)
+    pub(crate) fn take_toasts(&self) -> Vec<Toast> {
+        self.inner
+            .write()
+            .ok()
+            .map(|mut inner| std::mem::take(&mut inner.pending_toasts))
+            .unwrap_or_default()
+    }
+
+    /// Take the theme change request (runtime use)
+    pub(crate) fn take_theme_request(&self) -> Option<Arc<dyn Theme>> {
+        self.inner.write().ok().and_then(|mut inner| inner.theme_request.take())
+    }
 }
 
 impl Default for AppContext {
@@ -187,10 +242,10 @@ impl Default for AppContext {
     }
 }
 
-/// Context passed to modal handlers
+/// Context passed to modal handlers (will be expanded for modal system)
 pub struct ModalContext {
     /// The result to emit when modal closes
-    result: Option<Box<dyn std::any::Any + Send>>,
+    result: Option<Box<dyn Any + Send>>,
     /// Whether modal should close
     should_close: bool,
 }
@@ -220,7 +275,7 @@ impl ModalContext {
     }
 
     /// Take the result
-    pub fn take_result(&mut self) -> Option<Box<dyn std::any::Any + Send>> {
+    pub fn take_result(&mut self) -> Option<Box<dyn Any + Send>> {
         self.result.take()
     }
 }

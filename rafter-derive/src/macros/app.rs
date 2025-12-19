@@ -34,24 +34,19 @@ impl AppAttrs {
 struct FieldAttrs {
     /// Skip wrapping in State<T>
     skip: bool,
-    /// This is async state (can be mutated from async handlers)
-    async_state: bool,
 }
 
 impl FieldAttrs {
     fn parse(attrs: &[Attribute]) -> Self {
         let mut skip = false;
-        let mut async_state = false;
 
         for attr in attrs {
             if attr.path().is_ident("state") {
-                // #[state(skip)] or #[state(async)]
+                // #[state(skip)]
                 if let Meta::List(list) = attr.meta.clone() {
                     let _ = list.parse_nested_meta(|meta| {
                         if meta.path.is_ident("skip") {
                             skip = true;
-                        } else if meta.path.is_ident("async") {
-                            async_state = true;
                         }
                         Ok(())
                     });
@@ -59,7 +54,7 @@ impl FieldAttrs {
             }
         }
 
-        Self { skip, async_state }
+        Self { skip }
     }
 }
 
@@ -73,20 +68,7 @@ fn is_resource_type(ty: &Type) -> bool {
     false
 }
 
-/// Extract the inner type from Resource<T>
-fn extract_resource_inner_type(ty: &Type) -> Option<&Type> {
-    if let Type::Path(type_path) = ty
-        && let Some(segment) = type_path.path.segments.last()
-        && segment.ident == "Resource"
-        && let syn::PathArguments::AngleBracketed(args) = &segment.arguments
-        && let Some(syn::GenericArgument::Type(inner)) = args.args.first()
-    {
-        return Some(inner);
-    }
-    None
-}
-
-/// Transform a field, optionally wrapping in State<T>, AsyncState<T>, or AsyncResource<T>
+/// Transform a field, wrapping in State<T> or keeping Resource<T> as-is
 fn transform_field(field: &Field) -> TokenStream {
     let attrs = FieldAttrs::parse(&field.attrs);
     let vis = &field.vis;
@@ -106,17 +88,11 @@ fn transform_field(field: &Field) -> TokenStream {
             #(#other_attrs)*
             #vis #ident: #ty
         }
-    } else if let Some(inner_ty) = extract_resource_inner_type(ty) {
-        // Resource<T> -> AsyncResource<T>
+    } else if is_resource_type(ty) {
+        // Resource<T> stays as Resource<T> (it's already the unified type)
         quote! {
             #(#other_attrs)*
-            #vis #ident: rafter::resource::AsyncResource<#inner_ty>
-        }
-    } else if attrs.async_state {
-        // #[state(async)] -> AsyncState<T>
-        quote! {
-            #(#other_attrs)*
-            #vis #ident: rafter::state::AsyncState<#ty>
+            #vis #ident: #ty
         }
     } else {
         // Regular field -> State<T>
@@ -141,11 +117,8 @@ fn generate_default_impl(name: &Ident, fields: &FieldsNamed) -> TokenStream {
                 // #[state(skip)] - use type's Default
                 quote! { #ident: Default::default() }
             } else if is_resource_type(ty) {
-                // Resource<T> -> AsyncResource<T>::new()
-                quote! { #ident: rafter::resource::AsyncResource::new() }
-            } else if attrs.async_state {
-                // #[state(async)] -> AsyncState<T>::new(Default::default())
-                quote! { #ident: rafter::state::AsyncState::new(Default::default()) }
+                // Resource<T> -> Resource::new()
+                quote! { #ident: rafter::resource::Resource::new() }
             } else {
                 // Regular -> State<T>::new(Default::default())
                 quote! { #ident: rafter::state::State::new(Default::default()) }
@@ -164,6 +137,28 @@ fn generate_default_impl(name: &Ident, fields: &FieldsNamed) -> TokenStream {
     }
 }
 
+/// Generate Clone impl for the app
+fn generate_clone_impl(name: &Ident, fields: &FieldsNamed) -> TokenStream {
+    let field_clones: Vec<_> = fields
+        .named
+        .iter()
+        .map(|f| {
+            let ident = &f.ident;
+            quote! { #ident: self.#ident.clone() }
+        })
+        .collect();
+
+    quote! {
+        impl Clone for #name {
+            fn clone(&self) -> Self {
+                Self {
+                    #(#field_clones),*
+                }
+            }
+        }
+    }
+}
+
 /// Generate inventory registration
 fn generate_registration(name: &Ident) -> TokenStream {
     let name_str = name.to_string();
@@ -172,7 +167,7 @@ fn generate_registration(name: &Ident) -> TokenStream {
         inventory::submit! {
             rafter::app::AppRegistration::new(
                 #name_str,
-                || Box::new(#name::default()) as Box<dyn rafter::app::App>
+                || Box::new(#name::default()) as Box<dyn rafter::app::CloneableApp>
             )
         }
     }
@@ -185,8 +180,8 @@ fn generate_metadata(name: &Ident, attrs: &AppAttrs, fields: &FieldsNamed) -> To
         None => quote! { rafter::app::PanicBehavior::ShowError },
     };
 
-    // Collect field names for dirty checking (excluding skipped fields only)
-    // State<T>, AsyncState<T>, and AsyncResource<T> all have is_dirty/clear_dirty
+    // Collect field names for dirty checking (excluding skipped fields)
+    // State<T> and Resource<T> both have is_dirty/clear_dirty
     let dirty_fields: Vec<_> = fields
         .named
         .iter()
@@ -218,7 +213,7 @@ fn generate_metadata(name: &Ident, attrs: &AppAttrs, fields: &FieldsNamed) -> To
                 false #(|| #is_dirty_checks)*
             }
 
-            pub fn clear_dirty(app: &mut #name) {
+            pub fn clear_dirty(app: &#name) {
                 #(#clear_dirty_calls)*
             }
         }
@@ -269,6 +264,7 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
 
     // Generate implementations
     let default_impl = generate_default_impl(name, fields);
+    let clone_impl = generate_clone_impl(name, fields);
     let registration = generate_registration(name);
     let metadata = generate_metadata(name, &attrs, fields);
 
@@ -279,6 +275,7 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
         }
 
         #default_impl
+        #clone_impl
         #registration
         #metadata
     }

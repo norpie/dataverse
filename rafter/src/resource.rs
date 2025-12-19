@@ -1,5 +1,5 @@
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, RwLock};
 
 use thiserror::Error;
 
@@ -80,11 +80,9 @@ impl From<&str> for ResourceError {
     }
 }
 
-/// Async-loadable resource state.
-///
-/// This type is implicitly async state - it can be mutated from async handlers.
+/// The state of an async-loadable resource.
 #[derive(Debug, Clone, Default)]
-pub enum Resource<T> {
+pub enum ResourceState<T> {
     /// Resource has not started loading
     #[default]
     Idle,
@@ -98,7 +96,7 @@ pub enum Resource<T> {
     Error(ResourceError),
 }
 
-impl<T> Resource<T> {
+impl<T> ResourceState<T> {
     /// Check if resource is idle
     pub fn is_idle(&self) -> bool {
         matches!(self, Self::Idle)
@@ -127,14 +125,6 @@ impl<T> Resource<T> {
         }
     }
 
-    /// Get mutable reference to ready value
-    pub fn as_ready_mut(&mut self) -> Option<&mut T> {
-        match self {
-            Self::Ready(v) => Some(v),
-            _ => None,
-        }
-    }
-
     /// Get the error if present
     pub fn as_error(&self) -> Option<&ResourceError> {
         match self {
@@ -144,48 +134,105 @@ impl<T> Resource<T> {
     }
 
     /// Map the ready value
-    pub fn map<U, F: FnOnce(T) -> U>(self, f: F) -> Resource<U> {
+    pub fn map<U, F: FnOnce(T) -> U>(self, f: F) -> ResourceState<U> {
         match self {
-            Self::Idle => Resource::Idle,
-            Self::Loading => Resource::Loading,
-            Self::Progress(p) => Resource::Progress(p),
-            Self::Ready(v) => Resource::Ready(f(v)),
-            Self::Error(e) => Resource::Error(e),
+            Self::Idle => ResourceState::Idle,
+            Self::Loading => ResourceState::Loading,
+            Self::Progress(p) => ResourceState::Progress(p),
+            Self::Ready(v) => ResourceState::Ready(f(v)),
+            Self::Error(e) => ResourceState::Error(e),
         }
     }
 }
 
-/// Async-safe wrapper for Resource that can be mutated from async contexts.
-/// Uses Arc<Mutex<>> internally for thread-safe access.
+/// Async-loadable resource with interior mutability.
+///
+/// `Resource<T>` wraps a `ResourceState<T>` with thread-safe, async-compatible
+/// state management. It uses `Arc<RwLock<T>>` internally, making it cheap to
+/// clone and safe to use across async task boundaries.
+///
+/// # Example
+///
+/// ```ignore
+/// #[app]
+/// struct MyApp {
+///     data: Resource<Vec<Item>>,  // Already a Resource, not wrapped further
+/// }
+///
+/// #[handler]
+/// async fn load_data(&self, cx: &AppContext) {
+///     self.data.set_loading();
+///     
+///     match fetch_items().await {
+///         Ok(items) => self.data.set_ready(items),
+///         Err(e) => self.data.set_error(e.to_string()),
+///     }
+/// }
+/// ```
 #[derive(Debug)]
-pub struct AsyncResource<T> {
-    inner: Arc<Mutex<Resource<T>>>,
+pub struct Resource<T> {
+    inner: Arc<RwLock<ResourceState<T>>>,
     dirty: Arc<AtomicBool>,
 }
 
-impl<T> AsyncResource<T> {
-    /// Create a new async resource
+impl<T> Resource<T> {
+    /// Create a new resource in idle state
     pub fn new() -> Self {
         Self {
-            inner: Arc::new(Mutex::new(Resource::Idle)),
+            inner: Arc::new(RwLock::new(ResourceState::Idle)),
             dirty: Arc::new(AtomicBool::new(false)),
         }
     }
 
-    /// Set the resource state
-    pub fn set(&self, state: Resource<T>) {
-        if let Ok(mut guard) = self.inner.lock() {
-            *guard = state;
+    /// Get a clone of the current state
+    pub fn get(&self) -> ResourceState<T>
+    where
+        T: Clone,
+    {
+        self.inner
+            .read()
+            .map(|guard| guard.clone())
+            .unwrap_or(ResourceState::Idle)
+    }
+
+    /// Set to idle state
+    pub fn set_idle(&self) {
+        if let Ok(mut guard) = self.inner.write() {
+            *guard = ResourceState::Idle;
             self.dirty.store(true, Ordering::SeqCst);
         }
     }
 
-    /// Get a clone of the current state
-    pub fn get(&self) -> Resource<T>
-    where
-        T: Clone,
-    {
-        self.inner.lock().map_or(Resource::Idle, |g| g.clone())
+    /// Set to loading state
+    pub fn set_loading(&self) {
+        if let Ok(mut guard) = self.inner.write() {
+            *guard = ResourceState::Loading;
+            self.dirty.store(true, Ordering::SeqCst);
+        }
+    }
+
+    /// Set to progress state
+    pub fn set_progress(&self, progress: ProgressState) {
+        if let Ok(mut guard) = self.inner.write() {
+            *guard = ResourceState::Progress(progress);
+            self.dirty.store(true, Ordering::SeqCst);
+        }
+    }
+
+    /// Set to ready state with value
+    pub fn set_ready(&self, value: T) {
+        if let Ok(mut guard) = self.inner.write() {
+            *guard = ResourceState::Ready(value);
+            self.dirty.store(true, Ordering::SeqCst);
+        }
+    }
+
+    /// Set to error state
+    pub fn set_error(&self, err: impl Into<ResourceError>) {
+        if let Ok(mut guard) = self.inner.write() {
+            *guard = ResourceState::Error(err.into());
+            self.dirty.store(true, Ordering::SeqCst);
+        }
     }
 
     /// Check if the resource has been modified since last check
@@ -197,15 +244,47 @@ impl<T> AsyncResource<T> {
     pub fn clear_dirty(&self) {
         self.dirty.store(false, Ordering::SeqCst);
     }
+
+    /// Check if resource is idle
+    pub fn is_idle(&self) -> bool {
+        self.inner
+            .read()
+            .map(|guard| guard.is_idle())
+            .unwrap_or(true)
+    }
+
+    /// Check if resource is loading
+    pub fn is_loading(&self) -> bool {
+        self.inner
+            .read()
+            .map(|guard| guard.is_loading())
+            .unwrap_or(false)
+    }
+
+    /// Check if resource is ready
+    pub fn is_ready(&self) -> bool {
+        self.inner
+            .read()
+            .map(|guard| guard.is_ready())
+            .unwrap_or(false)
+    }
+
+    /// Check if resource has an error
+    pub fn is_error(&self) -> bool {
+        self.inner
+            .read()
+            .map(|guard| guard.is_error())
+            .unwrap_or(false)
+    }
 }
 
-impl<T> Default for AsyncResource<T> {
+impl<T> Default for Resource<T> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<T> Clone for AsyncResource<T> {
+impl<T> Clone for Resource<T> {
     fn clone(&self) -> Self {
         Self {
             inner: Arc::clone(&self.inner),

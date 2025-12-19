@@ -36,6 +36,8 @@ struct HandlerMethod {
     name: Ident,
     /// Handler takes context parameter
     has_context: bool,
+    /// Handler is async
+    is_async: bool,
 }
 
 /// Check if a method has the #[keybinds] attribute
@@ -95,9 +97,12 @@ fn parse_handler_metadata(method: &ImplItemFn) -> Option<HandlerMethod> {
                 }
             });
 
+            let is_async = method.sig.asyncness.is_some();
+
             return Some(HandlerMethod {
                 name: method.sig.ident.clone(),
                 has_context,
+                is_async,
             });
         }
     }
@@ -112,6 +117,11 @@ fn is_view_method(method: &ImplItemFn) -> bool {
 /// Check if method is named "on_start"
 fn is_on_start_method(method: &ImplItemFn) -> bool {
     method.sig.ident == "on_start"
+}
+
+/// Check if method is named "on_stop"
+fn is_on_stop_method(method: &ImplItemFn) -> bool {
+    method.sig.ident == "on_stop"
 }
 
 /// Extract the type name from a Type
@@ -154,6 +164,7 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
     let mut handlers = Vec::new();
     let mut has_view = false;
     let mut has_on_start = false;
+    let mut has_on_stop = false;
 
     for item in &impl_block.items {
         if let ImplItem::Fn(method) = item {
@@ -175,6 +186,10 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
 
             if is_on_start_method(method) {
                 has_on_start = true;
+            }
+
+            if is_on_stop_method(method) {
+                has_on_stop = true;
             }
         }
     }
@@ -244,12 +259,31 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
     // Generate on_start method (delegate to user's implementation if present)
     let on_start_impl = if has_on_start {
         quote! {
-            fn on_start(&mut self, cx: &mut rafter::context::AppContext) {
+            fn on_start(&self, cx: &rafter::context::AppContext) -> impl std::future::Future<Output = ()> + Send {
                 #self_ty::on_start(self, cx)
             }
         }
     } else {
-        quote! {}
+        quote! {
+            fn on_start(&self, _cx: &rafter::context::AppContext) -> impl std::future::Future<Output = ()> + Send {
+                async {}
+            }
+        }
+    };
+
+    // Generate on_stop method
+    let on_stop_impl = if has_on_stop {
+        quote! {
+            fn on_stop(&self, cx: &rafter::context::AppContext) -> impl std::future::Future<Output = ()> + Send {
+                #self_ty::on_stop(self, cx)
+            }
+        }
+    } else {
+        quote! {
+            fn on_stop(&self, _cx: &rafter::context::AppContext) -> impl std::future::Future<Output = ()> + Send {
+                async {}
+            }
+        }
     };
 
     // Generate name method
@@ -266,7 +300,7 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
             #metadata_mod::is_dirty(self)
         }
 
-        fn clear_dirty(&mut self) {
+        fn clear_dirty(&self) {
             #metadata_mod::clear_dirty(self)
         }
     };
@@ -278,22 +312,55 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
         }
     };
 
-    // Generate dispatch method
+    // Generate dispatch method - spawns async tasks for handlers
     let dispatch_arms: Vec<_> = handlers
         .iter()
         .map(|h| {
             let name = &h.name;
             let name_str = name.to_string();
-            if h.has_context {
-                quote! {
-                    #name_str => {
-                        self.#name(cx);
+            
+            // Clone self and cx for the spawned task
+            if h.is_async {
+                if h.has_context {
+                    quote! {
+                        #name_str => {
+                            let this = self.clone();
+                            let cx = cx.clone();
+                            tokio::spawn(async move {
+                                this.#name(&cx).await;
+                            });
+                        }
+                    }
+                } else {
+                    quote! {
+                        #name_str => {
+                            let this = self.clone();
+                            tokio::spawn(async move {
+                                this.#name().await;
+                            });
+                        }
                     }
                 }
             } else {
-                quote! {
-                    #name_str => {
-                        self.#name();
+                // Sync handler - still spawn but wrap in async block
+                if h.has_context {
+                    quote! {
+                        #name_str => {
+                            let this = self.clone();
+                            let cx = cx.clone();
+                            tokio::spawn(async move {
+                                this.#name(&cx);
+                            });
+                        }
+                    }
+                } else {
+                    quote! {
+                        #name_str => {
+                            let this = self.clone();
+                            tokio::spawn(async move {
+                                this.#name();
+                            });
+                        }
                     }
                 }
             }
@@ -304,7 +371,7 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
         quote! {}
     } else {
         quote! {
-            fn dispatch(&mut self, handler_id: &rafter::keybinds::HandlerId, cx: &mut rafter::context::AppContext) {
+            fn dispatch(&self, handler_id: &rafter::keybinds::HandlerId, cx: &rafter::context::AppContext) {
                 log::debug!("Dispatching handler: {}", handler_id.0);
                 match handler_id.0.as_str() {
                     #(#dispatch_arms)*
@@ -342,6 +409,7 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
             #keybinds_final
             #view_impl
             #on_start_impl
+            #on_stop_impl
             #dirty_impl
             #panic_impl
             #dispatch_impl

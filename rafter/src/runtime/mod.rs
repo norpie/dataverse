@@ -99,19 +99,19 @@ impl Runtime {
     /// Start the runtime with a specific app
     pub async fn start_with<A: App + Default>(self) -> Result<(), RuntimeError> {
         let app = A::default();
-        self.run(Box::new(app)).await
+        self.run(app).await
     }
 
-    /// Start the runtime with a boxed app
-    pub async fn run(mut self, app: Box<dyn App>) -> Result<(), RuntimeError> {
+    /// Start the runtime with an app instance
+    pub async fn run<A: App>(mut self, app: A) -> Result<(), RuntimeError> {
         info!("Runtime starting");
 
         // Initialize terminal
         let mut term_guard = TerminalGuard::new()?;
         info!("Terminal initialized");
 
-        // Create app context
-        let mut cx = AppContext::new();
+        // Create app context (now Clone + interior mutable)
+        let cx = AppContext::new();
 
         // Create input state for keybind sequence tracking
         let mut input_state = InputState::new();
@@ -129,11 +129,8 @@ impl Runtime {
             debug!("  Keybind: {:?} => {:?}", bind.keys, bind.handler);
         }
 
-        // Create mutable app state
-        let mut app = app;
-
-        // Call on_start
-        app.on_start(&mut cx);
+        // Call on_start (async)
+        app.on_start(&cx).await;
         info!("App started: {}", app.name());
 
         // Track the currently focused input's value for text editing
@@ -255,7 +252,7 @@ impl Runtime {
                                 // Get handler from view tree
                                 if let Some(handler_id) = view.get_submit_handler(&current.0) {
                                     cx.set_input_text(input_buffer.clone());
-                                    dispatch_handler(&mut app, &handler_id, &mut cx);
+                                    dispatch_handler(&app, &handler_id, &cx);
                                     cx.clear_input_text();
                                     input_buffer.clear();
 
@@ -290,7 +287,7 @@ impl Runtime {
                                     && let Some(handler_id) = view.get_change_handler(&current.0)
                                 {
                                     cx.set_input_text(input_buffer.clone());
-                                    dispatch_handler(&mut app, &handler_id, &mut cx);
+                                    dispatch_handler(&app, &handler_id, &cx);
                                     cx.clear_input_text();
                                 }
                                 continue;
@@ -309,7 +306,7 @@ impl Runtime {
                                     && let Some(handler_id) = view.get_change_handler(&current.0)
                                 {
                                     cx.set_input_text(input_buffer.clone());
-                                    dispatch_handler(&mut app, &handler_id, &mut cx);
+                                    dispatch_handler(&app, &handler_id, &cx);
                                     cx.clear_input_text();
                                 }
                                 continue;
@@ -319,8 +316,8 @@ impl Runtime {
                             match input_state.process_key(key_combo.clone(), &keybinds) {
                                 KeybindMatch::Match(handler_id) => {
                                     info!("Keybind matched: {:?}", handler_id);
-                                    // Dispatch to handler
-                                    dispatch_handler(&mut app, &handler_id, &mut cx);
+                                    // Dispatch to handler (spawns async task)
+                                    dispatch_handler(&app, &handler_id, &cx);
 
                                     // Check if exit was requested
                                     if cx.is_exit_requested() {
@@ -361,7 +358,7 @@ impl Runtime {
                                 } else {
                                     // It's a button - dispatch click handler from view
                                     if let Some(handler_id) = view.get_submit_handler(&hit_box.id) {
-                                        dispatch_handler(&mut app, &handler_id, &mut cx);
+                                        dispatch_handler(&app, &handler_id, &cx);
 
                                         if cx.is_exit_requested() {
                                             info!("Exit requested by handler");
@@ -379,8 +376,8 @@ impl Runtime {
             }
         }
 
-        // Call on_stop
-        app.on_stop(&mut cx);
+        // Call on_stop (async)
+        app.on_stop(&cx).await;
         info!("App stopped");
 
         Ok(())
@@ -394,6 +391,7 @@ impl Default for Runtime {
 }
 
 /// Dispatch a handler by its ID.
-fn dispatch_handler(app: &mut Box<dyn App>, handler_id: &HandlerId, cx: &mut AppContext) {
+/// The handler is spawned as an async task by the app's dispatch implementation.
+fn dispatch_handler<A: App>(app: &A, handler_id: &HandlerId, cx: &AppContext) {
     app.dispatch(handler_id, cx);
 }

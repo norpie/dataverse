@@ -22,9 +22,9 @@ pub mod prelude {
     pub use crate::focus::FocusState;
     pub use crate::keybinds::Keybinds;
     pub use crate::node::Node;
-    pub use crate::resource::{AsyncResource, ProgressState, Resource};
+    pub use crate::resource::{ProgressState, Resource, ResourceState};
     pub use crate::runtime::Runtime;
-    pub use crate::state::{AsyncState, State};
+    pub use crate::state::State;
     pub use crate::style::Style;
     pub use crate::theme::{DefaultTheme, Theme};
 

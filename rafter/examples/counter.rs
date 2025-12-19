@@ -25,8 +25,8 @@ struct Counter {
 
 #[app_impl]
 impl Counter {
-    fn on_start(&mut self, _cx: &mut AppContext) {
-        *self.step = 1;
+    async fn on_start(&self, _cx: &AppContext) {
+        self.step.set(1);
     }
 
     #[keybinds]
@@ -46,68 +46,66 @@ impl Counter {
     }
 
     #[handler]
-    fn increment(&mut self, _cx: &mut AppContext) {
-        *self.value += *self.step;
+    async fn increment(&self, _cx: &AppContext) {
+        let step = self.step.get();
+        self.value.update(|v| *v += step);
     }
 
     #[handler]
-    fn decrement(&mut self, _cx: &mut AppContext) {
-        *self.value -= *self.step;
+    async fn decrement(&self, _cx: &AppContext) {
+        let step = self.step.get();
+        self.value.update(|v| *v -= step);
     }
 
     #[handler]
-    fn reset(&mut self, cx: &mut AppContext) {
-        *self.value = 0;
-        *self.step = 1;
-        self.data.set(Resource::Idle);
+    async fn reset(&self, cx: &AppContext) {
+        self.value.set(0);
+        self.step.set(1);
+        self.data.set_idle();
         cx.toast("Reset");
     }
 
     #[handler]
-    fn set_step_1(&mut self, _cx: &mut AppContext) {
-        *self.step = 1;
+    async fn set_step_1(&self, _cx: &AppContext) {
+        self.step.set(1);
     }
 
     #[handler]
-    fn set_step_5(&mut self, _cx: &mut AppContext) {
-        *self.step = 5;
+    async fn set_step_5(&self, _cx: &AppContext) {
+        self.step.set(5);
     }
 
     #[handler]
-    fn set_step_10(&mut self, _cx: &mut AppContext) {
-        *self.step = 10;
+    async fn set_step_10(&self, _cx: &AppContext) {
+        self.step.set(10);
     }
 
     #[handler]
-    fn load_data(&mut self, cx: &mut AppContext) {
-        let data = self.data.clone();
-        data.set(Resource::Loading);
-
-        cx.spawn(async move {
-            // Simulate network request with progress
-            for i in 1..=3 {
-                tokio::time::sleep(Duration::from_millis(400)).await;
-                data.set(Resource::Progress(ProgressState {
-                    current: i,
-                    total: Some(3),
-                    message: Some(format!("Step {}/3", i)),
-                }));
-            }
-            tokio::time::sleep(Duration::from_millis(400)).await;
-            data.set(Resource::Ready("API response received".to_string()));
-        });
-
+    async fn load_data(&self, cx: &AppContext) {
+        self.data.set_loading();
         cx.toast("Loading...");
+
+        // Simulate network request with progress
+        for i in 1..=3 {
+            tokio::time::sleep(Duration::from_millis(400)).await;
+            self.data.set_progress(ProgressState {
+                current: i,
+                total: Some(3),
+                message: Some(format!("Step {}/3", i)),
+            });
+        }
+        tokio::time::sleep(Duration::from_millis(400)).await;
+        self.data.set_ready("API response received".to_string());
     }
 
     #[handler]
-    fn quit(&mut self, cx: &mut AppContext) {
+    async fn quit(&self, cx: &AppContext) {
         cx.exit();
     }
 
     fn view(&self) -> Node {
-        let value_str = self.value.to_string();
-        let step_str = self.step.to_string();
+        let value_str = self.value.get().to_string();
+        let step_str = self.step.get().to_string();
 
         // Build data status display
         let data_state = self.data.get();
@@ -140,19 +138,19 @@ impl Counter {
                 row (gap: 1) {
                     text (fg: muted) { "Data:" }
                     match data_state {
-                        Resource::Idle => {
+                        ResourceState::Idle => {
                             text (fg: muted) { "Press 'l' to load" }
                         }
-                        Resource::Loading => {
+                        ResourceState::Loading => {
                             text (fg: warning) { "Loading..." }
                         }
-                        Resource::Progress(p) => {
+                        ResourceState::Progress(p) => {
                             text (fg: warning) { p.message.clone().unwrap_or_default() }
                         }
-                        Resource::Ready(s) => {
+                        ResourceState::Ready(s) => {
                             text (fg: success) { s }
                         }
-                        Resource::Error(e) => {
+                        ResourceState::Error(e) => {
                             text (fg: error) { e.to_string() }
                         }
                     }
@@ -162,7 +160,6 @@ impl Counter {
             }
         }
     }
-
 }
 
 #[tokio::main]
