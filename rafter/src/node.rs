@@ -43,8 +43,7 @@ pub enum Border {
 }
 
 /// Size specification
-#[derive(Debug, Clone, Copy, PartialEq)]
-#[derive(Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub enum Size {
     /// Fixed size in cells
     Fixed(u16),
@@ -56,7 +55,6 @@ pub enum Size {
     #[default]
     Auto,
 }
-
 
 /// Layout properties for a node
 #[derive(Debug, Clone, Default)]
@@ -94,18 +92,14 @@ pub struct Layout {
 }
 
 /// A node in the view tree
-#[derive(Debug, Clone)]
-#[derive(Default)]
+#[derive(Debug, Clone, Default)]
 pub enum Node {
     /// Empty node (renders nothing)
     #[default]
     Empty,
 
     /// Text content
-    Text {
-        content: String,
-        style: Style,
-    },
+    Text { content: String, style: Style },
 
     /// Container with vertical layout
     Column {
@@ -192,4 +186,3 @@ impl Node {
         matches!(self, Self::Empty)
     }
 }
-

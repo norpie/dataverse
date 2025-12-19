@@ -83,8 +83,7 @@ impl From<&str> for ResourceError {
 /// Async-loadable resource state.
 ///
 /// This type is implicitly async state - it can be mutated from async handlers.
-#[derive(Debug, Clone)]
-#[derive(Default)]
+#[derive(Debug, Clone, Default)]
 pub enum Resource<T> {
     /// Resource has not started loading
     #[default]
@@ -155,7 +154,6 @@ impl<T> Resource<T> {
         }
     }
 }
-
 
 /// Async-safe wrapper for Resource that can be mutated from async contexts.
 /// Uses Arc<Mutex<>> internally for thread-safe access.

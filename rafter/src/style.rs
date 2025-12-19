@@ -33,13 +33,13 @@ impl Style {
     }
 
     /// Set foreground color
-    pub const fn fg(mut self, color: Color) -> Self {
+    pub fn fg(mut self, color: Color) -> Self {
         self.fg = Some(color);
         self
     }
 
     /// Set background color
-    pub const fn bg(mut self, color: Color) -> Self {
+    pub fn bg(mut self, color: Color) -> Self {
         self.bg = Some(color);
         self
     }
@@ -72,11 +72,11 @@ impl Style {
     pub fn to_ratatui(&self) -> RatatuiStyle {
         let mut style = RatatuiStyle::default();
 
-        if let Some(fg) = self.fg {
-            style = style.fg(fg.to_ratatui());
+        if let Some(ref fg) = self.fg {
+            style = style.fg(fg.clone().to_ratatui());
         }
-        if let Some(bg) = self.bg {
-            style = style.bg(bg.to_ratatui());
+        if let Some(ref bg) = self.bg {
+            style = style.bg(bg.clone().to_ratatui());
         }
 
         let mut modifiers = Modifier::empty();

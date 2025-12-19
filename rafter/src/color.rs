@@ -3,24 +3,39 @@ use ratatui::style::Color as RatatuiColor;
 
 /// A color value that can be defined in multiple color spaces.
 /// Converts to ratatui colors at render time.
-#[derive(Debug, Clone, Copy, PartialEq, Default)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub enum Color {
     /// OKLCH color space (lightness, chroma, hue)
     /// Lightness: 0.0-1.0, Chroma: 0.0-0.4+, Hue: 0-360
-    Oklch { l: f32, c: f32, h: f32 },
+    Oklch {
+        l: f32,
+        c: f32,
+        h: f32,
+    },
 
     /// HSL color space (hue, saturation, lightness)
     /// Hue: 0-360, Saturation: 0.0-1.0, Lightness: 0.0-1.0
-    Hsl { h: f32, s: f32, l: f32 },
+    Hsl {
+        h: f32,
+        s: f32,
+        l: f32,
+    },
 
     /// RGB color space
-    Rgb { r: u8, g: u8, b: u8 },
+    Rgb {
+        r: u8,
+        g: u8,
+        b: u8,
+    },
 
     /// Hex color (stored as RGB)
     Hex(u32),
 
     /// ANSI 256 color
     Indexed(u8),
+
+    /// Named theme color (resolved at render time)
+    Named(String),
 
     /// Basic ANSI colors
     Black,
@@ -107,8 +122,16 @@ impl Color {
             Self::BrightCyan => (0, 255, 255),
             Self::BrightWhite => (255, 255, 255),
             Self::Indexed(i) => indexed_to_rgb(i),
+            Self::Named(_) => (255, 255, 255), // Named colors resolved at render time
             Self::Reset => (255, 255, 255),
         }
+    }
+
+    /// Parse a hex color string like "#FF0000" or "FF0000"
+    pub fn from_hex(s: &str) -> Option<Self> {
+        let s = s.trim_start_matches('#');
+        let value = u32::from_str_radix(s, 16).ok()?;
+        Some(Self::Hex(value))
     }
 
     /// Convert to ratatui color
@@ -146,6 +169,7 @@ impl Color {
             Self::BrightMagenta => RatatuiColor::LightMagenta,
             Self::BrightCyan => RatatuiColor::LightCyan,
             Self::BrightWhite => RatatuiColor::White,
+            Self::Named(_) => RatatuiColor::Reset, // Named colors resolved at render time
             Self::Reset => RatatuiColor::Reset,
         }
     }
