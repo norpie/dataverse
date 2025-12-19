@@ -83,7 +83,18 @@ fn transform_field(field: &Field) -> TokenStream {
 }
 
 /// Generate the Default impl for the modal
-fn generate_default_impl(name: &Ident, fields: &FieldsNamed) -> TokenStream {
+fn generate_default_impl(name: &Ident, fields: Option<&FieldsNamed>) -> TokenStream {
+    let Some(fields) = fields else {
+        // Unit struct
+        return quote! {
+            impl Default for #name {
+                fn default() -> Self {
+                    Self
+                }
+            }
+        };
+    };
+
     let field_defaults: Vec<_> = fields
         .named
         .iter()
@@ -117,7 +128,18 @@ fn generate_default_impl(name: &Ident, fields: &FieldsNamed) -> TokenStream {
 }
 
 /// Generate Clone impl for the modal
-fn generate_clone_impl(name: &Ident, fields: &FieldsNamed) -> TokenStream {
+fn generate_clone_impl(name: &Ident, fields: Option<&FieldsNamed>) -> TokenStream {
+    let Some(fields) = fields else {
+        // Unit struct
+        return quote! {
+            impl Clone for #name {
+                fn clone(&self) -> Self {
+                    Self
+                }
+            }
+        };
+    };
+
     let field_clones: Vec<_> = fields
         .named
         .iter()
@@ -139,7 +161,29 @@ fn generate_clone_impl(name: &Ident, fields: &FieldsNamed) -> TokenStream {
 }
 
 /// Generate metadata struct for use by #[modal_impl]
-fn generate_metadata(name: &Ident, fields: &FieldsNamed) -> TokenStream {
+fn generate_metadata(name: &Ident, fields: Option<&FieldsNamed>) -> TokenStream {
+    let metadata_name = format_ident!(
+        "__rafter_modal_metadata_{}",
+        name.to_string().to_lowercase()
+    );
+
+    let Some(fields) = fields else {
+        // Unit struct - no dirty checking needed
+        return quote! {
+            #[doc(hidden)]
+            #[allow(non_snake_case)]
+            pub mod #metadata_name {
+                use super::*;
+
+                pub fn is_dirty(_modal: &#name) -> bool {
+                    false
+                }
+
+                pub fn clear_dirty(_modal: &#name) {}
+            }
+        };
+    };
+
     // Collect field names for dirty checking (excluding skipped fields)
     let dirty_fields: Vec<_> = fields
         .named
@@ -157,11 +201,6 @@ fn generate_metadata(name: &Ident, fields: &FieldsNamed) -> TokenStream {
     let clear_dirty_calls = dirty_fields.iter().map(|f| {
         quote! { modal.#f.clear_dirty(); }
     });
-
-    let metadata_name = format_ident!(
-        "__rafter_modal_metadata_{}",
-        name.to_string().to_lowercase()
-    );
 
     quote! {
         #[doc(hidden)]
@@ -199,11 +238,12 @@ pub fn expand(_attr: TokenStream, item: TokenStream) -> TokenStream {
 
     let fields = match &input.data {
         syn::Data::Struct(data) => match &data.fields {
-            Fields::Named(f) => f,
-            _ => {
+            Fields::Named(f) => Some(f),
+            Fields::Unit => None,
+            Fields::Unnamed(_) => {
                 return syn::Error::new_spanned(
                     &input,
-                    "#[modal] only supports structs with named fields",
+                    "#[modal] does not support tuple structs",
                 )
                 .to_compile_error();
             }
@@ -214,22 +254,34 @@ pub fn expand(_attr: TokenStream, item: TokenStream) -> TokenStream {
         }
     };
 
-    // Transform fields
-    let transformed_fields: Vec<_> = fields.named.iter().map(transform_field).collect();
-
     // Generate implementations
     let default_impl = generate_default_impl(name, fields);
     let clone_impl = generate_clone_impl(name, fields);
     let metadata = generate_metadata(name, fields);
 
-    quote! {
-        #(#other_attrs)*
-        #vis struct #name #generics {
-            #(#transformed_fields),*
-        }
+    if let Some(fields) = fields {
+        // Struct with named fields
+        let transformed_fields: Vec<_> = fields.named.iter().map(transform_field).collect();
 
-        #default_impl
-        #clone_impl
-        #metadata
+        quote! {
+            #(#other_attrs)*
+            #vis struct #name #generics {
+                #(#transformed_fields),*
+            }
+
+            #default_impl
+            #clone_impl
+            #metadata
+        }
+    } else {
+        // Unit struct
+        quote! {
+            #(#other_attrs)*
+            #vis struct #name #generics;
+
+            #default_impl
+            #clone_impl
+            #metadata
+        }
     }
 }
