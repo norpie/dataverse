@@ -218,12 +218,17 @@ fn render_input(
 
 /// Render a button
 fn render_button(frame: &mut Frame, label: &str, style: RatatuiStyle, focused: bool, area: Rect) {
-    let mut button_style = style;
-    if focused {
-        button_style = button_style.add_modifier(ratatui::style::Modifier::REVERSED);
-    }
+    // Buttons have a subtle background, brighter when focused
+    let button_style = if focused {
+        style
+            .bg(Color::Rgb(80, 80, 100))
+            .add_modifier(ratatui::style::Modifier::BOLD)
+    } else {
+        style.bg(Color::Rgb(50, 50, 65))
+    };
 
-    let content = format!("[ {} ]", label);
+    // Add padding with spaces
+    let content = format!(" {} ", label);
     let paragraph = Paragraph::new(content).style(button_style);
     frame.render_widget(paragraph, area);
 }
@@ -495,7 +500,7 @@ fn intrinsic_size(node: &Node, horizontal: bool) -> u16 {
         }
         Node::Button { label, .. } => {
             if horizontal {
-                (label.len() + 4) as u16 // "[ label ]"
+                (label.len() + 2) as u16 // " label " with padding
             } else {
                 1
             }
@@ -553,7 +558,7 @@ fn child_constraint(node: &Node, horizontal: bool) -> Constraint {
         Node::Button { label, .. } => {
             if horizontal {
                 // Button width: "[ label ]" = label + 4
-                Constraint::Length((label.len() + 4) as u16)
+                Constraint::Length((label.len() + 2) as u16)
             } else {
                 // For vertical layout, buttons take 1 line
                 Constraint::Length(1)
