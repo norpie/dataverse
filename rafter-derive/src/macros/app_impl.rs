@@ -1,138 +1,57 @@
+//! The `#[app_impl]` attribute macro for implementing the App trait.
+
 use proc_macro2::TokenStream;
-use quote::{format_ident, quote};
-use syn::{Attribute, Ident, ImplItem, ImplItemFn, ItemImpl, Type, parse2};
+use quote::quote;
+use syn::{Attribute, Ident, ImplItem, ImplItemFn, ItemImpl, parse2};
 
 use super::handler::HandlerParams;
+use super::impl_common::{
+    HandlerMethod, KeybindsMethod, app_metadata_mod, generate_keybinds_impl,
+    generate_name_impl, generate_view_impl, get_type_name, is_keybinds_method, is_view_method,
+    parse_handler_metadata, strip_custom_attrs,
+};
 
-/// Attributes for the #[app_impl] macro
-struct AppImplAttrs {
-    // Currently no attributes supported
-}
-
-impl AppImplAttrs {
-    fn parse(_attr: TokenStream) -> syn::Result<Self> {
-        Ok(Self {})
-    }
-}
-
-/// Information about a keybinds method
-struct KeybindsMethod {
-    /// Method name
-    name: Ident,
-    /// Scope (None = app-level, Some(view) = view-scoped)
-    #[allow(dead_code)]
-    scope: Option<KeybindScope>,
-}
-
+/// Keybind scope for app keybinds
 #[derive(Clone)]
 #[allow(dead_code)]
-enum KeybindScope {
+pub enum KeybindScope {
     View(Ident),
     Modal(Ident),
     Global,
-}
-
-/// Information about a handler method
-struct HandlerMethod {
-    /// Method name
-    name: Ident,
-    /// Handler parameter requirements
-    params: HandlerParams,
-    /// Handler is async
-    is_async: bool,
-}
-
-/// Check if a method has the #[keybinds] attribute
-fn is_keybinds_method(method: &ImplItemFn) -> bool {
-    method.attrs.iter().any(|a| a.path().is_ident("keybinds"))
 }
 
 /// Parse keybinds scope from attributes
 fn parse_keybinds_scope(attrs: &[Attribute]) -> Option<KeybindScope> {
     for attr in attrs {
         if attr.path().is_ident("keybinds") {
-            // Try to parse scope: #[keybinds(view = SomeView)] or #[keybinds(global)]
-            {
-                let meta: syn::Meta = attr.meta.clone();
-                if let syn::Meta::List(list) = meta {
-                    let mut scope = None;
-                    let _ = list.parse_nested_meta(|meta| {
-                        if meta.path.is_ident("view") {
-                            let value: syn::Expr = meta.value()?.parse()?;
-                            if let syn::Expr::Path(path) = value
-                                && let Some(ident) = path.path.get_ident()
-                            {
+            let meta: syn::Meta = attr.meta.clone();
+            if let syn::Meta::List(list) = meta {
+                let mut scope = None;
+                let _ = list.parse_nested_meta(|meta| {
+                    if meta.path.is_ident("view") {
+                        let value: syn::Expr = meta.value()?.parse()?;
+                        if let syn::Expr::Path(path) = value {
+                            if let Some(ident) = path.path.get_ident() {
                                 scope = Some(KeybindScope::View(ident.clone()));
                             }
-                        } else if meta.path.is_ident("modal") {
-                            let value: syn::Expr = meta.value()?.parse()?;
-                            if let syn::Expr::Path(path) = value
-                                && let Some(ident) = path.path.get_ident()
-                            {
+                        }
+                    } else if meta.path.is_ident("modal") {
+                        let value: syn::Expr = meta.value()?.parse()?;
+                        if let syn::Expr::Path(path) = value {
+                            if let Some(ident) = path.path.get_ident() {
                                 scope = Some(KeybindScope::Modal(ident.clone()));
                             }
-                        } else if meta.path.is_ident("global") {
-                            scope = Some(KeybindScope::Global);
                         }
-                        Ok(())
-                    });
-                    return scope;
-                }
+                    } else if meta.path.is_ident("global") {
+                        scope = Some(KeybindScope::Global);
+                    }
+                    Ok(())
+                });
+                return scope;
             }
         }
     }
     None
-}
-
-/// Check if method has #[handler] attribute and extract metadata
-fn parse_handler_metadata(method: &ImplItemFn) -> Option<HandlerMethod> {
-    for attr in &method.attrs {
-        if attr.path().is_ident("handler") {
-            // Detect parameter requirements from function signature
-            // Convert ImplItemFn to ItemFn for detection (create a minimal ItemFn)
-            let params = detect_handler_params_from_impl_fn(method);
-            let is_async = method.sig.asyncness.is_some();
-
-            return Some(HandlerMethod {
-                name: method.sig.ident.clone(),
-                params,
-                is_async,
-            });
-        }
-    }
-    None
-}
-
-/// Detect handler params from an impl method
-fn detect_handler_params_from_impl_fn(method: &ImplItemFn) -> HandlerParams {
-    let mut has_app_context = false;
-    let mut has_modal_context = false;
-
-    for arg in &method.sig.inputs {
-        if let syn::FnArg::Typed(pat_type) = arg {
-            let ty = &pat_type.ty;
-            let ty_str = quote::quote!(#ty).to_string();
-
-            if ty_str.contains("AppContext") {
-                has_app_context = true;
-            }
-            if ty_str.contains("ModalContext") {
-                has_modal_context = true;
-            }
-        }
-    }
-
-    match (has_app_context, has_modal_context) {
-        (false, false) => HandlerParams::None,
-        (true, false) => HandlerParams::AppContext,
-        (false, true) => HandlerParams::ModalContext,
-        (true, true) => HandlerParams::Both,
-    }
-}
-
-/// Check if method is named "view"
-fn is_view_method(method: &ImplItemFn) -> bool {
-    method.sig.ident == "view"
 }
 
 /// Check if method is named "on_start"
@@ -145,20 +64,9 @@ fn is_on_stop_method(method: &ImplItemFn) -> bool {
     method.sig.ident == "on_stop"
 }
 
-/// Extract the type name from a Type
-fn get_type_name(ty: &Type) -> Option<Ident> {
-    if let Type::Path(path) = ty {
-        path.path.get_ident().cloned()
-    } else {
-        None
-    }
-}
-
 pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
-    let _attrs = match AppImplAttrs::parse(attr) {
-        Ok(a) => a,
-        Err(e) => return e.to_compile_error(),
-    };
+    // No attributes currently supported for app_impl
+    let _ = attr;
 
     let mut impl_block: ItemImpl = match parse2(item) {
         Ok(i) => i,
@@ -166,8 +74,8 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
     };
 
     // Get the type we're implementing for
-    let self_ty = &impl_block.self_ty;
-    let type_name = match get_type_name(self_ty) {
+    let self_ty = impl_block.self_ty.clone();
+    let type_name = match get_type_name(&self_ty) {
         Some(n) => n,
         None => {
             return syn::Error::new_spanned(self_ty, "Expected a simple type name")
@@ -175,10 +83,7 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
         }
     };
 
-    let metadata_mod = format_ident!(
-        "__rafter_app_metadata_{}",
-        type_name.to_string().to_lowercase()
-    );
+    let metadata_mod = app_metadata_mod(&type_name);
 
     // Collect method information
     let mut keybinds_methods = Vec::new();
@@ -190,10 +95,9 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
     for item in &impl_block.items {
         if let ImplItem::Fn(method) = item {
             if is_keybinds_method(method) {
-                let scope = parse_keybinds_scope(&method.attrs);
+                let _scope = parse_keybinds_scope(&method.attrs);
                 keybinds_methods.push(KeybindsMethod {
                     name: method.sig.ident.clone(),
-                    scope,
                 });
             }
 
@@ -216,68 +120,14 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
     }
 
     // Strip our custom attributes from methods
-    for item in &mut impl_block.items {
-        if let ImplItem::Fn(method) = item {
-            method
-                .attrs
-                .retain(|a| !a.path().is_ident("keybinds") && !a.path().is_ident("handler"));
-            // Remove our metadata doc attributes (legacy, may not be needed anymore)
-            method.attrs.retain(|a| {
-                if a.path().is_ident("doc")
-                    && let syn::Meta::NameValue(nv) = &a.meta
-                    && let syn::Expr::Lit(syn::ExprLit {
-                        lit: syn::Lit::Str(s),
-                        ..
-                    }) = &nv.value
-                {
-                    return !s.value().starts_with("__rafter_handler:");
-                }
-                true
-            });
-        }
-    }
+    strip_custom_attrs(&mut impl_block);
 
-    // Generate keybinds method
-    let keybinds_impl = if keybinds_methods.is_empty() {
-        quote! {
-            fn keybinds(&self) -> rafter::keybinds::Keybinds {
-                rafter::keybinds::Keybinds::new()
-            }
-        }
-    } else {
-        let merge_calls: Vec<_> = keybinds_methods
-            .iter()
-            .map(|m| {
-                let name = &m.name;
-                quote! { __keybinds.merge(Self::#name()); }
-            })
-            .collect();
+    // Generate trait method implementations
+    let keybinds_impl = generate_keybinds_impl(&keybinds_methods);
+    let view_impl = generate_view_impl(has_view, &self_ty);
+    let name_impl = generate_name_impl(&type_name);
 
-        quote! {
-            fn keybinds(&self) -> rafter::keybinds::Keybinds {
-                let mut __keybinds = rafter::keybinds::Keybinds::new();
-                #(#merge_calls)*
-                __keybinds
-            }
-        }
-    };
-
-    // Generate view method (delegate to user's view if present)
-    let view_impl = if has_view {
-        quote! {
-            fn view(&self) -> rafter::node::Node {
-                #self_ty::view(self)
-            }
-        }
-    } else {
-        quote! {
-            fn view(&self) -> rafter::node::Node {
-                rafter::node::Node::empty()
-            }
-        }
-    };
-
-    // Generate on_start method (delegate to user's implementation if present)
+    // Generate on_start method
     let on_start_impl = if has_on_start {
         quote! {
             fn on_start(&self, cx: &rafter::context::AppContext) -> impl std::future::Future<Output = ()> + Send {
@@ -307,15 +157,7 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
         }
     };
 
-    // Generate name method
-    let type_name_str = type_name.to_string();
-    let name_impl = quote! {
-        fn name(&self) -> &'static str {
-            #type_name_str
-        }
-    };
-
-    // Generate is_dirty and clear_dirty methods
+    // Generate dirty methods
     let dirty_impl = quote! {
         fn is_dirty(&self) -> bool {
             #metadata_mod::is_dirty(self)
@@ -333,88 +175,13 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
         }
     };
 
-    // Generate dispatch method - spawns async tasks for handlers
-    let dispatch_arms: Vec<_> = handlers
-        .iter()
-        .map(|h| {
-            let name = &h.name;
-            let name_str = name.to_string();
-
-            // Generate the call based on what parameters the handler needs
-            // For app handlers, only AppContext is available (ModalContext is invalid)
-            let call = match h.params {
-                HandlerParams::None => {
-                    if h.is_async {
-                        quote! { this.#name().await; }
-                    } else {
-                        quote! { this.#name(); }
-                    }
-                }
-                HandlerParams::AppContext | HandlerParams::Both => {
-                    // App handlers can only receive AppContext
-                    // If handler wants ModalContext, it will get a compile error
-                    if h.is_async {
-                        quote! { this.#name(&cx).await; }
-                    } else {
-                        quote! { this.#name(&cx); }
-                    }
-                }
-                HandlerParams::ModalContext => {
-                    // Handler wants only ModalContext but we're in app context
-                    // This is a user error - they should use AppContext in app handlers
-                    // Generate code that will give a clear compile error
-                    quote! {
-                        compile_error!("Handler requests ModalContext but is defined in an app impl. Use AppContext instead.");
-                    }
-                }
-            };
-
-            // Determine if we need to clone cx
-            let needs_cx = h.params.needs_app_context();
-
-            if needs_cx {
-                quote! {
-                    #name_str => {
-                        let this = self.clone();
-                        let cx = cx.clone();
-                        tokio::spawn(async move {
-                            #call
-                        });
-                    }
-                }
-            } else {
-                quote! {
-                    #name_str => {
-                        let this = self.clone();
-                        tokio::spawn(async move {
-                            #call
-                        });
-                    }
-                }
-            }
-        })
-        .collect();
-
-    let dispatch_impl = if handlers.is_empty() {
-        quote! {}
-    } else {
-        quote! {
-            fn dispatch(&self, handler_id: &rafter::keybinds::HandlerId, cx: &rafter::context::AppContext) {
-                log::debug!("Dispatching handler: {}", handler_id.0);
-                match handler_id.0.as_str() {
-                    #(#dispatch_arms)*
-                    other => {
-                        log::warn!("Unknown handler: {}", other);
-                    }
-                }
-            }
-        }
-    };
+    // Generate dispatch method
+    let dispatch_impl = generate_app_dispatch(&handlers);
 
     // Output the impl block plus App trait implementation
     let impl_generics = &impl_block.generics;
 
-    // Determine which methods the user already implements
+    // Check if user already implements keybinds
     let user_has_keybinds = impl_block.items.iter().any(|item| {
         if let ImplItem::Fn(m) = item {
             m.sig.ident == "keybinds"
@@ -441,6 +208,78 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
             #dirty_impl
             #panic_impl
             #dispatch_impl
+        }
+    }
+}
+
+/// Generate dispatch method for app handlers
+fn generate_app_dispatch(handlers: &[HandlerMethod]) -> TokenStream {
+    if handlers.is_empty() {
+        return quote! {};
+    }
+
+    let dispatch_arms: Vec<_> = handlers
+        .iter()
+        .map(|h| {
+            let name = &h.name;
+            let name_str = name.to_string();
+
+            let call = match h.params {
+                HandlerParams::None => {
+                    if h.is_async {
+                        quote! { this.#name().await; }
+                    } else {
+                        quote! { this.#name(); }
+                    }
+                }
+                HandlerParams::AppContext | HandlerParams::Both => {
+                    if h.is_async {
+                        quote! { this.#name(&cx).await; }
+                    } else {
+                        quote! { this.#name(&cx); }
+                    }
+                }
+                HandlerParams::ModalContext => {
+                    quote! {
+                        compile_error!("Handler requests ModalContext but is defined in an app impl. Use AppContext instead.");
+                    }
+                }
+            };
+
+            let needs_cx = h.params.needs_app_context();
+
+            if needs_cx {
+                quote! {
+                    #name_str => {
+                        let this = self.clone();
+                        let cx = cx.clone();
+                        tokio::spawn(async move {
+                            #call
+                        });
+                    }
+                }
+            } else {
+                quote! {
+                    #name_str => {
+                        let this = self.clone();
+                        tokio::spawn(async move {
+                            #call
+                        });
+                    }
+                }
+            }
+        })
+        .collect();
+
+    quote! {
+        fn dispatch(&self, handler_id: &rafter::keybinds::HandlerId, cx: &rafter::context::AppContext) {
+            log::debug!("Dispatching handler: {}", handler_id.0);
+            match handler_id.0.as_str() {
+                #(#dispatch_arms)*
+                other => {
+                    log::warn!("Unknown handler: {}", other);
+                }
+            }
         }
     }
 }
