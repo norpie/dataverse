@@ -1,6 +1,7 @@
 //! Rafter runtime - manages the event loop, rendering, and app lifecycle.
 
 mod events;
+pub mod hit_test;
 mod input;
 mod render;
 mod terminal;
@@ -17,6 +18,7 @@ use crate::focus::{FocusId, FocusState};
 use crate::keybinds::{HandlerId, Key};
 
 use events::{Event, convert_event};
+use hit_test::HitTestMap;
 use input::{InputState, KeybindMatch};
 use render::{render_node, render_toasts};
 use terminal::TerminalGuard;
@@ -148,13 +150,26 @@ impl Runtime {
             // Update focusable IDs from app
             let focusable_ids: Vec<FocusId> =
                 app.focusable_ids().into_iter().map(FocusId::new).collect();
+            let focus_changed = focus_state.take_focus_changed();
             focus_state.set_focusable_ids(focusable_ids);
 
-            // Render
+            // Sync input buffer if focus changed to an input
+            if (focus_changed || focus_state.take_focus_changed())
+                && let Some(focused_id) = focus_state.current()
+                && app.captures_input(&focused_id.0)
+                && input_buffer.is_empty()
+                && let Some(value) = app.input_value(&focused_id.0)
+            {
+                input_buffer = value;
+                debug!("Initial sync input buffer: {}", input_buffer);
+            }
+
+            // Render and build hit test map
+            let mut hit_map = HitTestMap::new();
             term_guard.terminal().draw(|frame| {
                 let area = frame.area();
                 let node = app.view_with_focus(&focus_state);
-                render_node(frame, &node, area);
+                render_node(frame, &node, area, &mut hit_map);
 
                 // Render toasts in bottom-right corner
                 render_toasts(frame, &active_toasts);
@@ -189,8 +204,15 @@ impl Runtime {
                                     debug!("Focus next");
                                     focus_state.focus_next();
                                 }
-                                // Clear input buffer when focus changes
+                                // Sync input buffer with new focused element's value
                                 input_buffer.clear();
+                                if let Some(focused_id) = focus_state.current()
+                                    && app.captures_input(&focused_id.0)
+                                    && let Some(value) = app.input_value(&focused_id.0)
+                                {
+                                    input_buffer = value;
+                                    debug!("Synced input buffer: {}", input_buffer);
+                                }
                                 continue;
                             }
 
@@ -283,8 +305,39 @@ impl Runtime {
                         Event::Resize { width, height } => {
                             debug!("Resize: {}x{}", width, height);
                         }
-                        Event::Click(_) | Event::Scroll(_) => {
-                            // Mouse events - not implemented yet
+                        Event::Click(ref click) => {
+                            debug!("Click at ({}, {})", click.position.x, click.position.y);
+
+                            // Hit test to find clicked element
+                            if let Some(hit_box) =
+                                hit_map.hit_test(click.position.x, click.position.y)
+                            {
+                                debug!("Clicked element: {}", hit_box.id);
+
+                                // Focus the clicked element
+                                focus_state.set_focus(hit_box.id.clone());
+
+                                // If it's an input, sync the buffer with the current value
+                                if hit_box.captures_input {
+                                    input_buffer.clear();
+                                    if let Some(value) = app.input_value(&hit_box.id) {
+                                        input_buffer = value;
+                                        debug!("Synced input buffer on click: {}", input_buffer);
+                                    }
+                                } else {
+                                    // It's a button - dispatch click handler
+                                    let handler_id = HandlerId(format!("{}_submit", hit_box.id));
+                                    dispatch_handler(&mut app, &handler_id, &mut cx);
+
+                                    if cx.is_exit_requested() {
+                                        info!("Exit requested by handler");
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                        Event::Scroll(_) => {
+                            // Scroll events - not implemented yet
                         }
                     }
                 }

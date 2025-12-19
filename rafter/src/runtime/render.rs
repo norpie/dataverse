@@ -8,11 +8,12 @@ use ratatui::style::{Color, Style as RatatuiStyle};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, Paragraph};
 
+use super::hit_test::HitTestMap;
 use crate::context::{Toast, ToastLevel};
 use crate::node::{Border, Node};
 
 /// Render a Node tree to a ratatui Frame
-pub fn render_node(frame: &mut Frame, node: &Node, area: Rect) {
+pub fn render_node(frame: &mut Frame, node: &Node, area: Rect, hit_map: &mut HitTestMap) {
     match node {
         Node::Empty => {}
         Node::Text { content, style } => {
@@ -23,27 +24,44 @@ pub fn render_node(frame: &mut Frame, node: &Node, area: Rect) {
             style,
             layout,
         } => {
-            render_container(frame, children, style.to_ratatui(), layout, area, false);
+            render_container(
+                frame,
+                children,
+                style.to_ratatui(),
+                layout,
+                area,
+                false,
+                hit_map,
+            );
         }
         Node::Row {
             children,
             style,
             layout,
         } => {
-            render_container(frame, children, style.to_ratatui(), layout, area, true);
+            render_container(
+                frame,
+                children,
+                style.to_ratatui(),
+                layout,
+                area,
+                true,
+                hit_map,
+            );
         }
         Node::Stack {
             children,
             style,
             layout,
         } => {
-            render_stack(frame, children, style.to_ratatui(), layout, area);
+            render_stack(frame, children, style.to_ratatui(), layout, area, hit_map);
         }
         Node::Input {
             value,
             placeholder,
             style,
             focused,
+            id,
             ..
         } => {
             render_input(
@@ -54,14 +72,23 @@ pub fn render_node(frame: &mut Frame, node: &Node, area: Rect) {
                 *focused,
                 area,
             );
+            // Register hit box for input
+            if let Some(id) = id {
+                hit_map.register(id.clone(), area, true);
+            }
         }
         Node::Button {
             label,
             style,
             focused,
+            id,
             ..
         } => {
             render_button(frame, label, style.to_ratatui(), *focused, area);
+            // Register hit box for button
+            if let Some(id) = id {
+                hit_map.register(id.clone(), area, false);
+            }
         }
     }
 }
@@ -121,6 +148,7 @@ fn render_container(
     layout: &crate::node::Layout,
     area: Rect,
     horizontal: bool,
+    hit_map: &mut HitTestMap,
 ) {
     if children.is_empty() {
         return;
@@ -136,15 +164,15 @@ fn render_container(
     // Apply padding
     let padded_area = apply_padding(inner_area, layout.padding);
 
-    // Calculate constraints for children
-    let constraints = calculate_constraints(children, layout.gap);
-
     // Create layout
     let direction = if horizontal {
         Direction::Horizontal
     } else {
         Direction::Vertical
     };
+
+    // Calculate constraints for children
+    let constraints = calculate_constraints(children, layout.gap, horizontal);
 
     let chunks = Layout::default()
         .direction(direction)
@@ -155,7 +183,7 @@ fn render_container(
     let mut chunk_idx = 0;
     for child in children {
         if chunk_idx < chunks.len() {
-            render_node(frame, child, chunks[chunk_idx]);
+            render_node(frame, child, chunks[chunk_idx], hit_map);
             chunk_idx += 1;
             // Skip gap chunks
             if layout.gap > 0 && chunk_idx < chunks.len() {
@@ -172,6 +200,7 @@ fn render_stack(
     style: RatatuiStyle,
     layout: &crate::node::Layout,
     area: Rect,
+    hit_map: &mut HitTestMap,
 ) {
     // Apply border if specified
     let (inner_area, block) = apply_border(area, &layout.border, style);
@@ -185,7 +214,7 @@ fn render_stack(
 
     // Render all children in the same area (stacked)
     for child in children {
-        render_node(frame, child, padded_area);
+        render_node(frame, child, padded_area, hit_map);
     }
 }
 
@@ -244,12 +273,12 @@ fn apply_padding(area: Rect, padding: u16) -> Rect {
 }
 
 /// Calculate layout constraints for children
-fn calculate_constraints(children: &[Node], gap: u16) -> Vec<Constraint> {
+fn calculate_constraints(children: &[Node], gap: u16, horizontal: bool) -> Vec<Constraint> {
     let mut constraints = Vec::new();
 
     for (i, child) in children.iter().enumerate() {
         // Add constraint for this child
-        constraints.push(child_constraint(child));
+        constraints.push(child_constraint(child, horizontal));
 
         // Add gap between children (except after last)
         if gap > 0 && i < children.len() - 1 {
@@ -261,21 +290,32 @@ fn calculate_constraints(children: &[Node], gap: u16) -> Vec<Constraint> {
 }
 
 /// Get the constraint for a single child node
-fn child_constraint(node: &Node) -> Constraint {
+fn child_constraint(node: &Node, horizontal: bool) -> Constraint {
     match node {
         Node::Empty => Constraint::Length(0),
         Node::Text { content, .. } => {
-            // Text takes its natural width/height
-            let lines: Vec<&str> = content.lines().collect();
-            let height = lines.len().max(1) as u16;
-            Constraint::Length(height)
+            if horizontal {
+                // For horizontal layout, use text width
+                let width = content.len() as u16;
+                Constraint::Length(width)
+            } else {
+                // For vertical layout, use text height (number of lines)
+                let lines: Vec<&str> = content.lines().collect();
+                let height = lines.len().max(1) as u16;
+                Constraint::Length(height)
+            }
         }
         Node::Column { layout, .. } | Node::Row { layout, .. } | Node::Stack { layout, .. } => {
-            // Check layout hints
-            match layout.height {
-                crate::node::Size::Fixed(h) => Constraint::Length(h),
-                crate::node::Size::Percent(p) => Constraint::Percentage((p * 100.0) as u16),
-                crate::node::Size::Flex(f) => Constraint::Ratio(f as u32, 1),
+            // Check layout hints based on direction
+            let size = if horizontal {
+                &layout.width
+            } else {
+                &layout.height
+            };
+            match size {
+                crate::node::Size::Fixed(v) => Constraint::Length(*v),
+                crate::node::Size::Percent(p) => Constraint::Percentage((*p * 100.0) as u16),
+                crate::node::Size::Flex(f) => Constraint::Ratio(*f as u32, 1),
                 crate::node::Size::Auto => {
                     // Auto-size based on flex or equal distribution
                     if let Some(flex) = layout.flex {
@@ -286,9 +326,31 @@ fn child_constraint(node: &Node) -> Constraint {
                 }
             }
         }
-        Node::Input { .. } | Node::Button { .. } => {
-            // Interactive elements take 1 line
-            Constraint::Length(1)
+        Node::Input {
+            value, placeholder, ..
+        } => {
+            if horizontal {
+                // For horizontal layout, give inputs some reasonable width
+                let content_len = if value.is_empty() {
+                    placeholder.len()
+                } else {
+                    value.len()
+                };
+                // Minimum width of 10, or content length + some padding
+                Constraint::Min((content_len + 5).max(15) as u16)
+            } else {
+                // For vertical layout, inputs take 1 line
+                Constraint::Length(1)
+            }
+        }
+        Node::Button { label, .. } => {
+            if horizontal {
+                // Button width: "[ label ]" = label + 4
+                Constraint::Length((label.len() + 4) as u16)
+            } else {
+                // For vertical layout, buttons take 1 line
+                Constraint::Length(1)
+            }
         }
     }
 }

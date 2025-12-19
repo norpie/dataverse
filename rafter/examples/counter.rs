@@ -159,6 +159,14 @@ impl CounterApp {
         matches!(id, "step_input" | "message_input")
     }
 
+    fn input_value(&self, id: &str) -> Option<String> {
+        match id {
+            "step_input" => Some((*self.step).clone()),
+            "message_input" => Some((*self.message).clone()),
+            _ => None,
+        }
+    }
+
     fn view_with_focus(&self, focus: &FocusState) -> Node {
         let step_focused = focus.is_focused("step_input");
         let message_focused = focus.is_focused("message_input");

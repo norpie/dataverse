@@ -120,7 +120,9 @@ pub fn convert_event(event: CrosstermEvent) -> Option<Event> {
         CrosstermEvent::Key(key_event) => {
             log::debug!(
                 "Crossterm key: code={:?}, modifiers={:?}, kind={:?}",
-                key_event.code, key_event.modifiers, key_event.kind
+                key_event.code,
+                key_event.modifiers,
+                key_event.kind
             );
 
             // Only handle key press events, not release or repeat

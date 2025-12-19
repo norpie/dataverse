@@ -161,6 +161,11 @@ fn is_captures_input_method(method: &ImplItemFn) -> bool {
     method.sig.ident == "captures_input"
 }
 
+/// Check if method is named "input_value"
+fn is_input_value_method(method: &ImplItemFn) -> bool {
+    method.sig.ident == "input_value"
+}
+
 /// Extract the type name from a Type
 fn get_type_name(ty: &Type) -> Option<Ident> {
     if let Type::Path(path) = ty {
@@ -203,6 +208,7 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
     let mut has_view_with_focus = false;
     let mut has_focusable_ids = false;
     let mut has_captures_input = false;
+    let mut has_input_value = false;
 
     for item in &impl_block.items {
         if let ImplItem::Fn(method) = item {
@@ -232,6 +238,10 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
 
             if is_captures_input_method(method) {
                 has_captures_input = true;
+            }
+
+            if is_input_value_method(method) {
+                has_input_value = true;
             }
         }
     }
@@ -325,6 +335,17 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
         quote! {
             fn captures_input(&self, id: &str) -> bool {
                 #self_ty::captures_input(self, id)
+            }
+        }
+    } else {
+        quote! {}
+    };
+
+    // Generate input_value method (delegate to user's implementation if present)
+    let input_value_impl = if has_input_value {
+        quote! {
+            fn input_value(&self, id: &str) -> Option<String> {
+                #self_ty::input_value(self, id)
             }
         }
     } else {
@@ -430,6 +451,7 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
             #view_with_focus_impl
             #focusable_ids_impl
             #captures_input_impl
+            #input_value_impl
             #dirty_impl
             #panic_impl
             #dispatch_impl

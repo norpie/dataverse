@@ -49,6 +49,12 @@ pub trait App: Send + 'static {
         false
     }
 
+    /// Get the current value of an input field by ID.
+    /// Used by the runtime to sync the input buffer when focus changes.
+    fn input_value(&self, _id: &str) -> Option<String> {
+        None
+    }
+
     /// Called when the app starts
     fn on_start(&mut self, _cx: &mut AppContext) {}
 
