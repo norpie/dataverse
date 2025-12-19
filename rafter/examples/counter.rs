@@ -25,19 +25,16 @@ impl CounterApp {
     }
 
     #[handler]
-    #[allow(dead_code)]
     fn increment(&mut self) {
         *self.count += 1;
     }
 
     #[handler]
-    #[allow(dead_code)]
     fn decrement(&mut self) {
         *self.count -= 1;
     }
 
     #[handler]
-    #[allow(dead_code)]
     fn quit(&mut self, cx: &mut AppContext) {
         cx.exit();
     }
@@ -53,23 +50,9 @@ impl CounterApp {
     }
 }
 
-fn main() {
-    // TODO: implement runtime
-    println!("Counter example - macros work!");
-
-    // Test that the app can be created via Default
-    let app = CounterApp::default();
-    println!("Initial count: {}", *app.count);
-
-    // Test that it implements App trait
-    let _name = app.name();
-    println!("App name: {}", _name);
-
-    // Test keybinds
-    let keybinds = app.keybinds();
-    println!("Keybinds registered: {}", keybinds.all().len());
-
-    // Test view
-    let node = app.view();
-    println!("View created: {:?}", node);
+#[tokio::main]
+async fn main() {
+    if let Err(e) = rafter::Runtime::new().start_with::<CounterApp>().await {
+        eprintln!("Error: {}", e);
+    }
 }

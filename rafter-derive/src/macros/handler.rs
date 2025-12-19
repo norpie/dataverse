@@ -79,6 +79,19 @@ fn handler_name(func: &ItemFn) -> &Ident {
     &func.sig.ident
 }
 
+/// Check if the function takes a context parameter (AppContext)
+fn takes_context(func: &ItemFn) -> bool {
+    // Check if any parameter's type contains "AppContext" or "Context"
+    func.sig.inputs.iter().any(|arg| {
+        if let syn::FnArg::Typed(pat_type) = arg {
+            let ty_str = quote::quote!(#pat_type.ty).to_string();
+            ty_str.contains("AppContext") || ty_str.contains("Context")
+        } else {
+            false
+        }
+    })
+}
+
 pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
     let attrs = match HandlerAttrs::parse(attr) {
         Ok(a) => a,
@@ -92,6 +105,7 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
 
     let _name = handler_name(&func);
     let is_async = is_async_fn(&func);
+    let has_context = takes_context(&func);
 
     // Generate handler metadata as an attribute that #[app_impl] can read
     let supersedes = attrs.supersedes;
@@ -100,10 +114,10 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
 
     // We preserve the function as-is but add a doc attribute containing metadata
     // that #[app_impl] can parse. This is a bit hacky but works with proc macros.
-    // The metadata is encoded as: __rafter_handler:async:supersedes:queues:debounce_ms
+    // The metadata is encoded as: __rafter_handler:async:supersedes:queues:debounce_ms:has_context
     let metadata = format!(
-        "__rafter_handler:{}:{}:{}:{}",
-        is_async, supersedes, queues, debounce_ms
+        "__rafter_handler:{}:{}:{}:{}:{}",
+        is_async, supersedes, queues, debounce_ms, has_context
     );
 
     let vis = &func.vis;

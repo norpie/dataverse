@@ -43,6 +43,8 @@ struct HandlerMethod {
     queues: bool,
     /// Debounce milliseconds
     debounce_ms: u64,
+    /// Handler takes context parameter
+    has_context: bool,
 }
 
 /// Check if a method has the #[keybinds] attribute
@@ -99,7 +101,7 @@ fn parse_handler_metadata(method: &ImplItemFn) -> Option<HandlerMethod> {
         {
             let value = s.value();
             if value.starts_with("__rafter_handler:") {
-                // Parse: __rafter_handler:is_async:supersedes:queues:debounce_ms
+                // Parse: __rafter_handler:is_async:supersedes:queues:debounce_ms:has_context
                 let parts: Vec<&str> = value.split(':').collect();
                 if parts.len() >= 5 {
                     return Some(HandlerMethod {
@@ -108,6 +110,7 @@ fn parse_handler_metadata(method: &ImplItemFn) -> Option<HandlerMethod> {
                         supersedes: parts[2] == "true",
                         queues: parts[3] == "true",
                         debounce_ms: parts[4].parse().unwrap_or(0),
+                        has_context: parts.get(5).map(|s| *s == "true").unwrap_or(false),
                     });
                 }
             }
@@ -267,6 +270,48 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
         }
     };
 
+    // Generate dispatch method
+    let dispatch_arms: Vec<_> = handlers
+        .iter()
+        .map(|h| {
+            let name = &h.name;
+            let name_str = name.to_string();
+            if h.is_async {
+                // Async handlers need special treatment - for now, skip
+                quote! {
+                    #name_str => {
+                        // TODO: async handler dispatch
+                    }
+                }
+            } else if h.has_context {
+                quote! {
+                    #name_str => {
+                        self.#name(cx);
+                    }
+                }
+            } else {
+                quote! {
+                    #name_str => {
+                        self.#name();
+                    }
+                }
+            }
+        })
+        .collect();
+
+    let dispatch_impl = if handlers.is_empty() {
+        quote! {}
+    } else {
+        quote! {
+            fn dispatch(&mut self, handler_id: &rafter::keybinds::HandlerId, cx: &mut rafter::context::AppContext) {
+                match handler_id.0.as_str() {
+                    #(#dispatch_arms)*
+                    _ => {}
+                }
+            }
+        }
+    };
+
     // Output the impl block plus App trait implementation
     let impl_generics = &impl_block.generics;
 
@@ -294,6 +339,7 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
             #view_impl
             #dirty_impl
             #panic_impl
+            #dispatch_impl
         }
     }
 }

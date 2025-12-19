@@ -10,6 +10,7 @@ pub mod state;
 pub mod style;
 
 pub use rafter_derive::*;
+pub use runtime::Runtime;
 
 pub mod prelude {
     pub use crate::app::App;
