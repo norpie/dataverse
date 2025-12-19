@@ -595,7 +595,7 @@ fn dim_color(color: Color, amount: f32) -> Color {
                 (b.clamp(0.0, 1.0) * 255.0) as u8,
             )
         }
-        // For indexed colors, convert to approximate RGB first
+        // For basic ANSI colors, convert to approximate RGB first
         Color::Black => dim_color(Color::Rgb(0, 0, 0), amount),
         Color::Red => dim_color(Color::Rgb(205, 49, 49), amount),
         Color::Green => dim_color(Color::Rgb(13, 188, 121), amount),
@@ -612,8 +612,48 @@ fn dim_color(color: Color, amount: f32) -> Color {
         Color::LightMagenta => dim_color(Color::Rgb(214, 112, 214), amount),
         Color::LightCyan => dim_color(Color::Rgb(41, 184, 219), amount),
         Color::White => dim_color(Color::Rgb(229, 229, 229), amount),
-        // For Reset and Indexed, leave unchanged (can't reliably convert)
-        Color::Reset | Color::Indexed(_) => color,
+        // For indexed colors, convert using ANSI 256 color approximations
+        Color::Indexed(idx) => dim_color(indexed_to_rgb(idx), amount),
+        // Reset means "terminal default" - treat as light gray for dimming
+        Color::Reset => dim_color(Color::Rgb(200, 200, 200), amount),
+    }
+}
+
+/// Convert an ANSI 256 indexed color to RGB.
+fn indexed_to_rgb(idx: u8) -> Color {
+    match idx {
+        // Standard colors (0-15) - use same values as named colors
+        0 => Color::Rgb(0, 0, 0),
+        1 => Color::Rgb(205, 49, 49),
+        2 => Color::Rgb(13, 188, 121),
+        3 => Color::Rgb(229, 229, 16),
+        4 => Color::Rgb(36, 114, 200),
+        5 => Color::Rgb(188, 63, 188),
+        6 => Color::Rgb(17, 168, 205),
+        7 => Color::Rgb(229, 229, 229),
+        8 => Color::Rgb(102, 102, 102),
+        9 => Color::Rgb(241, 76, 76),
+        10 => Color::Rgb(35, 209, 139),
+        11 => Color::Rgb(245, 245, 67),
+        12 => Color::Rgb(59, 142, 234),
+        13 => Color::Rgb(214, 112, 214),
+        14 => Color::Rgb(41, 184, 219),
+        15 => Color::Rgb(255, 255, 255),
+        // 216 color cube (16-231): 6x6x6 RGB
+        16..=231 => {
+            let idx = idx - 16;
+            let r = (idx / 36) % 6;
+            let g = (idx / 6) % 6;
+            let b = idx % 6;
+            // Convert 0-5 to 0-255 (0, 95, 135, 175, 215, 255)
+            let to_255 = |v: u8| if v == 0 { 0 } else { 55 + v * 40 };
+            Color::Rgb(to_255(r), to_255(g), to_255(b))
+        }
+        // Grayscale (232-255): 24 shades from dark to light
+        232..=255 => {
+            let gray = 8 + (idx - 232) * 10;
+            Color::Rgb(gray, gray, gray)
+        }
     }
 }
 
