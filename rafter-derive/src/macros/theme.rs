@@ -1,6 +1,6 @@
 use proc_macro2::TokenStream;
 use quote::quote;
-use syn::{parse2, DeriveInput, Fields};
+use syn::{DeriveInput, Fields, parse2};
 
 /// Expand the `#[theme]` attribute macro.
 ///
@@ -39,20 +39,17 @@ pub fn expand(_attr: TokenStream, item: TokenStream) -> TokenStream {
                     &input,
                     "#[theme] only supports structs with named fields",
                 )
-                .to_compile_error()
+                .to_compile_error();
             }
         },
         _ => {
             return syn::Error::new_spanned(&input, "#[theme] only supports structs")
-                .to_compile_error()
+                .to_compile_error();
         }
     };
 
     // Collect field names for the resolve match arms
-    let field_names: Vec<_> = fields
-        .iter()
-        .filter_map(|f| f.ident.as_ref())
-        .collect();
+    let field_names: Vec<_> = fields.iter().filter_map(|f| f.ident.as_ref()).collect();
 
     let field_name_strs: Vec<String> = field_names.iter().map(|id| id.to_string()).collect();
 
@@ -68,10 +65,7 @@ pub fn expand(_attr: TokenStream, item: TokenStream) -> TokenStream {
         .collect();
 
     // Generate the color_names list
-    let color_names_list: Vec<_> = field_name_strs
-        .iter()
-        .map(|s| quote! { #s })
-        .collect();
+    let color_names_list: Vec<_> = field_name_strs.iter().map(|s| quote! { #s }).collect();
 
     // Generate the Theme impl
     let expanded = quote! {

@@ -12,7 +12,7 @@ use super::hit_test::HitTestMap;
 use crate::context::{Toast, ToastLevel};
 use crate::node::{Border, Node};
 use crate::style::Style;
-use crate::theme::{resolve_color, Theme};
+use crate::theme::{Theme, resolve_color};
 
 /// Convert a Style to ratatui Style, resolving named colors via theme
 fn style_to_ratatui(style: &Style, theme: &dyn Theme) -> RatatuiStyle {
@@ -162,13 +162,16 @@ pub fn render_node(
             }
         }
         Node::Button {
-            label,
-            style,
-            id,
-            ..
+            label, style, id, ..
         } => {
             let is_focused = focused_id == Some(id.as_str());
-            render_button(frame, label, style_to_ratatui(style, theme), is_focused, area);
+            render_button(
+                frame,
+                label,
+                style_to_ratatui(style, theme),
+                is_focused,
+                area,
+            );
             // Register hit box for button
             if !id.is_empty() {
                 hit_map.register(id.clone(), area, false);
@@ -401,7 +404,11 @@ fn intrinsic_size(node: &Node, horizontal: bool) -> u16 {
             let padding = layout.padding * 2;
             if horizontal {
                 // Width: max child width + padding + border
-                let max_child = children.iter().map(|c| intrinsic_size(c, true)).max().unwrap_or(0);
+                let max_child = children
+                    .iter()
+                    .map(|c| intrinsic_size(c, true))
+                    .max()
+                    .unwrap_or(0);
                 max_child + padding + border_size
             } else {
                 // Height: sum of children + gaps + padding + border
@@ -434,7 +441,11 @@ fn intrinsic_size(node: &Node, horizontal: bool) -> u16 {
                 child_sum + gaps + padding + border_size
             } else {
                 // Height: max child height + padding + border
-                let max_child = children.iter().map(|c| intrinsic_size(c, false)).max().unwrap_or(0);
+                let max_child = children
+                    .iter()
+                    .map(|c| intrinsic_size(c, false))
+                    .max()
+                    .unwrap_or(0);
                 max_child + padding + border_size
             }
         }
@@ -455,7 +466,9 @@ fn intrinsic_size(node: &Node, horizontal: bool) -> u16 {
                 .unwrap_or(0);
             max_child + padding + border_size
         }
-        Node::Input { value, placeholder, .. } => {
+        Node::Input {
+            value, placeholder, ..
+        } => {
             if horizontal {
                 let content_len = if value.is_empty() {
                     placeholder.len()

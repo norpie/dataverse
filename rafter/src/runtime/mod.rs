@@ -138,6 +138,12 @@ impl Runtime {
 
         // Main event loop
         loop {
+            // Check if exit was requested (by a handler from previous iteration)
+            if cx.is_exit_requested() {
+                info!("Exit requested by handler");
+                break;
+            }
+
             // Process any pending focus requests
             if let Some(focus_id) = cx.take_focus_request() {
                 debug!("Focus requested: {:?}", focus_id);
@@ -165,11 +171,8 @@ impl Runtime {
             let view = app.view();
 
             // Update focusable IDs from view tree
-            let focusable_ids: Vec<FocusId> = view
-                .focusable_ids()
-                .into_iter()
-                .map(FocusId::new)
-                .collect();
+            let focusable_ids: Vec<FocusId> =
+                view.focusable_ids().into_iter().map(FocusId::new).collect();
             let focus_changed = focus_state.take_focus_changed();
             focus_state.set_focusable_ids(focusable_ids);
 
@@ -255,11 +258,6 @@ impl Runtime {
                                     dispatch_handler(&app, &handler_id, &cx);
                                     cx.clear_input_text();
                                     input_buffer.clear();
-
-                                    if cx.is_exit_requested() {
-                                        info!("Exit requested by handler");
-                                        break;
-                                    }
                                 }
                                 continue;
                             }
@@ -318,12 +316,6 @@ impl Runtime {
                                     info!("Keybind matched: {:?}", handler_id);
                                     // Dispatch to handler (spawns async task)
                                     dispatch_handler(&app, &handler_id, &cx);
-
-                                    // Check if exit was requested
-                                    if cx.is_exit_requested() {
-                                        info!("Exit requested by handler");
-                                        break;
-                                    }
                                 }
                                 KeybindMatch::Pending => {
                                     debug!("Keybind pending (sequence in progress)");
@@ -359,10 +351,28 @@ impl Runtime {
                                     // It's a button - dispatch click handler from view
                                     if let Some(handler_id) = view.get_submit_handler(&hit_box.id) {
                                         dispatch_handler(&app, &handler_id, &cx);
+                                    }
+                                }
+                            }
+                        }
+                        Event::Hover(ref position) => {
+                            // Hit test to find hovered element
+                            if let Some(hit_box) = hit_map.hit_test(position.x, position.y) {
+                                // Only update focus if hovering a different element
+                                let current_focus = focus_state.current().map(|f| f.0.clone());
+                                if current_focus.as_deref() != Some(&hit_box.id) {
+                                    debug!("Hover focus: {}", hit_box.id);
+                                    focus_state.set_focus(hit_box.id.clone());
 
-                                        if cx.is_exit_requested() {
-                                            info!("Exit requested by handler");
-                                            break;
+                                    // If it's an input, sync the buffer with the current value
+                                    if hit_box.captures_input {
+                                        input_buffer.clear();
+                                        if let Some(value) = view.input_value(&hit_box.id) {
+                                            input_buffer = value;
+                                            debug!(
+                                                "Synced input buffer on hover: {}",
+                                                input_buffer
+                                            );
                                         }
                                     }
                                 }

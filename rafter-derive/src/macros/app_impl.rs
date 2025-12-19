@@ -318,7 +318,7 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
         .map(|h| {
             let name = &h.name;
             let name_str = name.to_string();
-            
+
             // Clone self and cx for the spawned task
             if h.is_async {
                 if h.has_context {

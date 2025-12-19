@@ -1,5 +1,5 @@
 use rafter::color::Color;
-use rafter::theme::{resolve_color, DefaultTheme, Theme};
+use rafter::theme::{DefaultTheme, Theme, resolve_color};
 
 #[test]
 fn test_default_theme_resolves_colors() {

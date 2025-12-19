@@ -213,12 +213,18 @@ impl AppContext {
 
     /// Take the navigation request (runtime use)
     pub(crate) fn take_navigation(&self) -> Option<Box<dyn Any + Send + Sync>> {
-        self.inner.write().ok().and_then(|mut inner| inner.navigate_to.take())
+        self.inner
+            .write()
+            .ok()
+            .and_then(|mut inner| inner.navigate_to.take())
     }
 
     /// Take the focus request (runtime use)
     pub(crate) fn take_focus_request(&self) -> Option<FocusId> {
-        self.inner.write().ok().and_then(|mut inner| inner.focus_request.take())
+        self.inner
+            .write()
+            .ok()
+            .and_then(|mut inner| inner.focus_request.take())
     }
 
     /// Take pending toasts (runtime use)
@@ -232,7 +238,10 @@ impl AppContext {
 
     /// Take the theme change request (runtime use)
     pub(crate) fn take_theme_request(&self) -> Option<Arc<dyn Theme>> {
-        self.inner.write().ok().and_then(|mut inner| inner.theme_request.take())
+        self.inner
+            .write()
+            .ok()
+            .and_then(|mut inner| inner.theme_request.take())
     }
 }
 

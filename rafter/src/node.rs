@@ -318,9 +318,9 @@ impl Node {
             Self::Input { id, on_submit, .. } if id == target_id => on_submit.clone(),
             Self::Column { children, .. }
             | Self::Row { children, .. }
-            | Self::Stack { children, .. } => {
-                children.iter().find_map(|c| c.get_submit_handler(target_id))
-            }
+            | Self::Stack { children, .. } => children
+                .iter()
+                .find_map(|c| c.get_submit_handler(target_id)),
             _ => None,
         }
     }
@@ -331,9 +331,9 @@ impl Node {
             Self::Input { id, on_change, .. } if id == target_id => on_change.clone(),
             Self::Column { children, .. }
             | Self::Row { children, .. }
-            | Self::Stack { children, .. } => {
-                children.iter().find_map(|c| c.get_change_handler(target_id))
-            }
+            | Self::Stack { children, .. } => children
+                .iter()
+                .find_map(|c| c.get_change_handler(target_id)),
             _ => None,
         }
     }

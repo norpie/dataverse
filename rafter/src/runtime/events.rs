@@ -17,6 +17,8 @@ pub enum Event {
     Key(KeyCombo),
     /// Mouse click event
     Click(ClickEvent),
+    /// Mouse hover/move event
+    Hover(Position),
     /// Mouse scroll event
     Scroll(ScrollEvent),
     /// Terminal resize event
@@ -110,6 +112,7 @@ pub fn convert_mouse_event(event: MouseEvent) -> Option<Event> {
             position,
             amount: 3,
         })),
+        MouseEventKind::Moved => Some(Event::Hover(position)),
         _ => None, // Ignore other mouse events for now
     }
 }
