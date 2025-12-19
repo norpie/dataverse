@@ -25,6 +25,10 @@ struct Counter {
 
 #[app_impl]
 impl Counter {
+    fn on_start(&mut self, _cx: &mut AppContext) {
+        *self.step = 1;
+    }
+
     #[keybinds]
     fn keys() -> Keybinds {
         keybinds! {
@@ -101,29 +105,30 @@ impl Counter {
         cx.exit();
     }
 
-    // Button handlers
+    // Button handlers (named {id}_submit to match button ids)
     #[handler]
-    fn inc_btn_submit(&mut self, cx: &mut AppContext) {
+    fn inc_submit(&mut self, cx: &mut AppContext) {
         self.increment(cx);
     }
 
     #[handler]
-    fn dec_btn_submit(&mut self, cx: &mut AppContext) {
+    fn dec_submit(&mut self, cx: &mut AppContext) {
         self.decrement(cx);
     }
 
     #[handler]
-    fn reset_btn_submit(&mut self, cx: &mut AppContext) {
+    fn reset_submit(&mut self, cx: &mut AppContext) {
         self.reset(cx);
     }
 
     #[handler]
-    fn load_btn_submit(&mut self, cx: &mut AppContext) {
+    fn load_submit(&mut self, cx: &mut AppContext) {
         self.load_data(cx);
     }
 
     fn focusable_ids(&self) -> Vec<String> {
-        vec!["inc".into(), "dec".into(), "reset".into(), "load".into()]
+        // Tab order: dec, inc, reset, load (left to right)
+        vec!["dec".into(), "inc".into(), "reset".into(), "load".into()]
     }
 
     fn captures_input(&self, _id: &str) -> bool {
@@ -148,7 +153,7 @@ impl Counter {
                     text (fg: muted) { "A rafter demo application" }
                 }
 
-                column (border: rounded, padding: 1) {
+                column (border: rounded) {
                     row (gap: 2) {
                         text (fg: muted) { "Value:" }
                         text (bold, fg: primary) { value_str }

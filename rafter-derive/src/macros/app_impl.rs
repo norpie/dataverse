@@ -129,6 +129,11 @@ fn is_input_value_method(method: &ImplItemFn) -> bool {
     method.sig.ident == "input_value"
 }
 
+/// Check if method is named "on_start"
+fn is_on_start_method(method: &ImplItemFn) -> bool {
+    method.sig.ident == "on_start"
+}
+
 /// Extract the type name from a Type
 fn get_type_name(ty: &Type) -> Option<Ident> {
     if let Type::Path(path) = ty {
@@ -172,6 +177,7 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
     let mut has_focusable_ids = false;
     let mut has_captures_input = false;
     let mut has_input_value = false;
+    let mut has_on_start = false;
 
     for item in &impl_block.items {
         if let ImplItem::Fn(method) = item {
@@ -205,6 +211,10 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
 
             if is_input_value_method(method) {
                 has_input_value = true;
+            }
+
+            if is_on_start_method(method) {
+                has_on_start = true;
             }
         }
     }
@@ -315,6 +325,17 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
         quote! {}
     };
 
+    // Generate on_start method (delegate to user's implementation if present)
+    let on_start_impl = if has_on_start {
+        quote! {
+            fn on_start(&mut self, cx: &mut rafter::context::AppContext) {
+                #self_ty::on_start(self, cx)
+            }
+        }
+    } else {
+        quote! {}
+    };
+
     // Generate name method
     let type_name_str = type_name.to_string();
     let name_impl = quote! {
@@ -408,6 +429,7 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
             #focusable_ids_impl
             #captures_input_impl
             #input_value_impl
+            #on_start_impl
             #dirty_impl
             #panic_impl
             #dispatch_impl

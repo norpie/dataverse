@@ -48,6 +48,32 @@ fn style_to_ratatui(style: &Style, theme: &dyn Theme) -> RatatuiStyle {
 }
 
 /// Render a Node tree to a ratatui Frame
+/// Constrain area to intrinsic size if layout is auto-sized
+fn constrain_area(node: &Node, area: Rect) -> Rect {
+    let layout = match node {
+        Node::Column { layout, .. } | Node::Row { layout, .. } | Node::Stack { layout, .. } => {
+            layout
+        }
+        _ => return area,
+    };
+
+    let mut result = area;
+
+    // Constrain width if auto
+    if matches!(layout.width, crate::node::Size::Auto) && layout.flex.is_none() {
+        let intrinsic_w = intrinsic_size(node, true);
+        result.width = result.width.min(intrinsic_w);
+    }
+
+    // Constrain height if auto
+    if matches!(layout.height, crate::node::Size::Auto) && layout.flex.is_none() {
+        let intrinsic_h = intrinsic_size(node, false);
+        result.height = result.height.min(intrinsic_h);
+    }
+
+    result
+}
+
 pub fn render_node(
     frame: &mut Frame,
     node: &Node,
@@ -55,6 +81,9 @@ pub fn render_node(
     hit_map: &mut HitTestMap,
     theme: &dyn Theme,
 ) {
+    // Constrain area for auto-sized containers
+    let area = constrain_area(node, area);
+
     match node {
         Node::Empty => {}
         Node::Text { content, style } => {
@@ -343,24 +372,118 @@ fn calculate_constraints(children: &[Node], gap: u16, horizontal: bool) -> Vec<C
     constraints
 }
 
+/// Calculate the intrinsic size of a node (width if horizontal, height if vertical)
+fn intrinsic_size(node: &Node, horizontal: bool) -> u16 {
+    match node {
+        Node::Empty => 0,
+        Node::Text { content, .. } => {
+            if horizontal {
+                content.len() as u16
+            } else {
+                content.lines().count().max(1) as u16
+            }
+        }
+        Node::Column {
+            children, layout, ..
+        } => {
+            let border_size = if matches!(layout.border, Border::None) {
+                0
+            } else {
+                2
+            };
+            let padding = layout.padding * 2;
+            if horizontal {
+                // Width: max child width + padding + border
+                let max_child = children.iter().map(|c| intrinsic_size(c, true)).max().unwrap_or(0);
+                max_child + padding + border_size
+            } else {
+                // Height: sum of children + gaps + padding + border
+                let child_sum: u16 = children.iter().map(|c| intrinsic_size(c, false)).sum();
+                let gaps = if children.len() > 1 {
+                    layout.gap * (children.len() as u16 - 1)
+                } else {
+                    0
+                };
+                child_sum + gaps + padding + border_size
+            }
+        }
+        Node::Row {
+            children, layout, ..
+        } => {
+            let border_size = if matches!(layout.border, Border::None) {
+                0
+            } else {
+                2
+            };
+            let padding = layout.padding * 2;
+            if horizontal {
+                // Width: sum of children + gaps + padding + border
+                let child_sum: u16 = children.iter().map(|c| intrinsic_size(c, true)).sum();
+                let gaps = if children.len() > 1 {
+                    layout.gap * (children.len() as u16 - 1)
+                } else {
+                    0
+                };
+                child_sum + gaps + padding + border_size
+            } else {
+                // Height: max child height + padding + border
+                let max_child = children.iter().map(|c| intrinsic_size(c, false)).max().unwrap_or(0);
+                max_child + padding + border_size
+            }
+        }
+        Node::Stack {
+            children, layout, ..
+        } => {
+            let border_size = if matches!(layout.border, Border::None) {
+                0
+            } else {
+                2
+            };
+            let padding = layout.padding * 2;
+            // Stack: max of all children in both directions
+            let max_child = children
+                .iter()
+                .map(|c| intrinsic_size(c, horizontal))
+                .max()
+                .unwrap_or(0);
+            max_child + padding + border_size
+        }
+        Node::Input { value, placeholder, .. } => {
+            if horizontal {
+                let content_len = if value.is_empty() {
+                    placeholder.len()
+                } else {
+                    value.len()
+                };
+                (content_len + 5).max(15) as u16
+            } else {
+                1
+            }
+        }
+        Node::Button { label, .. } => {
+            if horizontal {
+                (label.len() + 4) as u16 // "[ label ]"
+            } else {
+                1
+            }
+        }
+    }
+}
+
 /// Get the constraint for a single child node
 fn child_constraint(node: &Node, horizontal: bool) -> Constraint {
     match node {
         Node::Empty => Constraint::Length(0),
         Node::Text { content, .. } => {
             if horizontal {
-                // For horizontal layout, use text width
                 let width = content.len() as u16;
                 Constraint::Length(width)
             } else {
-                // For vertical layout, use text height (number of lines)
-                let lines: Vec<&str> = content.lines().collect();
-                let height = lines.len().max(1) as u16;
+                let height = content.lines().count().max(1) as u16;
                 Constraint::Length(height)
             }
         }
         Node::Column { layout, .. } | Node::Row { layout, .. } | Node::Stack { layout, .. } => {
-            // Check layout hints based on direction
             let size = if horizontal {
                 &layout.width
             } else {
@@ -371,11 +494,11 @@ fn child_constraint(node: &Node, horizontal: bool) -> Constraint {
                 crate::node::Size::Percent(p) => Constraint::Percentage((*p * 100.0) as u16),
                 crate::node::Size::Flex(f) => Constraint::Ratio(*f as u32, 1),
                 crate::node::Size::Auto => {
-                    // Auto-size based on flex or equal distribution
                     if let Some(flex) = layout.flex {
                         Constraint::Ratio(flex as u32, 1)
                     } else {
-                        Constraint::Min(1)
+                        // Calculate intrinsic size
+                        Constraint::Length(intrinsic_size(node, horizontal))
                     }
                 }
             }
@@ -384,16 +507,13 @@ fn child_constraint(node: &Node, horizontal: bool) -> Constraint {
             value, placeholder, ..
         } => {
             if horizontal {
-                // For horizontal layout, give inputs some reasonable width
                 let content_len = if value.is_empty() {
                     placeholder.len()
                 } else {
                     value.len()
                 };
-                // Minimum width of 10, or content length + some padding
                 Constraint::Min((content_len + 5).max(15) as u16)
             } else {
-                // For vertical layout, inputs take 1 line
                 Constraint::Length(1)
             }
         }
