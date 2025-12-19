@@ -1,0 +1,8 @@
+[workspace]
+resolver = "2"
+members = [
+    "rafter",
+    "dataverse-lib",
+    "dataverse-cli",
+    "dataverse-tui",
+]
