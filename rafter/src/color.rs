@@ -1,238 +1,249 @@
+//! Color system with OKLCH-first public API.
+//!
+//! Colors are stored internally as RGB for fast rendering, but the public API
+//! encourages OKLCH usage for perceptually uniform color definitions.
+//!
+//! # Example
+//!
+//! ```rust,ignore
+//! use rafter::color::Color;
+//!
+//! // OKLCH constructor (recommended for defining colors)
+//! let primary = Color::oklch(0.7, 0.15, 250.0);
+//!
+//! // Other constructors available for convenience
+//! let red = Color::rgb(255, 0, 0);
+//! let blue = Color::hex(0x0000FF);
+//! let css = Color::parse("hsl(200, 80%, 50%)").unwrap();
+//! ```
+
 use color::{AlphaColor, Hsl, Oklch, Srgb};
 use ratatui::style::Color as RatatuiColor;
 
-/// A color value that can be defined in multiple color spaces.
-/// Converts to ratatui colors at render time.
-#[derive(Debug, Clone, PartialEq, Default)]
-pub enum Color {
-    /// OKLCH color space (lightness, chroma, hue)
-    /// Lightness: 0.0-1.0, Chroma: 0.0-0.4+, Hue: 0-360
-    Oklch {
-        l: f32,
-        c: f32,
-        h: f32,
-    },
-
-    /// HSL color space (hue, saturation, lightness)
-    /// Hue: 0-360, Saturation: 0.0-1.0, Lightness: 0.0-1.0
-    Hsl {
-        h: f32,
-        s: f32,
-        l: f32,
-    },
-
-    /// RGB color space
-    Rgb {
-        r: u8,
-        g: u8,
-        b: u8,
-    },
-
-    /// Hex color (stored as RGB)
-    Hex(u32),
-
-    /// ANSI 256 color
-    Indexed(u8),
-
-    /// Named theme color (resolved at render time)
-    Named(String),
-
-    /// Basic ANSI colors
-    Black,
-    Red,
-    Green,
-    Yellow,
-    Blue,
-    Magenta,
-    Cyan,
-    White,
-    BrightBlack,
-    BrightRed,
-    BrightGreen,
-    BrightYellow,
-    BrightBlue,
-    BrightMagenta,
-    BrightCyan,
-    BrightWhite,
-
-    /// Reset to default
-    #[default]
-    Reset,
+/// A color value stored as RGB internally.
+///
+/// Use the OKLCH constructor for perceptually uniform color definitions.
+/// RGB is used internally for fast conversion to terminal colors.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct Color {
+    r: u8,
+    g: u8,
+    b: u8,
 }
 
+// Constructors
 impl Color {
-    /// Create an OKLCH color
-    pub const fn oklch(l: f32, c: f32, h: f32) -> Self {
-        Self::Oklch { l, c, h }
+    /// Create a color from OKLCH values (recommended).
+    ///
+    /// OKLCH provides perceptually uniform color specification:
+    /// - `l`: Lightness (0.0-1.0)
+    /// - `c`: Chroma (0.0-0.4+, varies by hue)
+    /// - `h`: Hue (0-360 degrees)
+    pub fn oklch(l: f32, c: f32, h: f32) -> Self {
+        let oklch = AlphaColor::<Oklch>::new([l, c, h, 1.0]);
+        let srgb: AlphaColor<Srgb> = oklch.convert();
+        let [r, g, b, _] = srgb.components;
+        Self {
+            r: (r.clamp(0.0, 1.0) * 255.0) as u8,
+            g: (g.clamp(0.0, 1.0) * 255.0) as u8,
+            b: (b.clamp(0.0, 1.0) * 255.0) as u8,
+        }
     }
 
-    /// Create an HSL color
-    pub const fn hsl(h: f32, s: f32, l: f32) -> Self {
-        Self::Hsl { h, s, l }
-    }
-
-    /// Create an RGB color
+    /// Create a color from RGB values.
     pub const fn rgb(r: u8, g: u8, b: u8) -> Self {
-        Self::Rgb { r, g, b }
+        Self { r, g, b }
     }
 
-    /// Create a color from hex value (0xRRGGBB)
+    /// Create a color from a hex value (0xRRGGBB).
     pub const fn hex(value: u32) -> Self {
-        Self::Hex(value)
+        Self {
+            r: ((value >> 16) & 0xFF) as u8,
+            g: ((value >> 8) & 0xFF) as u8,
+            b: (value & 0xFF) as u8,
+        }
     }
 
-    /// Parse a CSS color string
+    /// Create a color from HSL values.
+    pub fn hsl(h: f32, s: f32, l: f32) -> Self {
+        let hsl = AlphaColor::<Hsl>::new([h, s, l, 1.0]);
+        let srgb: AlphaColor<Srgb> = hsl.convert();
+        let [r, g, b, _] = srgb.components;
+        Self {
+            r: (r.clamp(0.0, 1.0) * 255.0) as u8,
+            g: (g.clamp(0.0, 1.0) * 255.0) as u8,
+            b: (b.clamp(0.0, 1.0) * 255.0) as u8,
+        }
+    }
+
+    /// Parse a CSS color string.
     pub fn parse(s: &str) -> Option<Self> {
         let parsed = color::parse_color(s).ok()?;
         let srgb: AlphaColor<Srgb> = parsed.to_alpha_color();
         let [r, g, b, _] = srgb.components;
-        Some(Self::Rgb {
+        Some(Self {
             r: (r.clamp(0.0, 1.0) * 255.0) as u8,
             g: (g.clamp(0.0, 1.0) * 255.0) as u8,
             b: (b.clamp(0.0, 1.0) * 255.0) as u8,
         })
     }
+}
 
-    /// Convert to RGB tuple
-    pub fn to_rgb(self) -> (u8, u8, u8) {
-        match self {
-            Self::Rgb { r, g, b } => (r, g, b),
-            Self::Hex(value) => {
-                let r = ((value >> 16) & 0xFF) as u8;
-                let g = ((value >> 8) & 0xFF) as u8;
-                let b = (value & 0xFF) as u8;
-                (r, g, b)
-            }
-            Self::Oklch { l, c, h } => oklch_to_rgb(l, c, h),
-            Self::Hsl { h, s, l } => hsl_to_rgb(h, s, l),
-            Self::Black => (0, 0, 0),
-            Self::Red => (128, 0, 0),
-            Self::Green => (0, 128, 0),
-            Self::Yellow => (128, 128, 0),
-            Self::Blue => (0, 0, 128),
-            Self::Magenta => (128, 0, 128),
-            Self::Cyan => (0, 128, 128),
-            Self::White => (192, 192, 192),
-            Self::BrightBlack => (128, 128, 128),
-            Self::BrightRed => (255, 0, 0),
-            Self::BrightGreen => (0, 255, 0),
-            Self::BrightYellow => (255, 255, 0),
-            Self::BrightBlue => (0, 0, 255),
-            Self::BrightMagenta => (255, 0, 255),
-            Self::BrightCyan => (0, 255, 255),
-            Self::BrightWhite => (255, 255, 255),
-            Self::Indexed(i) => indexed_to_rgb(i),
-            Self::Named(_) => (255, 255, 255), // Named colors resolved at render time
-            Self::Reset => (255, 255, 255),
-        }
+// Accessors
+impl Color {
+    /// Get the red component.
+    pub const fn r(&self) -> u8 {
+        self.r
     }
 
-    /// Parse a hex color string like "#FF0000" or "FF0000"
-    pub fn from_hex(s: &str) -> Option<Self> {
-        let s = s.trim_start_matches('#');
-        let value = u32::from_str_radix(s, 16).ok()?;
-        Some(Self::Hex(value))
+    /// Get the green component.
+    pub const fn g(&self) -> u8 {
+        self.g
     }
 
-    /// Convert to ratatui color
-    pub fn to_ratatui(self) -> RatatuiColor {
-        match self {
-            Self::Rgb { r, g, b } => RatatuiColor::Rgb(r, g, b),
-            Self::Hex(value) => {
-                let r = ((value >> 16) & 0xFF) as u8;
-                let g = ((value >> 8) & 0xFF) as u8;
-                let b = (value & 0xFF) as u8;
-                RatatuiColor::Rgb(r, g, b)
-            }
-            Self::Oklch { l, c, h } => {
-                let (r, g, b) = oklch_to_rgb(l, c, h);
-                RatatuiColor::Rgb(r, g, b)
-            }
-            Self::Hsl { h, s, l } => {
-                let (r, g, b) = hsl_to_rgb(h, s, l);
-                RatatuiColor::Rgb(r, g, b)
-            }
-            Self::Indexed(i) => RatatuiColor::Indexed(i),
-            Self::Black => RatatuiColor::Black,
-            Self::Red => RatatuiColor::Red,
-            Self::Green => RatatuiColor::Green,
-            Self::Yellow => RatatuiColor::Yellow,
-            Self::Blue => RatatuiColor::Blue,
-            Self::Magenta => RatatuiColor::Magenta,
-            Self::Cyan => RatatuiColor::Cyan,
-            Self::White => RatatuiColor::White,
-            Self::BrightBlack => RatatuiColor::DarkGray,
-            Self::BrightRed => RatatuiColor::LightRed,
-            Self::BrightGreen => RatatuiColor::LightGreen,
-            Self::BrightYellow => RatatuiColor::LightYellow,
-            Self::BrightBlue => RatatuiColor::LightBlue,
-            Self::BrightMagenta => RatatuiColor::LightMagenta,
-            Self::BrightCyan => RatatuiColor::LightCyan,
-            Self::BrightWhite => RatatuiColor::White,
-            Self::Named(_) => RatatuiColor::Reset, // Named colors resolved at render time
-            Self::Reset => RatatuiColor::Reset,
-        }
+    /// Get the blue component.
+    pub const fn b(&self) -> u8 {
+        self.b
+    }
+
+    /// Convert to RGB tuple.
+    pub const fn to_rgb(&self) -> (u8, u8, u8) {
+        (self.r, self.g, self.b)
+    }
+
+    /// Convert to ratatui Color.
+    pub const fn to_ratatui(&self) -> RatatuiColor {
+        RatatuiColor::Rgb(self.r, self.g, self.b)
     }
 }
 
-/// Convert OKLCH to RGB using the color crate
-fn oklch_to_rgb(l: f32, c: f32, h: f32) -> (u8, u8, u8) {
-    let oklch = AlphaColor::<Oklch>::new([l, c, h, 1.0]);
-    let srgb: AlphaColor<Srgb> = oklch.convert();
-    let [r, g, b, _] = srgb.components;
-    (
-        (r.clamp(0.0, 1.0) * 255.0) as u8,
-        (g.clamp(0.0, 1.0) * 255.0) as u8,
-        (b.clamp(0.0, 1.0) * 255.0) as u8,
-    )
+// Color manipulation (converts to OKLCH, manipulates, converts back)
+impl Color {
+    /// Get this color's OKLCH components.
+    pub fn to_oklch(&self) -> (f32, f32, f32) {
+        let srgb = AlphaColor::<Srgb>::new([
+            self.r as f32 / 255.0,
+            self.g as f32 / 255.0,
+            self.b as f32 / 255.0,
+            1.0,
+        ]);
+        let oklch: AlphaColor<Oklch> = srgb.convert();
+        let [l, c, h, _] = oklch.components;
+        (l, c, h)
+    }
+
+    /// Create a darker version of this color.
+    pub fn darken(&self, amount: f32) -> Self {
+        let (l, c, h) = self.to_oklch();
+        Self::oklch(l * (1.0 - amount), c, h)
+    }
+
+    /// Create a lighter version of this color.
+    pub fn lighten(&self, amount: f32) -> Self {
+        let (l, c, h) = self.to_oklch();
+        Self::oklch(l + (1.0 - l) * amount, c, h)
+    }
+
+    /// Create a less saturated version of this color.
+    pub fn desaturate(&self, amount: f32) -> Self {
+        let (l, c, h) = self.to_oklch();
+        Self::oklch(l, c * (1.0 - amount), h)
+    }
+
+    /// Create a more saturated version of this color.
+    pub fn saturate(&self, amount: f32) -> Self {
+        let (l, c, h) = self.to_oklch();
+        Self::oklch(l, c * (1.0 + amount), h)
+    }
+
+    /// Rotate the hue by the given degrees.
+    pub fn rotate_hue(&self, degrees: f32) -> Self {
+        let (l, c, h) = self.to_oklch();
+        Self::oklch(l, c, (h + degrees) % 360.0)
+    }
+
+    /// Create a new color with the given lightness.
+    pub fn with_lightness(&self, l: f32) -> Self {
+        let (_, c, h) = self.to_oklch();
+        Self::oklch(l.clamp(0.0, 1.0), c, h)
+    }
+
+    /// Create a new color with the given chroma.
+    pub fn with_chroma(&self, c: f32) -> Self {
+        let (l, _, h) = self.to_oklch();
+        Self::oklch(l, c.max(0.0), h)
+    }
+
+    /// Create a new color with the given hue.
+    pub fn with_hue(&self, h: f32) -> Self {
+        let (l, c, _) = self.to_oklch();
+        Self::oklch(l, c, h % 360.0)
+    }
 }
 
-/// Convert HSL to RGB using the color crate
-fn hsl_to_rgb(h: f32, s: f32, l: f32) -> (u8, u8, u8) {
-    let hsl = AlphaColor::<Hsl>::new([h, s, l, 1.0]);
-    let srgb: AlphaColor<Srgb> = hsl.convert();
-    let [r, g, b, _] = srgb.components;
-    (
-        (r.clamp(0.0, 1.0) * 255.0) as u8,
-        (g.clamp(0.0, 1.0) * 255.0) as u8,
-        (b.clamp(0.0, 1.0) * 255.0) as u8,
-    )
+// Common color constants (pre-computed RGB values)
+impl Color {
+    pub const BLACK: Self = Self::rgb(0, 0, 0);
+    pub const WHITE: Self = Self::rgb(255, 255, 255);
+    pub const RED: Self = Self::rgb(239, 68, 68);
+    pub const GREEN: Self = Self::rgb(34, 197, 94);
+    pub const BLUE: Self = Self::rgb(59, 130, 246);
+    pub const YELLOW: Self = Self::rgb(250, 204, 21);
+    pub const CYAN: Self = Self::rgb(6, 182, 212);
+    pub const MAGENTA: Self = Self::rgb(217, 70, 239);
+    pub const GRAY: Self = Self::rgb(156, 163, 175);
+    pub const DARK_GRAY: Self = Self::rgb(75, 85, 99);
+    pub const LIGHT_GRAY: Self = Self::rgb(209, 213, 219);
 }
 
-/// Convert 256-color index to approximate RGB
-fn indexed_to_rgb(i: u8) -> (u8, u8, u8) {
-    match i {
-        0 => (0, 0, 0),
-        1 => (128, 0, 0),
-        2 => (0, 128, 0),
-        3 => (128, 128, 0),
-        4 => (0, 0, 128),
-        5 => (128, 0, 128),
-        6 => (0, 128, 128),
-        7 => (192, 192, 192),
-        8 => (128, 128, 128),
-        9 => (255, 0, 0),
-        10 => (0, 255, 0),
-        11 => (255, 255, 0),
-        12 => (0, 0, 255),
-        13 => (255, 0, 255),
-        14 => (0, 255, 255),
-        15 => (255, 255, 255),
-        16..=231 => {
-            // 6x6x6 color cube
-            let i = i - 16;
-            let r = (i / 36) % 6;
-            let g = (i / 6) % 6;
-            let b = i % 6;
-            let r = if r == 0 { 0 } else { 55 + r * 40 };
-            let g = if g == 0 { 0 } else { 55 + g * 40 };
-            let b = if b == 0 { 0 } else { 55 + b * 40 };
-            (r, g, b)
-        }
-        232..=255 => {
-            // Grayscale
-            let g = 8 + (i - 232) * 10;
-            (g, g, g)
-        }
+/// A color that references a theme value by name.
+///
+/// This is resolved to a concrete `Color` at render time.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NamedColor(pub String);
+
+impl NamedColor {
+    /// Create a new named color.
+    pub fn new(name: impl Into<String>) -> Self {
+        Self(name.into())
+    }
+}
+
+/// A style color that can be either concrete or theme-referenced.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum StyleColor {
+    /// A concrete color value.
+    Concrete(Color),
+    /// A named theme color.
+    Named(String),
+}
+
+impl StyleColor {
+    /// Create a concrete color.
+    pub fn color(c: Color) -> Self {
+        Self::Concrete(c)
+    }
+
+    /// Create a named color reference.
+    pub fn named(name: impl Into<String>) -> Self {
+        Self::Named(name.into())
+    }
+}
+
+impl From<Color> for StyleColor {
+    fn from(c: Color) -> Self {
+        Self::Concrete(c)
+    }
+}
+
+impl From<&str> for StyleColor {
+    fn from(s: &str) -> Self {
+        Self::Named(s.to_string())
+    }
+}
+
+impl From<String> for StyleColor {
+    fn from(s: String) -> Self {
+        Self::Named(s)
     }
 }

@@ -17,7 +17,7 @@ pub use runtime::Runtime;
 
 pub mod prelude {
     pub use crate::app::App;
-    pub use crate::color::Color;
+    pub use crate::color::{Color, StyleColor};
     pub use crate::context::{AppContext, Toast, ToastLevel};
     pub use crate::events::{ClickEvent, ClickKind, Modifiers};
     pub use crate::focus::FocusState;

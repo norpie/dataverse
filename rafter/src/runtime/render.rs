@@ -2,7 +2,6 @@
 
 use std::time::Instant;
 
-use color::{Oklch, OpaqueColor, Srgb};
 use ratatui::Frame;
 use ratatui::buffer::Buffer;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
@@ -573,96 +572,106 @@ pub fn fill_background(frame: &mut Frame, color: Color) {
     frame.render_widget(block, area);
 }
 
-/// Dim the backdrop buffer using OKLCH color space.
+/// Dim the backdrop buffer by reducing brightness.
 ///
-/// This reduces the lightness of all colors in the buffer by the given amount.
-/// An amount of 0.5 will reduce lightness by half.
+/// This reduces the brightness of all colors in the buffer by the given amount.
+/// An amount of 0.5 will reduce brightness by half.
+/// Uses fast integer math instead of color space conversions.
 pub fn dim_backdrop(buffer: &mut Buffer, amount: f32) {
+    // Pre-calculate the multiplier as an integer for speed (0-256 range)
+    let mult = ((1.0 - amount) * 256.0) as u16;
+
     for cell in buffer.content.iter_mut() {
-        cell.bg = dim_color(cell.bg, amount);
-        cell.fg = dim_color(cell.fg, amount);
+        cell.bg = dim_color_fast(cell.bg, mult);
+        cell.fg = dim_color_fast(cell.fg, mult);
     }
 }
 
-/// Dim a single ratatui Color using OKLCH color space.
-fn dim_color(color: Color, amount: f32) -> Color {
+/// Fast color dimming using integer multiplication.
+/// `mult` is in 0-256 range where 256 = no change, 0 = black.
+#[inline]
+fn dim_color_fast(color: Color, mult: u16) -> Color {
     match color {
-        Color::Rgb(r, g, b) => {
-            // Convert to OpaqueColor<Srgb>
-            let srgb =
-                OpaqueColor::<Srgb>::new([r as f32 / 255.0, g as f32 / 255.0, b as f32 / 255.0]);
-
-            // Convert to Oklch, reduce lightness, convert back
-            let oklch: OpaqueColor<Oklch> = srgb.convert();
-            let dimmed = oklch.map_lightness(|l| l * (1.0 - amount));
-            let result: OpaqueColor<Srgb> = dimmed.convert();
-
-            // Convert back to RGB, clamping to valid range
-            let [r, g, b] = result.components;
-            Color::Rgb(
-                (r.clamp(0.0, 1.0) * 255.0) as u8,
-                (g.clamp(0.0, 1.0) * 255.0) as u8,
-                (b.clamp(0.0, 1.0) * 255.0) as u8,
-            )
-        }
-        // For basic ANSI colors, convert to approximate RGB first
-        Color::Black => dim_color(Color::Rgb(0, 0, 0), amount),
-        Color::Red => dim_color(Color::Rgb(205, 49, 49), amount),
-        Color::Green => dim_color(Color::Rgb(13, 188, 121), amount),
-        Color::Yellow => dim_color(Color::Rgb(229, 229, 16), amount),
-        Color::Blue => dim_color(Color::Rgb(36, 114, 200), amount),
-        Color::Magenta => dim_color(Color::Rgb(188, 63, 188), amount),
-        Color::Cyan => dim_color(Color::Rgb(17, 168, 205), amount),
-        Color::Gray => dim_color(Color::Rgb(128, 128, 128), amount),
-        Color::DarkGray => dim_color(Color::Rgb(102, 102, 102), amount),
-        Color::LightRed => dim_color(Color::Rgb(241, 76, 76), amount),
-        Color::LightGreen => dim_color(Color::Rgb(35, 209, 139), amount),
-        Color::LightYellow => dim_color(Color::Rgb(245, 245, 67), amount),
-        Color::LightBlue => dim_color(Color::Rgb(59, 142, 234), amount),
-        Color::LightMagenta => dim_color(Color::Rgb(214, 112, 214), amount),
-        Color::LightCyan => dim_color(Color::Rgb(41, 184, 219), amount),
-        Color::White => dim_color(Color::Rgb(229, 229, 229), amount),
-        // For indexed colors, convert using ANSI 256 color approximations
-        Color::Indexed(idx) => dim_color(indexed_to_rgb(idx), amount),
-        // Reset means "terminal default" - treat as light gray for dimming
-        Color::Reset => dim_color(Color::Rgb(200, 200, 200), amount),
+        Color::Rgb(r, g, b) => Color::Rgb(
+            ((r as u16 * mult) >> 8) as u8,
+            ((g as u16 * mult) >> 8) as u8,
+            ((b as u16 * mult) >> 8) as u8,
+        ),
+        // For basic ANSI colors, convert to RGB and dim
+        Color::Black => Color::Rgb(0, 0, 0),
+        Color::Red => dim_rgb_fast(205, 49, 49, mult),
+        Color::Green => dim_rgb_fast(13, 188, 121, mult),
+        Color::Yellow => dim_rgb_fast(229, 229, 16, mult),
+        Color::Blue => dim_rgb_fast(36, 114, 200, mult),
+        Color::Magenta => dim_rgb_fast(188, 63, 188, mult),
+        Color::Cyan => dim_rgb_fast(17, 168, 205, mult),
+        Color::Gray => dim_rgb_fast(128, 128, 128, mult),
+        Color::DarkGray => dim_rgb_fast(102, 102, 102, mult),
+        Color::LightRed => dim_rgb_fast(241, 76, 76, mult),
+        Color::LightGreen => dim_rgb_fast(35, 209, 139, mult),
+        Color::LightYellow => dim_rgb_fast(245, 245, 67, mult),
+        Color::LightBlue => dim_rgb_fast(59, 142, 234, mult),
+        Color::LightMagenta => dim_rgb_fast(214, 112, 214, mult),
+        Color::LightCyan => dim_rgb_fast(41, 184, 219, mult),
+        Color::White => dim_rgb_fast(229, 229, 229, mult),
+        // For indexed colors, convert and dim
+        Color::Indexed(idx) => dim_indexed_fast(idx, mult),
+        // Reset - dim as light gray
+        Color::Reset => dim_rgb_fast(200, 200, 200, mult),
     }
 }
 
-/// Convert an ANSI 256 indexed color to RGB.
-fn indexed_to_rgb(idx: u8) -> Color {
+/// Helper to dim RGB values inline.
+#[inline]
+fn dim_rgb_fast(r: u8, g: u8, b: u8, mult: u16) -> Color {
+    Color::Rgb(
+        ((r as u16 * mult) >> 8) as u8,
+        ((g as u16 * mult) >> 8) as u8,
+        ((b as u16 * mult) >> 8) as u8,
+    )
+}
+
+/// Dim an indexed color.
+#[inline]
+fn dim_indexed_fast(idx: u8, mult: u16) -> Color {
+    let (r, g, b) = indexed_to_rgb_tuple(idx);
+    dim_rgb_fast(r, g, b, mult)
+}
+
+/// Convert an ANSI 256 indexed color to RGB tuple.
+#[inline]
+fn indexed_to_rgb_tuple(idx: u8) -> (u8, u8, u8) {
     match idx {
-        // Standard colors (0-15) - use same values as named colors
-        0 => Color::Rgb(0, 0, 0),
-        1 => Color::Rgb(205, 49, 49),
-        2 => Color::Rgb(13, 188, 121),
-        3 => Color::Rgb(229, 229, 16),
-        4 => Color::Rgb(36, 114, 200),
-        5 => Color::Rgb(188, 63, 188),
-        6 => Color::Rgb(17, 168, 205),
-        7 => Color::Rgb(229, 229, 229),
-        8 => Color::Rgb(102, 102, 102),
-        9 => Color::Rgb(241, 76, 76),
-        10 => Color::Rgb(35, 209, 139),
-        11 => Color::Rgb(245, 245, 67),
-        12 => Color::Rgb(59, 142, 234),
-        13 => Color::Rgb(214, 112, 214),
-        14 => Color::Rgb(41, 184, 219),
-        15 => Color::Rgb(255, 255, 255),
+        // Standard colors (0-15)
+        0 => (0, 0, 0),
+        1 => (205, 49, 49),
+        2 => (13, 188, 121),
+        3 => (229, 229, 16),
+        4 => (36, 114, 200),
+        5 => (188, 63, 188),
+        6 => (17, 168, 205),
+        7 => (229, 229, 229),
+        8 => (102, 102, 102),
+        9 => (241, 76, 76),
+        10 => (35, 209, 139),
+        11 => (245, 245, 67),
+        12 => (59, 142, 234),
+        13 => (214, 112, 214),
+        14 => (41, 184, 219),
+        15 => (255, 255, 255),
         // 216 color cube (16-231): 6x6x6 RGB
         16..=231 => {
-            let idx = idx - 16;
-            let r = (idx / 36) % 6;
-            let g = (idx / 6) % 6;
-            let b = idx % 6;
-            // Convert 0-5 to 0-255 (0, 95, 135, 175, 215, 255)
+            let i = idx - 16;
+            let r = (i / 36) % 6;
+            let g = (i / 6) % 6;
+            let b = i % 6;
             let to_255 = |v: u8| if v == 0 { 0 } else { 55 + v * 40 };
-            Color::Rgb(to_255(r), to_255(g), to_255(b))
+            (to_255(r), to_255(g), to_255(b))
         }
-        // Grayscale (232-255): 24 shades from dark to light
+        // Grayscale (232-255)
         232..=255 => {
             let gray = 8 + (idx - 232) * 10;
-            Color::Rgb(gray, gray, gray)
+            (gray, gray, gray)
         }
     }
 }

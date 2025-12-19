@@ -1,14 +1,14 @@
 use ratatui::style::{Modifier, Style as RatatuiStyle};
 
-use crate::color::Color;
+use crate::color::StyleColor;
 
 /// Text and element styling
 #[derive(Debug, Clone, Default)]
 pub struct Style {
     /// Foreground color
-    pub fg: Option<Color>,
+    pub fg: Option<StyleColor>,
     /// Background color
-    pub bg: Option<Color>,
+    pub bg: Option<StyleColor>,
     /// Bold text
     pub bold: bool,
     /// Italic text
@@ -33,14 +33,14 @@ impl Style {
     }
 
     /// Set foreground color
-    pub fn fg(mut self, color: Color) -> Self {
-        self.fg = Some(color);
+    pub fn fg(mut self, color: impl Into<StyleColor>) -> Self {
+        self.fg = Some(color.into());
         self
     }
 
     /// Set background color
-    pub fn bg(mut self, color: Color) -> Self {
-        self.bg = Some(color);
+    pub fn bg(mut self, color: impl Into<StyleColor>) -> Self {
+        self.bg = Some(color.into());
         self
     }
 
@@ -68,16 +68,12 @@ impl Style {
         self
     }
 
-    /// Convert to ratatui style
-    pub fn to_ratatui(&self) -> RatatuiStyle {
+    /// Convert to ratatui style (only modifiers, colors require theme resolution).
+    ///
+    /// Note: This does not resolve colors - use `style_to_ratatui` in render.rs
+    /// for full conversion with theme support.
+    pub fn to_ratatui_modifiers(&self) -> RatatuiStyle {
         let mut style = RatatuiStyle::default();
-
-        if let Some(ref fg) = self.fg {
-            style = style.fg(fg.clone().to_ratatui());
-        }
-        if let Some(ref bg) = self.bg {
-            style = style.bg(bg.clone().to_ratatui());
-        }
 
         let mut modifiers = Modifier::empty();
         if self.bold {
@@ -103,6 +99,6 @@ impl Style {
 
 impl From<Style> for RatatuiStyle {
     fn from(style: Style) -> Self {
-        style.to_ratatui()
+        style.to_ratatui_modifiers()
     }
 }

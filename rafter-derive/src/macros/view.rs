@@ -621,16 +621,17 @@ fn generate_color_value(value: &Option<AttrValue>) -> TokenStream {
     match value {
         Some(AttrValue::Ident(ident)) => {
             // Color name like "primary", "error", etc.
-            // For now, just use the identifier as-is (theme lookup)
+            // Use StyleColor::Named for theme color lookup
             let name_str = ident.to_string();
-            quote! { Some(rafter::color::Color::Named(#name_str.to_string())) }
+            quote! { Some(rafter::color::StyleColor::Named(#name_str.to_string())) }
         }
         Some(AttrValue::Str(s)) => {
-            // Hex color or color name
-            quote! { Some(rafter::color::Color::from_hex(#s).unwrap_or_default()) }
+            // Hex color or color name - parse and wrap as concrete StyleColor
+            quote! { Some(rafter::color::StyleColor::Concrete(rafter::color::Color::parse(#s).unwrap_or_default())) }
         }
         Some(AttrValue::Expr(e)) => {
-            quote! { Some(#e) }
+            // Expression should produce a StyleColor or Color
+            quote! { Some((#e).into()) }
         }
         _ => quote! { None },
     }

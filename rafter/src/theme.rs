@@ -49,7 +49,7 @@
 
 use std::sync::Arc;
 
-use crate::color::Color;
+use crate::color::{Color, StyleColor};
 
 /// Trait for theme types that can resolve named colors.
 ///
@@ -104,32 +104,32 @@ impl DefaultTheme {
     /// Create the default dark theme.
     pub fn dark() -> Self {
         Self {
-            primary: Color::Cyan,
-            secondary: Color::Blue,
-            background: Color::Reset,
-            surface: Color::Indexed(236), // Dark gray
-            text: Color::White,
-            text_muted: Color::Indexed(245), // Light gray
-            error: Color::Red,
-            success: Color::Green,
-            warning: Color::Yellow,
-            info: Color::Cyan,
+            primary: Color::CYAN,
+            secondary: Color::BLUE,
+            background: Color::oklch(0.15, 0.0, 0.0), // Near black
+            surface: Color::oklch(0.25, 0.0, 0.0),    // Dark gray
+            text: Color::WHITE,
+            text_muted: Color::GRAY,
+            error: Color::RED,
+            success: Color::GREEN,
+            warning: Color::YELLOW,
+            info: Color::CYAN,
         }
     }
 
     /// Create a light theme variant.
     pub fn light() -> Self {
         Self {
-            primary: Color::Blue,
-            secondary: Color::Cyan,
-            background: Color::White,
-            surface: Color::Indexed(255), // Near white
-            text: Color::Black,
-            text_muted: Color::Indexed(240), // Dark gray
-            error: Color::Red,
-            success: Color::Green,
-            warning: Color::Yellow,
-            info: Color::Blue,
+            primary: Color::BLUE,
+            secondary: Color::CYAN,
+            background: Color::WHITE,
+            surface: Color::oklch(0.95, 0.0, 0.0), // Near white
+            text: Color::BLACK,
+            text_muted: Color::DARK_GRAY,
+            error: Color::RED,
+            success: Color::GREEN,
+            warning: Color::YELLOW,
+            info: Color::BLUE,
         }
     }
 }
@@ -137,31 +137,31 @@ impl DefaultTheme {
 impl Theme for DefaultTheme {
     fn resolve(&self, name: &str) -> Option<Color> {
         match name {
-            "primary" => Some(self.primary.clone()),
-            "secondary" => Some(self.secondary.clone()),
-            "background" => Some(self.background.clone()),
-            "surface" => Some(self.surface.clone()),
-            "text" => Some(self.text.clone()),
-            "text_muted" => Some(self.text_muted.clone()),
-            "error" => Some(self.error.clone()),
-            "success" => Some(self.success.clone()),
-            "warning" => Some(self.warning.clone()),
-            "info" => Some(self.info.clone()),
+            "primary" => Some(self.primary),
+            "secondary" => Some(self.secondary),
+            "background" => Some(self.background),
+            "surface" => Some(self.surface),
+            "text" => Some(self.text),
+            "text_muted" => Some(self.text_muted),
+            "error" => Some(self.error),
+            "success" => Some(self.success),
+            "warning" => Some(self.warning),
+            "info" => Some(self.info),
             // Common aliases
-            "fg" => Some(self.text.clone()),
-            "bg" => Some(self.background.clone()),
-            "muted" => Some(self.text_muted.clone()),
-            "danger" => Some(self.error.clone()),
-            // Basic color names pass through
-            "black" => Some(Color::Black),
-            "red" => Some(Color::Red),
-            "green" => Some(Color::Green),
-            "yellow" => Some(Color::Yellow),
-            "blue" => Some(Color::Blue),
-            "magenta" => Some(Color::Magenta),
-            "cyan" => Some(Color::Cyan),
-            "white" => Some(Color::White),
-            "gray" | "grey" => Some(Color::Indexed(245)),
+            "fg" => Some(self.text),
+            "bg" => Some(self.background),
+            "muted" => Some(self.text_muted),
+            "danger" => Some(self.error),
+            // Basic color names
+            "black" => Some(Color::BLACK),
+            "red" => Some(Color::RED),
+            "green" => Some(Color::GREEN),
+            "yellow" => Some(Color::YELLOW),
+            "blue" => Some(Color::BLUE),
+            "magenta" => Some(Color::MAGENTA),
+            "cyan" => Some(Color::CYAN),
+            "white" => Some(Color::WHITE),
+            "gray" | "grey" => Some(Color::GRAY),
             _ => None,
         }
     }
@@ -200,16 +200,16 @@ impl Theme for DefaultTheme {
     }
 }
 
-/// Resolve a color, looking up named colors in the theme.
+/// Resolve a StyleColor to a concrete Color, looking up named colors in the theme.
 ///
-/// This function is used by the renderer to convert `Color` values
+/// This function is used by the renderer to convert `StyleColor` values
 /// (which may contain named references) to concrete colors.
-pub fn resolve_color(color: &Color, theme: &dyn Theme) -> Color {
+pub fn resolve_color(color: &StyleColor, theme: &dyn Theme) -> Color {
     match color {
-        Color::Named(name) => theme.resolve(name).unwrap_or_else(|| {
+        StyleColor::Concrete(c) => *c,
+        StyleColor::Named(name) => theme.resolve(name).unwrap_or_else(|| {
             log::warn!("Unknown theme color '{}', using default", name);
-            Color::Reset
+            Color::GRAY
         }),
-        other => other.clone(),
     }
 }
