@@ -31,18 +31,9 @@ enum KeybindScope {
 }
 
 /// Information about a handler method
-#[allow(dead_code)]
 struct HandlerMethod {
     /// Method name
     name: Ident,
-    /// Is async handler
-    is_async: bool,
-    /// Supersedes previous calls
-    supersedes: bool,
-    /// Queues calls
-    queues: bool,
-    /// Debounce milliseconds
-    debounce_ms: u64,
     /// Handler takes context parameter
     has_context: bool,
 }
@@ -93,9 +84,6 @@ fn parse_keybinds_scope(attrs: &[Attribute]) -> Option<KeybindScope> {
 fn parse_handler_metadata(method: &ImplItemFn) -> Option<HandlerMethod> {
     for attr in &method.attrs {
         if attr.path().is_ident("handler") {
-            // Found a #[handler] attribute
-            let is_async = method.sig.asyncness.is_some();
-
             // Check if method takes context parameter
             let has_context = method.sig.inputs.iter().any(|arg| {
                 if let syn::FnArg::Typed(pat_type) = arg {
@@ -107,33 +95,8 @@ fn parse_handler_metadata(method: &ImplItemFn) -> Option<HandlerMethod> {
                 }
             });
 
-            // Parse handler attributes (supersedes, queues, debounce)
-            let mut supersedes = false;
-            let mut queues = false;
-            let mut debounce_ms = 0u64;
-
-            if let syn::Meta::List(list) = &attr.meta {
-                let _ = list.parse_nested_meta(|meta| {
-                    if meta.path.is_ident("supersedes") {
-                        supersedes = true;
-                    } else if meta.path.is_ident("queues") {
-                        queues = true;
-                    } else if meta.path.is_ident("debounce")
-                        && let Ok(value) = meta.value()
-                        && let Ok(lit) = value.parse::<syn::LitInt>()
-                    {
-                        debounce_ms = lit.base10_parse().unwrap_or(0);
-                    }
-                    Ok(())
-                });
-            }
-
             return Some(HandlerMethod {
                 name: method.sig.ident.clone(),
-                is_async,
-                supersedes,
-                queues,
-                debounce_ms,
                 has_context,
             });
         }
@@ -384,14 +347,7 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
         .map(|h| {
             let name = &h.name;
             let name_str = name.to_string();
-            if h.is_async {
-                // Async handlers need special treatment - for now, skip
-                quote! {
-                    #name_str => {
-                        // TODO: async handler dispatch
-                    }
-                }
-            } else if h.has_context {
+            if h.has_context {
                 quote! {
                     #name_str => {
                         self.#name(cx);

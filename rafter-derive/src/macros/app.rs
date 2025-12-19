@@ -45,17 +45,17 @@ impl FieldAttrs {
 
         for attr in attrs {
             if attr.path().is_ident("state") {
-                // #[state(skip)]
+                // #[state(skip)] or #[state(async)]
                 if let Meta::List(list) = attr.meta.clone() {
                     let _ = list.parse_nested_meta(|meta| {
                         if meta.path.is_ident("skip") {
                             skip = true;
+                        } else if meta.path.is_ident("async") {
+                            async_state = true;
                         }
                         Ok(())
                     });
                 }
-            } else if attr.path().is_ident("async_state") {
-                async_state = true;
             }
         }
 
@@ -73,7 +73,20 @@ fn is_resource_type(ty: &Type) -> bool {
     false
 }
 
-/// Transform a field, optionally wrapping in State<T>
+/// Extract the inner type from Resource<T>
+fn extract_resource_inner_type(ty: &Type) -> Option<&Type> {
+    if let Type::Path(type_path) = ty
+        && let Some(segment) = type_path.path.segments.last()
+        && segment.ident == "Resource"
+        && let syn::PathArguments::AngleBracketed(args) = &segment.arguments
+        && let Some(syn::GenericArgument::Type(inner)) = args.args.first()
+    {
+        return Some(inner);
+    }
+    None
+}
+
+/// Transform a field, optionally wrapping in State<T>, AsyncState<T>, or AsyncResource<T>
 fn transform_field(field: &Field) -> TokenStream {
     let attrs = FieldAttrs::parse(&field.attrs);
     let vis = &field.vis;
@@ -84,27 +97,29 @@ fn transform_field(field: &Field) -> TokenStream {
     let other_attrs: Vec<_> = field
         .attrs
         .iter()
-        .filter(|a| !a.path().is_ident("state") && !a.path().is_ident("async_state"))
+        .filter(|a| !a.path().is_ident("state"))
         .collect();
 
-    // Skip wrapping if:
-    // - #[state(skip)] is present
-    // - Type is already Resource<T> (implicitly async state)
-    // - #[async_state] is present (uses AsyncResource internally)
     if attrs.skip {
+        // #[state(skip)] - no wrapping
         quote! {
             #(#other_attrs)*
             #vis #ident: #ty
         }
-    } else if is_resource_type(ty) || attrs.async_state {
-        // Resource types and async_state don't get wrapped in State
-        // They have their own interior mutability
+    } else if let Some(inner_ty) = extract_resource_inner_type(ty) {
+        // Resource<T> -> AsyncResource<T>
         quote! {
             #(#other_attrs)*
-            #vis #ident: #ty
+            #vis #ident: rafter::resource::AsyncResource<#inner_ty>
+        }
+    } else if attrs.async_state {
+        // #[state(async)] -> AsyncState<T>
+        quote! {
+            #(#other_attrs)*
+            #vis #ident: rafter::state::AsyncState<#ty>
         }
     } else {
-        // Wrap in State<T>
+        // Regular field -> State<T>
         quote! {
             #(#other_attrs)*
             #vis #ident: rafter::state::State<#ty>
@@ -122,9 +137,17 @@ fn generate_default_impl(name: &Ident, fields: &FieldsNamed) -> TokenStream {
             let ident = &f.ident;
             let ty = &f.ty;
 
-            if attrs.skip || is_resource_type(ty) || attrs.async_state {
+            if attrs.skip {
+                // #[state(skip)] - use type's Default
                 quote! { #ident: Default::default() }
+            } else if is_resource_type(ty) {
+                // Resource<T> -> AsyncResource<T>::new()
+                quote! { #ident: rafter::resource::AsyncResource::new() }
+            } else if attrs.async_state {
+                // #[state(async)] -> AsyncState<T>::new(Default::default())
+                quote! { #ident: rafter::state::AsyncState::new(Default::default()) }
             } else {
+                // Regular -> State<T>::new(Default::default())
                 quote! { #ident: rafter::state::State::new(Default::default()) }
             }
         })
@@ -162,17 +185,14 @@ fn generate_metadata(name: &Ident, attrs: &AppAttrs, fields: &FieldsNamed) -> To
         None => quote! { rafter::app::PanicBehavior::ShowError },
     };
 
-    // Collect field names for dirty checking (excluding skipped and Resource fields)
+    // Collect field names for dirty checking (excluding skipped fields only)
+    // State<T>, AsyncState<T>, and AsyncResource<T> all have is_dirty/clear_dirty
     let dirty_fields: Vec<_> = fields
         .named
         .iter()
         .filter_map(|f| {
             let attrs = FieldAttrs::parse(&f.attrs);
-            if attrs.skip || is_resource_type(&f.ty) || attrs.async_state {
-                None
-            } else {
-                f.ident.as_ref()
-            }
+            if attrs.skip { None } else { f.ident.as_ref() }
         })
         .collect();
 

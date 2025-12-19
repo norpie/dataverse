@@ -123,7 +123,26 @@ impl Parse for ViewNode {
             return Ok(ViewNode::Expr(expr));
         }
 
-        // Must be an element
+        // Check if it looks like an element (identifier followed by parens or braces)
+        // or a bare identifier/expression (variable reference)
+        if input.peek(Ident) {
+            // Look ahead to see if this is an element (has parens or braces after)
+            // or just a variable reference
+            let fork = input.fork();
+            let _ident: Ident = fork.parse()?;
+
+            if fork.peek(syn::token::Paren) || fork.peek(Brace) {
+                // This is an element with attrs or children
+                let element = parse_element(input)?;
+                return Ok(ViewNode::Element(element));
+            } else {
+                // Bare identifier - treat as expression (variable reference)
+                let expr: Expr = input.parse()?;
+                return Ok(ViewNode::Expr(expr));
+            }
+        }
+
+        // Fallback: try to parse as element
         let element = parse_element(input)?;
         Ok(ViewNode::Element(element))
     }

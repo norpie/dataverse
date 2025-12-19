@@ -9,8 +9,11 @@
 // - Text input fields
 // - Buttons
 // - Toast notifications
+// - Async state with Resource<T> and #[state(async)]
+// - Spawning async tasks with cx.spawn()
 
 use std::fs::File;
+use std::time::Duration;
 
 use log::LevelFilter;
 use rafter::prelude::*;
@@ -21,6 +24,13 @@ struct CounterApp {
     count: i32,
     step: String,
     message: String,
+    // Resource<T> is automatically wrapped in AsyncResource<T>
+    // Can be mutated from spawned async tasks
+    data: Resource<String>,
+    // #[state(async)] wraps in AsyncState<T>
+    // Can be mutated from spawned async tasks
+    #[state(async)]
+    loading_status: String,
 }
 
 #[app_impl]
@@ -33,6 +43,7 @@ impl CounterApp {
             "t" => show_toast,
             "e" => show_error,
             "r" => reset,
+            "l" => load_data,
             "q" => quit,
         }
     }
@@ -58,6 +69,8 @@ impl CounterApp {
         log::info!("reset count");
         *self.count = 0;
         *self.step = "1".to_string();
+        self.data.set(Resource::Idle);
+        self.loading_status.set(String::new());
         cx.toast("Counter reset!");
     }
 
@@ -73,6 +86,39 @@ impl CounterApp {
     #[handler]
     fn show_error(&mut self, cx: &mut AppContext) {
         cx.show_toast(Toast::error("This is an error toast!"));
+    }
+
+    #[handler]
+    fn load_data(&mut self, cx: &mut AppContext) {
+        log::info!("load_data called - spawning async task");
+
+        // Clone the async-safe state handles before spawning
+        let data = self.data.clone();
+        let status = self.loading_status.clone();
+
+        // Set initial loading state
+        data.set(Resource::Loading);
+        status.set("Starting load...".to_string());
+
+        // Spawn an async task that simulates loading
+        cx.spawn(async move {
+            log::info!("Async task started");
+
+            // Simulate progress updates
+            for i in 1..=3 {
+                tokio::time::sleep(Duration::from_millis(500)).await;
+                status.set(format!("Loading... step {}/3", i));
+                log::info!("Progress: step {}/3", i);
+            }
+
+            // Simulate final result
+            tokio::time::sleep(Duration::from_millis(500)).await;
+            data.set(Resource::Ready("Data loaded successfully!".to_string()));
+            status.set("Complete!".to_string());
+            log::info!("Async task completed");
+        });
+
+        cx.toast("Loading started...");
     }
 
     #[handler]
@@ -144,6 +190,13 @@ impl CounterApp {
         self.reset(cx);
     }
 
+    // Handler for load button click
+    #[handler]
+    fn load_btn_submit(&mut self, cx: &mut AppContext) {
+        log::info!("load button clicked");
+        self.load_data(cx);
+    }
+
     fn focusable_ids(&self) -> Vec<String> {
         vec![
             "step_input".to_string(),
@@ -151,6 +204,7 @@ impl CounterApp {
             "inc_btn".to_string(),
             "dec_btn".to_string(),
             "reset_btn".to_string(),
+            "load_btn".to_string(),
         ]
     }
 
@@ -173,6 +227,18 @@ impl CounterApp {
         let inc_focused = focus.is_focused("inc_btn");
         let dec_focused = focus.is_focused("dec_btn");
         let reset_focused = focus.is_focused("reset_btn");
+        let load_focused = focus.is_focused("load_btn");
+
+        // Get current resource state for display
+        let data_status = match self.data.get() {
+            Resource::Idle => "Idle".to_string(),
+            Resource::Loading => "Loading...".to_string(),
+            Resource::Progress(p) => format!("Progress: {}/{:?}", p.current, p.total),
+            Resource::Ready(s) => format!("Ready: {}", s),
+            Resource::Error(e) => format!("Error: {}", e),
+        };
+
+        let loading_status = self.loading_status.get();
 
         view! {
             column (padding: 1, gap: 1) {
@@ -183,6 +249,18 @@ impl CounterApp {
                 row (gap: 1) {
                     text { "Count: " }
                     text (bold, fg: cyan) { self.count.to_string() }
+                }
+
+                text { "" }
+
+                // Async data display
+                row (gap: 1) {
+                    text { "Data: " }
+                    text (fg: yellow) { data_status }
+                }
+                row (gap: 1) {
+                    text { "Status: " }
+                    text (fg: green) { loading_status }
                 }
 
                 text { "" }
@@ -216,6 +294,7 @@ impl CounterApp {
                     button(label: "+", id: "inc_btn", focused: inc_focused)
                     button(label: "-", id: "dec_btn", focused: dec_focused)
                     button(label: "Reset", id: "reset_btn", focused: reset_focused)
+                    button(label: "Load", id: "load_btn", focused: load_focused)
                 }
 
                 text { "" }
@@ -224,7 +303,7 @@ impl CounterApp {
                 text (dim) { "Keybinds:" }
                 text (dim) { "  j/k or down/up - decrement/increment" }
                 text (dim) { "  t - show toast, e - show error toast" }
-                text (dim) { "  r - reset counter" }
+                text (dim) { "  r - reset, l - load async data" }
                 text (dim) { "  Tab/Shift+Tab - navigate focus" }
                 text (dim) { "  Enter - activate focused element" }
                 text (dim) { "  q - quit" }

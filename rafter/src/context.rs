@@ -1,4 +1,7 @@
+use std::future::Future;
 use std::time::Duration;
+
+use tokio::task::JoinHandle;
 
 use crate::focus::FocusId;
 
@@ -132,6 +135,32 @@ impl AppContext {
     /// Publish an event to the event bus
     pub fn publish<E: 'static + Send>(&mut self, _event: E) {
         // TODO: implement pub/sub
+    }
+
+    /// Spawn an async task.
+    ///
+    /// Use this for fire-and-forget async work. The spawned task can mutate
+    /// `AsyncResource<T>` and `AsyncState<T>` fields (after cloning them).
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// #[handler]
+    /// fn load_data(&mut self, cx: &mut AppContext) {
+    ///     let data = self.data.clone(); // AsyncResource<T>
+    ///     cx.spawn(async move {
+    ///         data.set(Resource::Loading);
+    ///         let result = fetch_data().await;
+    ///         data.set(Resource::Ready(result));
+    ///     });
+    /// }
+    /// ```
+    pub fn spawn<F>(&self, future: F) -> JoinHandle<F::Output>
+    where
+        F: Future + Send + 'static,
+        F::Output: Send + 'static,
+    {
+        tokio::spawn(future)
     }
 }
 

@@ -1,5 +1,5 @@
-use std::sync::Arc;
-use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 
 use thiserror::Error;
 
@@ -160,6 +160,7 @@ impl<T> Resource<T> {
 #[derive(Debug)]
 pub struct AsyncResource<T> {
     inner: Arc<Mutex<Resource<T>>>,
+    dirty: Arc<AtomicBool>,
 }
 
 impl<T> AsyncResource<T> {
@@ -167,6 +168,7 @@ impl<T> AsyncResource<T> {
     pub fn new() -> Self {
         Self {
             inner: Arc::new(Mutex::new(Resource::Idle)),
+            dirty: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -174,6 +176,7 @@ impl<T> AsyncResource<T> {
     pub fn set(&self, state: Resource<T>) {
         if let Ok(mut guard) = self.inner.lock() {
             *guard = state;
+            self.dirty.store(true, Ordering::SeqCst);
         }
     }
 
@@ -183,6 +186,16 @@ impl<T> AsyncResource<T> {
         T: Clone,
     {
         self.inner.lock().map_or(Resource::Idle, |g| g.clone())
+    }
+
+    /// Check if the resource has been modified since last check
+    pub fn is_dirty(&self) -> bool {
+        self.dirty.load(Ordering::SeqCst)
+    }
+
+    /// Clear the dirty flag
+    pub fn clear_dirty(&self) {
+        self.dirty.store(false, Ordering::SeqCst);
     }
 }
 
@@ -196,6 +209,7 @@ impl<T> Clone for AsyncResource<T> {
     fn clone(&self) -> Self {
         Self {
             inner: Arc::clone(&self.inner),
+            dirty: Arc::clone(&self.dirty),
         }
     }
 }
