@@ -7,6 +7,7 @@ mod render;
 mod terminal;
 
 use std::io;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use crossterm::event;
@@ -16,6 +17,7 @@ use crate::app::{App, PanicBehavior};
 use crate::context::{AppContext, Toast};
 use crate::focus::{FocusId, FocusState};
 use crate::keybinds::{HandlerId, Key};
+use crate::theme::{DefaultTheme, Theme};
 
 use events::{Event, convert_event};
 use hit_test::HitTestMap;
@@ -29,6 +31,8 @@ pub struct Runtime {
     panic_behavior: PanicBehavior,
     /// Error handler callback
     error_handler: Option<Box<dyn Fn(RuntimeError) + Send + Sync>>,
+    /// Current theme
+    theme: Arc<dyn Theme>,
 }
 
 /// Runtime error
@@ -67,7 +71,14 @@ impl Runtime {
         Self {
             panic_behavior: PanicBehavior::default(),
             error_handler: None,
+            theme: Arc::new(DefaultTheme::default()),
         }
+    }
+
+    /// Set the theme
+    pub fn theme<T: Theme>(mut self, theme: T) -> Self {
+        self.theme = Arc::new(theme);
+        self
     }
 
     /// Set the default panic behavior
@@ -92,7 +103,7 @@ impl Runtime {
     }
 
     /// Start the runtime with a boxed app
-    pub async fn run(self, app: Box<dyn App>) -> Result<(), RuntimeError> {
+    pub async fn run(mut self, app: Box<dyn App>) -> Result<(), RuntimeError> {
         info!("Runtime starting");
 
         // Initialize terminal
@@ -136,6 +147,12 @@ impl Runtime {
                 focus_state.set_focus(focus_id);
             }
 
+            // Process any pending theme change requests
+            if let Some(new_theme) = cx.take_theme_request() {
+                info!("Theme changed");
+                self.theme = new_theme;
+            }
+
             // Process any pending toasts
             for toast in cx.take_toasts() {
                 let expiry = Instant::now() + toast.duration;
@@ -166,13 +183,14 @@ impl Runtime {
 
             // Render and build hit test map
             let mut hit_map = HitTestMap::new();
+            let theme = &self.theme;
             term_guard.terminal().draw(|frame| {
                 let area = frame.area();
                 let node = app.view_with_focus(&focus_state);
-                render_node(frame, &node, area, &mut hit_map);
+                render_node(frame, &node, area, &mut hit_map, theme.as_ref());
 
                 // Render toasts in bottom-right corner
-                render_toasts(frame, &active_toasts);
+                render_toasts(frame, &active_toasts, theme.as_ref());
             })?;
 
             // Clear dirty flags after render

@@ -11,13 +11,54 @@ use ratatui::widgets::{Block, Borders, Clear, Paragraph};
 use super::hit_test::HitTestMap;
 use crate::context::{Toast, ToastLevel};
 use crate::node::{Border, Node};
+use crate::style::Style;
+use crate::theme::{resolve_color, Theme};
+
+/// Convert a Style to ratatui Style, resolving named colors via theme
+fn style_to_ratatui(style: &Style, theme: &dyn Theme) -> RatatuiStyle {
+    let mut ratatui_style = RatatuiStyle::default();
+
+    if let Some(ref fg) = style.fg {
+        let resolved = resolve_color(fg, theme);
+        ratatui_style = ratatui_style.fg(resolved.to_ratatui());
+    }
+
+    if let Some(ref bg) = style.bg {
+        let resolved = resolve_color(bg, theme);
+        ratatui_style = ratatui_style.bg(resolved.to_ratatui());
+    }
+
+    if style.bold {
+        ratatui_style = ratatui_style.add_modifier(ratatui::style::Modifier::BOLD);
+    }
+
+    if style.italic {
+        ratatui_style = ratatui_style.add_modifier(ratatui::style::Modifier::ITALIC);
+    }
+
+    if style.underline {
+        ratatui_style = ratatui_style.add_modifier(ratatui::style::Modifier::UNDERLINED);
+    }
+
+    if style.dim {
+        ratatui_style = ratatui_style.add_modifier(ratatui::style::Modifier::DIM);
+    }
+
+    ratatui_style
+}
 
 /// Render a Node tree to a ratatui Frame
-pub fn render_node(frame: &mut Frame, node: &Node, area: Rect, hit_map: &mut HitTestMap) {
+pub fn render_node(
+    frame: &mut Frame,
+    node: &Node,
+    area: Rect,
+    hit_map: &mut HitTestMap,
+    theme: &dyn Theme,
+) {
     match node {
         Node::Empty => {}
         Node::Text { content, style } => {
-            render_text(frame, content, style.to_ratatui(), area);
+            render_text(frame, content, style_to_ratatui(style, theme), area);
         }
         Node::Column {
             children,
@@ -27,11 +68,12 @@ pub fn render_node(frame: &mut Frame, node: &Node, area: Rect, hit_map: &mut Hit
             render_container(
                 frame,
                 children,
-                style.to_ratatui(),
+                style_to_ratatui(style, theme),
                 layout,
                 area,
                 false,
                 hit_map,
+                theme,
             );
         }
         Node::Row {
@@ -42,11 +84,12 @@ pub fn render_node(frame: &mut Frame, node: &Node, area: Rect, hit_map: &mut Hit
             render_container(
                 frame,
                 children,
-                style.to_ratatui(),
+                style_to_ratatui(style, theme),
                 layout,
                 area,
                 true,
                 hit_map,
+                theme,
             );
         }
         Node::Stack {
@@ -54,7 +97,15 @@ pub fn render_node(frame: &mut Frame, node: &Node, area: Rect, hit_map: &mut Hit
             style,
             layout,
         } => {
-            render_stack(frame, children, style.to_ratatui(), layout, area, hit_map);
+            render_stack(
+                frame,
+                children,
+                style_to_ratatui(style, theme),
+                layout,
+                area,
+                hit_map,
+                theme,
+            );
         }
         Node::Input {
             value,
@@ -68,7 +119,7 @@ pub fn render_node(frame: &mut Frame, node: &Node, area: Rect, hit_map: &mut Hit
                 frame,
                 value,
                 placeholder,
-                style.to_ratatui(),
+                style_to_ratatui(style, theme),
                 *focused,
                 area,
             );
@@ -84,7 +135,7 @@ pub fn render_node(frame: &mut Frame, node: &Node, area: Rect, hit_map: &mut Hit
             id,
             ..
         } => {
-            render_button(frame, label, style.to_ratatui(), *focused, area);
+            render_button(frame, label, style_to_ratatui(style, theme), *focused, area);
             // Register hit box for button
             if let Some(id) = id {
                 hit_map.register(id.clone(), area, false);
@@ -141,6 +192,7 @@ fn render_button(frame: &mut Frame, label: &str, style: RatatuiStyle, focused: b
 }
 
 /// Render a container (column or row)
+#[allow(clippy::too_many_arguments)]
 fn render_container(
     frame: &mut Frame,
     children: &[Node],
@@ -149,6 +201,7 @@ fn render_container(
     area: Rect,
     horizontal: bool,
     hit_map: &mut HitTestMap,
+    theme: &dyn Theme,
 ) {
     if children.is_empty() {
         return;
@@ -183,7 +236,7 @@ fn render_container(
     let mut chunk_idx = 0;
     for child in children {
         if chunk_idx < chunks.len() {
-            render_node(frame, child, chunks[chunk_idx], hit_map);
+            render_node(frame, child, chunks[chunk_idx], hit_map, theme);
             chunk_idx += 1;
             // Skip gap chunks
             if layout.gap > 0 && chunk_idx < chunks.len() {
@@ -201,6 +254,7 @@ fn render_stack(
     layout: &crate::node::Layout,
     area: Rect,
     hit_map: &mut HitTestMap,
+    theme: &dyn Theme,
 ) {
     // Apply border if specified
     let (inner_area, block) = apply_border(area, &layout.border, style);
@@ -214,7 +268,7 @@ fn render_stack(
 
     // Render all children in the same area (stacked)
     for child in children {
-        render_node(frame, child, padded_area, hit_map);
+        render_node(frame, child, padded_area, hit_map, theme);
     }
 }
 
@@ -356,7 +410,7 @@ fn child_constraint(node: &Node, horizontal: bool) -> Constraint {
 }
 
 /// Render active toasts in the bottom-right corner
-pub fn render_toasts(frame: &mut Frame, toasts: &[(Toast, Instant)]) {
+pub fn render_toasts(frame: &mut Frame, toasts: &[(Toast, Instant)], theme: &dyn Theme) {
     if toasts.is_empty() {
         return;
     }
@@ -385,13 +439,18 @@ pub fn render_toasts(frame: &mut Frame, toasts: &[(Toast, Instant)]) {
             continue;
         }
 
-        // Style based on toast level
-        let (border_color, title) = match toast.level {
-            ToastLevel::Info => (Color::Blue, "Info"),
-            ToastLevel::Success => (Color::Green, "Success"),
-            ToastLevel::Warning => (Color::Yellow, "Warning"),
-            ToastLevel::Error => (Color::Red, "Error"),
+        // Get border color from theme based on toast level
+        let (theme_color_name, title) = match toast.level {
+            ToastLevel::Info => ("info", "Info"),
+            ToastLevel::Success => ("success", "Success"),
+            ToastLevel::Warning => ("warning", "Warning"),
+            ToastLevel::Error => ("error", "Error"),
         };
+
+        let border_color = theme
+            .resolve(theme_color_name)
+            .map(|c| c.to_ratatui())
+            .unwrap_or(Color::White);
 
         // Clear the area first (so toasts appear on top)
         frame.render_widget(Clear, toast_area);

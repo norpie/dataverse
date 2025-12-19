@@ -242,13 +242,13 @@ impl CounterApp {
 
         view! {
             column (padding: 1, gap: 1) {
-                text (bold) { "Counter Demo - Phase 4 Features" }
+                text (bold, fg: primary) { "Counter Demo - Phase 5 Theme System" }
                 text { "" }
 
                 // Counter display
                 row (gap: 1) {
                     text { "Count: " }
-                    text (bold, fg: cyan) { self.count.to_string() }
+                    text (bold, fg: primary) { self.count.to_string() }
                 }
 
                 text { "" }
@@ -256,11 +256,11 @@ impl CounterApp {
                 // Async data display
                 row (gap: 1) {
                     text { "Data: " }
-                    text (fg: yellow) { data_status }
+                    text (fg: warning) { data_status }
                 }
                 row (gap: 1) {
                     text { "Status: " }
-                    text (fg: green) { loading_status }
+                    text (fg: success) { loading_status }
                 }
 
                 text { "" }
@@ -300,13 +300,13 @@ impl CounterApp {
                 text { "" }
 
                 // Help text
-                text (dim) { "Keybinds:" }
-                text (dim) { "  j/k or down/up - decrement/increment" }
-                text (dim) { "  t - show toast, e - show error toast" }
-                text (dim) { "  r - reset, l - load async data" }
-                text (dim) { "  Tab/Shift+Tab - navigate focus" }
-                text (dim) { "  Enter - activate focused element" }
-                text (dim) { "  q - quit" }
+                text (fg: muted) { "Keybinds:" }
+                text (fg: muted) { "  j/k or down/up - decrement/increment" }
+                text (fg: muted) { "  t - show toast, e - show error toast" }
+                text (fg: muted) { "  r - reset, l - load async data" }
+                text (fg: muted) { "  Tab/Shift+Tab - navigate focus" }
+                text (fg: muted) { "  Enter - activate focused element" }
+                text (fg: muted) { "  q - quit" }
             }
         }
     }

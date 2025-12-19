@@ -196,13 +196,24 @@ fn parse_attrs(input: ParseStream) -> syn::Result<Vec<Attr>> {
                 let lit: syn::LitBool = input.parse()?;
                 Some(AttrValue::Bool(lit.value))
             } else if input.peek(Ident) {
-                let ident: Ident = input.parse()?;
-                // Check for true/false identifiers
+                // Look ahead to see if this is a simple identifier or start of an expression
+                let fork = input.fork();
+                let ident: Ident = fork.parse()?;
+
+                // Check for true/false
                 if ident == "true" {
+                    input.parse::<Ident>()?;
                     Some(AttrValue::Bool(true))
                 } else if ident == "false" {
+                    input.parse::<Ident>()?;
                     Some(AttrValue::Bool(false))
+                } else if fork.peek(Token![.]) || fork.peek(syn::token::Paren) {
+                    // This is an expression (method call, function call, etc.)
+                    let expr: Expr = input.parse()?;
+                    Some(AttrValue::Expr(expr))
                 } else {
+                    // Simple identifier (color name, variable)
+                    input.parse::<Ident>()?;
                     Some(AttrValue::Ident(ident))
                 }
             } else {
@@ -322,7 +333,7 @@ fn parse_match(input: ParseStream) -> syn::Result<ControlFlowNode> {
 
     let mut arms = Vec::new();
     while !content.is_empty() {
-        let pattern: syn::Pat = syn::Pat::parse_multi(input)?;
+        let pattern: syn::Pat = syn::Pat::parse_multi(&content)?;
 
         let guard = if content.peek(Token![if]) {
             content.parse::<Token![if]>()?;

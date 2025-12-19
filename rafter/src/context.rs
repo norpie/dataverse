@@ -1,9 +1,11 @@
 use std::future::Future;
+use std::sync::Arc;
 use std::time::Duration;
 
 use tokio::task::JoinHandle;
 
 use crate::focus::FocusId;
+use crate::theme::Theme;
 
 /// Toast notification level
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -58,6 +60,8 @@ pub struct AppContext {
     pending_toasts: Vec<Toast>,
     /// Text input from the current input event
     input_text: Option<String>,
+    /// Request to change theme
+    theme_request: Option<Arc<dyn Theme>>,
 }
 
 impl AppContext {
@@ -69,6 +73,7 @@ impl AppContext {
             focus_request: None,
             pending_toasts: Vec::new(),
             input_text: None,
+            theme_request: None,
         }
     }
 
@@ -135,6 +140,18 @@ impl AppContext {
     /// Publish an event to the event bus
     pub fn publish<E: 'static + Send>(&mut self, _event: E) {
         // TODO: implement pub/sub
+    }
+
+    /// Set the current theme
+    ///
+    /// The theme change will take effect on the next render.
+    pub fn set_theme<T: Theme>(&mut self, theme: T) {
+        self.theme_request = Some(Arc::new(theme));
+    }
+
+    /// Take the theme change request
+    pub fn take_theme_request(&mut self) -> Option<Arc<dyn Theme>> {
+        self.theme_request.take()
     }
 
     /// Spawn an async task.
