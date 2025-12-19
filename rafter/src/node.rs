@@ -337,4 +337,130 @@ impl Node {
             _ => None,
         }
     }
+
+    /// Calculate intrinsic width of this node
+    pub fn intrinsic_width(&self) -> u16 {
+        match self {
+            Self::Empty => 0,
+            Self::Text { content, .. } => content.len() as u16,
+            Self::Column {
+                children, layout, ..
+            } => {
+                let border_size = if matches!(layout.border, Border::None) {
+                    0
+                } else {
+                    2
+                };
+                let padding = layout.padding * 2;
+                let max_child = children
+                    .iter()
+                    .map(|c| c.intrinsic_width())
+                    .max()
+                    .unwrap_or(0);
+                max_child + padding + border_size
+            }
+            Self::Row {
+                children, layout, ..
+            } => {
+                let border_size = if matches!(layout.border, Border::None) {
+                    0
+                } else {
+                    2
+                };
+                let padding = layout.padding * 2;
+                let child_sum: u16 = children.iter().map(|c| c.intrinsic_width()).sum();
+                let gaps = if children.len() > 1 {
+                    layout.gap * (children.len() as u16 - 1)
+                } else {
+                    0
+                };
+                child_sum + gaps + padding + border_size
+            }
+            Self::Stack {
+                children, layout, ..
+            } => {
+                let border_size = if matches!(layout.border, Border::None) {
+                    0
+                } else {
+                    2
+                };
+                let padding = layout.padding * 2;
+                let max_child = children
+                    .iter()
+                    .map(|c| c.intrinsic_width())
+                    .max()
+                    .unwrap_or(0);
+                max_child + padding + border_size
+            }
+            Self::Input {
+                value, placeholder, ..
+            } => {
+                let content_len = if value.is_empty() {
+                    placeholder.len()
+                } else {
+                    value.len()
+                };
+                (content_len + 5).max(15) as u16
+            }
+            Self::Button { label, .. } => (label.len() + 4) as u16,
+        }
+    }
+
+    /// Calculate intrinsic height of this node
+    pub fn intrinsic_height(&self) -> u16 {
+        match self {
+            Self::Empty => 0,
+            Self::Text { content, .. } => content.lines().count().max(1) as u16,
+            Self::Column {
+                children, layout, ..
+            } => {
+                let border_size = if matches!(layout.border, Border::None) {
+                    0
+                } else {
+                    2
+                };
+                let padding = layout.padding * 2;
+                let child_sum: u16 = children.iter().map(|c| c.intrinsic_height()).sum();
+                let gaps = if children.len() > 1 {
+                    layout.gap * (children.len() as u16 - 1)
+                } else {
+                    0
+                };
+                child_sum + gaps + padding + border_size
+            }
+            Self::Row {
+                children, layout, ..
+            } => {
+                let border_size = if matches!(layout.border, Border::None) {
+                    0
+                } else {
+                    2
+                };
+                let padding = layout.padding * 2;
+                let max_child = children
+                    .iter()
+                    .map(|c| c.intrinsic_height())
+                    .max()
+                    .unwrap_or(0);
+                max_child + padding + border_size
+            }
+            Self::Stack {
+                children, layout, ..
+            } => {
+                let border_size = if matches!(layout.border, Border::None) {
+                    0
+                } else {
+                    2
+                };
+                let padding = layout.padding * 2;
+                let max_child = children
+                    .iter()
+                    .map(|c| c.intrinsic_height())
+                    .max()
+                    .unwrap_or(0);
+                max_child + padding + border_size
+            }
+            Self::Input { .. } | Self::Button { .. } => 1,
+        }
+    }
 }

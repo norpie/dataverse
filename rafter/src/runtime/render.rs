@@ -2,7 +2,9 @@
 
 use std::time::Instant;
 
+use color::{Oklch, OpaqueColor, Srgb};
 use ratatui::Frame;
+use ratatui::buffer::Buffer;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Style as RatatuiStyle};
 use ratatui::text::{Line, Span};
@@ -546,6 +548,60 @@ fn child_constraint(node: &Node, horizontal: bool) -> Constraint {
                 Constraint::Length(1)
             }
         }
+    }
+}
+
+/// Dim the backdrop buffer using OKLCH color space.
+///
+/// This reduces the lightness of all colors in the buffer by the given amount.
+/// An amount of 0.5 will reduce lightness by half.
+pub fn dim_backdrop(buffer: &mut Buffer, amount: f32) {
+    for cell in buffer.content.iter_mut() {
+        cell.bg = dim_color(cell.bg, amount);
+        cell.fg = dim_color(cell.fg, amount);
+    }
+}
+
+/// Dim a single ratatui Color using OKLCH color space.
+fn dim_color(color: Color, amount: f32) -> Color {
+    match color {
+        Color::Rgb(r, g, b) => {
+            // Convert to OpaqueColor<Srgb>
+            let srgb =
+                OpaqueColor::<Srgb>::new([r as f32 / 255.0, g as f32 / 255.0, b as f32 / 255.0]);
+
+            // Convert to Oklch, reduce lightness, convert back
+            let oklch: OpaqueColor<Oklch> = srgb.convert();
+            let dimmed = oklch.map_lightness(|l| l * (1.0 - amount));
+            let result: OpaqueColor<Srgb> = dimmed.convert();
+
+            // Convert back to RGB, clamping to valid range
+            let [r, g, b] = result.components;
+            Color::Rgb(
+                (r.clamp(0.0, 1.0) * 255.0) as u8,
+                (g.clamp(0.0, 1.0) * 255.0) as u8,
+                (b.clamp(0.0, 1.0) * 255.0) as u8,
+            )
+        }
+        // For indexed colors, convert to approximate RGB first
+        Color::Black => dim_color(Color::Rgb(0, 0, 0), amount),
+        Color::Red => dim_color(Color::Rgb(205, 49, 49), amount),
+        Color::Green => dim_color(Color::Rgb(13, 188, 121), amount),
+        Color::Yellow => dim_color(Color::Rgb(229, 229, 16), amount),
+        Color::Blue => dim_color(Color::Rgb(36, 114, 200), amount),
+        Color::Magenta => dim_color(Color::Rgb(188, 63, 188), amount),
+        Color::Cyan => dim_color(Color::Rgb(17, 168, 205), amount),
+        Color::Gray => dim_color(Color::Rgb(128, 128, 128), amount),
+        Color::DarkGray => dim_color(Color::Rgb(102, 102, 102), amount),
+        Color::LightRed => dim_color(Color::Rgb(241, 76, 76), amount),
+        Color::LightGreen => dim_color(Color::Rgb(35, 209, 139), amount),
+        Color::LightYellow => dim_color(Color::Rgb(245, 245, 67), amount),
+        Color::LightBlue => dim_color(Color::Rgb(59, 142, 234), amount),
+        Color::LightMagenta => dim_color(Color::Rgb(214, 112, 214), amount),
+        Color::LightCyan => dim_color(Color::Rgb(41, 184, 219), amount),
+        Color::White => dim_color(Color::Rgb(229, 229, 229), amount),
+        // For Reset and Indexed, leave unchanged (can't reliably convert)
+        Color::Reset | Color::Indexed(_) => color,
     }
 }
 

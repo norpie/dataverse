@@ -4,6 +4,7 @@ pub mod context;
 pub mod events;
 pub mod focus;
 pub mod keybinds;
+pub mod modal;
 pub mod node;
 pub mod resource;
 pub mod runtime;
@@ -21,6 +22,7 @@ pub mod prelude {
     pub use crate::events::{ClickEvent, ClickKind, Modifiers};
     pub use crate::focus::FocusState;
     pub use crate::keybinds::Keybinds;
+    pub use crate::modal::{Modal, ModalContext, ModalPosition, ModalSize};
     pub use crate::node::Node;
     pub use crate::resource::{ProgressState, Resource, ResourceState};
     pub use crate::runtime::Runtime;

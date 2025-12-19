@@ -8,13 +8,108 @@
 //! - Async operations with progress feedback
 //! - Toast notifications
 //! - Theme-aware styling
+//! - Modal dialogs
 
 use std::fs::File;
 use std::time::Duration;
 
 use log::LevelFilter;
+use rafter::color::Color;
 use rafter::prelude::*;
+use rafter::theme::{DefaultTheme, Theme};
 use simplelog::{Config, WriteLogger};
+
+// ============================================================================
+// Custom Theme with visible background for dimming demo
+// ============================================================================
+
+#[derive(Debug, Clone)]
+struct CounterTheme {
+    inner: DefaultTheme,
+}
+
+impl CounterTheme {
+    fn new() -> Self {
+        Self {
+            inner: DefaultTheme {
+                // Use RGB colors so dimming is visible
+                primary: Color::rgb(0, 200, 200),      // Cyan
+                secondary: Color::rgb(100, 150, 255),  // Light blue
+                background: Color::rgb(25, 25, 35),    // Dark blue-gray
+                surface: Color::rgb(40, 40, 55),       // Slightly lighter
+                text: Color::rgb(230, 230, 240),       // Off-white
+                text_muted: Color::rgb(140, 140, 160), // Gray
+                error: Color::rgb(255, 100, 100),      // Red
+                success: Color::rgb(100, 220, 100),    // Green
+                warning: Color::rgb(255, 200, 50),     // Yellow
+                info: Color::rgb(100, 180, 255),       // Light blue
+            },
+        }
+    }
+}
+
+impl Theme for CounterTheme {
+    fn resolve(&self, name: &str) -> Option<Color> {
+        self.inner.resolve(name)
+    }
+
+    fn color_names(&self) -> Vec<&'static str> {
+        self.inner.color_names()
+    }
+
+    fn clone_box(&self) -> Box<dyn Theme> {
+        Box::new(self.clone())
+    }
+}
+
+// ============================================================================
+// Confirm Modal
+// ============================================================================
+
+#[modal]
+struct ConfirmModal {
+    #[state(skip)]
+    message: String,
+}
+
+#[modal_impl]
+impl ConfirmModal {
+    #[keybinds]
+    fn keys() -> Keybinds {
+        keybinds! {
+            "y" | "enter" => confirm,
+            "n" | "escape" => cancel,
+        }
+    }
+
+    #[handler]
+    async fn confirm(&self, mx: &ModalContext<bool>) {
+        mx.close(true);
+    }
+
+    #[handler]
+    async fn cancel(&self, mx: &ModalContext<bool>) {
+        mx.close(false);
+    }
+
+    fn view(&self) -> Node {
+        let message = self.message.clone();
+        view! {
+            column (padding: 1, gap: 1, border: rounded) {
+                text (bold, fg: warning) { "Confirm" }
+                text { message }
+                row (gap: 2) {
+                    button(label: "No [n]", id: "no", on_click: cancel)
+                    button(label: "Yes [y]", id: "yes", on_click: confirm)
+                }
+            }
+        }
+    }
+}
+
+// ============================================================================
+// Counter App
+// ============================================================================
 
 #[app]
 struct Counter {
@@ -59,10 +154,19 @@ impl Counter {
 
     #[handler]
     async fn reset(&self, cx: &AppContext) {
-        self.value.set(0);
-        self.step.set(1);
-        self.data.set_idle();
-        cx.toast("Reset");
+        // Show confirmation modal
+        let confirmed = cx
+            .modal(ConfirmModal {
+                message: "Reset the counter to zero?".to_string(),
+            })
+            .await;
+
+        if confirmed {
+            self.value.set(0);
+            self.step.set(1);
+            self.data.set_idle();
+            cx.toast("Reset");
+        }
     }
 
     #[handler]
@@ -111,7 +215,7 @@ impl Counter {
         let data_state = self.data.get();
 
         view! {
-            column (padding: 1, gap: 1) {
+            column (padding: 1, gap: 1, bg: background) {
                 column {
                     text (bold, fg: primary) { "Counter" }
                     text (fg: muted) { "A rafter demo application" }
@@ -169,7 +273,11 @@ async fn main() {
         let _ = WriteLogger::init(LevelFilter::Debug, Config::default(), log_file);
     }
 
-    if let Err(e) = rafter::Runtime::new().start_with::<Counter>().await {
+    if let Err(e) = rafter::Runtime::new()
+        .theme(CounterTheme::new())
+        .start_with::<Counter>()
+        .await
+    {
         eprintln!("Error: {}", e);
     }
 }

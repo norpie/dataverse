@@ -3,9 +3,11 @@ use std::future::Future;
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
 
+use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
 
 use crate::focus::FocusId;
+use crate::modal::{Modal, ModalContext, ModalDyn, ModalEntry};
 use crate::theme::Theme;
 
 /// Toast notification level
@@ -63,6 +65,8 @@ struct AppContextInner {
     input_text: Option<String>,
     /// Request to change theme
     theme_request: Option<Arc<dyn Theme>>,
+    /// Pending modal to open
+    modal_request: Option<Box<dyn ModalDyn>>,
 }
 
 /// Context passed to app handlers, providing access to framework functionality.
@@ -99,6 +103,7 @@ impl AppContext {
                 pending_toasts: Vec::new(),
                 input_text: None,
                 theme_request: None,
+                modal_request: None,
             })),
         }
     }
@@ -174,6 +179,43 @@ impl AppContext {
         }
     }
 
+    /// Open a modal and wait for it to return a result.
+    ///
+    /// The modal will be displayed on top of the current view and will
+    /// capture all input until it is closed.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// #[handler]
+    /// async fn confirm_delete(&self, cx: &AppContext) {
+    ///     let confirmed = cx.modal(ConfirmModal {
+    ///         message: "Delete this item?".into(),
+    ///     }).await;
+    ///     
+    ///     if confirmed {
+    ///         self.delete_item();
+    ///     }
+    /// }
+    /// ```
+    pub async fn modal<M: Modal>(&self, modal: M) -> M::Result {
+        let (tx, rx) = oneshot::channel();
+
+        // Create the modal context with the result sender
+        let mx = ModalContext::new(tx);
+
+        // Create the type-erased entry
+        let entry = ModalEntry::new(modal, mx);
+
+        // Request the runtime to push this modal
+        if let Ok(mut inner) = self.inner.write() {
+            inner.modal_request = Some(Box::new(entry));
+        }
+
+        // Wait for the modal to close and return its result
+        rx.await.expect("modal closed without sending result")
+    }
+
     /// Spawn an async task.
     ///
     /// The spawned task runs independently and can use cloned state.
@@ -243,53 +285,17 @@ impl AppContext {
             .ok()
             .and_then(|mut inner| inner.theme_request.take())
     }
+
+    /// Take the modal request (runtime use)
+    pub(crate) fn take_modal_request(&self) -> Option<Box<dyn ModalDyn>> {
+        self.inner
+            .write()
+            .ok()
+            .and_then(|mut inner| inner.modal_request.take())
+    }
 }
 
 impl Default for AppContext {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-/// Context passed to modal handlers (will be expanded for modal system)
-pub struct ModalContext {
-    /// The result to emit when modal closes
-    result: Option<Box<dyn Any + Send>>,
-    /// Whether modal should close
-    should_close: bool,
-}
-
-impl ModalContext {
-    /// Create a new modal context
-    pub fn new() -> Self {
-        Self {
-            result: None,
-            should_close: false,
-        }
-    }
-
-    /// Emit a result value
-    pub fn emit<T: 'static + Send>(&mut self, value: T) {
-        self.result = Some(Box::new(value));
-    }
-
-    /// Close the modal
-    pub fn close(&mut self) {
-        self.should_close = true;
-    }
-
-    /// Check if modal should close
-    pub fn should_close(&self) -> bool {
-        self.should_close
-    }
-
-    /// Take the result
-    pub fn take_result(&mut self) -> Option<Box<dyn Any + Send>> {
-        self.result.take()
-    }
-}
-
-impl Default for ModalContext {
     fn default() -> Self {
         Self::new()
     }
