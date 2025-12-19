@@ -91,7 +91,7 @@ impl ReallySureModal {
 
     fn view(&self) -> Node {
         view! {
-            column (padding: 1, gap: 1, border: rounded) {
+            column (padding: 2, gap: 1, bg: surface) {
                 text (bold, fg: error) { "Are you REALLY sure?" }
                 text (fg: muted) { "This action cannot be undone!" }
                 row (gap: 2) {
@@ -141,7 +141,7 @@ impl ConfirmModal {
     fn view(&self) -> Node {
         let message = self.message.clone();
         view! {
-            column (padding: 1, gap: 1, border: rounded) {
+            column (padding: 2, gap: 1, bg: surface) {
                 text (bold, fg: warning) { "Confirm" }
                 text { message }
                 row (gap: 2) {
