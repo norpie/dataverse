@@ -131,12 +131,6 @@ pub fn convert_event(event: CrosstermEvent) -> Option<Event> {
                 return None;
             }
 
-            // Check for Ctrl+C to quit
-            if key_event.modifiers.contains(KeyModifiers::CONTROL)
-                && key_event.code == KeyCode::Char('c')
-            {
-                return Some(Event::Quit);
-            }
             convert_key_event(key_event).map(Event::Key)
         }
         CrosstermEvent::Mouse(mouse_event) => convert_mouse_event(mouse_event),

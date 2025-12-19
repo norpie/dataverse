@@ -220,7 +220,7 @@ impl Runtime {
 
                     match rafter_event {
                         Event::Quit => {
-                            info!("Quit requested via Ctrl+C");
+                            info!("Quit requested via system keybind");
                             break;
                         }
                         Event::Key(ref key_combo) => {
