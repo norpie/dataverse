@@ -1,0 +1,79 @@
+use crate::context::AppContext;
+use crate::keybinds::Keybinds;
+use crate::node::Node;
+
+/// Panic behavior for an app
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum PanicBehavior {
+    /// Show error to user, app continues in degraded state
+    #[default]
+    ShowError,
+    /// Kill app and restart fresh
+    RestartApp,
+    /// Propagate panic, crash the runtime
+    CrashRuntime,
+}
+
+/// Trait that all apps must implement.
+///
+/// This is typically implemented via the `#[app]` and `#[app_impl]` macros.
+pub trait App: Send + 'static {
+    /// Get the app's display name
+    fn name(&self) -> &'static str;
+
+    /// Get the app's keybinds
+    fn keybinds(&self) -> Keybinds {
+        Keybinds::new()
+    }
+
+    /// Render the app's view
+    fn view(&self) -> Node;
+
+    /// Called when the app starts
+    fn on_start(&mut self, _cx: &mut AppContext) {}
+
+    /// Called when the app is brought to foreground
+    fn on_foreground(&mut self, _cx: &mut AppContext) {}
+
+    /// Called when the app is sent to background
+    fn on_background(&mut self, _cx: &mut AppContext) {}
+
+    /// Called when the app is about to stop
+    fn on_stop(&mut self, _cx: &mut AppContext) {}
+
+    /// Get the panic behavior for this app
+    fn panic_behavior(&self) -> PanicBehavior {
+        PanicBehavior::default()
+    }
+
+    /// Check if any state is dirty and needs re-render
+    fn is_dirty(&self) -> bool {
+        true // Default: always re-render (conservative)
+    }
+
+    /// Clear dirty flags after render
+    fn clear_dirty(&mut self) {}
+}
+
+/// App registration entry for inventory
+pub struct AppRegistration {
+    /// App name
+    pub name: &'static str,
+    /// Factory function to create the app
+    pub factory: fn() -> Box<dyn App>,
+}
+
+impl AppRegistration {
+    /// Create a new app registration
+    pub const fn new(name: &'static str, factory: fn() -> Box<dyn App>) -> Self {
+        Self { name, factory }
+    }
+}
+
+// Collect all registered apps
+inventory::collect!(AppRegistration);
+
+/// Get all registered apps
+pub fn registered_apps() -> impl Iterator<Item = &'static AppRegistration> {
+    inventory::iter::<AppRegistration>()
+}
