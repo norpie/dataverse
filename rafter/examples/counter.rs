@@ -6,7 +6,11 @@
 // - View rendering
 // - Event handling
 
+use std::fs::File;
+
+use log::LevelFilter;
 use rafter::prelude::*;
+use simplelog::{Config, WriteLogger};
 
 #[app]
 struct CounterApp {
@@ -26,16 +30,19 @@ impl CounterApp {
 
     #[handler]
     fn increment(&mut self) {
+        log::info!("increment called, count was {}", *self.count);
         *self.count += 1;
     }
 
     #[handler]
     fn decrement(&mut self) {
+        log::info!("decrement called, count was {}", *self.count);
         *self.count -= 1;
     }
 
     #[handler]
     fn quit(&mut self, cx: &mut AppContext) {
+        log::info!("quit called");
         cx.exit();
     }
 
@@ -52,7 +59,17 @@ impl CounterApp {
 
 #[tokio::main]
 async fn main() {
+    // Initialize logging to file (truncate on start)
+    let log_file = File::create("counter.log").expect("Failed to create log file");
+    WriteLogger::init(LevelFilter::Debug, Config::default(), log_file)
+        .expect("Failed to initialize logger");
+
+    log::info!("Counter app starting");
+
     if let Err(e) = rafter::Runtime::new().start_with::<CounterApp>().await {
+        log::error!("Runtime error: {}", e);
         eprintln!("Error: {}", e);
     }
+
+    log::info!("Counter app exiting");
 }

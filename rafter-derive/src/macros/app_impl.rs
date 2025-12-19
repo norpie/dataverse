@@ -304,9 +304,12 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
     } else {
         quote! {
             fn dispatch(&mut self, handler_id: &rafter::keybinds::HandlerId, cx: &mut rafter::context::AppContext) {
+                log::debug!("Dispatching handler: {}", handler_id.0);
                 match handler_id.0.as_str() {
                     #(#dispatch_arms)*
-                    _ => {}
+                    other => {
+                        log::warn!("Unknown handler: {}", other);
+                    }
                 }
             }
         }

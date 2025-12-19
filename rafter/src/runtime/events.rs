@@ -1,9 +1,10 @@
 //! Event handling - convert crossterm events to rafter events.
 
 use crossterm::event::{
-    Event as CrosstermEvent, KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent,
-    MouseEventKind,
+    Event as CrosstermEvent, KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseButton,
+    MouseEvent, MouseEventKind,
 };
+use log::trace;
 
 use crate::events::{ClickEvent, ClickKind, Modifiers, Position, ScrollDirection, ScrollEvent};
 use crate::keybinds::{Key, KeyCombo};
@@ -117,6 +118,17 @@ pub fn convert_mouse_event(event: MouseEvent) -> Option<Event> {
 pub fn convert_event(event: CrosstermEvent) -> Option<Event> {
     match event {
         CrosstermEvent::Key(key_event) => {
+            trace!(
+                "Key event: code={:?}, modifiers={:?}, kind={:?}",
+                key_event.code, key_event.modifiers, key_event.kind
+            );
+
+            // Only handle key press events, not release or repeat
+            if key_event.kind != KeyEventKind::Press {
+                trace!("Ignoring non-press key event");
+                return None;
+            }
+
             // Check for Ctrl+C to quit
             if key_event.modifiers.contains(KeyModifiers::CONTROL)
                 && key_event.code == KeyCode::Char('c')

@@ -2,6 +2,8 @@
 
 use std::time::{Duration, Instant};
 
+use log::{debug, trace};
+
 use crate::keybinds::{HandlerId, KeyCombo, Keybinds};
 
 /// Timeout for key sequences (e.g., "gg")
@@ -27,10 +29,13 @@ impl InputState {
     /// Process a key press and check for matching keybinds.
     /// Returns the handler ID if a match is found.
     pub fn process_key(&mut self, key: KeyCombo, keybinds: &Keybinds) -> KeybindMatch {
+        debug!("Processing key: {:?}", key);
+
         // Check if sequence has timed out
         if let Some(start) = self.sequence_start
             && start.elapsed() > SEQUENCE_TIMEOUT
         {
+            debug!("Sequence timed out, clearing");
             self.sequence.clear();
             self.sequence_start = None;
         }
@@ -41,18 +46,26 @@ impl InputState {
             self.sequence_start = Some(Instant::now());
         }
 
+        debug!("Current sequence: {:?}", self.sequence);
+
         // Try to match against keybinds
         let mut exact_match: Option<HandlerId> = None;
         let mut prefix_match = false;
 
         for bind in keybinds.all() {
+            trace!(
+                "Comparing sequence {:?} with bind {:?}",
+                self.sequence, bind.keys
+            );
             if bind.keys == self.sequence {
                 // Exact match
+                debug!("Exact match found: {:?}", bind.handler);
                 exact_match = Some(bind.handler.clone());
             } else if bind.keys.len() > self.sequence.len()
                 && bind.keys[..self.sequence.len()] == self.sequence[..]
             {
                 // This sequence is a prefix of a longer binding
+                debug!("Prefix match for {:?}", bind.handler);
                 prefix_match = true;
             }
         }
@@ -67,6 +80,7 @@ impl InputState {
             KeybindMatch::Pending
         } else {
             // No match possible - clear sequence
+            debug!("No match found, clearing sequence");
             self.sequence.clear();
             self.sequence_start = None;
             KeybindMatch::NoMatch

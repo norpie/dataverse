@@ -9,6 +9,7 @@ use std::io;
 use std::time::Duration;
 
 use crossterm::event;
+use log::{debug, info, trace};
 
 use crate::app::{App, PanicBehavior};
 use crate::context::AppContext;
@@ -89,8 +90,11 @@ impl Runtime {
 
     /// Start the runtime with a boxed app
     pub async fn run(self, app: Box<dyn App>) -> Result<(), RuntimeError> {
+        info!("Runtime starting");
+
         // Initialize terminal
         let mut term_guard = TerminalGuard::new()?;
+        info!("Terminal initialized");
 
         // Create app context
         let mut cx = AppContext::new();
@@ -100,12 +104,17 @@ impl Runtime {
 
         // Get initial keybinds
         let keybinds = app.keybinds();
+        info!("Registered {} keybinds", keybinds.all().len());
+        for bind in keybinds.all() {
+            debug!("  Keybind: {:?} => {:?}", bind.keys, bind.handler);
+        }
 
         // Create mutable app state
         let mut app = app;
 
         // Call on_start
         app.on_start(&mut cx);
+        info!("App started: {}", app.name());
 
         // Main event loop
         loop {
@@ -120,40 +129,49 @@ impl Runtime {
             app.clear_dirty();
 
             // Wait for events (with timeout for animations later)
-            if event::poll(Duration::from_millis(100))?
-                && let Ok(crossterm_event) = event::read()
-                && let Some(rafter_event) = convert_event(crossterm_event)
-            {
-                match rafter_event {
-                    Event::Quit => {
-                        // Exit requested
-                        break;
-                    }
-                    Event::Key(key_combo) => {
-                        // Process keybind
-                        match input_state.process_key(key_combo, &keybinds) {
-                            KeybindMatch::Match(handler_id) => {
-                                // Dispatch to handler
-                                dispatch_handler(&mut app, &handler_id, &mut cx);
+            if event::poll(Duration::from_millis(100))? {
+                if let Ok(crossterm_event) = event::read() {
+                    trace!("Crossterm event: {:?}", crossterm_event);
 
-                                // Check if exit was requested
-                                if cx.is_exit_requested() {
-                                    break;
+                    if let Some(rafter_event) = convert_event(crossterm_event) {
+                        debug!("Rafter event: {:?}", rafter_event);
+
+                        match rafter_event {
+                            Event::Quit => {
+                                info!("Quit requested via Ctrl+C");
+                                break;
+                            }
+                            Event::Key(ref key_combo) => {
+                                debug!("Key event: {:?}", key_combo);
+
+                                // Process keybind
+                                match input_state.process_key(key_combo.clone(), &keybinds) {
+                                    KeybindMatch::Match(handler_id) => {
+                                        info!("Keybind matched: {:?}", handler_id);
+                                        // Dispatch to handler
+                                        dispatch_handler(&mut app, &handler_id, &mut cx);
+
+                                        // Check if exit was requested
+                                        if cx.is_exit_requested() {
+                                            info!("Exit requested by handler");
+                                            break;
+                                        }
+                                    }
+                                    KeybindMatch::Pending => {
+                                        debug!("Keybind pending (sequence in progress)");
+                                    }
+                                    KeybindMatch::NoMatch => {
+                                        debug!("No keybind matched for key");
+                                    }
                                 }
                             }
-                            KeybindMatch::Pending => {
-                                // Waiting for more keys in sequence
+                            Event::Resize { width, height } => {
+                                debug!("Resize: {}x{}", width, height);
                             }
-                            KeybindMatch::NoMatch => {
-                                // No keybind matched
+                            Event::Click(_) | Event::Scroll(_) => {
+                                // Mouse events - not implemented yet
                             }
                         }
-                    }
-                    Event::Resize { .. } => {
-                        // Terminal resized - will re-render on next loop
-                    }
-                    Event::Click(_) | Event::Scroll(_) => {
-                        // Mouse events - not implemented yet
                     }
                 }
             }
@@ -161,6 +179,7 @@ impl Runtime {
 
         // Call on_stop
         app.on_stop(&mut cx);
+        info!("App stopped");
 
         Ok(())
     }
