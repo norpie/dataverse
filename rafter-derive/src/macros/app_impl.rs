@@ -89,31 +89,54 @@ fn parse_keybinds_scope(attrs: &[Attribute]) -> Option<KeybindScope> {
     None
 }
 
-/// Check if method is a handler (has __rafter_handler doc attribute)
+/// Check if method has #[handler] attribute and extract metadata
 fn parse_handler_metadata(method: &ImplItemFn) -> Option<HandlerMethod> {
     for attr in &method.attrs {
-        if attr.path().is_ident("doc")
-            && let syn::Meta::NameValue(nv) = &attr.meta
-            && let syn::Expr::Lit(syn::ExprLit {
-                lit: syn::Lit::Str(s),
-                ..
-            }) = &nv.value
-        {
-            let value = s.value();
-            if value.starts_with("__rafter_handler:") {
-                // Parse: __rafter_handler:is_async:supersedes:queues:debounce_ms:has_context
-                let parts: Vec<&str> = value.split(':').collect();
-                if parts.len() >= 5 {
-                    return Some(HandlerMethod {
-                        name: method.sig.ident.clone(),
-                        is_async: parts[1] == "true",
-                        supersedes: parts[2] == "true",
-                        queues: parts[3] == "true",
-                        debounce_ms: parts[4].parse().unwrap_or(0),
-                        has_context: parts.get(5).map(|s| *s == "true").unwrap_or(false),
-                    });
+        if attr.path().is_ident("handler") {
+            // Found a #[handler] attribute
+            let is_async = method.sig.asyncness.is_some();
+
+            // Check if method takes context parameter
+            let has_context = method.sig.inputs.iter().any(|arg| {
+                if let syn::FnArg::Typed(pat_type) = arg {
+                    let ty = &pat_type.ty;
+                    let ty_str = quote::quote!(#ty).to_string();
+                    ty_str.contains("AppContext") || ty_str.contains("Context")
+                } else {
+                    false
                 }
+            });
+
+            // Parse handler attributes (supersedes, queues, debounce)
+            let mut supersedes = false;
+            let mut queues = false;
+            let mut debounce_ms = 0u64;
+
+            if let syn::Meta::List(list) = &attr.meta {
+                let _ = list.parse_nested_meta(|meta| {
+                    if meta.path.is_ident("supersedes") {
+                        supersedes = true;
+                    } else if meta.path.is_ident("queues") {
+                        queues = true;
+                    } else if meta.path.is_ident("debounce") {
+                        if let Ok(value) = meta.value() {
+                            if let Ok(lit) = value.parse::<syn::LitInt>() {
+                                debounce_ms = lit.base10_parse().unwrap_or(0);
+                            }
+                        }
+                    }
+                    Ok(())
+                });
             }
+
+            return Some(HandlerMethod {
+                name: method.sig.ident.clone(),
+                is_async,
+                supersedes,
+                queues,
+                debounce_ms,
+                has_context,
+            });
         }
     }
     None
@@ -187,8 +210,10 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
     // Strip our custom attributes from methods
     for item in &mut impl_block.items {
         if let ImplItem::Fn(method) = item {
-            method.attrs.retain(|a| !a.path().is_ident("keybinds"));
-            // Remove our metadata doc attributes
+            method
+                .attrs
+                .retain(|a| !a.path().is_ident("keybinds") && !a.path().is_ident("handler"));
+            // Remove our metadata doc attributes (legacy, may not be needed anymore)
             method.attrs.retain(|a| {
                 if a.path().is_ident("doc")
                     && let syn::Meta::NameValue(nv) = &a.meta
