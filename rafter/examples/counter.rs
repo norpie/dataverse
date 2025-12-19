@@ -1,16 +1,13 @@
-// Example: Counter App
-//
-// A demo app showcasing rafter's Phase 4 features:
-// - App definition with state
-// - Keybinds
-// - View rendering
-// - Event handling
-// - Focus system with Tab navigation
-// - Text input fields
-// - Buttons
-// - Toast notifications
-// - Async state with Resource<T> and #[state(async)]
-// - Spawning async tasks with cx.spawn()
+//! Counter Example
+//!
+//! A polished demo showcasing rafter's capabilities:
+//! - Declarative views with the `view!` macro
+//! - State management with automatic reactivity
+//! - Keyboard navigation and vim-style keybinds
+//! - Focus system with Tab navigation
+//! - Async operations with progress feedback
+//! - Toast notifications
+//! - Theme-aware styling
 
 use std::fs::File;
 use std::time::Duration;
@@ -20,316 +17,194 @@ use rafter::prelude::*;
 use simplelog::{Config, WriteLogger};
 
 #[app]
-struct CounterApp {
-    count: i32,
-    step: String,
-    message: String,
-    // Resource<T> is automatically wrapped in AsyncResource<T>
-    // Can be mutated from spawned async tasks
+struct Counter {
+    value: i32,
+    step: i32,
     data: Resource<String>,
-    // #[state(async)] wraps in AsyncState<T>
-    // Can be mutated from spawned async tasks
-    #[state(async)]
-    loading_status: String,
 }
 
 #[app_impl]
-impl CounterApp {
+impl Counter {
     #[keybinds]
     fn keys() -> Keybinds {
         keybinds! {
-            "j" | "down" => decrement,
             "k" | "up" => increment,
-            "t" => show_toast,
-            "e" => show_error,
+            "j" | "down" => decrement,
+            "+" => increment,
+            "-" => decrement,
             "r" => reset,
             "l" => load_data,
+            "1" => set_step_1,
+            "5" => set_step_5,
+            "0" => set_step_10,
             "q" => quit,
         }
     }
 
     #[handler]
-    fn increment(&mut self, cx: &mut AppContext) {
-        let step = self.step.parse::<i32>().unwrap_or(1);
-        log::info!("increment by {}, count was {}", step, *self.count);
-        *self.count += step;
-        cx.toast(format!("Count increased to {}", *self.count));
+    fn increment(&mut self, _cx: &mut AppContext) {
+        *self.value += *self.step;
     }
 
     #[handler]
-    fn decrement(&mut self, cx: &mut AppContext) {
-        let step = self.step.parse::<i32>().unwrap_or(1);
-        log::info!("decrement by {}, count was {}", step, *self.count);
-        *self.count -= step;
-        cx.toast(format!("Count decreased to {}", *self.count));
+    fn decrement(&mut self, _cx: &mut AppContext) {
+        *self.value -= *self.step;
     }
 
     #[handler]
     fn reset(&mut self, cx: &mut AppContext) {
-        log::info!("reset count");
-        *self.count = 0;
-        *self.step = "1".to_string();
+        *self.value = 0;
+        *self.step = 1;
         self.data.set(Resource::Idle);
-        self.loading_status.set(String::new());
-        cx.toast("Counter reset!");
+        cx.toast("Reset");
     }
 
     #[handler]
-    fn show_toast(&mut self, cx: &mut AppContext) {
-        if self.message.is_empty() {
-            cx.toast("Hello from rafter!");
-        } else {
-            cx.toast((*self.message).clone());
-        }
+    fn set_step_1(&mut self, _cx: &mut AppContext) {
+        *self.step = 1;
     }
 
     #[handler]
-    fn show_error(&mut self, cx: &mut AppContext) {
-        cx.show_toast(Toast::error("This is an error toast!"));
+    fn set_step_5(&mut self, _cx: &mut AppContext) {
+        *self.step = 5;
+    }
+
+    #[handler]
+    fn set_step_10(&mut self, _cx: &mut AppContext) {
+        *self.step = 10;
     }
 
     #[handler]
     fn load_data(&mut self, cx: &mut AppContext) {
-        log::info!("load_data called - spawning async task");
-
-        // Clone the async-safe state handles before spawning
         let data = self.data.clone();
-        let status = self.loading_status.clone();
-
-        // Set initial loading state
         data.set(Resource::Loading);
-        status.set("Starting load...".to_string());
 
-        // Spawn an async task that simulates loading
         cx.spawn(async move {
-            log::info!("Async task started");
-
-            // Simulate progress updates
+            // Simulate network request with progress
             for i in 1..=3 {
-                tokio::time::sleep(Duration::from_millis(500)).await;
-                status.set(format!("Loading... step {}/3", i));
-                log::info!("Progress: step {}/3", i);
+                tokio::time::sleep(Duration::from_millis(400)).await;
+                data.set(Resource::Progress(ProgressState {
+                    current: i,
+                    total: Some(3),
+                    message: Some(format!("Step {}/3", i)),
+                }));
             }
-
-            // Simulate final result
-            tokio::time::sleep(Duration::from_millis(500)).await;
-            data.set(Resource::Ready("Data loaded successfully!".to_string()));
-            status.set("Complete!".to_string());
-            log::info!("Async task completed");
+            tokio::time::sleep(Duration::from_millis(400)).await;
+            data.set(Resource::Ready("API response received".to_string()));
         });
 
-        cx.toast("Loading started...");
+        cx.toast("Loading...");
     }
 
     #[handler]
     fn quit(&mut self, cx: &mut AppContext) {
-        log::info!("quit called");
         cx.exit();
     }
 
-    // Handler for step input changes
-    #[handler]
-    fn step_input_change(&mut self, cx: &mut AppContext) {
-        if let Some(text) = cx.input_text() {
-            log::info!("step input changed: {}", text);
-            *self.step = text.to_string();
-        }
-    }
-
-    // Handler for step input submit (Enter)
-    #[handler]
-    fn step_input_submit(&mut self, cx: &mut AppContext) {
-        if let Some(text) = cx.input_text() {
-            log::info!("step input submitted: {}", text);
-            *self.step = text.to_string();
-            if let Ok(step) = text.parse::<i32>() {
-                cx.toast(format!("Step size set to {}", step));
-            } else {
-                cx.show_toast(Toast::error("Invalid step value"));
-            }
-        }
-    }
-
-    // Handler for message input changes
-    #[handler]
-    fn message_input_change(&mut self, cx: &mut AppContext) {
-        if let Some(text) = cx.input_text() {
-            log::info!("message input changed: {}", text);
-            *self.message = text.to_string();
-        }
-    }
-
-    // Handler for message input submit
-    #[handler]
-    fn message_input_submit(&mut self, cx: &mut AppContext) {
-        if let Some(text) = cx.input_text() {
-            log::info!("message input submitted: {}", text);
-            *self.message = text.to_string();
-            cx.toast(format!("Message set: {}", text));
-        }
-    }
-
-    // Handler for increment button click
+    // Button handlers
     #[handler]
     fn inc_btn_submit(&mut self, cx: &mut AppContext) {
-        log::info!("increment button clicked");
         self.increment(cx);
     }
 
-    // Handler for decrement button click
     #[handler]
     fn dec_btn_submit(&mut self, cx: &mut AppContext) {
-        log::info!("decrement button clicked");
         self.decrement(cx);
     }
 
-    // Handler for reset button click
     #[handler]
     fn reset_btn_submit(&mut self, cx: &mut AppContext) {
-        log::info!("reset button clicked");
         self.reset(cx);
     }
 
-    // Handler for load button click
     #[handler]
     fn load_btn_submit(&mut self, cx: &mut AppContext) {
-        log::info!("load button clicked");
         self.load_data(cx);
     }
 
     fn focusable_ids(&self) -> Vec<String> {
-        vec![
-            "step_input".to_string(),
-            "message_input".to_string(),
-            "inc_btn".to_string(),
-            "dec_btn".to_string(),
-            "reset_btn".to_string(),
-            "load_btn".to_string(),
-        ]
+        vec!["inc".into(), "dec".into(), "reset".into(), "load".into()]
     }
 
-    fn captures_input(&self, id: &str) -> bool {
-        // Only input fields capture text input, not buttons
-        matches!(id, "step_input" | "message_input")
+    fn captures_input(&self, _id: &str) -> bool {
+        false
     }
 
-    fn input_value(&self, id: &str) -> Option<String> {
-        match id {
-            "step_input" => Some((*self.step).clone()),
-            "message_input" => Some((*self.message).clone()),
-            _ => None,
-        }
+    fn input_value(&self, _id: &str) -> Option<String> {
+        None
     }
 
     fn view_with_focus(&self, focus: &FocusState) -> Node {
-        let step_focused = focus.is_focused("step_input");
-        let message_focused = focus.is_focused("message_input");
-        let inc_focused = focus.is_focused("inc_btn");
-        let dec_focused = focus.is_focused("dec_btn");
-        let reset_focused = focus.is_focused("reset_btn");
-        let load_focused = focus.is_focused("load_btn");
+        let value_str = self.value.to_string();
+        let step_str = self.step.to_string();
 
-        // Get current resource state for display
-        let data_status = match self.data.get() {
-            Resource::Idle => "Idle".to_string(),
-            Resource::Loading => "Loading...".to_string(),
-            Resource::Progress(p) => format!("Progress: {}/{:?}", p.current, p.total),
-            Resource::Ready(s) => format!("Ready: {}", s),
-            Resource::Error(e) => format!("Error: {}", e),
-        };
-
-        let loading_status = self.loading_status.get();
+        // Build data status display
+        let data_state = self.data.get();
 
         view! {
             column (padding: 1, gap: 1) {
-                text (bold, fg: primary) { "Counter Demo - Phase 5 Theme System" }
-                text { "" }
+                column {
+                    text (bold, fg: primary) { "Counter" }
+                    text (fg: muted) { "A rafter demo application" }
+                }
 
-                // Counter display
+                column (border: rounded, padding: 1) {
+                    row (gap: 2) {
+                        text (fg: muted) { "Value:" }
+                        text (bold, fg: primary) { value_str }
+                    }
+                    row (gap: 2) {
+                        text (fg: muted) { "Step: " }
+                        text (fg: secondary) { step_str }
+                    }
+                }
+
                 row (gap: 1) {
-                    text { "Count: " }
-                    text (bold, fg: primary) { self.count.to_string() }
+                    button(label: "−", id: "dec", focused: focus.is_focused("dec"))
+                    button(label: "+", id: "inc", focused: focus.is_focused("inc"))
+                    button(label: "Reset", id: "reset", focused: focus.is_focused("reset"))
+                    button(label: "Load", id: "load", focused: focus.is_focused("load"))
                 }
 
-                text { "" }
-
-                // Async data display
                 row (gap: 1) {
-                    text { "Data: " }
-                    text (fg: warning) { data_status }
-                }
-                row (gap: 1) {
-                    text { "Status: " }
-                    text (fg: success) { loading_status }
-                }
-
-                text { "" }
-
-                // Step input
-                row (gap: 1) {
-                    text { "Step size: " }
-                    input(
-                        value: self.step.clone(),
-                        placeholder: "1",
-                        id: "step_input",
-                        focused: step_focused
-                    )
-                }
-
-                // Message input
-                row (gap: 1) {
-                    text { "Message: " }
-                    input(
-                        value: self.message.clone(),
-                        placeholder: "Enter toast message...",
-                        id: "message_input",
-                        focused: message_focused
-                    )
+                    text (fg: muted) { "Data:" }
+                    match data_state {
+                        Resource::Idle => {
+                            text (fg: muted) { "Press 'l' to load" }
+                        }
+                        Resource::Loading => {
+                            text (fg: warning) { "Loading..." }
+                        }
+                        Resource::Progress(p) => {
+                            text (fg: warning) { p.message.clone().unwrap_or_default() }
+                        }
+                        Resource::Ready(s) => {
+                            text (fg: success) { s }
+                        }
+                        Resource::Error(e) => {
+                            text (fg: error) { e.to_string() }
+                        }
+                    }
                 }
 
-                text { "" }
-
-                // Buttons row
-                row (gap: 2) {
-                    button(label: "+", id: "inc_btn", focused: inc_focused)
-                    button(label: "-", id: "dec_btn", focused: dec_focused)
-                    button(label: "Reset", id: "reset_btn", focused: reset_focused)
-                    button(label: "Load", id: "load_btn", focused: load_focused)
-                }
-
-                text { "" }
-
-                // Help text
-                text (fg: muted) { "Keybinds:" }
-                text (fg: muted) { "  j/k or down/up - decrement/increment" }
-                text (fg: muted) { "  t - show toast, e - show error toast" }
-                text (fg: muted) { "  r - reset, l - load async data" }
-                text (fg: muted) { "  Tab/Shift+Tab - navigate focus" }
-                text (fg: muted) { "  Enter - activate focused element" }
-                text (fg: muted) { "  q - quit" }
+                text (fg: muted) { "↑k/↓j ±value  1/5/0 step  r reset  l load  Tab focus  q quit" }
             }
         }
     }
 
     fn view(&self) -> Node {
-        // Fallback without focus
         self.view_with_focus(&FocusState::new())
     }
 }
 
 #[tokio::main]
 async fn main() {
-    // Initialize logging to file (truncate on start)
-    let log_file = File::create("counter.log").expect("Failed to create log file");
-    WriteLogger::init(LevelFilter::Debug, Config::default(), log_file)
-        .expect("Failed to initialize logger");
-
-    log::info!("Counter app starting");
-
-    if let Err(e) = rafter::Runtime::new().start_with::<CounterApp>().await {
-        log::error!("Runtime error: {}", e);
-        eprintln!("Error: {}", e);
+    // Initialize file logging
+    if let Ok(log_file) = File::create("counter.log") {
+        let _ = WriteLogger::init(LevelFilter::Debug, Config::default(), log_file);
     }
 
-    log::info!("Counter app exiting");
+    if let Err(e) = rafter::Runtime::new().start_with::<Counter>().await {
+        eprintln!("Error: {}", e);
+    }
 }
