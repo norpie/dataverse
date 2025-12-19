@@ -689,9 +689,9 @@ pub fn render_toasts(frame: &mut Frame, toasts: &[(Toast, Instant)], theme: &dyn
 
     let area = frame.area();
 
-    // Calculate toast dimensions
-    const TOAST_WIDTH: u16 = 40;
-    const TOAST_HEIGHT: u16 = 3;
+    // Calculate toast dimensions - sleek single-line toasts
+    const TOAST_WIDTH: u16 = 44;
+    const TOAST_HEIGHT: u16 = 1;
     const TOAST_MARGIN: u16 = 1;
 
     // Render toasts from bottom to top
@@ -700,8 +700,8 @@ pub fn render_toasts(frame: &mut Frame, toasts: &[(Toast, Instant)], theme: &dyn
 
         // Position in bottom-right corner
         let toast_area = Rect::new(
-            area.width.saturating_sub(TOAST_WIDTH + 2),
-            area.height.saturating_sub(TOAST_HEIGHT + 2 + y_offset),
+            area.width.saturating_sub(TOAST_WIDTH + 1),
+            area.height.saturating_sub(TOAST_HEIGHT + 1 + y_offset),
             TOAST_WIDTH,
             TOAST_HEIGHT,
         );
@@ -711,41 +711,44 @@ pub fn render_toasts(frame: &mut Frame, toasts: &[(Toast, Instant)], theme: &dyn
             continue;
         }
 
-        // Get border color from theme based on toast level
-        let (theme_color_name, title) = match toast.level {
-            ToastLevel::Info => ("info", "Info"),
-            ToastLevel::Success => ("success", "Success"),
-            ToastLevel::Warning => ("warning", "Warning"),
-            ToastLevel::Error => ("error", "Error"),
+        // Get accent color and icon from theme based on toast level
+        let (theme_color_name, icon) = match toast.level {
+            ToastLevel::Info => ("info", "●"),
+            ToastLevel::Success => ("success", "✓"),
+            ToastLevel::Warning => ("warning", "⚠"),
+            ToastLevel::Error => ("error", "✗"),
         };
 
-        let border_color = theme
+        let accent_color = theme
             .resolve(theme_color_name)
             .map(|c| c.to_ratatui())
             .unwrap_or(Color::White);
 
+        let bg_color = Color::Rgb(35, 35, 45);
+
         // Clear the area first (so toasts appear on top)
         frame.render_widget(Clear, toast_area);
 
-        // Create toast block
-        let block = Block::default()
-            .borders(Borders::ALL)
-            .border_type(ratatui::widgets::BorderType::Rounded)
-            .border_style(RatatuiStyle::default().fg(border_color))
-            .title(title);
-
-        let inner = block.inner(toast_area);
-        frame.render_widget(block, toast_area);
-
-        // Render message (truncate if needed)
-        let max_width = inner.width as usize;
-        let message = if toast.message.len() > max_width {
-            format!("{}...", &toast.message[..max_width.saturating_sub(3)])
+        // Render message with icon - truncate if needed
+        let max_msg_width = (toast_area.width as usize).saturating_sub(4); // icon + spaces
+        let message = if toast.message.len() > max_msg_width {
+            format!("{}...", &toast.message[..max_msg_width.saturating_sub(3)])
         } else {
             toast.message.clone()
         };
 
-        let paragraph = Paragraph::new(message);
-        frame.render_widget(paragraph, inner);
+        let line = Line::from(vec![
+            Span::styled(
+                format!(" {} ", icon),
+                RatatuiStyle::default().fg(accent_color).bg(bg_color),
+            ),
+            Span::styled(
+                format!("{} ", message),
+                RatatuiStyle::default().fg(Color::Rgb(220, 220, 230)).bg(bg_color),
+            ),
+        ]);
+
+        let paragraph = Paragraph::new(line);
+        frame.render_widget(paragraph, toast_area);
     }
 }
