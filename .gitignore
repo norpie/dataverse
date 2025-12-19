@@ -3,3 +3,6 @@
 AGENTS.md
 rafter/counter.log
 rafter/CURRENT_PLAN.md
+rafter/flamegraph.svg
+rafter/perf.data
+rafter/perf.data.old
