@@ -63,6 +63,47 @@ impl Theme for CounterTheme {
 }
 
 // ============================================================================
+// Really Sure Modal (nested confirmation)
+// ============================================================================
+
+#[modal]
+struct ReallySureModal;
+
+#[modal_impl]
+impl ReallySureModal {
+    #[keybinds]
+    fn keys() -> Keybinds {
+        keybinds! {
+            "y" | "enter" => confirm,
+            "n" | "escape" => cancel,
+        }
+    }
+
+    #[handler]
+    async fn confirm(&self, mx: &ModalContext<bool>) {
+        mx.close(true);
+    }
+
+    #[handler]
+    async fn cancel(&self, mx: &ModalContext<bool>) {
+        mx.close(false);
+    }
+
+    fn view(&self) -> Node {
+        view! {
+            column (padding: 1, gap: 1, border: rounded) {
+                text (bold, fg: error) { "Are you REALLY sure?" }
+                text (fg: muted) { "This action cannot be undone!" }
+                row (gap: 2) {
+                    button(label: "No [n]", id: "no", on_click: cancel)
+                    button(label: "Yes [y]", id: "yes", on_click: confirm)
+                }
+            }
+        }
+    }
+}
+
+// ============================================================================
 // Confirm Modal
 // ============================================================================
 
@@ -83,8 +124,13 @@ impl ConfirmModal {
     }
 
     #[handler]
-    async fn confirm(&self, mx: &ModalContext<bool>) {
-        mx.close(true);
+    async fn confirm(&self, cx: &AppContext, mx: &ModalContext<bool>) {
+        // Show nested confirmation modal
+        let really_sure = cx.modal(ReallySureModal).await;
+        if really_sure {
+            mx.close(true);
+        }
+        // If not really sure, stay on this modal
     }
 
     #[handler]
