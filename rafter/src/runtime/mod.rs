@@ -24,7 +24,7 @@ use crate::theme::{DefaultTheme, Theme};
 use events::{Event, convert_event};
 use hit_test::HitTestMap;
 use input::{InputState, KeybindMatch};
-use render::{dim_backdrop, render_node, render_toasts};
+use render::{dim_backdrop, fill_background, render_node, render_toasts};
 use terminal::TerminalGuard;
 
 /// A modal entry in the modal stack
@@ -262,6 +262,11 @@ impl Runtime {
             let modal_stack_ref = &modal_stack;
             term_guard.terminal().draw(|frame| {
                 let area = frame.area();
+
+                // Fill entire terminal with theme background color
+                if let Some(bg_color) = theme.resolve("background") {
+                    fill_background(frame, bg_color.to_ratatui());
+                }
 
                 // Always render the app first
                 let app_view = app.view();

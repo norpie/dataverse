@@ -563,6 +563,16 @@ fn child_constraint(node: &Node, horizontal: bool) -> Constraint {
     }
 }
 
+/// Fill the entire buffer with a background color.
+///
+/// This should be called before rendering the view to ensure
+/// the entire terminal has a consistent background.
+pub fn fill_background(frame: &mut Frame, color: Color) {
+    let area = frame.area();
+    let block = Block::default().style(RatatuiStyle::default().bg(color));
+    frame.render_widget(block, area);
+}
+
 /// Dim the backdrop buffer using OKLCH color space.
 ///
 /// This reduces the lightness of all colors in the buffer by the given amount.
