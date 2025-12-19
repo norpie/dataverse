@@ -2,6 +2,8 @@ use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 use syn::{Attribute, Ident, ImplItem, ImplItemFn, ItemImpl, Type, parse2};
 
+use super::handler::HandlerParams;
+
 /// Attributes for the #[app_impl] macro
 struct AppImplAttrs {
     // Currently no attributes supported
@@ -34,8 +36,8 @@ enum KeybindScope {
 struct HandlerMethod {
     /// Method name
     name: Ident,
-    /// Handler takes context parameter
-    has_context: bool,
+    /// Handler parameter requirements
+    params: HandlerParams,
     /// Handler is async
     is_async: bool,
 }
@@ -86,27 +88,46 @@ fn parse_keybinds_scope(attrs: &[Attribute]) -> Option<KeybindScope> {
 fn parse_handler_metadata(method: &ImplItemFn) -> Option<HandlerMethod> {
     for attr in &method.attrs {
         if attr.path().is_ident("handler") {
-            // Check if method takes context parameter
-            let has_context = method.sig.inputs.iter().any(|arg| {
-                if let syn::FnArg::Typed(pat_type) = arg {
-                    let ty = &pat_type.ty;
-                    let ty_str = quote::quote!(#ty).to_string();
-                    ty_str.contains("AppContext") || ty_str.contains("Context")
-                } else {
-                    false
-                }
-            });
-
+            // Detect parameter requirements from function signature
+            // Convert ImplItemFn to ItemFn for detection (create a minimal ItemFn)
+            let params = detect_handler_params_from_impl_fn(method);
             let is_async = method.sig.asyncness.is_some();
 
             return Some(HandlerMethod {
                 name: method.sig.ident.clone(),
-                has_context,
+                params,
                 is_async,
             });
         }
     }
     None
+}
+
+/// Detect handler params from an impl method
+fn detect_handler_params_from_impl_fn(method: &ImplItemFn) -> HandlerParams {
+    let mut has_app_context = false;
+    let mut has_modal_context = false;
+
+    for arg in &method.sig.inputs {
+        if let syn::FnArg::Typed(pat_type) = arg {
+            let ty = &pat_type.ty;
+            let ty_str = quote::quote!(#ty).to_string();
+
+            if ty_str.contains("AppContext") {
+                has_app_context = true;
+            }
+            if ty_str.contains("ModalContext") {
+                has_modal_context = true;
+            }
+        }
+    }
+
+    match (has_app_context, has_modal_context) {
+        (false, false) => HandlerParams::None,
+        (true, false) => HandlerParams::AppContext,
+        (false, true) => HandlerParams::ModalContext,
+        (true, true) => HandlerParams::Both,
+    }
 }
 
 /// Check if method is named "view"
@@ -319,48 +340,55 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
             let name = &h.name;
             let name_str = name.to_string();
 
-            // Clone self and cx for the spawned task
-            if h.is_async {
-                if h.has_context {
-                    quote! {
-                        #name_str => {
-                            let this = self.clone();
-                            let cx = cx.clone();
-                            tokio::spawn(async move {
-                                this.#name(&cx).await;
-                            });
-                        }
+            // Generate the call based on what parameters the handler needs
+            // For app handlers, only AppContext is available (ModalContext is invalid)
+            let call = match h.params {
+                HandlerParams::None => {
+                    if h.is_async {
+                        quote! { this.#name().await; }
+                    } else {
+                        quote! { this.#name(); }
                     }
-                } else {
+                }
+                HandlerParams::AppContext | HandlerParams::Both => {
+                    // App handlers can only receive AppContext
+                    // If handler wants ModalContext, it will get a compile error
+                    if h.is_async {
+                        quote! { this.#name(&cx).await; }
+                    } else {
+                        quote! { this.#name(&cx); }
+                    }
+                }
+                HandlerParams::ModalContext => {
+                    // Handler wants only ModalContext but we're in app context
+                    // This is a user error - they should use AppContext in app handlers
+                    // Generate code that will give a clear compile error
                     quote! {
-                        #name_str => {
-                            let this = self.clone();
-                            tokio::spawn(async move {
-                                this.#name().await;
-                            });
-                        }
+                        compile_error!("Handler requests ModalContext but is defined in an app impl. Use AppContext instead.");
+                    }
+                }
+            };
+
+            // Determine if we need to clone cx
+            let needs_cx = h.params.needs_app_context();
+
+            if needs_cx {
+                quote! {
+                    #name_str => {
+                        let this = self.clone();
+                        let cx = cx.clone();
+                        tokio::spawn(async move {
+                            #call
+                        });
                     }
                 }
             } else {
-                // Sync handler - still spawn but wrap in async block
-                if h.has_context {
-                    quote! {
-                        #name_str => {
-                            let this = self.clone();
-                            let cx = cx.clone();
-                            tokio::spawn(async move {
-                                this.#name(&cx);
-                            });
-                        }
-                    }
-                } else {
-                    quote! {
-                        #name_str => {
-                            let this = self.clone();
-                            tokio::spawn(async move {
-                                this.#name();
-                            });
-                        }
+                quote! {
+                    #name_str => {
+                        let this = self.clone();
+                        tokio::spawn(async move {
+                            #call
+                        });
                     }
                 }
             }
