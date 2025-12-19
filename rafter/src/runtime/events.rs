@@ -42,7 +42,7 @@ fn convert_key(code: KeyCode) -> Option<Key> {
         KeyCode::Enter => Some(Key::Enter),
         KeyCode::Esc => Some(Key::Escape),
         KeyCode::Backspace => Some(Key::Backspace),
-        KeyCode::Tab => Some(Key::Tab),
+        KeyCode::Tab | KeyCode::BackTab => Some(Key::Tab),
         KeyCode::Up => Some(Key::Up),
         KeyCode::Down => Some(Key::Down),
         KeyCode::Left => Some(Key::Left),
@@ -118,8 +118,8 @@ pub fn convert_mouse_event(event: MouseEvent) -> Option<Event> {
 pub fn convert_event(event: CrosstermEvent) -> Option<Event> {
     match event {
         CrosstermEvent::Key(key_event) => {
-            trace!(
-                "Key event: code={:?}, modifiers={:?}, kind={:?}",
+            log::debug!(
+                "Crossterm key: code={:?}, modifiers={:?}, kind={:?}",
                 key_event.code, key_event.modifiers, key_event.kind
             );
 

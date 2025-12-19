@@ -358,6 +358,8 @@ fn generate_element(elem: &ElementNode) -> TokenStream {
         "row" => generate_container(elem, quote! { rafter::node::Node::Row }),
         "stack" => generate_container(elem, quote! { rafter::node::Node::Stack }),
         "text" => generate_text_element(elem),
+        "input" => generate_input_element(elem),
+        "button" => generate_button_element(elem),
         _ => {
             // Unknown element - treat as a component function call
             let name = &elem.name;
@@ -412,6 +414,142 @@ fn generate_text_element(elem: &ElementNode) -> TokenStream {
         rafter::node::Node::Text {
             content: #content,
             style: #style,
+        }
+    }
+}
+
+fn generate_input_element(elem: &ElementNode) -> TokenStream {
+    let style = generate_style(&elem.attrs);
+    let mut value = quote! { String::new() };
+    let mut placeholder = quote! { String::new() };
+    let mut id = quote! { None };
+    let mut focused = quote! { false };
+    let mut on_change = quote! { None };
+    let mut on_submit = quote! { None };
+
+    for attr in &elem.attrs {
+        let name_str = attr.name.to_string();
+        match name_str.as_str() {
+            "value" => {
+                if let Some(AttrValue::Str(s)) = &attr.value {
+                    value = quote! { #s.to_string() };
+                } else if let Some(AttrValue::Expr(e)) = &attr.value {
+                    value = quote! { (#e).to_string() };
+                } else if let Some(AttrValue::Ident(i)) = &attr.value {
+                    value = quote! { #i.to_string() };
+                }
+            }
+            "placeholder" => {
+                if let Some(AttrValue::Str(s)) = &attr.value {
+                    placeholder = quote! { #s.to_string() };
+                } else if let Some(AttrValue::Expr(e)) = &attr.value {
+                    placeholder = quote! { #e.to_string() };
+                }
+            }
+            "id" => {
+                if let Some(AttrValue::Str(s)) = &attr.value {
+                    id = quote! { Some(#s.to_string()) };
+                } else if let Some(AttrValue::Expr(e)) = &attr.value {
+                    id = quote! { Some(#e.to_string()) };
+                }
+            }
+            "focused" => {
+                if let Some(AttrValue::Bool(b)) = &attr.value {
+                    focused = quote! { #b };
+                } else if let Some(AttrValue::Expr(e)) = &attr.value {
+                    focused = quote! { #e };
+                } else if let Some(AttrValue::Ident(i)) = &attr.value {
+                    // Variable reference like step_focused
+                    focused = quote! { #i };
+                } else {
+                    focused = quote! { true };
+                }
+            }
+            "on_change" => {
+                if let Some(AttrValue::Ident(i)) = &attr.value {
+                    let handler_name = i.to_string();
+                    on_change =
+                        quote! { Some(rafter::keybinds::HandlerId(#handler_name.to_string())) };
+                }
+            }
+            "on_submit" => {
+                if let Some(AttrValue::Ident(i)) = &attr.value {
+                    let handler_name = i.to_string();
+                    on_submit =
+                        quote! { Some(rafter::keybinds::HandlerId(#handler_name.to_string())) };
+                }
+            }
+            _ => {}
+        }
+    }
+
+    quote! {
+        rafter::node::Node::Input {
+            value: #value,
+            placeholder: #placeholder,
+            on_change: #on_change,
+            on_submit: #on_submit,
+            id: #id,
+            style: #style,
+            focused: #focused,
+        }
+    }
+}
+
+fn generate_button_element(elem: &ElementNode) -> TokenStream {
+    let style = generate_style(&elem.attrs);
+    let mut label = quote! { String::new() };
+    let mut id = quote! { None };
+    let mut focused = quote! { false };
+    let mut on_click = quote! { None };
+
+    for attr in &elem.attrs {
+        let name_str = attr.name.to_string();
+        match name_str.as_str() {
+            "label" => {
+                if let Some(AttrValue::Str(s)) = &attr.value {
+                    label = quote! { #s.to_string() };
+                } else if let Some(AttrValue::Expr(e)) = &attr.value {
+                    label = quote! { #e.to_string() };
+                }
+            }
+            "id" => {
+                if let Some(AttrValue::Str(s)) = &attr.value {
+                    id = quote! { Some(#s.to_string()) };
+                } else if let Some(AttrValue::Expr(e)) = &attr.value {
+                    id = quote! { Some(#e.to_string()) };
+                }
+            }
+            "focused" => {
+                if let Some(AttrValue::Bool(b)) = &attr.value {
+                    focused = quote! { #b };
+                } else if let Some(AttrValue::Expr(e)) = &attr.value {
+                    focused = quote! { #e };
+                } else if let Some(AttrValue::Ident(i)) = &attr.value {
+                    // Variable reference like inc_focused
+                    focused = quote! { #i };
+                } else {
+                    focused = quote! { true };
+                }
+            }
+            "on_click" => {
+                if let Some(AttrValue::Ident(i)) = &attr.value {
+                    let handler_name = i.to_string();
+                    on_click =
+                        quote! { Some(rafter::keybinds::HandlerId(#handler_name.to_string())) };
+                }
+            }
+            _ => {}
+        }
+    }
+
+    quote! {
+        rafter::node::Node::Button {
+            label: #label,
+            on_click: #on_click,
+            id: #id,
+            style: #style,
+            focused: #focused,
         }
     }
 }

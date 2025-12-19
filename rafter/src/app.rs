@@ -1,4 +1,5 @@
 use crate::context::AppContext;
+use crate::focus::FocusState;
 use crate::keybinds::{HandlerId, Keybinds};
 use crate::node::Node;
 
@@ -28,6 +29,25 @@ pub trait App: Send + 'static {
 
     /// Render the app's view
     fn view(&self) -> Node;
+
+    /// Render the app's view with focus state.
+    /// Override this to make interactive elements focus-aware.
+    fn view_with_focus(&self, _focus: &FocusState) -> Node {
+        self.view()
+    }
+
+    /// Collect focusable element IDs from the view.
+    /// Returns IDs in tab order. Override for custom tab order.
+    fn focusable_ids(&self) -> Vec<String> {
+        Vec::new()
+    }
+
+    /// Check if a focusable element captures text input.
+    /// Elements that capture input (like text fields) will receive character
+    /// keypresses instead of triggering keybinds.
+    fn captures_input(&self, _id: &str) -> bool {
+        false
+    }
 
     /// Called when the app starts
     fn on_start(&mut self, _cx: &mut AppContext) {}

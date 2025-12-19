@@ -1,11 +1,14 @@
 //! Rendering - convert Node tree to ratatui widgets.
 
+use std::time::Instant;
+
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
-use ratatui::style::Style as RatatuiStyle;
+use ratatui::style::{Color, Style as RatatuiStyle};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, Paragraph};
+use ratatui::widgets::{Block, Borders, Clear, Paragraph};
 
+use crate::context::{Toast, ToastLevel};
 use crate::node::{Border, Node};
 
 /// Render a Node tree to a ratatui Frame
@@ -36,6 +39,30 @@ pub fn render_node(frame: &mut Frame, node: &Node, area: Rect) {
         } => {
             render_stack(frame, children, style.to_ratatui(), layout, area);
         }
+        Node::Input {
+            value,
+            placeholder,
+            style,
+            focused,
+            ..
+        } => {
+            render_input(
+                frame,
+                value,
+                placeholder,
+                style.to_ratatui(),
+                *focused,
+                area,
+            );
+        }
+        Node::Button {
+            label,
+            style,
+            focused,
+            ..
+        } => {
+            render_button(frame, label, style.to_ratatui(), *focused, area);
+        }
     }
 }
 
@@ -44,6 +71,45 @@ fn render_text(frame: &mut Frame, content: &str, style: RatatuiStyle, area: Rect
     let span = Span::styled(content, style);
     let line = Line::from(span);
     let paragraph = Paragraph::new(line);
+    frame.render_widget(paragraph, area);
+}
+
+/// Render an input field
+fn render_input(
+    frame: &mut Frame,
+    value: &str,
+    placeholder: &str,
+    style: RatatuiStyle,
+    focused: bool,
+    area: Rect,
+) {
+    let display_text = if value.is_empty() { placeholder } else { value };
+
+    let mut input_style = style;
+    if focused {
+        input_style = input_style.add_modifier(ratatui::style::Modifier::REVERSED);
+    }
+
+    // Show cursor at end if focused
+    let content = if focused {
+        format!("{}█", display_text)
+    } else {
+        display_text.to_string()
+    };
+
+    let paragraph = Paragraph::new(content).style(input_style);
+    frame.render_widget(paragraph, area);
+}
+
+/// Render a button
+fn render_button(frame: &mut Frame, label: &str, style: RatatuiStyle, focused: bool, area: Rect) {
+    let mut button_style = style;
+    if focused {
+        button_style = button_style.add_modifier(ratatui::style::Modifier::REVERSED);
+    }
+
+    let content = format!("[ {} ]", label);
+    let paragraph = Paragraph::new(content).style(button_style);
     frame.render_widget(paragraph, area);
 }
 
@@ -220,5 +286,73 @@ fn child_constraint(node: &Node) -> Constraint {
                 }
             }
         }
+        Node::Input { .. } | Node::Button { .. } => {
+            // Interactive elements take 1 line
+            Constraint::Length(1)
+        }
+    }
+}
+
+/// Render active toasts in the bottom-right corner
+pub fn render_toasts(frame: &mut Frame, toasts: &[(Toast, Instant)]) {
+    if toasts.is_empty() {
+        return;
+    }
+
+    let area = frame.area();
+
+    // Calculate toast dimensions
+    const TOAST_WIDTH: u16 = 40;
+    const TOAST_HEIGHT: u16 = 3;
+    const TOAST_MARGIN: u16 = 1;
+
+    // Render toasts from bottom to top
+    for (i, (toast, _expiry)) in toasts.iter().enumerate().take(5) {
+        let y_offset = (i as u16) * (TOAST_HEIGHT + TOAST_MARGIN);
+
+        // Position in bottom-right corner
+        let toast_area = Rect::new(
+            area.width.saturating_sub(TOAST_WIDTH + 2),
+            area.height.saturating_sub(TOAST_HEIGHT + 2 + y_offset),
+            TOAST_WIDTH,
+            TOAST_HEIGHT,
+        );
+
+        // Skip if toast would be off-screen
+        if toast_area.y == 0 || toast_area.x == 0 {
+            continue;
+        }
+
+        // Style based on toast level
+        let (border_color, title) = match toast.level {
+            ToastLevel::Info => (Color::Blue, "Info"),
+            ToastLevel::Success => (Color::Green, "Success"),
+            ToastLevel::Warning => (Color::Yellow, "Warning"),
+            ToastLevel::Error => (Color::Red, "Error"),
+        };
+
+        // Clear the area first (so toasts appear on top)
+        frame.render_widget(Clear, toast_area);
+
+        // Create toast block
+        let block = Block::default()
+            .borders(Borders::ALL)
+            .border_type(ratatui::widgets::BorderType::Rounded)
+            .border_style(RatatuiStyle::default().fg(border_color))
+            .title(title);
+
+        let inner = block.inner(toast_area);
+        frame.render_widget(block, toast_area);
+
+        // Render message (truncate if needed)
+        let max_width = inner.width as usize;
+        let message = if toast.message.len() > max_width {
+            format!("{}...", &toast.message[..max_width.saturating_sub(3)])
+        } else {
+            toast.message.clone()
+        };
+
+        let paragraph = Paragraph::new(message);
+        frame.render_widget(paragraph, inner);
     }
 }

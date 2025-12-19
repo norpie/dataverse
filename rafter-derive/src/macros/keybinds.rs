@@ -84,12 +84,52 @@ fn parse_key_string(s: &str) -> TokenStream {
         parts[0]
     };
 
+    // Check if it's a special key name first
+    let is_special_key = matches!(
+        key_part.to_lowercase().as_str(),
+        "enter"
+            | "return"
+            | "escape"
+            | "esc"
+            | "backspace"
+            | "tab"
+            | "space"
+            | "up"
+            | "down"
+            | "left"
+            | "right"
+            | "home"
+            | "end"
+            | "pageup"
+            | "pgup"
+            | "pagedown"
+            | "pgdn"
+            | "insert"
+            | "ins"
+            | "delete"
+            | "del"
+            | "f1"
+            | "f2"
+            | "f3"
+            | "f4"
+            | "f5"
+            | "f6"
+            | "f7"
+            | "f8"
+            | "f9"
+            | "f10"
+            | "f11"
+            | "f12"
+    );
+
     // Check if it's a sequence (multiple chars without modifiers, like "gg")
+    // but NOT a special key name
     let is_sequence = !ctrl
         && !shift
         && !alt
         && key_part.len() > 1
-        && key_part.chars().all(|c| c.is_alphanumeric());
+        && key_part.chars().all(|c| c.is_alphanumeric())
+        && !is_special_key;
 
     if is_sequence {
         // Generate a sequence of KeyCombos

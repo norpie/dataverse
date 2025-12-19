@@ -1,3 +1,4 @@
+use crate::keybinds::HandlerId;
 use crate::style::Style;
 
 /// Layout direction
@@ -121,6 +122,38 @@ pub enum Node {
         style: Style,
         layout: Layout,
     },
+
+    /// Text input field
+    Input {
+        /// Current input value
+        value: String,
+        /// Placeholder text
+        placeholder: String,
+        /// Handler for value changes
+        on_change: Option<HandlerId>,
+        /// Handler for submit (Enter)
+        on_submit: Option<HandlerId>,
+        /// Element ID for focus
+        id: Option<String>,
+        /// Style
+        style: Style,
+        /// Whether this input is focused
+        focused: bool,
+    },
+
+    /// Clickable button
+    Button {
+        /// Button label
+        label: String,
+        /// Click handler
+        on_click: Option<HandlerId>,
+        /// Element ID for focus
+        id: Option<String>,
+        /// Style
+        style: Style,
+        /// Whether this button is focused
+        focused: bool,
+    },
 }
 
 impl Node {
@@ -184,5 +217,55 @@ impl Node {
     /// Check if node is empty
     pub fn is_empty(&self) -> bool {
         matches!(self, Self::Empty)
+    }
+
+    /// Create an input node
+    pub fn input() -> Self {
+        Self::Input {
+            value: String::new(),
+            placeholder: String::new(),
+            on_change: None,
+            on_submit: None,
+            id: None,
+            style: Style::new(),
+            focused: false,
+        }
+    }
+
+    /// Create a button node
+    pub fn button(label: impl Into<String>) -> Self {
+        Self::Button {
+            label: label.into(),
+            on_click: None,
+            id: None,
+            style: Style::new(),
+            focused: false,
+        }
+    }
+
+    /// Check if this node is focusable
+    pub fn is_focusable(&self) -> bool {
+        matches!(self, Self::Input { .. } | Self::Button { .. })
+    }
+
+    /// Get the element ID if any
+    pub fn id(&self) -> Option<&str> {
+        match self {
+            Self::Input { id, .. } | Self::Button { id, .. } => id.as_deref(),
+            _ => None,
+        }
+    }
+
+    /// Check if this node is focused
+    pub fn is_focused(&self) -> bool {
+        match self {
+            Self::Input { focused, .. } | Self::Button { focused, .. } => *focused,
+            _ => false,
+        }
+    }
+
+    /// Check if this node captures text input when focused
+    pub fn captures_input(&self) -> bool {
+        matches!(self, Self::Input { .. })
     }
 }

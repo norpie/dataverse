@@ -1,9 +1,60 @@
+use std::time::Duration;
+
+use crate::focus::FocusId;
+
+/// Toast notification level
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum ToastLevel {
+    #[default]
+    Info,
+    Success,
+    Warning,
+    Error,
+}
+
+/// A toast notification
+#[derive(Debug, Clone)]
+pub struct Toast {
+    /// Message to display
+    pub message: String,
+    /// Toast level (affects styling)
+    pub level: ToastLevel,
+    /// How long to show the toast
+    pub duration: Duration,
+}
+
+impl Toast {
+    /// Create a simple info toast
+    pub fn info(message: impl Into<String>) -> Self {
+        Self {
+            message: message.into(),
+            level: ToastLevel::Info,
+            duration: Duration::from_secs(3),
+        }
+    }
+
+    /// Create an error toast
+    pub fn error(message: impl Into<String>) -> Self {
+        Self {
+            message: message.into(),
+            level: ToastLevel::Error,
+            duration: Duration::from_secs(5),
+        }
+    }
+}
+
 /// Context passed to app handlers, providing access to framework functionality.
 pub struct AppContext {
     /// Request to exit the app
     exit_requested: bool,
     /// Request to navigate to a different view
     navigate_to: Option<Box<dyn std::any::Any + Send>>,
+    /// Request to focus a specific element
+    focus_request: Option<FocusId>,
+    /// Pending toasts to show
+    pending_toasts: Vec<Toast>,
+    /// Text input from the current input event
+    input_text: Option<String>,
 }
 
 impl AppContext {
@@ -12,6 +63,9 @@ impl AppContext {
         Self {
             exit_requested: false,
             navigate_to: None,
+            focus_request: None,
+            pending_toasts: Vec::new(),
+            input_text: None,
         }
     }
 
@@ -36,13 +90,43 @@ impl AppContext {
     }
 
     /// Set focus to a specific element by ID
-    pub fn focus(&mut self, _id: &str) {
-        // TODO: implement focus system
+    pub fn focus(&mut self, id: impl Into<FocusId>) {
+        self.focus_request = Some(id.into());
+    }
+
+    /// Take the focus request
+    pub fn take_focus_request(&mut self) -> Option<FocusId> {
+        self.focus_request.take()
     }
 
     /// Show a toast notification
-    pub fn toast(&mut self, _message: impl Into<String>) {
-        // TODO: implement toast system
+    pub fn toast(&mut self, message: impl Into<String>) {
+        self.pending_toasts.push(Toast::info(message));
+    }
+
+    /// Show a configured toast
+    pub fn show_toast(&mut self, toast: Toast) {
+        self.pending_toasts.push(toast);
+    }
+
+    /// Take pending toasts
+    pub fn take_toasts(&mut self) -> Vec<Toast> {
+        std::mem::take(&mut self.pending_toasts)
+    }
+
+    /// Set the current input text (called by runtime for input events)
+    pub fn set_input_text(&mut self, text: String) {
+        self.input_text = Some(text);
+    }
+
+    /// Get the current input text
+    pub fn input_text(&self) -> Option<&str> {
+        self.input_text.as_deref()
+    }
+
+    /// Clear the input text
+    pub fn clear_input_text(&mut self) {
+        self.input_text = None;
     }
 
     /// Publish an event to the event bus

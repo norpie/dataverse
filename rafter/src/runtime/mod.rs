@@ -6,18 +6,19 @@ mod render;
 mod terminal;
 
 use std::io;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use crossterm::event;
 use log::{debug, info, trace};
 
 use crate::app::{App, PanicBehavior};
-use crate::context::AppContext;
-use crate::keybinds::HandlerId;
+use crate::context::{AppContext, Toast};
+use crate::focus::{FocusId, FocusState};
+use crate::keybinds::{HandlerId, Key};
 
 use events::{Event, convert_event};
 use input::{InputState, KeybindMatch};
-use render::render_node;
+use render::{render_node, render_toasts};
 use terminal::TerminalGuard;
 
 /// Rafter runtime - the main entry point for running apps.
@@ -102,6 +103,12 @@ impl Runtime {
         // Create input state for keybind sequence tracking
         let mut input_state = InputState::new();
 
+        // Create focus state
+        let mut focus_state = FocusState::new();
+
+        // Active toasts with their expiration times
+        let mut active_toasts: Vec<(Toast, Instant)> = Vec::new();
+
         // Get initial keybinds
         let keybinds = app.keybinds();
         info!("Registered {} keybinds", keybinds.all().len());
@@ -116,61 +123,168 @@ impl Runtime {
         app.on_start(&mut cx);
         info!("App started: {}", app.name());
 
+        // Track the currently focused input's value for text editing
+        let mut input_buffer: String = String::new();
+
         // Main event loop
         loop {
+            // Process any pending focus requests
+            if let Some(focus_id) = cx.take_focus_request() {
+                debug!("Focus requested: {:?}", focus_id);
+                focus_state.set_focus(focus_id);
+            }
+
+            // Process any pending toasts
+            for toast in cx.take_toasts() {
+                let expiry = Instant::now() + toast.duration;
+                info!("Toast: {}", toast.message);
+                active_toasts.push((toast, expiry));
+            }
+
+            // Remove expired toasts
+            let now = Instant::now();
+            active_toasts.retain(|(_, expiry)| *expiry > now);
+
+            // Update focusable IDs from app
+            let focusable_ids: Vec<FocusId> =
+                app.focusable_ids().into_iter().map(FocusId::new).collect();
+            focus_state.set_focusable_ids(focusable_ids);
+
             // Render
             term_guard.terminal().draw(|frame| {
                 let area = frame.area();
-                let node = app.view();
+                let node = app.view_with_focus(&focus_state);
                 render_node(frame, &node, area);
+
+                // Render toasts in bottom-right corner
+                render_toasts(frame, &active_toasts);
             })?;
 
             // Clear dirty flags after render
             app.clear_dirty();
 
-            // Wait for events (with timeout for animations later)
-            if event::poll(Duration::from_millis(100))? {
-                if let Ok(crossterm_event) = event::read() {
-                    trace!("Crossterm event: {:?}", crossterm_event);
+            // Wait for events (with timeout for animations/toast expiry)
+            if event::poll(Duration::from_millis(100))?
+                && let Ok(crossterm_event) = event::read()
+            {
+                trace!("Crossterm event: {:?}", crossterm_event);
 
-                    if let Some(rafter_event) = convert_event(crossterm_event) {
-                        debug!("Rafter event: {:?}", rafter_event);
+                if let Some(rafter_event) = convert_event(crossterm_event) {
+                    debug!("Rafter event: {:?}", rafter_event);
 
-                        match rafter_event {
-                            Event::Quit => {
-                                info!("Quit requested via Ctrl+C");
-                                break;
+                    match rafter_event {
+                        Event::Quit => {
+                            info!("Quit requested via Ctrl+C");
+                            break;
+                        }
+                        Event::Key(ref key_combo) => {
+                            debug!("Key event: {:?}", key_combo);
+
+                            // Handle Tab/Shift+Tab for focus navigation
+                            if key_combo.key == Key::Tab {
+                                if key_combo.modifiers.shift {
+                                    debug!("Focus prev");
+                                    focus_state.focus_prev();
+                                } else {
+                                    debug!("Focus next");
+                                    focus_state.focus_next();
+                                }
+                                // Clear input buffer when focus changes
+                                input_buffer.clear();
+                                continue;
                             }
-                            Event::Key(ref key_combo) => {
-                                debug!("Key event: {:?}", key_combo);
 
-                                // Process keybind
-                                match input_state.process_key(key_combo.clone(), &keybinds) {
-                                    KeybindMatch::Match(handler_id) => {
-                                        info!("Keybind matched: {:?}", handler_id);
-                                        // Dispatch to handler
-                                        dispatch_handler(&mut app, &handler_id, &mut cx);
+                            // Handle Enter key for focused elements
+                            if key_combo.key == Key::Enter
+                                && let Some(current) = focus_state.current()
+                            {
+                                debug!("Enter on focused element: {:?}", current);
+                                // Dispatch to on_submit or on_click handler
+                                let handler_id = HandlerId(format!("{}_submit", current.0));
+                                cx.set_input_text(input_buffer.clone());
+                                dispatch_handler(&mut app, &handler_id, &mut cx);
+                                cx.clear_input_text();
+                                input_buffer.clear();
 
-                                        // Check if exit was requested
-                                        if cx.is_exit_requested() {
-                                            info!("Exit requested by handler");
-                                            break;
-                                        }
-                                    }
-                                    KeybindMatch::Pending => {
-                                        debug!("Keybind pending (sequence in progress)");
-                                    }
-                                    KeybindMatch::NoMatch => {
-                                        debug!("No keybind matched for key");
+                                if cx.is_exit_requested() {
+                                    info!("Exit requested by handler");
+                                    break;
+                                }
+                                continue;
+                            }
+
+                            // Handle Escape to clear focus/input
+                            if key_combo.key == Key::Escape {
+                                debug!("Escape pressed, clearing input buffer");
+                                input_buffer.clear();
+                                focus_state.clear_focus();
+                                continue;
+                            }
+
+                            // Check if currently focused element captures text input
+                            let is_text_input_focused = focus_state
+                                .current()
+                                .map(|id| app.captures_input(&id.0))
+                                .unwrap_or(false);
+
+                            // Handle Backspace for text input
+                            if key_combo.key == Key::Backspace && is_text_input_focused {
+                                input_buffer.pop();
+                                debug!("Backspace, buffer: {}", input_buffer);
+                                // Notify app of change
+                                if let Some(current) = focus_state.current() {
+                                    let handler_id = HandlerId(format!("{}_change", current.0));
+                                    cx.set_input_text(input_buffer.clone());
+                                    dispatch_handler(&mut app, &handler_id, &mut cx);
+                                    cx.clear_input_text();
+                                }
+                                continue;
+                            }
+
+                            // Handle character input for focused input fields only
+                            if let Key::Char(c) = key_combo.key
+                                && is_text_input_focused
+                                && !key_combo.modifiers.ctrl
+                                && !key_combo.modifiers.alt
+                            {
+                                input_buffer.push(c);
+                                debug!("Char input '{}', buffer: {}", c, input_buffer);
+                                // Notify app of change
+                                if let Some(current) = focus_state.current() {
+                                    let handler_id = HandlerId(format!("{}_change", current.0));
+                                    cx.set_input_text(input_buffer.clone());
+                                    dispatch_handler(&mut app, &handler_id, &mut cx);
+                                    cx.clear_input_text();
+                                }
+                                continue;
+                            }
+
+                            // Process keybind (only if not handled above)
+                            match input_state.process_key(key_combo.clone(), &keybinds) {
+                                KeybindMatch::Match(handler_id) => {
+                                    info!("Keybind matched: {:?}", handler_id);
+                                    // Dispatch to handler
+                                    dispatch_handler(&mut app, &handler_id, &mut cx);
+
+                                    // Check if exit was requested
+                                    if cx.is_exit_requested() {
+                                        info!("Exit requested by handler");
+                                        break;
                                     }
                                 }
+                                KeybindMatch::Pending => {
+                                    debug!("Keybind pending (sequence in progress)");
+                                }
+                                KeybindMatch::NoMatch => {
+                                    debug!("No keybind matched for key");
+                                }
                             }
-                            Event::Resize { width, height } => {
-                                debug!("Resize: {}x{}", width, height);
-                            }
-                            Event::Click(_) | Event::Scroll(_) => {
-                                // Mouse events - not implemented yet
-                            }
+                        }
+                        Event::Resize { width, height } => {
+                            debug!("Resize: {}x{}", width, height);
+                        }
+                        Event::Click(_) | Event::Scroll(_) => {
+                            // Mouse events - not implemented yet
                         }
                     }
                 }
