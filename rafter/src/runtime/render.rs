@@ -242,6 +242,12 @@ fn render_container(
     theme: &dyn Theme,
     focused_id: Option<&str>,
 ) {
+    // Fill background if specified
+    if style.bg.is_some() {
+        let block = Block::default().style(style);
+        frame.render_widget(block, area);
+    }
+
     if children.is_empty() {
         return;
     }
@@ -297,6 +303,12 @@ fn render_stack(
     theme: &dyn Theme,
     focused_id: Option<&str>,
 ) {
+    // Fill background if specified
+    if style.bg.is_some() {
+        let block = Block::default().style(style);
+        frame.render_widget(block, area);
+    }
+
     // Apply border if specified
     let (inner_area, block) = apply_border(area, &layout.border, style);
 
