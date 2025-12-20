@@ -217,7 +217,9 @@ pub fn intrinsic_size(node: &Node, horizontal: bool) -> u16 {
             let padding = layout.padding * 2;
             intrinsic_size(child, horizontal) + padding + border_size
         }
-        Node::List { layout, component, .. } => {
+        Node::List {
+            layout, component, ..
+        } => {
             let border_size = if matches!(layout.border, Border::None) {
                 0
             } else {

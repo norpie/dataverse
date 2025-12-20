@@ -63,7 +63,12 @@ pub trait ComponentEvents {
     /// Handle a scroll event.
     ///
     /// Called when the user scrolls (mouse wheel) within the component's bounds.
-    fn on_scroll(&self, _direction: ScrollDirection, _amount: u16, _cx: &AppContext) -> EventResult {
+    fn on_scroll(
+        &self,
+        _direction: ScrollDirection,
+        _amount: u16,
+        _cx: &AppContext,
+    ) -> EventResult {
         EventResult::Ignored
     }
 

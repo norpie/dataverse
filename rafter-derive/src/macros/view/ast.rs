@@ -75,10 +75,7 @@ pub enum ControlFlowNode {
         body: Vec<ViewNode>,
     },
     /// match expr { ... }
-    Match {
-        expr: Expr,
-        arms: Vec<MatchArm>,
-    },
+    Match { expr: Expr, arms: Vec<MatchArm> },
 }
 
 /// A match arm

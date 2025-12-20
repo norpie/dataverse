@@ -31,7 +31,12 @@ impl InputState {
     ///
     /// The `current_view` parameter is used to filter keybinds by scope.
     /// View-scoped keybinds take priority over global keybinds.
-    pub fn process_key(&mut self, key: KeyCombo, keybinds: &Keybinds, current_view: Option<&str>) -> KeybindMatch {
+    pub fn process_key(
+        &mut self,
+        key: KeyCombo,
+        keybinds: &Keybinds,
+        current_view: Option<&str>,
+    ) -> KeybindMatch {
         debug!("Processing key: {:?} (view: {:?})", key, current_view);
 
         // Check if sequence has timed out
@@ -73,7 +78,10 @@ impl InputState {
             );
             if keys == self.sequence {
                 // Exact match - prefer view-scoped over global
-                debug!("Exact match found: {:?} (scope: {:?})", bind.handler, bind.scope);
+                debug!(
+                    "Exact match found: {:?} (scope: {:?})",
+                    bind.handler, bind.scope
+                );
                 if bind.scope != crate::keybinds::KeybindScope::Global {
                     view_exact_match = Some(bind.handler.clone());
                 } else if global_exact_match.is_none() {

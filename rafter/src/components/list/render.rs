@@ -19,14 +19,7 @@ pub fn render_list<T: ListItem>(
     hit_map: &mut HitTestMap,
     theme: &dyn Theme,
     focused_id: Option<&str>,
-    render_node_fn: fn(
-        &mut Frame,
-        &Node,
-        Rect,
-        &mut HitTestMap,
-        &dyn Theme,
-        Option<&str>,
-    ),
+    render_node_fn: fn(&mut Frame, &Node, Rect, &mut HitTestMap, &dyn Theme, Option<&str>),
 ) {
     // Fill background if specified
     if style.bg.is_some() {
@@ -56,7 +49,7 @@ pub fn render_list<T: ListItem>(
 
             // Calculate item position
             let item_y = (index as u16 * item_height).saturating_sub(scroll_offset);
-            
+
             // Check if item is within viewport
             if item_y >= area.height {
                 continue;

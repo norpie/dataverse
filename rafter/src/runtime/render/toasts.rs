@@ -74,7 +74,9 @@ pub fn render_toasts(frame: &mut Frame, toasts: &[(Toast, Instant)], theme: &dyn
             ),
             Span::styled(
                 format!("{} ", message),
-                RatatuiStyle::default().fg(Color::Rgb(220, 220, 230)).bg(bg_color),
+                RatatuiStyle::default()
+                    .fg(Color::Rgb(220, 220, 230))
+                    .bg(bg_color),
             ),
         ]);
 

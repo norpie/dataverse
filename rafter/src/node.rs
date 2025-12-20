@@ -365,7 +365,9 @@ impl Node {
         match self {
             Self::Button { id, on_click, .. } if id == target_id => on_click.clone(),
             Self::Input { id, on_submit, .. } if id == target_id => on_submit.clone(),
-            Self::List { id, on_activate, .. } if id == target_id => on_activate.clone(),
+            Self::List {
+                id, on_activate, ..
+            } if id == target_id => on_activate.clone(),
             Self::Column { children, .. }
             | Self::Row { children, .. }
             | Self::Stack { children, .. } => children

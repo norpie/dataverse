@@ -156,10 +156,7 @@ impl Input {
 
     /// Get the cursor position (byte offset)
     pub fn cursor(&self) -> usize {
-        self.inner
-            .read()
-            .map(|guard| guard.cursor)
-            .unwrap_or(0)
+        self.inner.read().map(|guard| guard.cursor).unwrap_or(0)
     }
 
     /// Check if the input is empty

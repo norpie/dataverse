@@ -323,9 +323,9 @@ impl AppContext {
     }
 
     /// Get display info for currently active keybinds
-    /// 
+    ///
     /// Note: This requires knowing the current view, which is app-specific.
-    /// For now, this returns all keybinds. Use the app's `current_view()` 
+    /// For now, this returns all keybinds. Use the app's `current_view()`
     /// to filter if needed.
     pub fn all_keybinds(&self) -> Vec<KeybindInfo> {
         self.keybinds()
@@ -338,25 +338,28 @@ impl AppContext {
     /// cx.override_keybind("my_app.save", "ctrl+shift+s")?;
     /// ```
     pub fn override_keybind(&self, id: &str, keys: &str) -> Result<(), KeybindError> {
-        let mut keybinds = self.keybinds.write().map_err(|_| {
-            KeybindError::ParseError("Failed to acquire keybinds lock".to_string())
-        })?;
+        let mut keybinds = self
+            .keybinds
+            .write()
+            .map_err(|_| KeybindError::ParseError("Failed to acquire keybinds lock".to_string()))?;
         keybinds.override_keybind(id, keys)
     }
 
     /// Disable a keybind
     pub fn disable_keybind(&self, id: &str) -> Result<(), KeybindError> {
-        let mut keybinds = self.keybinds.write().map_err(|_| {
-            KeybindError::ParseError("Failed to acquire keybinds lock".to_string())
-        })?;
+        let mut keybinds = self
+            .keybinds
+            .write()
+            .map_err(|_| KeybindError::ParseError("Failed to acquire keybinds lock".to_string()))?;
         keybinds.disable_keybind(id)
     }
 
     /// Reset a keybind to its default key combination
     pub fn reset_keybind(&self, id: &str) -> Result<(), KeybindError> {
-        let mut keybinds = self.keybinds.write().map_err(|_| {
-            KeybindError::ParseError("Failed to acquire keybinds lock".to_string())
-        })?;
+        let mut keybinds = self
+            .keybinds
+            .write()
+            .map_err(|_| KeybindError::ParseError("Failed to acquire keybinds lock".to_string()))?;
         keybinds.reset_keybind(id)
     }
 

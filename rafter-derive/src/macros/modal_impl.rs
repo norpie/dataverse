@@ -3,8 +3,8 @@
 use proc_macro2::TokenStream;
 use quote::quote;
 use syn::{
-    AngleBracketedGenericArguments, GenericArgument, ImplItem, ImplItemFn, ItemImpl,
-    PathArguments, Type, parse2,
+    AngleBracketedGenericArguments, GenericArgument, ImplItem, ImplItemFn, ItemImpl, PathArguments,
+    Type, parse2,
 };
 
 use super::handler::HandlerParams;

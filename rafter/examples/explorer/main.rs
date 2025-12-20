@@ -200,7 +200,11 @@ impl Explorer {
 
         // Add many files to demonstrate scrolling
         for i in 1..=50 {
-            files.push(FileEntry::new(format!("file_{:03}.txt", i), i as u64 * 100, false));
+            files.push(FileEntry::new(
+                format!("file_{:03}.txt", i),
+                i as u64 * 100,
+                false,
+            ));
         }
 
         self.files.set_items(files);
@@ -277,10 +281,7 @@ impl Explorer {
         if let Some(selected) = self.files.cursor() {
             if let Some(file) = self.files.get(selected) {
                 let confirmed = cx
-                    .modal(ConfirmModal::new(format!(
-                        "Delete '{}'?",
-                        file.name
-                    )))
+                    .modal(ConfirmModal::new(format!("Delete '{}'?", file.name)))
                     .await;
 
                 if confirmed {

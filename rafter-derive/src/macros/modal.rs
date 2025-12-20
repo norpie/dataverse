@@ -236,11 +236,8 @@ pub fn expand(_attr: TokenStream, item: TokenStream) -> TokenStream {
             Fields::Named(f) => Some(f),
             Fields::Unit => None,
             Fields::Unnamed(_) => {
-                return syn::Error::new_spanned(
-                    &input,
-                    "#[modal] does not support tuple structs",
-                )
-                .to_compile_error();
+                return syn::Error::new_spanned(&input, "#[modal] does not support tuple structs")
+                    .to_compile_error();
             }
         },
         _ => {

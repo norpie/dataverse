@@ -154,7 +154,10 @@ fn to_snake_case(s: &str) -> String {
 }
 
 /// Generate keybinds trait method implementation
-pub fn generate_keybinds_impl(keybinds_methods: &[KeybindsMethod], type_name: &Ident) -> TokenStream {
+pub fn generate_keybinds_impl(
+    keybinds_methods: &[KeybindsMethod],
+    type_name: &Ident,
+) -> TokenStream {
     let app_name_snake = to_snake_case(&type_name.to_string());
 
     if keybinds_methods.is_empty() {

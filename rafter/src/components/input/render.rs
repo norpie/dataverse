@@ -38,9 +38,7 @@ pub fn render_input(
             .map(|(_, c)| c)
             .collect();
 
-        let at_cursor: Option<char> = display_text[cursor_pos..]
-            .chars()
-            .next();
+        let at_cursor: Option<char> = display_text[cursor_pos..].chars().next();
 
         let after_cursor: String = if let Some(c) = at_cursor {
             display_text[cursor_pos + c.len_utf8()..].to_string()

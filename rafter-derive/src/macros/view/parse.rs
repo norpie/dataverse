@@ -6,9 +6,7 @@ use syn::{
     token::Brace,
 };
 
-use super::ast::{
-    Attr, AttrValue, ControlFlowNode, ElementNode, MatchArm, TextNode, ViewNode,
-};
+use super::ast::{Attr, AttrValue, ControlFlowNode, ElementNode, MatchArm, TextNode, ViewNode};
 
 impl Parse for ViewNode {
     fn parse(input: ParseStream) -> syn::Result<Self> {

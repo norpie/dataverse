@@ -187,12 +187,12 @@ fn is_special_key(s: &str) -> bool {
 }
 
 /// Parse a key string like "ctrl+shift+a" or "gg" into KeyCombo(s)
-/// 
+///
 /// Supports:
 /// - Single keys: "a", "enter", "f1"
 /// - Modifiers: "ctrl+a", "ctrl+shift+a", "alt+f4"
 /// - Sequences: "gg", "gc" (vim-style multi-key)
-/// 
+///
 /// # Examples
 /// ```ignore
 /// let keys = parse_key_string("ctrl+s")?;  // [KeyCombo { key: Char('s'), modifiers: ctrl }]
@@ -374,7 +374,7 @@ impl Keybind {
 }
 
 /// Display-friendly information about a keybind.
-/// 
+///
 /// Used for settings UI, help menus, etc.
 #[derive(Debug, Clone)]
 pub struct KeybindInfo {
@@ -415,26 +415,24 @@ impl Keybinds {
     pub fn bind(&mut self, key: KeyCombo, handler: impl Into<HandlerId>) {
         let handler = handler.into();
         let key_str = format!("{:?}", key); // Simple debug representation
-        self.add(Keybind::new(
-            handler.0.clone(),
-            key_str,
-            vec![key],
-            handler,
-        ));
+        self.add(Keybind::new(handler.0.clone(), key_str, vec![key], handler));
     }
 
     /// Add a simple key -> handler binding with view scope
     /// Note: This generates an ID from the handler name. For full control, use `add()` directly.
-    pub fn bind_scoped(&mut self, key: KeyCombo, handler: impl Into<HandlerId>, view: impl Into<String>) {
+    pub fn bind_scoped(
+        &mut self,
+        key: KeyCombo,
+        handler: impl Into<HandlerId>,
+        view: impl Into<String>,
+    ) {
         let handler = handler.into();
         let view = view.into();
         let key_str = format!("{:?}", key); // Simple debug representation
-        self.add(Keybind::new(
-            handler.0.clone(),
-            key_str,
-            vec![key],
-            handler,
-        ).with_scope(KeybindScope::View(view)));
+        self.add(
+            Keybind::new(handler.0.clone(), key_str, vec![key], handler)
+                .with_scope(KeybindScope::View(view)),
+        );
     }
 
     /// Look up handler for a single key, respecting view scope
@@ -470,7 +468,9 @@ impl Keybinds {
 
     /// Get keybinds that are active for the current view
     pub fn active_for(&self, current_view: Option<&str>) -> impl Iterator<Item = &Keybind> {
-        self.binds.iter().filter(move |bind| bind.is_active_for(current_view))
+        self.binds
+            .iter()
+            .filter(move |bind| bind.is_active_for(current_view))
     }
 
     /// Merge another keybinds collection into this one
@@ -553,8 +553,8 @@ impl Keybinds {
             .get_by_id_mut(id)
             .ok_or_else(|| KeybindError::NotFound(id.to_string()))?;
 
-        let keys =
-            parse_key_string(&bind.default_keys).map_err(|e| KeybindError::ParseError(e.message))?;
+        let keys = parse_key_string(&bind.default_keys)
+            .map_err(|e| KeybindError::ParseError(e.message))?;
         bind.set_keys(keys);
         Ok(())
     }

@@ -1,12 +1,12 @@
 //! Scrollable component rendering.
 
+use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::Style as RatatuiStyle;
-use ratatui::Frame;
 
-use super::state::ScrollDirection;
 use super::ScrollbarConfig;
 use super::ScrollbarVisibility;
+use super::state::ScrollDirection;
 use crate::node::Node;
 use crate::runtime::hit_test::HitTestMap;
 use crate::theme::Theme;

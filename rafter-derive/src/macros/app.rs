@@ -60,8 +60,6 @@ impl FieldAttrs {
     }
 }
 
-
-
 /// Transform a field, wrapping in State<T> or keeping Resource<T> as-is
 fn transform_field(field: &Field) -> TokenStream {
     let attrs = FieldAttrs::parse(&field.attrs);

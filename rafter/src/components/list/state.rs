@@ -5,7 +5,9 @@ use std::collections::HashSet;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, RwLock};
 
-use crate::components::scrollbar::{ScrollbarConfig, ScrollbarDrag, ScrollbarGeometry, ScrollbarState};
+use crate::components::scrollbar::{
+    ScrollbarConfig, ScrollbarDrag, ScrollbarGeometry, ScrollbarState,
+};
 use crate::node::Node;
 
 /// Unique identifier for a List component instance.
@@ -98,7 +100,12 @@ impl Selection {
 
     /// Select a single index (clears others).
     pub fn select(&mut self, index: usize) -> (Vec<usize>, Vec<usize>) {
-        let removed: Vec<_> = self.selected.iter().copied().filter(|&i| i != index).collect();
+        let removed: Vec<_> = self
+            .selected
+            .iter()
+            .copied()
+            .filter(|&i| i != index)
+            .collect();
         self.selected.clear();
         self.selected.insert(index);
         self.anchor = Some(index);
@@ -124,11 +131,7 @@ impl Selection {
 
     /// Range select from anchor to index (Shift+click behavior).
     /// If `extend` is false, clears existing selection first.
-    pub fn range_select(
-        &mut self,
-        index: usize,
-        extend: bool,
-    ) -> (Vec<usize>, Vec<usize>) {
+    pub fn range_select(&mut self, index: usize, extend: bool) -> (Vec<usize>, Vec<usize>) {
         let anchor = self.anchor.unwrap_or(index);
         let (start, end) = if anchor <= index {
             (anchor, index)
@@ -793,22 +796,47 @@ pub trait AnyList: Send + Sync + std::fmt::Debug {
     fn as_any(&self) -> &dyn Any;
 
     /// Handle a key event (for ComponentEvents compatibility).
-    fn on_key(&self, key: &crate::keybinds::KeyCombo, cx: &crate::context::AppContext) -> crate::components::events::EventResult;
+    fn on_key(
+        &self,
+        key: &crate::keybinds::KeyCombo,
+        cx: &crate::context::AppContext,
+    ) -> crate::components::events::EventResult;
 
     /// Handle a click event at the given position within the list bounds.
-    fn on_click(&self, x: u16, y: u16, cx: &crate::context::AppContext) -> crate::components::events::EventResult;
+    fn on_click(
+        &self,
+        x: u16,
+        y: u16,
+        cx: &crate::context::AppContext,
+    ) -> crate::components::events::EventResult;
 
     /// Handle a hover event at the given position within the list bounds.
-    fn on_hover(&self, x: u16, y: u16, cx: &crate::context::AppContext) -> crate::components::events::EventResult;
+    fn on_hover(
+        &self,
+        x: u16,
+        y: u16,
+        cx: &crate::context::AppContext,
+    ) -> crate::components::events::EventResult;
 
     /// Handle a scroll event.
-    fn on_scroll(&self, direction: crate::events::ScrollDirection, amount: u16, cx: &crate::context::AppContext) -> crate::components::events::EventResult;
+    fn on_scroll(
+        &self,
+        direction: crate::events::ScrollDirection,
+        amount: u16,
+        cx: &crate::context::AppContext,
+    ) -> crate::components::events::EventResult;
 
     /// Handle a drag event.
-    fn on_drag(&self, x: u16, y: u16, cx: &crate::context::AppContext) -> crate::components::events::EventResult;
+    fn on_drag(
+        &self,
+        x: u16,
+        y: u16,
+        cx: &crate::context::AppContext,
+    ) -> crate::components::events::EventResult;
 
     /// Handle a release event.
-    fn on_release(&self, cx: &crate::context::AppContext) -> crate::components::events::EventResult;
+    fn on_release(&self, cx: &crate::context::AppContext)
+    -> crate::components::events::EventResult;
 
     /// Handle a click with modifier keys (Ctrl, Shift).
     fn on_click_with_modifiers(
@@ -901,32 +929,59 @@ impl<T: ListItem + std::fmt::Debug> AnyList for List<T> {
         self
     }
 
-    fn on_key(&self, key: &crate::keybinds::KeyCombo, cx: &crate::context::AppContext) -> crate::components::events::EventResult {
+    fn on_key(
+        &self,
+        key: &crate::keybinds::KeyCombo,
+        cx: &crate::context::AppContext,
+    ) -> crate::components::events::EventResult {
         use crate::components::events::ComponentEvents;
         ComponentEvents::on_key(self, key, cx)
     }
 
-    fn on_click(&self, x: u16, y: u16, cx: &crate::context::AppContext) -> crate::components::events::EventResult {
+    fn on_click(
+        &self,
+        x: u16,
+        y: u16,
+        cx: &crate::context::AppContext,
+    ) -> crate::components::events::EventResult {
         use crate::components::events::ComponentEvents;
         ComponentEvents::on_click(self, x, y, cx)
     }
 
-    fn on_hover(&self, x: u16, y: u16, cx: &crate::context::AppContext) -> crate::components::events::EventResult {
+    fn on_hover(
+        &self,
+        x: u16,
+        y: u16,
+        cx: &crate::context::AppContext,
+    ) -> crate::components::events::EventResult {
         use crate::components::events::ComponentEvents;
         ComponentEvents::on_hover(self, x, y, cx)
     }
 
-    fn on_scroll(&self, direction: crate::events::ScrollDirection, amount: u16, cx: &crate::context::AppContext) -> crate::components::events::EventResult {
+    fn on_scroll(
+        &self,
+        direction: crate::events::ScrollDirection,
+        amount: u16,
+        cx: &crate::context::AppContext,
+    ) -> crate::components::events::EventResult {
         use crate::components::events::ComponentEvents;
         ComponentEvents::on_scroll(self, direction, amount, cx)
     }
 
-    fn on_drag(&self, x: u16, y: u16, cx: &crate::context::AppContext) -> crate::components::events::EventResult {
+    fn on_drag(
+        &self,
+        x: u16,
+        y: u16,
+        cx: &crate::context::AppContext,
+    ) -> crate::components::events::EventResult {
         use crate::components::events::ComponentEvents;
         ComponentEvents::on_drag(self, x, y, cx)
     }
 
-    fn on_release(&self, cx: &crate::context::AppContext) -> crate::components::events::EventResult {
+    fn on_release(
+        &self,
+        cx: &crate::context::AppContext,
+    ) -> crate::components::events::EventResult {
         use crate::components::events::ComponentEvents;
         ComponentEvents::on_release(self, cx)
     }

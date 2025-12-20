@@ -187,18 +187,12 @@ impl Scrollable {
 
     /// Get the horizontal scroll offset.
     pub fn offset_x(&self) -> u16 {
-        self.inner
-            .read()
-            .map(|guard| guard.offset_x)
-            .unwrap_or(0)
+        self.inner.read().map(|guard| guard.offset_x).unwrap_or(0)
     }
 
     /// Get the vertical scroll offset.
     pub fn offset_y(&self) -> u16 {
-        self.inner
-            .read()
-            .map(|guard| guard.offset_y)
-            .unwrap_or(0)
+        self.inner.read().map(|guard| guard.offset_y).unwrap_or(0)
     }
 
     // -------------------------------------------------------------------------

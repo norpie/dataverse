@@ -44,8 +44,12 @@ pub fn generate_scrollable_element(elem: &ElementNode) -> TokenStream {
                 Some(AttrValue::Ident(i)) => {
                     let dir_str = i.to_string();
                     match dir_str.as_str() {
-                        "vertical" => Some(quote! { rafter::components::ScrollDirection::Vertical }),
-                        "horizontal" => Some(quote! { rafter::components::ScrollDirection::Horizontal }),
+                        "vertical" => {
+                            Some(quote! { rafter::components::ScrollDirection::Vertical })
+                        }
+                        "horizontal" => {
+                            Some(quote! { rafter::components::ScrollDirection::Horizontal })
+                        }
                         "both" => Some(quote! { rafter::components::ScrollDirection::Both }),
                         _ => None,
                     }

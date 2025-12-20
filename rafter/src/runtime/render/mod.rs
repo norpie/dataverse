@@ -11,15 +11,15 @@ use ratatui::style::Style as RatatuiStyle;
 use super::hit_test::HitTestMap;
 use crate::node::Node;
 use crate::style::Style;
-use crate::theme::{resolve_color, Theme};
+use crate::theme::{Theme, resolve_color};
 
 pub use backdrop::{dim_backdrop, fill_background};
 pub use toasts::render_toasts;
 
 use crate::components::input::render::render_input;
 use crate::components::scrollable::render::{
-    calculate_scrollable_layout, calculate_wrapped_content_size, render_horizontal_scrollbar,
-    render_node_clipped, render_vertical_scrollbar, ClipRect,
+    ClipRect, calculate_scrollable_layout, calculate_wrapped_content_size,
+    render_horizontal_scrollbar, render_node_clipped, render_vertical_scrollbar,
 };
 use crate::components::scrollbar::ScrollbarState;
 use primitives::{render_button, render_container, render_stack, render_text};
@@ -328,7 +328,8 @@ fn render_list(
     use ratatui::widgets::Block;
 
     // Apply border and get inner area
-    let (inner_area, block) = crate::runtime::render::layout::apply_border(area, &layout.border, style);
+    let (inner_area, block) =
+        crate::runtime::render::layout::apply_border(area, &layout.border, style);
     if let Some(block) = block {
         frame.render_widget(block, area);
     } else if style.bg.is_some() {
