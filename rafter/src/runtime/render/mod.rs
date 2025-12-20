@@ -212,16 +212,18 @@ fn render_scrollable(
         frame.render_widget(block, area);
     }
 
-    // Get content intrinsic size
-    let content_size = (child.intrinsic_width(), child.intrinsic_height());
-
-    // Calculate layout (determines scrollbar visibility and content area)
+    // Calculate layout first to get viewport dimensions
+    // Use intrinsic size for initial layout calculation
+    let initial_content_size = (child.intrinsic_width(), child.intrinsic_height());
     let scroll_layout = calculate_scrollable_layout(
         area,
-        content_size,
+        initial_content_size,
         widget.direction(),
         &widget.scrollbar_config(),
     );
+
+    // Now calculate actual content height with wrapping based on viewport width
+    let content_size = calculate_wrapped_content_size(child, scroll_layout.content_area.width);
 
     // Update widget with computed sizes
     widget.set_sizes(
@@ -374,30 +376,97 @@ fn render_text_clipped(
     _area: ratatui::layout::Rect,
     clip: &ClipRect,
 ) {
-    use ratatui::text::Line;
-    use ratatui::widgets::Paragraph;
+    use ratatui::widgets::{Paragraph, Wrap};
 
-    // Split content into lines
-    let lines: Vec<&str> = content.lines().collect();
-    let total_lines = lines.len();
-    
+    // For scrollable text, we need to wrap first, then slice by line offset.
+    // Wrap text to viewport width to get the actual wrapped lines.
+    let viewport_width = clip.viewport.width as usize;
+    let wrapped_lines = wrap_text(content, viewport_width);
+    let total_lines = wrapped_lines.len();
+
     // Calculate which lines are visible
     let start_line = clip.offset_y as usize;
     let visible_lines = clip.viewport.height as usize;
     let end_line = (start_line + visible_lines).min(total_lines);
-    
+
     if start_line >= total_lines {
         return; // Nothing to render
     }
-    
-    // Get only the visible lines
-    let visible: Vec<Line> = lines[start_line..end_line]
-        .iter()
-        .map(|&s| Line::raw(s))
-        .collect();
-    
-    let paragraph = Paragraph::new(visible).style(style);
+
+    // Get only the visible wrapped lines
+    let visible_text = wrapped_lines[start_line..end_line].join("\n");
+
+    let paragraph = Paragraph::new(visible_text)
+        .style(style)
+        .wrap(Wrap { trim: false });
     frame.render_widget(paragraph, clip.viewport);
+}
+
+/// Wrap text to a given width, respecting existing line breaks.
+fn wrap_text(text: &str, width: usize) -> Vec<String> {
+    if width == 0 {
+        return vec![];
+    }
+
+    let mut result = Vec::new();
+
+    for line in text.lines() {
+        if line.is_empty() {
+            result.push(String::new());
+            continue;
+        }
+
+        // Simple word-wrapping
+        let words: Vec<&str> = line.split_whitespace().collect();
+        if words.is_empty() {
+            result.push(String::new());
+            continue;
+        }
+
+        let mut current_line = String::new();
+        for word in words {
+            if current_line.is_empty() {
+                // First word on line
+                if word.len() > width {
+                    // Word is longer than width, break it
+                    let mut remaining = word;
+                    while remaining.len() > width {
+                        result.push(remaining[..width].to_string());
+                        remaining = &remaining[width..];
+                    }
+                    if !remaining.is_empty() {
+                        current_line = remaining.to_string();
+                    }
+                } else {
+                    current_line = word.to_string();
+                }
+            } else if current_line.len() + 1 + word.len() <= width {
+                // Word fits on current line
+                current_line.push(' ');
+                current_line.push_str(word);
+            } else {
+                // Start new line
+                result.push(current_line);
+                if word.len() > width {
+                    // Word is longer than width, break it
+                    let mut remaining = word;
+                    while remaining.len() > width {
+                        result.push(remaining[..width].to_string());
+                        remaining = &remaining[width..];
+                    }
+                    current_line = remaining.to_string();
+                } else {
+                    current_line = word.to_string();
+                }
+            }
+        }
+
+        if !current_line.is_empty() {
+            result.push(current_line);
+        }
+    }
+
+    result
 }
 
 /// Render a container with clipping
@@ -517,5 +586,53 @@ fn intersect_rects(a: ratatui::layout::Rect, b: ratatui::layout::Rect) -> ratatu
         ratatui::layout::Rect::new(x, y, right - x, bottom - y)
     } else {
         ratatui::layout::Rect::new(0, 0, 0, 0)
+    }
+}
+
+/// Calculate content size with text wrapping taken into account
+fn calculate_wrapped_content_size(node: &Node, viewport_width: u16) -> (u16, u16) {
+    match node {
+        Node::Text { content, .. } => {
+            let wrapped = wrap_text(content, viewport_width as usize);
+            (viewport_width, wrapped.len() as u16)
+        }
+        Node::Column { children, layout, .. } => {
+            let border_size = if matches!(layout.border, crate::node::Border::None) { 0 } else { 2 };
+            let padding = layout.padding * 2;
+            let inner_width = viewport_width.saturating_sub(padding + border_size);
+            
+            let child_heights: u16 = children
+                .iter()
+                .map(|c| calculate_wrapped_content_size(c, inner_width).1)
+                .sum();
+            let gaps = if children.len() > 1 {
+                layout.gap * (children.len() as u16 - 1)
+            } else {
+                0
+            };
+            (viewport_width, child_heights + gaps + padding + border_size)
+        }
+        Node::Row { children, layout, .. } => {
+            let border_size = if matches!(layout.border, crate::node::Border::None) { 0 } else { 2 };
+            let padding = layout.padding * 2;
+            
+            // For rows, divide width among children (simplified)
+            let child_count = children.len().max(1) as u16;
+            let gaps = if children.len() > 1 {
+                layout.gap * (children.len() as u16 - 1)
+            } else {
+                0
+            };
+            let available = viewport_width.saturating_sub(padding + border_size + gaps);
+            let child_width = available / child_count;
+            
+            let max_height = children
+                .iter()
+                .map(|c| calculate_wrapped_content_size(c, child_width).1)
+                .max()
+                .unwrap_or(0);
+            (viewport_width, max_height + padding + border_size)
+        }
+        _ => (node.intrinsic_width(), node.intrinsic_height()),
     }
 }

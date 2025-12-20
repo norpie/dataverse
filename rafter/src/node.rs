@@ -382,7 +382,10 @@ impl Node {
     pub fn intrinsic_width(&self) -> u16 {
         match self {
             Self::Empty => 0,
-            Self::Text { content, .. } => content.len() as u16,
+            Self::Text { content, .. } => {
+                // Max line width, not total length
+                content.lines().map(|l| l.len()).max().unwrap_or(0) as u16
+            }
             Self::Column {
                 children, layout, ..
             } => {
