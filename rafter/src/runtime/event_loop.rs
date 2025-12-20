@@ -86,7 +86,9 @@ pub async fn run_event_loop<A: App>(
         }
 
         // Remove closed modals from the stack
+        let modal_count_before = modal_stack.len();
         modal_stack.retain(|entry| !entry.modal.is_closed());
+        let modal_closed = modal_stack.len() < modal_count_before;
 
         // Determine if we're in modal mode
         let in_modal = !modal_stack.is_empty();
@@ -283,8 +285,18 @@ pub async fn run_event_loop<A: App>(
             app.clear_dirty();
         }
 
+        // Determine poll timeout - skip waiting if state changed
+        let needs_immediate_update = modal_closed 
+            || app.is_dirty()
+            || modal_stack.iter().any(|e| e.modal.is_dirty());
+        let poll_timeout = if needs_immediate_update {
+            Duration::from_millis(0)
+        } else {
+            Duration::from_millis(100)
+        };
+
         // Wait for events (with timeout for animations/toast expiry)
-        if event::poll(Duration::from_millis(100))? {
+        if event::poll(poll_timeout)? {
             if let Ok(crossterm_event) = event::read() {
                 trace!("Crossterm event: {:?}", crossterm_event);
 

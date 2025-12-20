@@ -125,6 +125,11 @@ pub trait Modal: Clone + Send + Sync + 'static {
     /// Dispatch a handler by ID.
     fn dispatch(&self, handler_id: &HandlerId, cx: &AppContext, mx: &ModalContext<Self::Result>);
 
+    /// Check if the modal needs re-rendering.
+    fn is_dirty(&self) -> bool {
+        true // Default: always re-render
+    }
+
     /// Clear dirty flags after rendering.
     fn clear_dirty(&self);
 }
@@ -151,6 +156,9 @@ pub(crate) trait ModalDyn: Send + Sync {
 
     /// Dispatch a handler (type-erased).
     fn dispatch_dyn(&self, handler_id: &HandlerId, cx: &AppContext);
+
+    /// Check if the modal needs re-rendering.
+    fn is_dirty(&self) -> bool;
 
     /// Clear dirty flags.
     fn clear_dirty(&self);
@@ -195,6 +203,10 @@ impl<M: Modal> ModalDyn for ModalEntry<M> {
 
     fn dispatch_dyn(&self, handler_id: &HandlerId, cx: &AppContext) {
         self.modal.dispatch(handler_id, cx, &self.context);
+    }
+
+    fn is_dirty(&self) -> bool {
+        self.modal.is_dirty()
     }
 
     fn clear_dirty(&self) {
