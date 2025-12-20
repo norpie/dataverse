@@ -183,6 +183,25 @@ pub fn render_node(
                 focused_id,
             );
         }
+        Node::List {
+            id,
+            style,
+            layout,
+            component,
+            ..
+        } => {
+            render_list(
+                frame,
+                id,
+                style_to_ratatui(style, theme),
+                layout,
+                component.as_ref(),
+                area,
+                hit_map,
+                theme,
+                focused_id,
+            );
+        }
     }
 }
 
@@ -286,6 +305,77 @@ fn render_scrollable(
     }
 
     // Register hit box for scroll area (focusable for keyboard navigation)
+    if !id.is_empty() {
+        hit_map.register(id.to_string(), area, true);
+    }
+}
+
+/// Render a list component
+#[allow(clippy::too_many_arguments)]
+fn render_list(
+    frame: &mut Frame,
+    id: &str,
+    style: RatatuiStyle,
+    layout: &crate::node::Layout,
+    component: &dyn crate::components::list::AnyList,
+    area: ratatui::layout::Rect,
+    hit_map: &mut HitTestMap,
+    theme: &dyn Theme,
+    focused_id: Option<&str>,
+) {
+    use ratatui::widgets::Block;
+
+    // Apply border and get inner area
+    let (inner_area, block) = crate::runtime::render::layout::apply_border(area, &layout.border, style);
+    if let Some(block) = block {
+        frame.render_widget(block, area);
+    } else if style.bg.is_some() {
+        // Fill background if no border but has background
+        let bg_block = Block::default().style(style);
+        frame.render_widget(bg_block, area);
+    }
+
+    // Apply padding
+    let content_area = crate::runtime::render::layout::apply_padding(inner_area, layout.padding);
+
+    if content_area.width == 0 || content_area.height == 0 {
+        return;
+    }
+
+    // Update component's viewport height
+    component.set_viewport_height(content_area.height);
+
+    // Get visible range
+    let visible_range = component.visible_range();
+    let item_height = component.item_height();
+    let scroll_offset = component.scroll_offset();
+
+    // Calculate offset for first visible item
+    let first_item_y = (visible_range.start as u16 * item_height).saturating_sub(scroll_offset);
+
+    // Render visible items
+    for (i, index) in visible_range.enumerate() {
+        let item_y = content_area.y + first_item_y + (i as u16 * item_height);
+
+        // Skip if outside viewport
+        if item_y >= content_area.y + content_area.height {
+            break;
+        }
+
+        let item_area = ratatui::layout::Rect {
+            x: content_area.x,
+            y: item_y,
+            width: content_area.width,
+            height: item_height.min(content_area.y + content_area.height - item_y),
+        };
+
+        // Render the item
+        if let Some(item_node) = component.render_item(index) {
+            render_node(frame, &item_node, item_area, hit_map, theme, focused_id);
+        }
+    }
+
+    // Register hit box (focusable for keyboard navigation)
     if !id.is_empty() {
         hit_map.register(id.to_string(), area, true);
     }

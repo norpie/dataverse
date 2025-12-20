@@ -4,6 +4,7 @@ pub mod button;
 pub mod container;
 pub mod input;
 pub mod layout;
+pub mod list;
 pub mod scrollable;
 pub mod style;
 pub mod text;
@@ -16,6 +17,7 @@ use crate::macros::view::ast::{AttrValue, ControlFlowNode, ElementNode, ViewNode
 pub use button::generate_button_element;
 pub use container::generate_container;
 pub use input::generate_input_element;
+pub use list::generate_list_element;
 pub use scrollable::generate_scrollable_element;
 pub use text::{generate_text, generate_text_element};
 
@@ -44,6 +46,7 @@ fn generate_element(elem: &ElementNode) -> TokenStream {
         "input" => generate_input_element(elem),
         "button" => generate_button_element(elem),
         "scrollable" => generate_scrollable_element(elem),
+        "list" => generate_list_element(elem),
         _ => {
             // Unknown element - treat as a component function call
             let name = &elem.name;

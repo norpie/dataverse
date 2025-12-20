@@ -1,4 +1,5 @@
 use crate::components::events::{ComponentEvents, EventResult};
+use crate::components::list::AnyList;
 use crate::components::{Input, Scrollable};
 use crate::events::ScrollDirection;
 use crate::keybinds::{HandlerId, KeyCombo};
@@ -169,6 +170,24 @@ pub enum Node {
         /// Bound Scrollable component
         component: Scrollable,
     },
+
+    /// Virtualized list
+    List {
+        /// Element ID
+        id: String,
+        /// Style
+        style: Style,
+        /// Layout properties
+        layout: Layout,
+        /// The list component (type-erased)
+        component: Box<dyn AnyList>,
+        /// Handler for item activation
+        on_activate: Option<HandlerId>,
+        /// Handler for selection changes
+        on_selection_change: Option<HandlerId>,
+        /// Handler for cursor movement
+        on_cursor_move: Option<HandlerId>,
+    },
 }
 
 impl Node {
@@ -248,14 +267,17 @@ impl Node {
     pub fn is_focusable(&self) -> bool {
         matches!(
             self,
-            Self::Input { .. } | Self::Button { .. } | Self::Scrollable { .. }
+            Self::Input { .. } | Self::Button { .. } | Self::Scrollable { .. } | Self::List { .. }
         )
     }
 
     /// Get the element ID if any
     pub fn id(&self) -> Option<&str> {
         match self {
-            Self::Input { id, .. } | Self::Button { id, .. } | Self::Scrollable { id, .. } => {
+            Self::Input { id, .. }
+            | Self::Button { id, .. }
+            | Self::Scrollable { id, .. }
+            | Self::List { id, .. } => {
                 if id.is_empty() {
                     None
                 } else {
@@ -284,6 +306,12 @@ impl Node {
                 }
                 // Also collect focusable children inside the scrollable
                 child.collect_focusable_ids(ids);
+            }
+            Self::List { id, .. } => {
+                // List is focusable (no children to collect)
+                if !id.is_empty() {
+                    ids.push(id.clone());
+                }
             }
             Self::Column { children, .. }
             | Self::Row { children, .. }
@@ -336,6 +364,7 @@ impl Node {
         match self {
             Self::Button { id, on_click, .. } if id == target_id => on_click.clone(),
             Self::Input { id, on_submit, .. } if id == target_id => on_submit.clone(),
+            Self::List { id, on_activate, .. } if id == target_id => on_activate.clone(),
             Self::Column { children, .. }
             | Self::Row { children, .. }
             | Self::Stack { children, .. } => children
@@ -388,6 +417,54 @@ impl Node {
         }
     }
 
+    /// Get the List component for a list element by ID
+    pub fn get_list_component(&self, target_id: &str) -> Option<&dyn AnyList> {
+        match self {
+            Self::List { id, component, .. } if id == target_id => Some(component.as_ref()),
+            Self::Column { children, .. }
+            | Self::Row { children, .. }
+            | Self::Stack { children, .. } => children
+                .iter()
+                .find_map(|c| c.get_list_component(target_id)),
+            Self::Scrollable { child, .. } => child.get_list_component(target_id),
+            _ => None,
+        }
+    }
+
+    /// Get the on_selection_change handler for a list element by ID
+    pub fn get_list_selection_handler(&self, target_id: &str) -> Option<HandlerId> {
+        match self {
+            Self::List {
+                id,
+                on_selection_change,
+                ..
+            } if id == target_id => on_selection_change.clone(),
+            Self::Column { children, .. }
+            | Self::Row { children, .. }
+            | Self::Stack { children, .. } => children
+                .iter()
+                .find_map(|c| c.get_list_selection_handler(target_id)),
+            Self::Scrollable { child, .. } => child.get_list_selection_handler(target_id),
+            _ => None,
+        }
+    }
+
+    /// Get the on_cursor_move handler for a list element by ID
+    pub fn get_list_cursor_handler(&self, target_id: &str) -> Option<HandlerId> {
+        match self {
+            Self::List {
+                id, on_cursor_move, ..
+            } if id == target_id => on_cursor_move.clone(),
+            Self::Column { children, .. }
+            | Self::Row { children, .. }
+            | Self::Stack { children, .. } => children
+                .iter()
+                .find_map(|c| c.get_list_cursor_handler(target_id)),
+            Self::Scrollable { child, .. } => child.get_list_cursor_handler(target_id),
+            _ => None,
+        }
+    }
+
     /// Dispatch a click event to a component.
     ///
     /// Finds the component with the given ID and delegates to its `on_click` handler.
@@ -402,6 +479,9 @@ impl Node {
                 } else {
                     Some(EventResult::Ignored)
                 }
+            }
+            Self::List { id, component, .. } if id == target_id => {
+                Some(component.on_click(x, y))
             }
             Self::Column { children, .. }
             | Self::Row { children, .. }
@@ -483,6 +563,7 @@ impl Node {
                 }
             }
             Self::Scrollable { id, component, .. } if id == target_id => Some(component.on_key(key)),
+            Self::List { id, component, .. } if id == target_id => Some(component.on_key(key)),
             Self::Column { children, .. }
             | Self::Row { children, .. }
             | Self::Stack { children, .. } => children
@@ -571,6 +652,16 @@ impl Node {
                 // Scrollable reports child's intrinsic size (may be larger than viewport)
                 child.intrinsic_width() + padding + border_size
             }
+            Self::List { layout, .. } => {
+                // List width is determined by layout, not content
+                let border_size = if matches!(layout.border, Border::None) {
+                    0
+                } else {
+                    2
+                };
+                let padding = layout.padding * 2;
+                40 + padding + border_size // Default width, will be overridden by layout
+            }
         }
     }
 
@@ -638,6 +729,18 @@ impl Node {
                 let padding = layout.padding * 2;
                 // Scrollable reports child's intrinsic size (may be larger than viewport)
                 child.intrinsic_height() + padding + border_size
+            }
+            Self::List {
+                layout, component, ..
+            } => {
+                let border_size = if matches!(layout.border, Border::None) {
+                    0
+                } else {
+                    2
+                };
+                let padding = layout.padding * 2;
+                // Total height of all items
+                component.total_height() + padding + border_size
             }
         }
     }

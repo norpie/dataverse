@@ -65,6 +65,12 @@ struct AppContextInner {
     theme_request: Option<Arc<dyn Theme>>,
     /// Pending modal to open
     modal_request: Option<Box<dyn ModalDyn>>,
+    /// Activated list item index (for list on_activate handlers)
+    list_activated_index: Option<usize>,
+    /// Selected list indices (for list on_selection_change handlers)
+    list_selected_indices: Option<Vec<usize>>,
+    /// Cursor position (for list on_cursor_move handlers)
+    list_cursor: Option<usize>,
 }
 
 /// Context passed to app handlers, providing access to framework functionality.
@@ -103,6 +109,9 @@ impl AppContext {
                 input_text: None,
                 theme_request: None,
                 modal_request: None,
+                list_activated_index: None,
+                list_selected_indices: None,
+                list_cursor: None,
             })),
             keybinds,
         }
@@ -155,6 +164,73 @@ impl AppContext {
     pub fn clear_input_text(&self) {
         if let Ok(mut inner) = self.inner.write() {
             inner.input_text = None;
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // List event data (set by runtime for list handlers)
+    // -------------------------------------------------------------------------
+
+    /// Set the activated list item index (called by runtime)
+    pub fn set_list_activated_index(&self, index: usize) {
+        if let Ok(mut inner) = self.inner.write() {
+            inner.list_activated_index = Some(index);
+        }
+    }
+
+    /// Get the activated list item index
+    pub fn list_activated_index(&self) -> Option<usize> {
+        self.inner
+            .read()
+            .ok()
+            .and_then(|inner| inner.list_activated_index)
+    }
+
+    /// Clear the activated list item index
+    pub fn clear_list_activated_index(&self) {
+        if let Ok(mut inner) = self.inner.write() {
+            inner.list_activated_index = None;
+        }
+    }
+
+    /// Set the selected list indices (called by runtime)
+    pub fn set_list_selected_indices(&self, indices: Vec<usize>) {
+        if let Ok(mut inner) = self.inner.write() {
+            inner.list_selected_indices = Some(indices);
+        }
+    }
+
+    /// Get the selected list indices
+    pub fn list_selected_indices(&self) -> Option<Vec<usize>> {
+        self.inner
+            .read()
+            .ok()
+            .and_then(|inner| inner.list_selected_indices.clone())
+    }
+
+    /// Clear the selected list indices
+    pub fn clear_list_selected_indices(&self) {
+        if let Ok(mut inner) = self.inner.write() {
+            inner.list_selected_indices = None;
+        }
+    }
+
+    /// Set the list cursor position (called by runtime)
+    pub fn set_list_cursor(&self, cursor: usize) {
+        if let Ok(mut inner) = self.inner.write() {
+            inner.list_cursor = Some(cursor);
+        }
+    }
+
+    /// Get the list cursor position
+    pub fn list_cursor(&self) -> Option<usize> {
+        self.inner.read().ok().and_then(|inner| inner.list_cursor)
+    }
+
+    /// Clear the list cursor position
+    pub fn clear_list_cursor(&self) {
+        if let Ok(mut inner) = self.inner.write() {
+            inner.list_cursor = None;
         }
     }
 
