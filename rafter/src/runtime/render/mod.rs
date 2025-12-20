@@ -132,14 +132,15 @@ pub fn render_node(
             ..
         } => {
             let is_focused = focused_id == Some(id.as_str());
-            let display_value = component
+            let (display_value, cursor_pos) = component
                 .as_ref()
-                .map(|c| c.value())
-                .unwrap_or_else(|| value.clone());
+                .map(|c| (c.value(), c.cursor()))
+                .unwrap_or_else(|| (value.clone(), value.len()));
             render_input(
                 frame,
                 &display_value,
                 placeholder,
+                cursor_pos,
                 style_to_ratatui(style, theme),
                 is_focused,
                 area,
