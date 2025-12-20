@@ -12,6 +12,7 @@ pub mod runtime;
 pub mod state;
 pub mod style;
 pub mod theme;
+pub mod utils;
 
 pub use rafter_derive::*;
 pub use runtime::Runtime;

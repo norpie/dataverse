@@ -5,7 +5,7 @@ mod events;
 pub mod hit_test;
 mod input;
 mod modal;
-mod render;
+pub(crate) mod render;
 mod terminal;
 
 use std::io;
