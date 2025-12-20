@@ -1,4 +1,3 @@
-use std::any::Any;
 use std::future::Future;
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
@@ -55,8 +54,6 @@ impl Toast {
 struct AppContextInner {
     /// Request to exit the app
     exit_requested: bool,
-    /// Request to navigate to a different view
-    navigate_to: Option<Box<dyn Any + Send + Sync>>,
     /// Request to focus a specific element
     focus_request: Option<FocusId>,
     /// Pending toasts to show
@@ -98,7 +95,6 @@ impl AppContext {
         Self {
             inner: Arc::new(RwLock::new(AppContextInner {
                 exit_requested: false,
-                navigate_to: None,
                 focus_request: None,
                 pending_toasts: Vec::new(),
                 input_text: None,
@@ -112,13 +108,6 @@ impl AppContext {
     pub fn exit(&self) {
         if let Ok(mut inner) = self.inner.write() {
             inner.exit_requested = true;
-        }
-    }
-
-    /// Navigate to a different view
-    pub fn navigate<V: 'static + Send + Sync>(&self, view: V) {
-        if let Ok(mut inner) = self.inner.write() {
-            inner.navigate_to = Some(Box::new(view));
         }
     }
 
@@ -251,14 +240,6 @@ impl AppContext {
             .read()
             .map(|inner| inner.exit_requested)
             .unwrap_or(false)
-    }
-
-    /// Take the navigation request (runtime use)
-    pub(crate) fn take_navigation(&self) -> Option<Box<dyn Any + Send + Sync>> {
-        self.inner
-            .write()
-            .ok()
-            .and_then(|mut inner| inner.navigate_to.take())
     }
 
     /// Take the focus request (runtime use)

@@ -2,48 +2,32 @@
 
 use proc_macro2::TokenStream;
 use quote::quote;
-use syn::{Attribute, Ident, ImplItem, ImplItemFn, ItemImpl, parse2};
+use syn::{Attribute, ImplItem, ImplItemFn, ItemImpl, parse2};
 
 use super::handler::HandlerParams;
 use super::impl_common::{
-    HandlerMethod, KeybindsMethod, app_metadata_mod, generate_keybinds_impl,
+    HandlerMethod, KeybindScope, KeybindsMethod, app_metadata_mod, generate_keybinds_impl,
     generate_name_impl, generate_view_impl, get_type_name, is_keybinds_method, is_view_method,
     parse_handler_metadata, strip_custom_attrs,
 };
 
-/// Keybind scope for app keybinds
-#[derive(Clone)]
-#[allow(dead_code)]
-pub enum KeybindScope {
-    View(Ident),
-    Modal(Ident),
-    Global,
-}
-
 /// Parse keybinds scope from attributes
-fn parse_keybinds_scope(attrs: &[Attribute]) -> Option<KeybindScope> {
+fn parse_keybinds_scope(attrs: &[Attribute]) -> KeybindScope {
     for attr in attrs {
         if attr.path().is_ident("keybinds") {
             let meta: syn::Meta = attr.meta.clone();
             if let syn::Meta::List(list) = meta {
-                let mut scope = None;
+                let mut scope = KeybindScope::Global;
                 let _ = list.parse_nested_meta(|meta| {
                     if meta.path.is_ident("view") {
                         let value: syn::Expr = meta.value()?.parse()?;
-                        if let syn::Expr::Path(path) = value {
-                            if let Some(ident) = path.path.get_ident() {
-                                scope = Some(KeybindScope::View(ident.clone()));
-                            }
-                        }
-                    } else if meta.path.is_ident("modal") {
-                        let value: syn::Expr = meta.value()?.parse()?;
-                        if let syn::Expr::Path(path) = value {
-                            if let Some(ident) = path.path.get_ident() {
-                                scope = Some(KeybindScope::Modal(ident.clone()));
-                            }
+                        if let syn::Expr::Path(path) = value
+                            && let Some(ident) = path.path.get_ident()
+                        {
+                            scope = KeybindScope::View(ident.to_string());
                         }
                     } else if meta.path.is_ident("global") {
-                        scope = Some(KeybindScope::Global);
+                        scope = KeybindScope::Global;
                     }
                     Ok(())
                 });
@@ -51,7 +35,7 @@ fn parse_keybinds_scope(attrs: &[Attribute]) -> Option<KeybindScope> {
             }
         }
     }
-    None
+    KeybindScope::Global
 }
 
 /// Check if method is named "on_start"
@@ -95,9 +79,10 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
     for item in &impl_block.items {
         if let ImplItem::Fn(method) = item {
             if is_keybinds_method(method) {
-                let _scope = parse_keybinds_scope(&method.attrs);
+                let scope = parse_keybinds_scope(&method.attrs);
                 keybinds_methods.push(KeybindsMethod {
                     name: method.sig.ident.clone(),
+                    scope,
                 });
             }
 

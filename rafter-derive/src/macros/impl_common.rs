@@ -6,10 +6,22 @@ use syn::{Ident, ImplItem, ImplItemFn, ItemImpl, Type};
 
 use super::handler::HandlerParams;
 
+/// Keybind scope parsed from #[keybinds(view = X)] attribute
+#[derive(Clone, Debug, Default)]
+pub enum KeybindScope {
+    /// No scope specified - global keybinds
+    #[default]
+    Global,
+    /// View-scoped keybinds
+    View(String),
+}
+
 /// Information about a keybinds method
 pub struct KeybindsMethod {
     /// Method name
     pub name: Ident,
+    /// Scope for these keybinds
+    pub scope: KeybindScope,
 }
 
 /// Information about a handler method
@@ -110,16 +122,14 @@ pub fn strip_custom_attrs(impl_block: &mut ItemImpl) {
                 .retain(|a| !a.path().is_ident("keybinds") && !a.path().is_ident("handler"));
             // Remove metadata doc attributes
             method.attrs.retain(|a| {
-                if a.path().is_ident("doc") {
-                    if let syn::Meta::NameValue(nv) = &a.meta {
-                        if let syn::Expr::Lit(syn::ExprLit {
-                            lit: syn::Lit::Str(s),
-                            ..
-                        }) = &nv.value
-                        {
-                            return !s.value().starts_with("__rafter_handler:");
-                        }
-                    }
+                if a.path().is_ident("doc")
+                    && let syn::Meta::NameValue(nv) = &a.meta
+                    && let syn::Expr::Lit(syn::ExprLit {
+                        lit: syn::Lit::Str(s),
+                        ..
+                    }) = &nv.value
+                {
+                    return !s.value().starts_with("__rafter_handler:");
                 }
                 true
             });
@@ -140,7 +150,20 @@ pub fn generate_keybinds_impl(keybinds_methods: &[KeybindsMethod]) -> TokenStrea
             .iter()
             .map(|m| {
                 let name = &m.name;
-                quote! { __keybinds.merge(Self::#name()); }
+                match &m.scope {
+                    KeybindScope::Global => {
+                        quote! { __keybinds.merge(Self::#name()); }
+                    }
+                    KeybindScope::View(view_name) => {
+                        quote! {
+                            __keybinds.merge(
+                                Self::#name().with_scope(
+                                    rafter::keybinds::KeybindScope::View(#view_name.to_string())
+                                )
+                            );
+                        }
+                    }
+                }
             })
             .collect();
 

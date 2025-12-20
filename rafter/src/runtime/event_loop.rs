@@ -434,12 +434,21 @@ pub async fn run_event_loop<A: App>(
                             }
 
                             // Process keybind (only if not handled above)
+                            // Get current view for keybind scoping (only for app, modals don't have views)
+                            let current_view = if modal_stack.is_empty() {
+                                app.current_view()
+                            } else {
+                                None
+                            };
+                            let current_view_ref = current_view.as_deref();
+                            
                             let keybind_match = if let Some(entry) = modal_stack.last_mut() {
+                                // Modals don't have view scoping, pass None
                                 entry
                                     .input_state
-                                    .process_key(key_combo.clone(), &entry.keybinds)
+                                    .process_key(key_combo.clone(), &entry.keybinds, None)
                             } else {
-                                app_input_state.process_key(key_combo.clone(), &app_keybinds)
+                                app_input_state.process_key(key_combo.clone(), &app_keybinds, current_view_ref)
                             };
                             match keybind_match {
                                 KeybindMatch::Match(handler_id) => {

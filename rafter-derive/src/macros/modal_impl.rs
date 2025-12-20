@@ -142,8 +142,10 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
     for item in &impl_block.items {
         if let ImplItem::Fn(method) = item {
             if is_keybinds_method(method) {
+                // Modals don't support view-scoped keybinds, all are global
                 keybinds_methods.push(KeybindsMethod {
                     name: method.sig.ident.clone(),
+                    scope: super::impl_common::KeybindScope::Global,
                 });
             }
 

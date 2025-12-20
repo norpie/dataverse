@@ -28,8 +28,11 @@ impl InputState {
 
     /// Process a key press and check for matching keybinds.
     /// Returns the handler ID if a match is found.
-    pub fn process_key(&mut self, key: KeyCombo, keybinds: &Keybinds) -> KeybindMatch {
-        debug!("Processing key: {:?}", key);
+    ///
+    /// The `current_view` parameter is used to filter keybinds by scope.
+    /// View-scoped keybinds take priority over global keybinds.
+    pub fn process_key(&mut self, key: KeyCombo, keybinds: &Keybinds, current_view: Option<&str>) -> KeybindMatch {
+        debug!("Processing key: {:?} (view: {:?})", key, current_view);
 
         // Check if sequence has timed out
         if let Some(start) = self.sequence_start
@@ -48,19 +51,29 @@ impl InputState {
 
         debug!("Current sequence: {:?}", self.sequence);
 
-        // Try to match against keybinds
-        let mut exact_match: Option<HandlerId> = None;
+        // Try to match against keybinds (view-scoped first, then global)
+        let mut view_exact_match: Option<HandlerId> = None;
+        let mut global_exact_match: Option<HandlerId> = None;
         let mut prefix_match = false;
 
         for bind in keybinds.all() {
+            // Skip keybinds that aren't active for the current view
+            if !bind.is_active_for(current_view) {
+                continue;
+            }
+
             trace!(
                 "Comparing sequence {:?} with bind {:?}",
                 self.sequence, bind.keys
             );
             if bind.keys == self.sequence {
-                // Exact match
-                debug!("Exact match found: {:?}", bind.handler);
-                exact_match = Some(bind.handler.clone());
+                // Exact match - prefer view-scoped over global
+                debug!("Exact match found: {:?} (scope: {:?})", bind.handler, bind.scope);
+                if bind.scope != crate::keybinds::KeybindScope::Global {
+                    view_exact_match = Some(bind.handler.clone());
+                } else if global_exact_match.is_none() {
+                    global_exact_match = Some(bind.handler.clone());
+                }
             } else if bind.keys.len() > self.sequence.len()
                 && bind.keys[..self.sequence.len()] == self.sequence[..]
             {
@@ -69,6 +82,9 @@ impl InputState {
                 prefix_match = true;
             }
         }
+
+        // View-scoped matches take priority
+        let exact_match = view_exact_match.or(global_exact_match);
 
         if let Some(handler) = exact_match {
             // Found a match - clear sequence and return handler

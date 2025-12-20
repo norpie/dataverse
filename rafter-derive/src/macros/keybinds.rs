@@ -223,6 +223,7 @@ pub fn expand(input: TokenStream) -> TokenStream {
                 __keybinds.add(rafter::keybinds::Keybind {
                     keys: #keys,
                     handler: rafter::keybinds::HandlerId::new(#handler_name),
+                    scope: rafter::keybinds::KeybindScope::Global,
                 });
             });
         }

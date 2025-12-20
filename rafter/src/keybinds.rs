@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use crate::events::Modifiers;
 
 /// A key combination (key + modifiers)
@@ -107,6 +105,19 @@ impl From<&str> for HandlerId {
     }
 }
 
+/// View scope for a keybind.
+///
+/// Keybinds can be scoped to specific views, meaning they are only active
+/// when the app's `current_view()` returns a matching value.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash)]
+pub enum KeybindScope {
+    /// Always active (no view restriction)
+    #[default]
+    Global,
+    /// Only active when `current_view()` returns this view name
+    View(String),
+}
+
 /// A single keybind entry (may be a sequence like "gg")
 #[derive(Debug, Clone)]
 pub struct Keybind {
@@ -114,22 +125,58 @@ pub struct Keybind {
     pub keys: Vec<KeyCombo>,
     /// Handler to invoke
     pub handler: HandlerId,
+    /// View scope for this keybind
+    pub scope: KeybindScope,
 }
 
 impl Keybind {
-    /// Create a single-key keybind
+    /// Create a single-key keybind (global scope)
     pub fn single(key: KeyCombo, handler: impl Into<HandlerId>) -> Self {
         Self {
             keys: vec![key],
             handler: handler.into(),
+            scope: KeybindScope::Global,
         }
     }
 
-    /// Create a multi-key sequence keybind
+    /// Create a multi-key sequence keybind (global scope)
     pub fn sequence(keys: Vec<KeyCombo>, handler: impl Into<HandlerId>) -> Self {
         Self {
             keys,
             handler: handler.into(),
+            scope: KeybindScope::Global,
+        }
+    }
+
+    /// Create a single-key keybind with view scope
+    pub fn single_scoped(key: KeyCombo, handler: impl Into<HandlerId>, view: impl Into<String>) -> Self {
+        Self {
+            keys: vec![key],
+            handler: handler.into(),
+            scope: KeybindScope::View(view.into()),
+        }
+    }
+
+    /// Create a multi-key sequence keybind with view scope
+    pub fn sequence_scoped(keys: Vec<KeyCombo>, handler: impl Into<HandlerId>, view: impl Into<String>) -> Self {
+        Self {
+            keys,
+            handler: handler.into(),
+            scope: KeybindScope::View(view.into()),
+        }
+    }
+
+    /// Set the view scope for this keybind
+    pub fn with_scope(mut self, scope: KeybindScope) -> Self {
+        self.scope = scope;
+        self
+    }
+
+    /// Check if this keybind is active for the given view
+    pub fn is_active_for(&self, current_view: Option<&str>) -> bool {
+        match &self.scope {
+            KeybindScope::Global => true,
+            KeybindScope::View(view) => current_view == Some(view.as_str()),
         }
     }
 }
@@ -139,8 +186,6 @@ impl Keybind {
 pub struct Keybinds {
     /// All registered keybinds
     binds: Vec<Keybind>,
-    /// Quick lookup for single-key binds
-    single_key_map: HashMap<KeyCombo, HandlerId>,
 }
 
 impl Keybinds {
@@ -151,21 +196,41 @@ impl Keybinds {
 
     /// Add a keybind
     pub fn add(&mut self, keybind: Keybind) {
-        if keybind.keys.len() == 1 {
-            self.single_key_map
-                .insert(keybind.keys[0].clone(), keybind.handler.clone());
-        }
         self.binds.push(keybind);
     }
 
-    /// Add a simple key -> handler binding
+    /// Add a simple key -> handler binding (global scope)
     pub fn bind(&mut self, key: KeyCombo, handler: impl Into<HandlerId>) {
         self.add(Keybind::single(key, handler));
     }
 
-    /// Look up handler for a single key
-    pub fn get_single(&self, key: &KeyCombo) -> Option<&HandlerId> {
-        self.single_key_map.get(key)
+    /// Add a simple key -> handler binding with view scope
+    pub fn bind_scoped(&mut self, key: KeyCombo, handler: impl Into<HandlerId>, view: impl Into<String>) {
+        self.add(Keybind::single_scoped(key, handler, view));
+    }
+
+    /// Look up handler for a single key, respecting view scope
+    pub fn get_single(&self, key: &KeyCombo, current_view: Option<&str>) -> Option<&HandlerId> {
+        // First try view-scoped keybinds (higher priority)
+        for bind in &self.binds {
+            if bind.keys.len() == 1
+                && bind.keys[0] == *key
+                && let KeybindScope::View(view) = &bind.scope
+                && current_view == Some(view.as_str())
+            {
+                return Some(&bind.handler);
+            }
+        }
+        // Then try global keybinds
+        for bind in &self.binds {
+            if bind.keys.len() == 1
+                && bind.keys[0] == *key
+                && bind.scope == KeybindScope::Global
+            {
+                return Some(&bind.handler);
+            }
+        }
+        None
     }
 
     /// Get all keybinds for sequence matching
@@ -173,10 +238,23 @@ impl Keybinds {
         &self.binds
     }
 
+    /// Get keybinds that are active for the current view
+    pub fn active_for(&self, current_view: Option<&str>) -> impl Iterator<Item = &Keybind> {
+        self.binds.iter().filter(move |bind| bind.is_active_for(current_view))
+    }
+
     /// Merge another keybinds collection into this one
     pub fn merge(&mut self, other: Keybinds) {
         for bind in other.binds {
             self.add(bind);
         }
+    }
+
+    /// Set the scope for all keybinds in this collection
+    pub fn with_scope(mut self, scope: KeybindScope) -> Self {
+        for bind in &mut self.binds {
+            bind.scope = scope.clone();
+        }
+        self
     }
 }

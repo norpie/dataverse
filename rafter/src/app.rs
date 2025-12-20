@@ -61,6 +61,34 @@ pub trait App: Clone + Send + Sync + 'static {
     /// - Sync input values when focus changes
     fn view(&self) -> Node;
 
+    /// Get the current view identifier for keybind scoping.
+    ///
+    /// Return `Some(name)` to enable view-scoped keybinds.
+    /// Keybinds marked with `#[keybinds(view = X)]` will only be active
+    /// when this method returns a string matching `X`.
+    ///
+    /// The recommended pattern is to use an enum that implements `Display`:
+    ///
+    /// ```ignore
+    /// #[derive(strum::Display)]
+    /// enum View { List, Record }
+    ///
+    /// #[app]
+    /// struct MyApp {
+    ///     view: View,
+    /// }
+    ///
+    /// #[app_impl]
+    /// impl MyApp {
+    ///     fn current_view(&self) -> Option<String> {
+    ///         Some(self.view.get().to_string())
+    ///     }
+    /// }
+    /// ```
+    fn current_view(&self) -> Option<String> {
+        None
+    }
+
     /// Called when the app starts
     fn on_start(&self, cx: &AppContext) -> impl Future<Output = ()> + Send {
         let _ = cx;
