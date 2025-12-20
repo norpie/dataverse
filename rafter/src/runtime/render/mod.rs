@@ -346,13 +346,14 @@ fn render_list(
 
     // Determine if we need a scrollbar
     let needs_scrollbar = component.needs_vertical_scrollbar();
-    let scrollbar_width = if needs_scrollbar { 1u16 } else { 0u16 };
+    // Scrollbar takes 1 cell, plus 1 cell padding between content and scrollbar
+    let scrollbar_reserved = if needs_scrollbar { 2u16 } else { 0u16 };
 
-    // Content area excludes scrollbar
+    // Content area excludes scrollbar and padding
     let content_area = ratatui::layout::Rect {
         x: padded_area.x,
         y: padded_area.y,
-        width: padded_area.width.saturating_sub(scrollbar_width),
+        width: padded_area.width.saturating_sub(scrollbar_reserved),
         height: padded_area.height,
     };
 

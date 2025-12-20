@@ -90,19 +90,19 @@ impl ListItem for FileEntry {
         let size_display = self.size_display();
 
         if focused {
-            // Focused row - highlighted background
+            // Focused row - highlighted background, flex: 1 fills available width
             if self.is_dir {
                 view! {
-                    row (gap: 2, bg: surface) {
-                        text (bold, fg: secondary, width: 24) { display_name }
-                        text (fg: muted, width: 10) { size_display }
+                    row (flex: 1, justify: space_between, bg: surface) {
+                        text (bold, fg: secondary) { display_name }
+                        text (fg: muted) { size_display }
                     }
                 }
             } else {
                 view! {
-                    row (gap: 2, bg: surface) {
-                        text (bold, fg: primary, width: 24) { display_name }
-                        text (fg: muted, width: 10) { size_display }
+                    row (flex: 1, justify: space_between, bg: surface) {
+                        text (bold, fg: primary) { display_name }
+                        text (fg: muted) { size_display }
                     }
                 }
             }
@@ -110,16 +110,16 @@ impl ListItem for FileEntry {
             // Non-focused row
             if self.is_dir {
                 view! {
-                    row (gap: 2) {
-                        text (fg: secondary, width: 24) { display_name }
-                        text (fg: muted, width: 10) { size_display }
+                    row (flex: 1, justify: space_between) {
+                        text (fg: secondary) { display_name }
+                        text (fg: muted) { size_display }
                     }
                 }
             } else {
                 view! {
-                    row (gap: 2) {
-                        text (width: 24) { display_name }
-                        text (fg: muted, width: 10) { size_display }
+                    row (flex: 1, justify: space_between) {
+                        text { display_name }
+                        text (fg: muted) { size_display }
                     }
                 }
             }
@@ -186,17 +186,24 @@ pub struct Explorer {
 #[app_impl]
 impl Explorer {
     async fn on_start(&self, cx: &AppContext) {
-        // Initialize with sample files
-        self.files.set_items(vec![
+        // Initialize with sample files - enough to require scrolling
+        let mut files = vec![
             FileEntry::new("Documents", 0, true),
             FileEntry::new("Pictures", 0, true),
             FileEntry::new("Downloads", 0, true),
-            FileEntry::new("readme.md", 2048, false),
-            FileEntry::new("config.toml", 512, false),
-            FileEntry::new("notes.txt", 1024, false),
-            FileEntry::new("project.rs", 4096, false),
-            FileEntry::new("data.json", 8192, false),
-        ]);
+            FileEntry::new("Music", 0, true),
+            FileEntry::new("Videos", 0, true),
+            FileEntry::new("Desktop", 0, true),
+            FileEntry::new("Projects", 0, true),
+            FileEntry::new("Archives", 0, true),
+        ];
+
+        // Add many files to demonstrate scrolling
+        for i in 1..=50 {
+            files.push(FileEntry::new(format!("file_{:03}.txt", i), i as u64 * 100, false));
+        }
+
+        self.files.set_items(files);
         // Enable multi-selection mode (Space to toggle, Ctrl+click, Shift+range)
         self.files.set_selection_mode(SelectionMode::Multiple);
         // Set initial cursor position
