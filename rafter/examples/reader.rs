@@ -87,13 +87,17 @@ impl Reader {
 
     fn view(&self) -> Node {
         view! {
-            column(padding: 1, bg: background) {
-                text(bold, fg: primary) { "Reader - Press 'q' to quit, scroll with mouse wheel" }
-                scrollable(bind: self.scroll, direction: vertical) {
-                    column(padding: 1) {
-                        text(fg: text) { LONG_TEXT }
+            row(padding: 2, bg: background) {
+                column(padding: 4) {}
+                column(gap: 1) {
+                    text(bold, fg: primary) { "Reader - Press 'q' to quit, scroll with mouse wheel" }
+                    column(border: rounded, padding: 2) {
+                        scrollable(bind: self.scroll, direction: vertical) {
+                            text(fg: text) { LONG_TEXT }
+                        }
                     }
                 }
+                column(padding: 4) {}
             }
         }
     }
