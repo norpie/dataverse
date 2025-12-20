@@ -17,10 +17,6 @@ pub struct ModalStackEntry {
     pub focus_state: FocusState,
     /// Input state for keybind sequences
     pub input_state: InputState,
-    /// Input buffer for text input
-    pub input_buffer: String,
-    /// ID of the input element the buffer belongs to (if any)
-    pub input_buffer_id: Option<String>,
     /// Cached keybinds
     pub keybinds: Keybinds,
 }

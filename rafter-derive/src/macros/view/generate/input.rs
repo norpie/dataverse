@@ -10,36 +10,44 @@ use super::style::generate_style;
 /// Generate code for an input element
 pub fn generate_input_element(elem: &ElementNode) -> TokenStream {
     let style = generate_style(&elem.attrs);
-    let mut value = quote! { String::new() };
-    let mut placeholder = quote! { String::new() };
-    let mut id = quote! { String::new() };
+
+    // Find the bind: attribute - required for input elements
+    let bind_expr = elem.attrs.iter().find_map(|attr| {
+        if attr.name == "bind" {
+            match &attr.value {
+                Some(AttrValue::Expr(e)) => Some(e.clone()),
+                Some(AttrValue::Ident(i)) => Some(syn::parse_quote! { #i }),
+                _ => None,
+            }
+        } else {
+            None
+        }
+    });
+
+    let input_widget = match bind_expr {
+        Some(expr) => expr,
+        None => {
+            return syn::Error::new_spanned(
+                &elem.name,
+                "input elements require a `bind:` attribute, e.g. `input(bind: self.my_input)`",
+            )
+            .to_compile_error();
+        }
+    };
+
+    // Parse optional attributes
+    let mut placeholder_override: Option<TokenStream> = None;
     let mut on_change = quote! { None };
     let mut on_submit = quote! { None };
 
     for attr in &elem.attrs {
         let name_str = attr.name.to_string();
         match name_str.as_str() {
-            "value" => {
-                if let Some(AttrValue::Str(s)) = &attr.value {
-                    value = quote! { #s.to_string() };
-                } else if let Some(AttrValue::Expr(e)) = &attr.value {
-                    value = quote! { (#e).to_string() };
-                } else if let Some(AttrValue::Ident(i)) = &attr.value {
-                    value = quote! { #i.to_string() };
-                }
-            }
             "placeholder" => {
                 if let Some(AttrValue::Str(s)) = &attr.value {
-                    placeholder = quote! { #s.to_string() };
+                    placeholder_override = Some(quote! { #s.to_string() });
                 } else if let Some(AttrValue::Expr(e)) = &attr.value {
-                    placeholder = quote! { #e.to_string() };
-                }
-            }
-            "id" => {
-                if let Some(AttrValue::Str(s)) = &attr.value {
-                    id = quote! { #s.to_string() };
-                } else if let Some(AttrValue::Expr(e)) = &attr.value {
-                    id = quote! { #e.to_string() };
+                    placeholder_override = Some(quote! { (#e).to_string() });
                 }
             }
             "on_change" => {
@@ -60,14 +68,23 @@ pub fn generate_input_element(elem: &ElementNode) -> TokenStream {
         }
     }
 
+    let placeholder = match placeholder_override {
+        Some(p) => p,
+        None => quote! { __widget.placeholder() },
+    };
+
     quote! {
-        rafter::node::Node::Input {
-            value: #value,
-            placeholder: #placeholder,
-            on_change: #on_change,
-            on_submit: #on_submit,
-            id: #id,
-            style: #style,
+        {
+            let __widget = (#input_widget).clone();
+            rafter::node::Node::Input {
+                value: __widget.value(),
+                placeholder: #placeholder,
+                on_change: #on_change,
+                on_submit: #on_submit,
+                id: __widget.id_string(),
+                style: #style,
+                widget: Some(__widget),
+            }
         }
     }
 }

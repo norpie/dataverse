@@ -1,3 +1,4 @@
+use crate::input::Input;
 use crate::keybinds::HandlerId;
 use crate::style::Style;
 
@@ -137,6 +138,8 @@ pub enum Node {
         id: String,
         /// Style
         style: Style,
+        /// Bound Input widget (if using bind: syntax)
+        widget: Option<Input>,
     },
 
     /// Clickable button
@@ -213,18 +216,6 @@ impl Node {
     /// Check if node is empty
     pub fn is_empty(&self) -> bool {
         matches!(self, Self::Empty)
-    }
-
-    /// Create an input node
-    pub fn input() -> Self {
-        Self::Input {
-            value: String::new(),
-            placeholder: String::new(),
-            on_change: None,
-            on_submit: None,
-            id: String::new(),
-            style: Style::new(),
-        }
     }
 
     /// Create a button node
@@ -334,6 +325,19 @@ impl Node {
             | Self::Stack { children, .. } => children
                 .iter()
                 .find_map(|c| c.get_change_handler(target_id)),
+            _ => None,
+        }
+    }
+
+    /// Get the Input widget for an input element by ID
+    pub fn get_input_widget(&self, target_id: &str) -> Option<&Input> {
+        match self {
+            Self::Input { id, widget, .. } if id == target_id => widget.as_ref(),
+            Self::Column { children, .. }
+            | Self::Row { children, .. }
+            | Self::Stack { children, .. } => children
+                .iter()
+                .find_map(|c| c.get_input_widget(target_id)),
             _ => None,
         }
     }

@@ -10,13 +10,14 @@ use crate::app::App;
 use crate::context::{AppContext, Toast};
 use crate::focus::{FocusId, FocusState};
 use crate::keybinds::{HandlerId, Key};
+use crate::node::Node;
 use crate::theme::Theme;
 
-use super::events::{Event, convert_event};
+use super::events::{convert_event, Event};
 use super::hit_test::HitTestMap;
 use super::input::{InputState, KeybindMatch};
-use super::modal::{ModalStackEntry, calculate_modal_area};
-use super::render::{dim_backdrop, fill_background, render_node_with_input, render_toasts};
+use super::modal::{calculate_modal_area, ModalStackEntry};
+use super::render::{dim_backdrop, fill_background, render_node, render_toasts};
 use super::terminal::TerminalGuard;
 use super::RuntimeError;
 
@@ -32,7 +33,10 @@ pub async fn run_event_loop<A: App>(
         let kb = app_keybinds.read().unwrap();
         info!("Registered {} keybinds", kb.all().len());
         for bind in kb.all() {
-            debug!("  Keybind: {} ({:?}) => {:?}", bind.id, bind.default_keys, bind.handler);
+            debug!(
+                "  Keybind: {} ({:?}) => {:?}",
+                bind.id, bind.default_keys, bind.handler
+            );
         }
     }
 
@@ -55,11 +59,6 @@ pub async fn run_event_loop<A: App>(
     app.on_start(&cx).await;
     info!("App started: {}", app.name());
 
-    // Track the currently focused input's value for text editing
-    let mut app_input_buffer: String = String::new();
-    // ID of the input element the app buffer belongs to
-    let mut app_input_buffer_id: Option<String> = None;
-
     // Current theme (mutable for theme switching)
     let mut current_theme = theme;
 
@@ -79,8 +78,6 @@ pub async fn run_event_loop<A: App>(
                 modal,
                 focus_state: FocusState::new(),
                 input_state: InputState::new(),
-                input_buffer: String::new(),
-                input_buffer_id: None,
                 keybinds,
             });
         }
@@ -126,53 +123,17 @@ pub async fn run_event_loop<A: App>(
         };
 
         // Update focusable IDs from view tree
-        let focusable_ids: Vec<FocusId> =
-            view.focusable_ids().into_iter().map(FocusId::new).collect();
+        let focusable_ids: Vec<FocusId> = view
+            .focusable_ids()
+            .into_iter()
+            .map(FocusId::new)
+            .collect();
 
         // Update focus state for the active layer
-        let focus_changed = if let Some(entry) = modal_stack.last_mut() {
-            let changed = entry.focus_state.take_focus_changed();
+        if let Some(entry) = modal_stack.last_mut() {
             entry.focus_state.set_focusable_ids(focusable_ids);
-            changed || entry.focus_state.take_focus_changed()
         } else {
-            let changed = app_focus_state.take_focus_changed();
             app_focus_state.set_focusable_ids(focusable_ids);
-            changed || app_focus_state.take_focus_changed()
-        };
-
-        // Sync input buffer if focus changed to an input
-        if focus_changed {
-            let focused_id = if let Some(entry) = modal_stack.last() {
-                entry.focus_state.current().map(|f| f.0.clone())
-            } else {
-                app_focus_state.current().map(|f| f.0.clone())
-            };
-            if let Some(ref focused_id) = focused_id {
-                if view.element_captures_input(focused_id) {
-                    // Check if buffer already belongs to this input
-                    let current_buffer_id = if let Some(entry) = modal_stack.last() {
-                        entry.input_buffer_id.as_deref()
-                    } else {
-                        app_input_buffer_id.as_deref()
-                    };
-                    
-                    let is_same_input = current_buffer_id == Some(focused_id.as_str());
-                    
-                    if !is_same_input {
-                        // New input - sync buffer with its initial value
-                        let initial_value = view.input_value(focused_id).unwrap_or_default();
-                        if let Some(entry) = modal_stack.last_mut() {
-                            entry.input_buffer = initial_value;
-                            entry.input_buffer_id = Some(focused_id.clone());
-                            debug!("Initial sync input buffer: {}", entry.input_buffer);
-                        } else {
-                            app_input_buffer = initial_value;
-                            app_input_buffer_id = Some(focused_id.clone());
-                            debug!("Initial sync input buffer: {}", app_input_buffer);
-                        }
-                    }
-                }
-            }
         }
 
         // Render and build hit test map
@@ -183,21 +144,12 @@ pub async fn run_event_loop<A: App>(
         } else {
             app_focus_state.current().map(|f| f.0.clone())
         };
+
         // Cache app view (computed once per frame)
         let app_view = app.view();
 
         // Cache modal views (computed once per frame)
         let modal_views: Vec<_> = modal_stack.iter().map(|e| e.modal.view()).collect();
-
-        // Get input buffer and its ID for rendering
-        let (render_input_buffer, render_input_id): (Option<String>, Option<String>) = 
-            if let Some(entry) = modal_stack.last() {
-                (Some(entry.input_buffer.clone()), entry.input_buffer_id.clone())
-            } else {
-                (Some(app_input_buffer.clone()), app_input_buffer_id.clone())
-            };
-        let render_input_ref = render_input_buffer.as_deref();
-        let render_input_id_ref = render_input_id.as_deref();
 
         let modal_stack_ref = &modal_stack;
         term_guard.terminal().draw(|frame| {
@@ -208,26 +160,19 @@ pub async fn run_event_loop<A: App>(
                 fill_background(frame, bg_color.to_ratatui());
             }
 
-            // Always render the app first (without input buffer if modal is open)
+            // Always render the app first
             let app_focused = if modal_stack_ref.is_empty() {
                 focused_id.as_deref()
             } else {
                 None
             };
-            let (app_input, app_input_id) = if modal_stack_ref.is_empty() {
-                (render_input_ref, render_input_id_ref)
-            } else {
-                (None, None)
-            };
-            render_node_with_input(
+            render_node(
                 frame,
                 &app_view,
                 area,
                 &mut hit_map,
                 theme.as_ref(),
                 app_focused,
-                app_input,
-                app_input_id,
             );
 
             // Render modals on top with backdrop dimming
@@ -248,29 +193,22 @@ pub async fn run_event_loop<A: App>(
                 // Clear the modal area
                 frame.render_widget(ratatui::widgets::Clear, modal_area);
 
-                // Only show focus and input buffer for the top modal
+                // Only show focus for the top modal
                 let is_top_modal = i == modal_stack_ref.len() - 1;
                 let modal_focused = if is_top_modal {
                     focused_id.as_deref()
                 } else {
                     None
                 };
-                let (modal_input, modal_input_id) = if is_top_modal {
-                    (render_input_ref, render_input_id_ref)
-                } else {
-                    (None, None)
-                };
 
                 // Render modal view
-                render_node_with_input(
+                render_node(
                     frame,
                     modal_view,
                     modal_area,
                     &mut hit_map,
                     theme.as_ref(),
                     modal_focused,
-                    modal_input,
-                    modal_input_id,
                 );
             }
 
@@ -286,9 +224,8 @@ pub async fn run_event_loop<A: App>(
         }
 
         // Determine poll timeout - skip waiting if state changed
-        let needs_immediate_update = modal_closed 
-            || app.is_dirty()
-            || modal_stack.iter().any(|e| e.modal.is_dirty());
+        let needs_immediate_update =
+            modal_closed || app.is_dirty() || modal_stack.iter().any(|e| e.modal.is_dirty());
         let poll_timeout = if needs_immediate_update {
             Duration::from_millis(0)
         } else {
@@ -325,229 +262,111 @@ pub async fn run_event_loop<A: App>(
                                     debug!("Focus next");
                                     focus_state.focus_next();
                                 }
-                                // Only sync input buffer if new focused element is an input
-                                // (don't clear buffer when focusing buttons - we need it for submit)
-                                let new_focused_id = if let Some(entry) = modal_stack.last() {
-                                    entry.focus_state.current().map(|f| f.0.clone())
-                                } else {
-                                    app_focus_state.current().map(|f| f.0.clone())
-                                };
-                                if let Some(ref focused_id) = new_focused_id {
-                                    if view.element_captures_input(focused_id) {
-                                        // Focusing an input - only sync if this is a DIFFERENT input
-                                        // (preserve buffer if returning to the same input we were editing)
-                                        let current_buffer_id = if let Some(entry) = modal_stack.last() {
-                                            entry.input_buffer_id.as_deref()
-                                        } else {
-                                            app_input_buffer_id.as_deref()
-                                        };
-                                        
-                                        let is_same_input = current_buffer_id == Some(focused_id.as_str());
-                                        
-                                        if !is_same_input {
-                                            // Different input - sync buffer with its value
-                                            let new_value = view.input_value(focused_id);
-                                            if let Some(entry) = modal_stack.last_mut() {
-                                                if let Some(value) = new_value {
-                                                    entry.input_buffer = value;
-                                                } else {
-                                                    entry.input_buffer.clear();
-                                                }
-                                                entry.input_buffer_id = Some(focused_id.clone());
-                                                debug!("Synced input buffer to new input: {}", entry.input_buffer);
-                                            } else {
-                                                if let Some(value) = new_value {
-                                                    app_input_buffer = value;
-                                                } else {
-                                                    app_input_buffer.clear();
-                                                }
-                                                app_input_buffer_id = Some(focused_id.clone());
-                                                debug!("Synced input buffer to new input: {}", app_input_buffer);
-                                            }
-                                        } else {
-                                            debug!("Re-focusing same input, keeping buffer");
-                                        }
-                                    }
-                                    // If focusing a button, keep buffer as-is for potential submit
-                                }
                                 continue;
                             }
 
-                            // Handle Enter key for focused elements
+                            // Get current focus
                             let current_focus = if let Some(entry) = modal_stack.last() {
                                 entry.focus_state.current().map(|f| f.0.clone())
                             } else {
                                 app_focus_state.current().map(|f| f.0.clone())
                             };
+
+                            // Handle Enter key for focused elements
                             if key_combo.key == Key::Enter {
-                                if let Some(ref current) = current_focus {
-                                    debug!("Enter on focused element: {:?}", current);
-                                    // Get handler from view tree
-                                    if let Some(handler_id) = view.get_submit_handler(current) {
-                                        let input_buffer = if let Some(entry) = modal_stack.last() {
-                                            &entry.input_buffer
-                                        } else {
-                                            &app_input_buffer
-                                        };
-                                        cx.set_input_text(input_buffer.clone());
-                                        debug!("Set input text for handler: {:?}", cx.input_text());
-                                        if let Some(entry) = modal_stack.last() {
-                                            entry.modal.dispatch_dyn(&handler_id, &cx);
-                                        } else {
-                                            dispatch_handler(&app, &handler_id, &cx);
+                                if let Some(ref focus_id) = current_focus {
+                                    debug!("Enter on focused element: {:?}", focus_id);
+                                    if let Some(handler_id) = view.get_submit_handler(focus_id) {
+                                        // For inputs, set the input text from the widget
+                                        if let Some(widget) = view.get_input_widget(focus_id) {
+                                            cx.set_input_text(widget.value());
                                         }
-                                        // Note: Don't clear input_text here - the async handler
-                                        // needs to read it. It will be overwritten on next submit.
-                                        let input_buffer = if let Some(entry) = modal_stack.last_mut() {
-                                            &mut entry.input_buffer
-                                        } else {
-                                            &mut app_input_buffer
-                                        };
-                                        input_buffer.clear();
+                                        dispatch_to_layer(
+                                            &app,
+                                            &modal_stack,
+                                            &handler_id,
+                                            &cx,
+                                        );
                                     }
                                     continue;
                                 }
                             }
 
-                            // Handle Escape to clear focus/input (but NOT close modal - explicit only)
+                            // Handle Escape to clear focus
                             if key_combo.key == Key::Escape {
-                                debug!("Escape pressed, clearing input buffer");
+                                debug!("Escape pressed, clearing focus");
                                 if let Some(entry) = modal_stack.last_mut() {
-                                    entry.input_buffer.clear();
                                     entry.focus_state.clear_focus();
                                 } else {
-                                    app_input_buffer.clear();
                                     app_focus_state.clear_focus();
                                 }
                                 continue;
                             }
 
-                            // Check if currently focused element captures text input
-                            let is_text_input_focused = if let Some(entry) = modal_stack.last() {
-                                entry
-                                    .focus_state
-                                    .current()
-                                    .map(|id| view.element_captures_input(&id.0))
-                                    .unwrap_or(false)
-                            } else {
-                                app_focus_state
-                                    .current()
-                                    .map(|id| view.element_captures_input(&id.0))
-                                    .unwrap_or(false)
-                            };
+                            // Check if currently focused element is a text input
+                            let focused_input = current_focus
+                                .as_ref()
+                                .and_then(|id| view.get_input_widget(id));
 
-                            // Handle Backspace for text input
-                            if key_combo.key == Key::Backspace && is_text_input_focused {
-                                // Get the focused input's ID
-                                let focused_input_id = current_focus.clone();
-                                
-                                if let Some(entry) = modal_stack.last_mut() {
-                                    entry.input_buffer.pop();
-                                    entry.input_buffer_id = focused_input_id.clone();
-                                    debug!("Backspace, buffer: {}", entry.input_buffer);
-                                } else {
-                                    app_input_buffer.pop();
-                                    app_input_buffer_id = focused_input_id.clone();
-                                    debug!("Backspace, buffer: {}", app_input_buffer);
-                                }
-                                // Notify of change via on_change handler
-                                let current = if let Some(entry) = modal_stack.last() {
-                                    entry.focus_state.current().map(|f| f.0.clone())
-                                } else {
-                                    app_focus_state.current().map(|f| f.0.clone())
-                                };
-                                if let Some(ref current) = current {
-                                    if let Some(handler_id) = view.get_change_handler(current) {
-                                        let input_buffer = if let Some(entry) = modal_stack.last() {
-                                            &entry.input_buffer
-                                        } else {
-                                            &app_input_buffer
-                                        };
-                                        cx.set_input_text(input_buffer.clone());
-                                        if let Some(entry) = modal_stack.last() {
-                                            entry.modal.dispatch_dyn(&handler_id, &cx);
-                                        } else {
-                                            dispatch_handler(&app, &handler_id, &cx);
-                                        }
-                                        // Note: Don't clear input_text - async handler needs it
+                            if let Some(input) = focused_input {
+                                // Handle text input keys
+                                match key_combo.key {
+                                    Key::Backspace => {
+                                        input.delete_char_before();
+                                        notify_input_change(&view, &current_focus, &app, &modal_stack, &cx);
+                                        continue;
                                     }
-                                }
-                                continue;
-                            }
-
-                            // Handle character input for focused input fields only
-                            if let Key::Char(c) = key_combo.key {
-                                if is_text_input_focused
-                                    && !key_combo.modifiers.ctrl
-                                    && !key_combo.modifiers.alt
-                                {
-                                    // Get the focused input's ID
-                                    let focused_input_id = current_focus.clone();
-                                    
-                                    // Update buffer and track which input it belongs to
-                                    if let Some(entry) = modal_stack.last_mut() {
-                                        entry.input_buffer.push(c);
-                                        entry.input_buffer_id = focused_input_id.clone();
-                                        debug!("Char input '{}', buffer: {}", c, entry.input_buffer);
-                                    } else {
-                                        app_input_buffer.push(c);
-                                        app_input_buffer_id = focused_input_id.clone();
-                                        debug!("Char input '{}', buffer: {}", c, app_input_buffer);
+                                    Key::Delete => {
+                                        input.delete_char_at();
+                                        notify_input_change(&view, &current_focus, &app, &modal_stack, &cx);
+                                        continue;
                                     }
-                                    // Notify of change via on_change handler
-                                    let current = if let Some(entry) = modal_stack.last() {
-                                        entry.focus_state.current().map(|f| f.0.clone())
-                                    } else {
-                                        app_focus_state.current().map(|f| f.0.clone())
-                                    };
-                                    if let Some(ref current) = current {
-                                        if let Some(handler_id) = view.get_change_handler(current) {
-                                            let input_buffer = if let Some(entry) = modal_stack.last() {
-                                                &entry.input_buffer
-                                            } else {
-                                                &app_input_buffer
-                                            };
-                                            cx.set_input_text(input_buffer.clone());
-                                            if let Some(entry) = modal_stack.last() {
-                                                entry.modal.dispatch_dyn(&handler_id, &cx);
-                                            } else {
-                                                dispatch_handler(&app, &handler_id, &cx);
-                                            }
-                                            // Note: Don't clear input_text - async handler needs it
-                                        }
+                                    Key::Left => {
+                                        input.cursor_left();
+                                        continue;
                                     }
-                                    continue;
+                                    Key::Right => {
+                                        input.cursor_right();
+                                        continue;
+                                    }
+                                    Key::Home => {
+                                        input.cursor_home();
+                                        continue;
+                                    }
+                                    Key::End => {
+                                        input.cursor_end();
+                                        continue;
+                                    }
+                                    Key::Char(c) if !key_combo.modifiers.ctrl && !key_combo.modifiers.alt => {
+                                        input.insert_char(c);
+                                        notify_input_change(&view, &current_focus, &app, &modal_stack, &cx);
+                                        continue;
+                                    }
+                                    _ => {}
                                 }
                             }
 
                             // Process keybind (only if not handled above)
-                            // Get current view for keybind scoping (only for app, modals don't have views)
                             let current_view = if modal_stack.is_empty() {
                                 app.current_view()
                             } else {
                                 None
                             };
                             let current_view_ref = current_view.as_deref();
-                            
+
                             let keybind_match = if let Some(entry) = modal_stack.last_mut() {
-                                // Modals don't have view scoping, pass None
                                 entry
                                     .input_state
                                     .process_key(key_combo.clone(), &entry.keybinds, None)
                             } else {
-                                // Read keybinds from the shared lock
                                 let kb = app_keybinds.read().unwrap();
                                 app_input_state.process_key(key_combo.clone(), &kb, current_view_ref)
                             };
+
                             match keybind_match {
                                 KeybindMatch::Match(handler_id) => {
                                     info!("Keybind matched: {:?}", handler_id);
-                                    // Dispatch to modal or app
-                                    if let Some(entry) = modal_stack.last() {
-                                        entry.modal.dispatch_dyn(&handler_id, &cx);
-                                    } else {
-                                        dispatch_handler(&app, &handler_id, &cx);
-                                    }
+                                    dispatch_to_layer(&app, &modal_stack, &handler_id, &cx);
                                 }
                                 KeybindMatch::Pending => {
                                     debug!("Keybind pending (sequence in progress)");
@@ -563,7 +382,6 @@ pub async fn run_event_loop<A: App>(
                         Event::Click(ref click) => {
                             debug!("Click at ({}, {})", click.position.x, click.position.y);
 
-                            // Hit test to find clicked element
                             if let Some(hit_box) =
                                 hit_map.hit_test(click.position.x, click.position.y)
                             {
@@ -576,34 +394,16 @@ pub async fn run_event_loop<A: App>(
                                     app_focus_state.set_focus(hit_box.id.clone());
                                 }
 
-                                // If it's an input, sync the buffer with the current value
-                                if hit_box.captures_input {
-                                    let input_buffer = if let Some(entry) = modal_stack.last_mut() {
-                                        &mut entry.input_buffer
-                                    } else {
-                                        &mut app_input_buffer
-                                    };
-                                    input_buffer.clear();
-                                    if let Some(value) = view.input_value(&hit_box.id) {
-                                        *input_buffer = value;
-                                        debug!("Synced input buffer on click: {}", input_buffer);
-                                    }
-                                } else {
-                                    // It's a button - dispatch click handler from view
+                                // If it's a button, dispatch click handler
+                                if !hit_box.captures_input {
                                     if let Some(handler_id) = view.get_submit_handler(&hit_box.id) {
-                                        if let Some(entry) = modal_stack.last() {
-                                            entry.modal.dispatch_dyn(&handler_id, &cx);
-                                        } else {
-                                            dispatch_handler(&app, &handler_id, &cx);
-                                        }
+                                        dispatch_to_layer(&app, &modal_stack, &handler_id, &cx);
                                     }
                                 }
                             }
                         }
                         Event::Hover(ref position) => {
-                            // Hit test to find hovered element
                             if let Some(hit_box) = hit_map.hit_test(position.x, position.y) {
-                                // Only update focus if hovering a different element
                                 let current_focus = if let Some(entry) = modal_stack.last() {
                                     entry.focus_state.current().map(|f| f.0.clone())
                                 } else {
@@ -615,24 +415,6 @@ pub async fn run_event_loop<A: App>(
                                         entry.focus_state.set_focus(hit_box.id.clone());
                                     } else {
                                         app_focus_state.set_focus(hit_box.id.clone());
-                                    }
-
-                                    // If it's an input, sync the buffer with the current value
-                                    if hit_box.captures_input {
-                                        let input_buffer =
-                                            if let Some(entry) = modal_stack.last_mut() {
-                                                &mut entry.input_buffer
-                                            } else {
-                                                &mut app_input_buffer
-                                            };
-                                        input_buffer.clear();
-                                        if let Some(value) = view.input_value(&hit_box.id) {
-                                            *input_buffer = value;
-                                            debug!(
-                                                "Synced input buffer on hover: {}",
-                                                input_buffer
-                                            );
-                                        }
                                     }
                                 }
                             }
@@ -653,8 +435,34 @@ pub async fn run_event_loop<A: App>(
     Ok(())
 }
 
-/// Dispatch a handler by its ID.
-/// The handler is spawned as an async task by the app's dispatch implementation.
-fn dispatch_handler<A: App>(app: &A, handler_id: &HandlerId, cx: &AppContext) {
-    app.dispatch(handler_id, cx);
+/// Dispatch a handler to the appropriate layer (modal or app)
+fn dispatch_to_layer<A: App>(
+    app: &A,
+    modal_stack: &[ModalStackEntry],
+    handler_id: &HandlerId,
+    cx: &AppContext,
+) {
+    if let Some(entry) = modal_stack.last() {
+        entry.modal.dispatch_dyn(handler_id, cx);
+    } else {
+        app.dispatch(handler_id, cx);
+    }
+}
+
+/// Notify on_change handler if present
+fn notify_input_change<A: App>(
+    view: &Node,
+    current_focus: &Option<String>,
+    app: &A,
+    modal_stack: &[ModalStackEntry],
+    cx: &AppContext,
+) {
+    if let Some(focus_id) = current_focus {
+        if let Some(handler_id) = view.get_change_handler(focus_id) {
+            if let Some(widget) = view.get_input_widget(focus_id) {
+                cx.set_input_text(widget.value());
+            }
+            dispatch_to_layer(app, modal_stack, &handler_id, cx);
+        }
+    }
 }

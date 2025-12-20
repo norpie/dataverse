@@ -1,8 +1,10 @@
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 use syn::{
-    Attribute, DeriveInput, Expr, ExprPath, Field, Fields, FieldsNamed, Ident, Meta, Type, parse2,
+    Attribute, DeriveInput, Expr, ExprPath, Field, Fields, FieldsNamed, Ident, Meta, parse2,
 };
+
+use super::field_utils::{is_resource_type, is_widget_type};
 
 /// Attributes that can be applied to the #[app] macro
 struct AppAttrs {
@@ -58,15 +60,7 @@ impl FieldAttrs {
     }
 }
 
-/// Check if a type is Resource<T>
-fn is_resource_type(ty: &Type) -> bool {
-    if let Type::Path(type_path) = ty
-        && let Some(segment) = type_path.path.segments.last()
-    {
-        return segment.ident == "Resource";
-    }
-    false
-}
+
 
 /// Transform a field, wrapping in State<T> or keeping Resource<T> as-is
 fn transform_field(field: &Field) -> TokenStream {
@@ -90,6 +84,12 @@ fn transform_field(field: &Field) -> TokenStream {
         }
     } else if is_resource_type(ty) {
         // Resource<T> stays as Resource<T> (it's already the unified type)
+        quote! {
+            #(#other_attrs)*
+            #vis #ident: #ty
+        }
+    } else if is_widget_type(ty) {
+        // Widget types (Input, List<T>, etc.) manage their own state
         quote! {
             #(#other_attrs)*
             #vis #ident: #ty
@@ -119,6 +119,9 @@ fn generate_default_impl(name: &Ident, fields: &FieldsNamed) -> TokenStream {
             } else if is_resource_type(ty) {
                 // Resource<T> -> Resource::new()
                 quote! { #ident: rafter::resource::Resource::new() }
+            } else if is_widget_type(ty) {
+                // Widget types use Default
+                quote! { #ident: Default::default() }
             } else {
                 // Regular -> State<T>::new(Default::default())
                 quote! { #ident: rafter::state::State::new(Default::default()) }

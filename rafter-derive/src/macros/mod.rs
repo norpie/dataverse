@@ -1,6 +1,7 @@
 pub mod app;
 pub mod app_impl;
 pub mod component;
+pub mod field_utils;
 pub mod handler;
 pub mod impl_common;
 pub mod keybinds;
