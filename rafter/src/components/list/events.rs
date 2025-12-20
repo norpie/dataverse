@@ -149,8 +149,8 @@ impl<T: ListItem> ComponentEvents for List<T> {
         EventResult::Ignored
     }
 
-    fn on_click(&self, x: u16, y: u16, cx: &AppContext) -> EventResult {
-        // Check vertical scrollbar first
+    fn on_click(&self, x: u16, y: u16, _cx: &AppContext) -> EventResult {
+        // Check vertical scrollbar first (uses absolute coordinates)
         if let Some(geom) = ScrollbarState::vertical_scrollbar(self) {
             if geom.contains(x, y) {
                 let grab_offset = if geom.handle_contains(x, y, true) {
@@ -177,19 +177,8 @@ impl<T: ListItem> ComponentEvents for List<T> {
             }
         }
 
-        // Handle click on list item
-        // Note: y is relative to the list's content area (set by event loop)
-        if let Some(index) = self.index_from_viewport_y(y) {
-            // Move cursor
-            self.handle_cursor_move(index, cx);
-
-            // Handle activation (simple click without modifiers)
-            // Selection with modifiers is handled by on_click_with_modifiers
-            self.handle_activate(index, cx);
-            self.scroll_to_cursor();
-            return EventResult::Consumed;
-        }
-
+        // If not on scrollbar, return Ignored - let the event loop handle
+        // the click with modifiers via on_click_with_modifiers
         EventResult::Ignored
     }
 
