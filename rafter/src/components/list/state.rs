@@ -820,6 +820,9 @@ pub trait AnyList: Send + Sync + std::fmt::Debug {
         shift: bool,
     ) -> super::events::ListEvents;
 
+    /// Handle a hover event and return events to dispatch.
+    fn handle_hover_events(&self, y_in_viewport: u16) -> super::events::ListEvents;
+
     // -------------------------------------------------------------------------
     // Scrollbar support
     // -------------------------------------------------------------------------
@@ -941,6 +944,10 @@ impl<T: ListItem + std::fmt::Debug> AnyList for List<T> {
         shift: bool,
     ) -> super::events::ListEvents {
         self.handle_click(y_in_viewport, ctrl, shift)
+    }
+
+    fn handle_hover_events(&self, y_in_viewport: u16) -> super::events::ListEvents {
+        self.handle_hover(y_in_viewport)
     }
 
     fn scrollbar_config(&self) -> ScrollbarConfig {

@@ -127,6 +127,33 @@ impl<T: ListItem> List<T> {
         events
     }
 
+    /// Handle a hover at the given y-offset within the list viewport.
+    /// Only moves the cursor, doesn't trigger selection or activation.
+    /// Returns events that should be dispatched.
+    pub fn handle_hover(&self, y_in_viewport: u16) -> ListEvents {
+        let mut events = ListEvents::default();
+
+        let scroll_offset = self.scroll_offset();
+        let item_height = T::HEIGHT;
+        let absolute_y = scroll_offset + y_in_viewport;
+        let index = (absolute_y / item_height) as usize;
+
+        if index >= self.len() {
+            return events;
+        }
+
+        // Move cursor (hover only moves cursor, no selection/activation)
+        let previous = self.set_cursor(index);
+        if previous != Some(index) {
+            events.cursor_move = Some(CursorMoveEvent {
+                previous,
+                current: index,
+            });
+        }
+
+        events
+    }
+
     /// Handle keyboard input. Returns events that should be dispatched.
     pub fn handle_key(&self, key: &KeyCombo) -> (EventResult, ListEvents) {
         let mut events = ListEvents::default();

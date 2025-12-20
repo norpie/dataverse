@@ -445,6 +445,35 @@ pub async fn run_event_loop<A: App>(
                         }
                         Event::Hover(ref position) => {
                             if let Some(hit_box) = hit_map.hit_test(position.x, position.y) {
+                                // Check if this is a List component - handle hover to move cursor
+                                if let Some(list_component) = view.get_list_component(&hit_box.id) {
+                                    // Focus the list if not already focused
+                                    let current_focus = if let Some(entry) = modal_stack.last() {
+                                        entry.focus_state.current().map(|f| f.0.clone())
+                                    } else {
+                                        app_focus_state.current().map(|f| f.0.clone())
+                                    };
+                                    if current_focus.as_deref() != Some(&hit_box.id) {
+                                        debug!("Hover focus list: {}", hit_box.id);
+                                        if let Some(entry) = modal_stack.last_mut() {
+                                            entry.focus_state.set_focus(hit_box.id.clone());
+                                        } else {
+                                            app_focus_state.set_focus(hit_box.id.clone());
+                                        }
+                                    }
+
+                                    // Calculate y position relative to list content area
+                                    let y_in_viewport = position.y.saturating_sub(hit_box.rect.y);
+
+                                    // Get list events (hover only moves cursor)
+                                    let list_events = list_component.handle_hover_events(y_in_viewport);
+
+                                    // Dispatch cursor move events
+                                    dispatch_list_events(&view, &hit_box.id, list_events, &app, &modal_stack, &cx);
+                                    continue;
+                                }
+
+                                // Non-list elements: just focus on hover
                                 let current_focus = if let Some(entry) = modal_stack.last() {
                                     entry.focus_state.current().map(|f| f.0.clone())
                                 } else {
