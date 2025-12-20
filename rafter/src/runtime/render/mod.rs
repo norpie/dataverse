@@ -1,7 +1,7 @@
 //! Rendering - convert Node tree to ratatui widgets.
 
 mod backdrop;
-mod components;
+mod primitives;
 mod layout;
 mod toasts;
 
@@ -16,7 +16,8 @@ use crate::theme::{resolve_color, Theme};
 pub use backdrop::{dim_backdrop, fill_background};
 pub use toasts::render_toasts;
 
-use components::{render_button, render_container, render_input, render_stack, render_text};
+use crate::components::input::render::render_input;
+use primitives::{render_button, render_container, render_stack, render_text};
 
 
 /// Convert a Style to ratatui Style, resolving named colors via theme
