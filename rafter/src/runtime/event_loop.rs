@@ -7,6 +7,7 @@ use crossterm::event;
 use log::{debug, info, trace};
 
 use crate::app::App;
+use crate::components::EventResult;
 use crate::context::{AppContext, Toast};
 use crate::focus::{FocusId, FocusState};
 use crate::keybinds::{HandlerId, Key};
@@ -55,9 +56,8 @@ pub async fn run_event_loop<A: App>(
     // Modal stack
     let mut modal_stack: Vec<ModalStackEntry> = Vec::new();
 
-    // Scrollbar drag state: (scrollable_id, is_vertical, grab_offset)
-    // grab_offset is the position within the handle where the user clicked (0 = top/left of handle)
-    let mut scrollbar_drag: Option<(String, bool, u16)> = None;
+    // Component drag state (tracks which component is dragging)
+    let mut drag_component_id: Option<String> = None;
 
     // Call on_start (async)
     app.on_start(&cx).await;
@@ -281,9 +281,9 @@ pub async fn run_event_loop<A: App>(
                                 if let Some(ref focus_id) = current_focus {
                                     debug!("Enter on focused element: {:?}", focus_id);
                                     if let Some(handler_id) = view.get_submit_handler(focus_id) {
-                                        // For inputs, set the input text from the widget
-                                        if let Some(widget) = view.get_input_widget(focus_id) {
-                                            cx.set_input_text(widget.value());
+                                        // For inputs, set the input text from the component
+                                        if let Some(component) = view.get_input_component(focus_id) {
+                                            cx.set_input_text(component.value());
                                         }
                                         dispatch_to_layer(
                                             &app,
@@ -307,46 +307,23 @@ pub async fn run_event_loop<A: App>(
                                 continue;
                             }
 
-                            // Check if currently focused element is a text input
-                            let focused_input = current_focus
-                                .as_ref()
-                                .and_then(|id| view.get_input_widget(id));
-
-                            if let Some(input) = focused_input {
-                                // Handle text input keys
-                                match key_combo.key {
-                                    Key::Backspace => {
-                                        input.delete_char_before();
-                                        notify_input_change(&view, &current_focus, &app, &modal_stack, &cx);
+                            // Dispatch to focused component
+                            if let Some(ref focus_id) = current_focus {
+                                // For Inputs, verify value change to trigger on_change
+                                let old_value = view.get_input_component(focus_id).map(|c| c.value());
+                                
+                                if let Some(result) = view.dispatch_key_event(focus_id, key_combo) {
+                                    if result.is_handled() {
+                                        // Check if value changed
+                                        if let Some(old) = old_value {
+                                            if let Some(component) = view.get_input_component(focus_id) {
+                                                if component.value() != old {
+                                                    notify_input_change(&view, &current_focus, &app, &modal_stack, &cx);
+                                                }
+                                            }
+                                        }
                                         continue;
                                     }
-                                    Key::Delete => {
-                                        input.delete_char_at();
-                                        notify_input_change(&view, &current_focus, &app, &modal_stack, &cx);
-                                        continue;
-                                    }
-                                    Key::Left => {
-                                        input.cursor_left();
-                                        continue;
-                                    }
-                                    Key::Right => {
-                                        input.cursor_right();
-                                        continue;
-                                    }
-                                    Key::Home => {
-                                        input.cursor_home();
-                                        continue;
-                                    }
-                                    Key::End => {
-                                        input.cursor_end();
-                                        continue;
-                                    }
-                                    Key::Char(c) if !key_combo.modifiers.ctrl && !key_combo.modifiers.alt => {
-                                        input.insert_char(c);
-                                        notify_input_change(&view, &current_focus, &app, &modal_stack, &cx);
-                                        continue;
-                                    }
-                                    _ => {}
                                 }
                             }
 
@@ -386,85 +363,34 @@ pub async fn run_event_loop<A: App>(
                         Event::Click(ref click) => {
                             debug!("Click at ({}, {})", click.position.x, click.position.y);
 
-                            // Check if clicking on a scrollbar first
-                            let mut handled_scrollbar = false;
                             if let Some(hit_box) =
                                 hit_map.hit_test(click.position.x, click.position.y)
                             {
-                                if let Some(scrollable) = view.get_scrollable_widget(&hit_box.id) {
-                                    let x = click.position.x;
-                                    let y = click.position.y;
-
-                                    // Check vertical scrollbar
-                                    if let Some(geom) = scrollable.vertical_scrollbar() {
-                                        if geom.contains(x, y) {
-                                            handled_scrollbar = true;
-                                            
-                                            // Calculate grab offset within handle
-                                            let grab_offset = if geom.handle_contains(x, y, true) {
-                                                // Clicked on handle - remember offset within handle
-                                                y.saturating_sub(geom.y + geom.handle_pos)
-                                            } else {
-                                                // Clicked on track - proportional offset based on click position
-                                                // E.g. clicking 3/4 down the track = grab 3/4 down the handle
-                                                let track_ratio = (y.saturating_sub(geom.y) as f32)
-                                                    / (geom.height.max(1) as f32);
-                                                let grab_offset = (track_ratio * geom.handle_size as f32) as u16;
-                                                let ratio = geom.position_to_ratio_with_offset(x, y, true, grab_offset);
-                                                scrollable.scroll_to_ratio(None, Some(ratio));
-                                                grab_offset
-                                            };
-                                            
-                                            scrollbar_drag = Some((hit_box.id.clone(), true, grab_offset));
+                                // First try to dispatch to component (handles scrollbars etc)
+                                if let Some(result) = view.dispatch_click_event(&hit_box.id, click.position.x, click.position.y) {
+                                    match result {
+                                        EventResult::StartDrag => {
+                                            drag_component_id = Some(hit_box.id.clone());
+                                            continue;
                                         }
-                                    }
-
-                                    // Check horizontal scrollbar
-                                    if !handled_scrollbar {
-                                        if let Some(geom) = scrollable.horizontal_scrollbar() {
-                                            if geom.contains(x, y) {
-                                                handled_scrollbar = true;
-                                                
-                                                // Calculate grab offset within handle
-                                                let grab_offset = if geom.handle_contains(x, y, false) {
-                                                    // Clicked on handle - remember offset within handle
-                                                    x.saturating_sub(geom.x + geom.handle_pos)
-                                                } else {
-                                                    // Clicked on track - proportional offset based on click position
-                                                    let track_ratio = (x.saturating_sub(geom.x) as f32)
-                                                        / (geom.width.max(1) as f32);
-                                                    let grab_offset = (track_ratio * geom.handle_size as f32) as u16;
-                                                    let ratio = geom.position_to_ratio_with_offset(x, y, false, grab_offset);
-                                                    scrollable.scroll_to_ratio(Some(ratio), None);
-                                                    grab_offset
-                                                };
-                                                
-                                                scrollbar_drag = Some((hit_box.id.clone(), false, grab_offset));
-                                            }
-                                        }
+                                        EventResult::Consumed => continue,
+                                        EventResult::Ignored => {}
                                     }
                                 }
-                            }
 
-                            // If not a scrollbar click, handle normally
-                            if !handled_scrollbar {
-                                if let Some(hit_box) =
-                                    hit_map.hit_test(click.position.x, click.position.y)
-                                {
-                                    debug!("Clicked element: {}", hit_box.id);
+                                debug!("Clicked element: {}", hit_box.id);
 
-                                    // Focus the clicked element
-                                    if let Some(entry) = modal_stack.last_mut() {
-                                        entry.focus_state.set_focus(hit_box.id.clone());
-                                    } else {
-                                        app_focus_state.set_focus(hit_box.id.clone());
-                                    }
+                                // Focus the clicked element
+                                if let Some(entry) = modal_stack.last_mut() {
+                                    entry.focus_state.set_focus(hit_box.id.clone());
+                                } else {
+                                    app_focus_state.set_focus(hit_box.id.clone());
+                                }
 
-                                    // If it's a button, dispatch click handler
-                                    if !hit_box.captures_input {
-                                        if let Some(handler_id) = view.get_submit_handler(&hit_box.id) {
-                                            dispatch_to_layer(&app, &modal_stack, &handler_id, &cx);
-                                        }
+                                // If it's a button, dispatch click handler
+                                if !hit_box.captures_input {
+                                    if let Some(handler_id) = view.get_submit_handler(&hit_box.id) {
+                                        dispatch_to_layer(&app, &modal_stack, &handler_id, &cx);
                                     }
                                 }
                             }
@@ -493,50 +419,18 @@ pub async fn run_event_loop<A: App>(
                             if let Some(hit_box) =
                                 hit_map.hit_test(scroll.position.x, scroll.position.y)
                             {
-                                // Look for a scrollable widget
-                                if let Some(scrollable) = view.get_scrollable_widget(&hit_box.id) {
-                                    let amount = scroll.amount as i16;
-                                    match scroll.direction {
-                                        crate::events::ScrollDirection::Up => {
-                                            scrollable.scroll_by(0, -amount);
-                                        }
-                                        crate::events::ScrollDirection::Down => {
-                                            scrollable.scroll_by(0, amount);
-                                        }
-                                        crate::events::ScrollDirection::Left => {
-                                            scrollable.scroll_by(-amount, 0);
-                                        }
-                                        crate::events::ScrollDirection::Right => {
-                                            scrollable.scroll_by(amount, 0);
-                                        }
-                                    }
-                                }
+                                // Dispatch scroll event to component
+                                view.dispatch_scroll_event(&hit_box.id, scroll.direction, scroll.amount);
                             }
                         }
                         Event::Release(_) => {
-                            // End any scrollbar drag
-                            if scrollbar_drag.is_some() {
-                                debug!("Scrollbar drag ended");
-                                scrollbar_drag = None;
+                            if let Some(id) = drag_component_id.take() {
+                                view.dispatch_release_event(&id);
                             }
                         }
                         Event::Drag(ref drag) => {
-                            // Handle scrollbar dragging
-                            if let Some((ref scrollable_id, is_vertical, grab_offset)) = scrollbar_drag {
-                                if let Some(scrollable) = view.get_scrollable_widget(scrollable_id) {
-                                    let x = drag.position.x;
-                                    let y = drag.position.y;
-
-                                    if is_vertical {
-                                        if let Some(geom) = scrollable.vertical_scrollbar() {
-                                            let ratio = geom.position_to_ratio_with_offset(x, y, true, grab_offset);
-                                            scrollable.scroll_to_ratio(None, Some(ratio));
-                                        }
-                                    } else if let Some(geom) = scrollable.horizontal_scrollbar() {
-                                        let ratio = geom.position_to_ratio_with_offset(x, y, false, grab_offset);
-                                        scrollable.scroll_to_ratio(Some(ratio), None);
-                                    }
-                                }
+                            if let Some(ref id) = drag_component_id {
+                                view.dispatch_drag_event(id, drag.position.x, drag.position.y);
                             }
                         }
                     }
@@ -576,8 +470,8 @@ fn notify_input_change<A: App>(
 ) {
     if let Some(focus_id) = current_focus {
         if let Some(handler_id) = view.get_change_handler(focus_id) {
-            if let Some(widget) = view.get_input_widget(focus_id) {
-                cx.set_input_text(widget.value());
+            if let Some(component) = view.get_input_component(focus_id) {
+                cx.set_input_text(component.value());
             }
             dispatch_to_layer(app, modal_stack, &handler_id, cx);
         }

@@ -57,10 +57,10 @@ pub fn generate_scrollable_element(elem: &ElementNode) -> TokenStream {
         }
     });
 
-    // If direction specified, set it on the widget
+    // If direction specified, set it on the component
     let direction_setter = direction.map(|dir| {
         quote! {
-            __widget.set_direction(#dir);
+            __component.set_direction(#dir);
         }
     });
 
@@ -80,14 +80,14 @@ pub fn generate_scrollable_element(elem: &ElementNode) -> TokenStream {
 
     quote! {
         {
-            let __widget = (#scrollable_widget).clone();
+            let __component = (#scrollable_widget).clone();
             #direction_setter
             rafter::node::Node::Scrollable {
                 child: Box::new(#child_node),
-                id: __widget.id_string(),
+                id: __component.id_string(),
                 style: #style,
                 layout: #layout,
-                widget: __widget,
+                component: __component,
             }
         }
     }

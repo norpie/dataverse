@@ -128,13 +128,13 @@ pub fn render_node(
             placeholder,
             style,
             id,
-            widget,
+            component,
             ..
         } => {
             let is_focused = focused_id == Some(id.as_str());
-            let display_value = widget
+            let display_value = component
                 .as_ref()
-                .map(|w| w.value())
+                .map(|c| c.value())
                 .unwrap_or_else(|| value.clone());
             render_input(
                 frame,
@@ -167,7 +167,7 @@ pub fn render_node(
             child,
             id,
             style,
-            widget,
+            component,
             ..
         } => {
             render_scrollable(
@@ -175,7 +175,7 @@ pub fn render_node(
                 child,
                 id,
                 style_to_ratatui(style, theme),
-                widget,
+                component,
                 area,
                 hit_map,
                 theme,

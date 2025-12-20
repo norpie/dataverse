@@ -70,20 +70,20 @@ pub fn generate_input_element(elem: &ElementNode) -> TokenStream {
 
     let placeholder = match placeholder_override {
         Some(p) => p,
-        None => quote! { __widget.placeholder() },
+        None => quote! { __component.placeholder() },
     };
 
     quote! {
         {
-            let __widget = (#input_widget).clone();
+            let __component = (#input_widget).clone();
             rafter::node::Node::Input {
-                value: __widget.value(),
+                value: __component.value(),
                 placeholder: #placeholder,
                 on_change: #on_change,
                 on_submit: #on_submit,
-                id: __widget.id_string(),
+                id: __component.id_string(),
                 style: #style,
-                widget: Some(__widget),
+                component: Some(__component),
             }
         }
     }

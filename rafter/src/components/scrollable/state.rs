@@ -129,6 +129,8 @@ impl ScrollbarGeometry {
     }
 }
 
+use super::events::ScrollbarDrag;
+
 /// Internal state for the Scrollable component.
 #[derive(Debug)]
 struct ScrollableInner {
@@ -151,6 +153,9 @@ struct ScrollableInner {
     vertical_scrollbar: Option<ScrollbarGeometry>,
     /// Horizontal scrollbar geometry - updated by renderer.
     horizontal_scrollbar: Option<ScrollbarGeometry>,
+
+    /// Current drag state.
+    drag: Option<ScrollbarDrag>,
 }
 
 impl Default for ScrollableInner {
@@ -164,6 +169,7 @@ impl Default for ScrollableInner {
             viewport_size: (0, 0),
             vertical_scrollbar: None,
             horizontal_scrollbar: None,
+            drag: None,
         }
     }
 }
@@ -516,6 +522,22 @@ impl Scrollable {
     /// Clear the dirty flag.
     pub fn clear_dirty(&self) {
         self.dirty.store(false, Ordering::SeqCst);
+    }
+
+    // -------------------------------------------------------------------------
+    // Drag state
+    // -------------------------------------------------------------------------
+
+    /// Get current drag state.
+    pub fn drag(&self) -> Option<ScrollbarDrag> {
+        self.inner.read().map(|guard| guard.drag).unwrap_or(None)
+    }
+
+    /// Set current drag state.
+    pub fn set_drag(&self, drag: Option<ScrollbarDrag>) {
+        if let Ok(mut guard) = self.inner.write() {
+            guard.drag = drag;
+        }
     }
 }
 

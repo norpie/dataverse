@@ -1,5 +1,7 @@
+use crate::components::events::{ComponentEvents, EventResult};
 use crate::components::{Input, Scrollable};
-use crate::keybinds::HandlerId;
+use crate::events::ScrollDirection;
+use crate::keybinds::{HandlerId, KeyCombo};
 use crate::style::Style;
 
 /// Layout direction
@@ -138,8 +140,8 @@ pub enum Node {
         id: String,
         /// Style
         style: Style,
-        /// Bound Input widget (if using bind: syntax)
-        widget: Option<Input>,
+        /// Bound Input component (if using bind: syntax)
+        component: Option<Input>,
     },
 
     /// Clickable button
@@ -165,7 +167,7 @@ pub enum Node {
         /// Layout properties
         layout: Layout,
         /// Bound Scrollable component
-        widget: Scrollable,
+        component: Scrollable,
     },
 }
 
@@ -350,30 +352,135 @@ impl Node {
         }
     }
 
-    /// Get the Input widget for an input element by ID
-    pub fn get_input_widget(&self, target_id: &str) -> Option<&Input> {
+    /// Get the Input component for an input element by ID
+    pub fn get_input_component(&self, target_id: &str) -> Option<&Input> {
         match self {
-            Self::Input { id, widget, .. } if id == target_id => widget.as_ref(),
+            Self::Input { id, component, .. } if id == target_id => component.as_ref(),
             Self::Column { children, .. }
             | Self::Row { children, .. }
             | Self::Stack { children, .. } => children
                 .iter()
-                .find_map(|c| c.get_input_widget(target_id)),
-            Self::Scrollable { child, .. } => child.get_input_widget(target_id),
+                .find_map(|c| c.get_input_component(target_id)),
+            Self::Scrollable { child, .. } => child.get_input_component(target_id),
             _ => None,
         }
     }
 
-    /// Get the Scrollable widget for a scrollable element by ID
-    pub fn get_scrollable_widget(&self, target_id: &str) -> Option<&Scrollable> {
+    /// Get the Scrollable component for a scrollable element by ID
+    pub fn get_scrollable_component(&self, target_id: &str) -> Option<&Scrollable> {
         match self {
-            Self::Scrollable { id, widget, .. } if id == target_id => Some(widget),
+            Self::Scrollable { id, component, .. } if id == target_id => Some(component),
             Self::Column { children, .. }
             | Self::Row { children, .. }
             | Self::Stack { children, .. } => children
                 .iter()
-                .find_map(|c| c.get_scrollable_widget(target_id)),
-            Self::Scrollable { child, .. } => child.get_scrollable_widget(target_id),
+                .find_map(|c| c.get_scrollable_component(target_id)),
+            Self::Scrollable { child, .. } => child.get_scrollable_component(target_id),
+            _ => None,
+        }
+    }
+
+    /// Dispatch a click event to a component.
+    ///
+    /// Finds the component with the given ID and delegates to its `on_click` handler.
+    pub fn dispatch_click_event(&self, target_id: &str, x: u16, y: u16) -> Option<EventResult> {
+        match self {
+            Self::Scrollable { id, component, .. } if id == target_id => {
+                Some(component.on_click(x, y))
+            }
+            Self::Input { id, component, .. } if id == target_id => {
+                if let Some(component) = component {
+                    Some(component.on_click(x, y))
+                } else {
+                    Some(EventResult::Ignored)
+                }
+            }
+            Self::Column { children, .. }
+            | Self::Row { children, .. }
+            | Self::Stack { children, .. } => children
+                .iter()
+                .find_map(|c| c.dispatch_click_event(target_id, x, y)),
+            Self::Scrollable { child, .. } => child.dispatch_click_event(target_id, x, y),
+            _ => None,
+        }
+    }
+
+    /// Dispatch a scroll event to a component.
+    pub fn dispatch_scroll_event(
+        &self,
+        target_id: &str,
+        direction: ScrollDirection,
+        amount: u16,
+    ) -> Option<EventResult> {
+        match self {
+            Self::Scrollable { id, component, .. } if id == target_id => {
+                Some(component.on_scroll(direction, amount))
+            }
+            Self::Column { children, .. }
+            | Self::Row { children, .. }
+            | Self::Stack { children, .. } => children
+                .iter()
+                .find_map(|c| c.dispatch_scroll_event(target_id, direction, amount)),
+            Self::Scrollable { child, .. } => {
+                child.dispatch_scroll_event(target_id, direction, amount)
+            }
+            _ => None,
+        }
+    }
+
+    /// Dispatch a drag event to a component.
+    ///
+    /// The target ID is typically stored from a previous `StartDrag` result.
+    pub fn dispatch_drag_event(&self, target_id: &str, x: u16, y: u16) -> Option<EventResult> {
+        match self {
+            Self::Scrollable { id, component, .. } if id == target_id => {
+                Some(component.on_drag(x, y))
+            }
+            Self::Column { children, .. }
+            | Self::Row { children, .. }
+            | Self::Stack { children, .. } => children
+                .iter()
+                .find_map(|c| c.dispatch_drag_event(target_id, x, y)),
+            Self::Scrollable { child, .. } => child.dispatch_drag_event(target_id, x, y),
+            _ => None,
+        }
+    }
+
+    /// Dispatch a drag release event to a component.
+    pub fn dispatch_release_event(&self, target_id: &str) -> Option<EventResult> {
+        match self {
+            Self::Scrollable { id, component, .. } if id == target_id => Some(component.on_release()),
+            Self::Column { children, .. }
+            | Self::Row { children, .. }
+            | Self::Stack { children, .. } => children
+                .iter()
+                .find_map(|c| c.dispatch_release_event(target_id)),
+            Self::Scrollable { child, .. } => child.dispatch_release_event(target_id),
+            _ => None,
+        }
+    }
+
+    /// Dispatch a key event to a component.
+    pub fn dispatch_key_event(
+        &self,
+        target_id: &str,
+        key: &KeyCombo,
+    ) -> Option<EventResult> {
+        match self {
+            Self::Input { id, component, .. } if id == target_id => {
+                if let Some(component) = component {
+                    Some(component.on_key(key))
+                } else {
+                    Some(EventResult::Ignored)
+                }
+            }
+            Self::Scrollable { id, component, .. } if id == target_id => Some(component.on_key(key)),
+            Self::Column { children, .. }
+            | Self::Row { children, .. }
+            | Self::Stack { children, .. } => children
+                .iter()
+                .find_map(|c| c.dispatch_key_event(target_id, key)),
+            Self::Scrollable { child, .. } => child.dispatch_key_event(target_id, key),
             _ => None,
         }
     }
