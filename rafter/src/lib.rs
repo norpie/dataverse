@@ -21,7 +21,7 @@ pub mod prelude {
     pub use crate::context::{AppContext, Toast, ToastLevel};
     pub use crate::events::{ClickEvent, ClickKind, Modifiers};
     pub use crate::focus::FocusState;
-    pub use crate::keybinds::Keybinds;
+    pub use crate::keybinds::{KeybindError, KeybindInfo, Keybinds};
     pub use crate::modal::{Modal, ModalContext, ModalPosition, ModalSize};
     pub use crate::node::Node;
     pub use crate::resource::{ProgressState, Resource, ResourceState};

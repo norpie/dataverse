@@ -171,7 +171,7 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
     strip_custom_attrs(&mut impl_block);
 
     // Generate trait method implementations
-    let keybinds_impl = generate_keybinds_impl(&keybinds_methods);
+    let keybinds_impl = generate_keybinds_impl(&keybinds_methods, &type_name);
     let view_impl = generate_view_impl(has_view, &self_ty);
     let name_impl = generate_name_impl(&type_name);
 

@@ -137,8 +137,26 @@ pub fn strip_custom_attrs(impl_block: &mut ItemImpl) {
     }
 }
 
+/// Convert a PascalCase or camelCase identifier to snake_case
+fn to_snake_case(s: &str) -> String {
+    let mut result = String::new();
+    for (i, c) in s.chars().enumerate() {
+        if c.is_uppercase() {
+            if i > 0 {
+                result.push('_');
+            }
+            result.push(c.to_lowercase().next().unwrap());
+        } else {
+            result.push(c);
+        }
+    }
+    result
+}
+
 /// Generate keybinds trait method implementation
-pub fn generate_keybinds_impl(keybinds_methods: &[KeybindsMethod]) -> TokenStream {
+pub fn generate_keybinds_impl(keybinds_methods: &[KeybindsMethod], type_name: &Ident) -> TokenStream {
+    let app_name_snake = to_snake_case(&type_name.to_string());
+
     if keybinds_methods.is_empty() {
         quote! {
             fn keybinds(&self) -> rafter::keybinds::Keybinds {
@@ -152,14 +170,23 @@ pub fn generate_keybinds_impl(keybinds_methods: &[KeybindsMethod]) -> TokenStrea
                 let name = &m.name;
                 match &m.scope {
                     KeybindScope::Global => {
-                        quote! { __keybinds.merge(Self::#name()); }
-                    }
-                    KeybindScope::View(view_name) => {
+                        // ID prefix is just the app name for global keybinds
+                        let id_prefix = &app_name_snake;
                         quote! {
                             __keybinds.merge(
-                                Self::#name().with_scope(
-                                    rafter::keybinds::KeybindScope::View(#view_name.to_string())
-                                )
+                                Self::#name().with_id_prefix(#id_prefix)
+                            );
+                        }
+                    }
+                    KeybindScope::View(view_name) => {
+                        // ID prefix includes the view name for scoped keybinds
+                        let view_name_snake = to_snake_case(view_name);
+                        let id_prefix = format!("{}.{}", app_name_snake, view_name_snake);
+                        quote! {
+                            __keybinds.merge(
+                                Self::#name()
+                                    .with_id_prefix(#id_prefix)
+                                    .with_scope(rafter::keybinds::KeybindScope::View(#view_name.to_string()))
                             );
                         }
                     }

@@ -1,6 +1,6 @@
 //! Main event loop for the runtime.
 
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant};
 
 use crossterm::event;
@@ -26,8 +26,18 @@ pub async fn run_event_loop<A: App>(
     theme: Arc<dyn Theme>,
     term_guard: &mut TerminalGuard,
 ) -> Result<(), RuntimeError> {
-    // Create app context (now Clone + interior mutable)
-    let cx = AppContext::new();
+    // Get initial keybinds and wrap in Arc<RwLock<>> for runtime mutation
+    let app_keybinds = Arc::new(RwLock::new(app.keybinds()));
+    {
+        let kb = app_keybinds.read().unwrap();
+        info!("Registered {} keybinds", kb.all().len());
+        for bind in kb.all() {
+            debug!("  Keybind: {} ({:?}) => {:?}", bind.id, bind.default_keys, bind.handler);
+        }
+    }
+
+    // Create app context with shared keybinds
+    let cx = AppContext::new(app_keybinds.clone());
 
     // Create input state for keybind sequence tracking
     let mut app_input_state = InputState::new();
@@ -40,13 +50,6 @@ pub async fn run_event_loop<A: App>(
 
     // Modal stack
     let mut modal_stack: Vec<ModalStackEntry> = Vec::new();
-
-    // Get initial keybinds
-    let app_keybinds = app.keybinds();
-    info!("Registered {} keybinds", app_keybinds.all().len());
-    for bind in app_keybinds.all() {
-        debug!("  Keybind: {:?} => {:?}", bind.keys, bind.handler);
-    }
 
     // Call on_start (async)
     app.on_start(&cx).await;
@@ -448,7 +451,9 @@ pub async fn run_event_loop<A: App>(
                                     .input_state
                                     .process_key(key_combo.clone(), &entry.keybinds, None)
                             } else {
-                                app_input_state.process_key(key_combo.clone(), &app_keybinds, current_view_ref)
+                                // Read keybinds from the shared lock
+                                let kb = app_keybinds.read().unwrap();
+                                app_input_state.process_key(key_combo.clone(), &kb, current_view_ref)
                             };
                             match keybind_match {
                                 KeybindMatch::Match(handler_id) => {

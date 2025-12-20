@@ -220,11 +220,12 @@ pub fn expand(input: TokenStream) -> TokenStream {
             let keys = parse_key_string(key_str);
 
             add_calls.push(quote! {
-                __keybinds.add(rafter::keybinds::Keybind {
-                    keys: #keys,
-                    handler: rafter::keybinds::HandlerId::new(#handler_name),
-                    scope: rafter::keybinds::KeybindScope::Global,
-                });
+                __keybinds.add(rafter::keybinds::Keybind::new(
+                    #handler_name,  // id (just handler name, prefix added later)
+                    #key_str,       // default_keys (original string for display/reset)
+                    #keys,          // parsed keys
+                    #handler_name,  // handler
+                ));
             });
         }
     }

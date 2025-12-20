@@ -62,11 +62,16 @@ impl InputState {
                 continue;
             }
 
+            // Get current keys (skip if disabled)
+            let Some(keys) = bind.current_keys() else {
+                continue;
+            };
+
             trace!(
                 "Comparing sequence {:?} with bind {:?}",
-                self.sequence, bind.keys
+                self.sequence, keys
             );
-            if bind.keys == self.sequence {
+            if keys == self.sequence {
                 // Exact match - prefer view-scoped over global
                 debug!("Exact match found: {:?} (scope: {:?})", bind.handler, bind.scope);
                 if bind.scope != crate::keybinds::KeybindScope::Global {
@@ -74,8 +79,8 @@ impl InputState {
                 } else if global_exact_match.is_none() {
                     global_exact_match = Some(bind.handler.clone());
                 }
-            } else if bind.keys.len() > self.sequence.len()
-                && bind.keys[..self.sequence.len()] == self.sequence[..]
+            } else if keys.len() > self.sequence.len()
+                && keys[..self.sequence.len()] == self.sequence[..]
             {
                 // This sequence is a prefix of a longer binding
                 debug!("Prefix match for {:?}", bind.handler);

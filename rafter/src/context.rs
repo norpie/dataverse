@@ -6,6 +6,7 @@ use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
 
 use crate::focus::FocusId;
+use crate::keybinds::{KeybindError, KeybindInfo, Keybinds};
 use crate::modal::{Modal, ModalContext, ModalDyn, ModalEntry};
 use crate::theme::Theme;
 
@@ -87,11 +88,13 @@ struct AppContextInner {
 #[derive(Clone)]
 pub struct AppContext {
     inner: Arc<RwLock<AppContextInner>>,
+    /// Shared keybinds (can be modified at runtime)
+    keybinds: Arc<RwLock<Keybinds>>,
 }
 
 impl AppContext {
-    /// Create a new app context
-    pub fn new() -> Self {
+    /// Create a new app context with shared keybinds
+    pub fn new(keybinds: Arc<RwLock<Keybinds>>) -> Self {
         Self {
             inner: Arc::new(RwLock::new(AppContextInner {
                 exit_requested: false,
@@ -101,6 +104,7 @@ impl AppContext {
                 theme_request: None,
                 modal_request: None,
             })),
+            keybinds,
         }
     }
 
@@ -231,6 +235,63 @@ impl AppContext {
     }
 
     // -------------------------------------------------------------------------
+    // Keybind methods
+    // -------------------------------------------------------------------------
+
+    /// Get display info for all keybinds
+    pub fn keybinds(&self) -> Vec<KeybindInfo> {
+        self.keybinds
+            .read()
+            .map(|kb| kb.infos())
+            .unwrap_or_default()
+    }
+
+    /// Get display info for currently active keybinds
+    /// 
+    /// Note: This requires knowing the current view, which is app-specific.
+    /// For now, this returns all keybinds. Use the app's `current_view()` 
+    /// to filter if needed.
+    pub fn all_keybinds(&self) -> Vec<KeybindInfo> {
+        self.keybinds()
+    }
+
+    /// Override a keybind's key combination
+    ///
+    /// # Example
+    /// ```ignore
+    /// cx.override_keybind("my_app.save", "ctrl+shift+s")?;
+    /// ```
+    pub fn override_keybind(&self, id: &str, keys: &str) -> Result<(), KeybindError> {
+        let mut keybinds = self.keybinds.write().map_err(|_| {
+            KeybindError::ParseError("Failed to acquire keybinds lock".to_string())
+        })?;
+        keybinds.override_keybind(id, keys)
+    }
+
+    /// Disable a keybind
+    pub fn disable_keybind(&self, id: &str) -> Result<(), KeybindError> {
+        let mut keybinds = self.keybinds.write().map_err(|_| {
+            KeybindError::ParseError("Failed to acquire keybinds lock".to_string())
+        })?;
+        keybinds.disable_keybind(id)
+    }
+
+    /// Reset a keybind to its default key combination
+    pub fn reset_keybind(&self, id: &str) -> Result<(), KeybindError> {
+        let mut keybinds = self.keybinds.write().map_err(|_| {
+            KeybindError::ParseError("Failed to acquire keybinds lock".to_string())
+        })?;
+        keybinds.reset_keybind(id)
+    }
+
+    /// Reset all keybinds to their defaults
+    pub fn reset_all_keybinds(&self) {
+        if let Ok(mut keybinds) = self.keybinds.write() {
+            keybinds.reset_all();
+        }
+    }
+
+    // -------------------------------------------------------------------------
     // Internal methods for runtime use
     // -------------------------------------------------------------------------
 
@@ -278,7 +339,7 @@ impl AppContext {
 
 impl Default for AppContext {
     fn default() -> Self {
-        Self::new()
+        Self::new(Arc::new(RwLock::new(Keybinds::new())))
     }
 }
 
