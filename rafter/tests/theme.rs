@@ -1,4 +1,4 @@
-use rafter::color::Color;
+use rafter::color::{Color, StyleColor};
 use rafter::theme::{DefaultTheme, Theme, resolve_color};
 
 #[test]
@@ -22,18 +22,19 @@ fn test_default_theme_aliases() {
 #[test]
 fn test_resolve_color_with_named() {
     let theme = DefaultTheme::dark();
-    let named = Color::Named("primary".to_string());
+    let named = StyleColor::Named("primary".to_string());
     let resolved = resolve_color(&named, &theme);
 
-    // Should resolve to the theme's primary color
-    assert!(!matches!(resolved, Color::Named(_)));
+    // Should resolve to the theme's primary color, not a named reference
+    // Just verify it's a valid Color (the resolve function returns Color directly)
+    let _ = resolved;
 }
 
 #[test]
 fn test_resolve_color_passthrough() {
     let theme = DefaultTheme::dark();
-    let literal = Color::Cyan;
+    let literal = StyleColor::Concrete(Color::CYAN);
     let resolved = resolve_color(&literal, &theme);
 
-    assert!(matches!(resolved, Color::Cyan));
+    assert_eq!(resolved, Color::CYAN);
 }
