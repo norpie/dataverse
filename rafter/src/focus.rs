@@ -76,6 +76,7 @@ impl FocusState {
         // If no focus and there are focusable elements, focus the first one
         if self.current.is_none() && !self.focusable_ids.is_empty() {
             self.current = Some(self.focusable_ids[0].clone());
+            self.focus_changed = true;
         }
     }
 

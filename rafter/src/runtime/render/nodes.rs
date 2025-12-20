@@ -7,7 +7,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Paragraph};
 
 use super::layout::{apply_border, apply_padding, calculate_constraints};
-use super::render_node;
+use super::render_node_with_input;
 use crate::node::{Layout as NodeLayout, Node};
 use crate::runtime::hit_test::HitTestMap;
 use crate::theme::Theme;
@@ -76,6 +76,8 @@ pub fn render_container(
     hit_map: &mut HitTestMap,
     theme: &dyn Theme,
     focused_id: Option<&str>,
+    input_buffer: Option<&str>,
+    input_buffer_id: Option<&str>,
 ) {
     // Fill background if specified
     if style.bg.is_some() {
@@ -116,7 +118,7 @@ pub fn render_container(
     let mut chunk_idx = 0;
     for child in children {
         if chunk_idx < chunks.len() {
-            render_node(frame, child, chunks[chunk_idx], hit_map, theme, focused_id);
+            render_node_with_input(frame, child, chunks[chunk_idx], hit_map, theme, focused_id, input_buffer, input_buffer_id);
             chunk_idx += 1;
             // Skip gap chunks
             if layout.gap > 0 && chunk_idx < chunks.len() {
@@ -137,6 +139,8 @@ pub fn render_stack(
     hit_map: &mut HitTestMap,
     theme: &dyn Theme,
     focused_id: Option<&str>,
+    input_buffer: Option<&str>,
+    input_buffer_id: Option<&str>,
 ) {
     // Fill background if specified
     if style.bg.is_some() {
@@ -156,6 +160,6 @@ pub fn render_stack(
 
     // Render all children in the same area (stacked)
     for child in children {
-        render_node(frame, child, padded_area, hit_map, theme, focused_id);
+        render_node_with_input(frame, child, padded_area, hit_map, theme, focused_id, input_buffer, input_buffer_id);
     }
 }

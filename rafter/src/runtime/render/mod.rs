@@ -61,6 +61,23 @@ pub fn render_node(
     theme: &dyn Theme,
     focused_id: Option<&str>,
 ) {
+    render_node_with_input(frame, node, area, hit_map, theme, focused_id, None, None)
+}
+
+/// Render a Node tree with an optional input buffer override
+/// 
+/// `input_buffer` - the current text being edited
+/// `input_buffer_id` - the ID of the input element the buffer belongs to
+pub fn render_node_with_input(
+    frame: &mut Frame,
+    node: &Node,
+    area: ratatui::layout::Rect,
+    hit_map: &mut HitTestMap,
+    theme: &dyn Theme,
+    focused_id: Option<&str>,
+    input_buffer: Option<&str>,
+    input_buffer_id: Option<&str>,
+) {
     // Constrain area for auto-sized containers
     let area = constrain_area(node, area);
 
@@ -84,6 +101,8 @@ pub fn render_node(
                 hit_map,
                 theme,
                 focused_id,
+                input_buffer,
+                input_buffer_id,
             );
         }
         Node::Row {
@@ -101,6 +120,8 @@ pub fn render_node(
                 hit_map,
                 theme,
                 focused_id,
+                input_buffer,
+                input_buffer_id,
             );
         }
         Node::Stack {
@@ -117,6 +138,8 @@ pub fn render_node(
                 hit_map,
                 theme,
                 focused_id,
+                input_buffer,
+                input_buffer_id,
             );
         }
         Node::Input {
@@ -127,9 +150,16 @@ pub fn render_node(
             ..
         } => {
             let is_focused = focused_id == Some(id.as_str());
+            // Use input_buffer if this input owns the buffer (by ID), otherwise use the node's value
+            let is_buffer_owner = input_buffer_id == Some(id.as_str());
+            let display_value = if is_buffer_owner {
+                input_buffer.unwrap_or(value.as_str())
+            } else {
+                value.as_str()
+            };
             render_input(
                 frame,
-                value,
+                display_value,
                 placeholder,
                 style_to_ratatui(style, theme),
                 is_focused,
