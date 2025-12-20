@@ -3,7 +3,7 @@
 use crate::components::events::{ComponentEvents, EventResult};
 use crate::components::scrollbar::{ScrollbarDrag, ScrollbarState};
 use crate::context::AppContext;
-use crate::events::ScrollDirection;
+use crate::events::{Modifiers, ScrollDirection};
 use crate::keybinds::{Key, KeyCombo};
 
 use super::state::{List, ListItem, SelectionMode};
@@ -202,7 +202,7 @@ impl<T: ListItem> ComponentEvents for List<T> {
         EventResult::Consumed
     }
 
-    fn on_drag(&self, x: u16, y: u16, _cx: &AppContext) -> EventResult {
+    fn on_drag(&self, x: u16, y: u16, _modifiers: Modifiers, _cx: &AppContext) -> EventResult {
         if let Some(drag) = ScrollbarState::drag(self) {
             if drag.is_vertical
                 && let Some(geom) = ScrollbarState::vertical_scrollbar(self) {

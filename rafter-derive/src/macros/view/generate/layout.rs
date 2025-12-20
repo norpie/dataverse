@@ -141,9 +141,8 @@ fn parse_size_value(value: &Option<AttrValue>) -> TokenStream {
             if name == "fill" {
                 // fill = flex: 1 behavior (use Flex(1) for now)
                 quote! { rafter::node::Size::Flex(1) }
-            } else if name == "auto" {
-                quote! { rafter::node::Size::Auto }
             } else {
+                // "auto" or any unrecognized ident defaults to Auto
                 quote! { rafter::node::Size::Auto }
             }
         }

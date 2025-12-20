@@ -3,7 +3,7 @@
 use crate::components::events::{ComponentEvents, EventResult};
 use crate::components::scrollbar::{ScrollbarDrag, ScrollbarState};
 use crate::context::AppContext;
-use crate::events::ScrollDirection;
+use crate::events::{Modifiers, ScrollDirection};
 use crate::keybinds::{Key, KeyCombo};
 
 use super::Scrollable;
@@ -75,7 +75,7 @@ impl ComponentEvents for Scrollable {
         EventResult::Consumed
     }
 
-    fn on_drag(&self, x: u16, y: u16, _cx: &AppContext) -> EventResult {
+    fn on_drag(&self, x: u16, y: u16, _modifiers: Modifiers, _cx: &AppContext) -> EventResult {
         if let Some(drag) = self.drag() {
             if drag.is_vertical {
                 if let Some(geom) = self.vertical_scrollbar() {

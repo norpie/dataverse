@@ -2,7 +2,7 @@ use crate::components::events::{ComponentEvents, EventResult};
 use crate::components::list::AnyList;
 use crate::components::{Input, Scrollable};
 use crate::context::AppContext;
-use crate::events::ScrollDirection;
+use crate::events::{Modifiers, ScrollDirection};
 use crate::keybinds::{HandlerId, KeyCombo};
 use crate::style::Style;
 
@@ -537,21 +537,22 @@ impl Node {
         target_id: &str,
         x: u16,
         y: u16,
+        modifiers: Modifiers,
         cx: &AppContext,
     ) -> Option<EventResult> {
         match self {
             Self::Scrollable { id, component, .. } if id == target_id => {
-                Some(component.on_drag(x, y, cx))
+                Some(component.on_drag(x, y, modifiers, cx))
             }
             Self::List { id, component, .. } if id == target_id => {
-                Some(component.on_drag(x, y, cx))
+                Some(component.on_drag(x, y, modifiers, cx))
             }
             Self::Column { children, .. }
             | Self::Row { children, .. }
             | Self::Stack { children, .. } => children
                 .iter()
-                .find_map(|c| c.dispatch_drag_event(target_id, x, y, cx)),
-            Self::Scrollable { child, .. } => child.dispatch_drag_event(target_id, x, y, cx),
+                .find_map(|c| c.dispatch_drag_event(target_id, x, y, modifiers, cx)),
+            Self::Scrollable { child, .. } => child.dispatch_drag_event(target_id, x, y, modifiers, cx),
             _ => None,
         }
     }

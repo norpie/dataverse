@@ -602,7 +602,7 @@ pub async fn run_event_loop<A: App>(
                         }
                         Event::Drag(ref drag) => {
                             if let Some(ref id) = drag_component_id {
-                                view.dispatch_drag_event(id, drag.position.x, drag.position.y, &cx);
+                                view.dispatch_drag_event(id, drag.position.x, drag.position.y, drag.modifiers, &cx);
                             }
                         }
                     }

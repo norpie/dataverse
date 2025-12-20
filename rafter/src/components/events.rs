@@ -9,7 +9,7 @@
 //! then dispatches appropriate handlers based on what context was set.
 
 use crate::context::AppContext;
-use crate::events::ScrollDirection;
+use crate::events::{Modifiers, ScrollDirection};
 use crate::keybinds::KeyCombo;
 
 /// Result of handling an event.
@@ -76,7 +76,7 @@ pub trait ComponentEvents {
     ///
     /// Called when the user drags after a `StartDrag` result from `on_click`.
     /// The component should track its own drag state internally.
-    fn on_drag(&self, _x: u16, _y: u16, _cx: &AppContext) -> EventResult {
+    fn on_drag(&self, _x: u16, _y: u16, _modifiers: Modifiers, _cx: &AppContext) -> EventResult {
         EventResult::Ignored
     }
 

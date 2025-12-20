@@ -14,8 +14,6 @@ use crate::keybinds::{Key, KeyCombo};
 pub struct DragEvent {
     /// Current drag position
     pub position: Position,
-    /// Button being held
-    pub button: MouseButton,
     /// Modifier keys held during drag
     pub modifiers: Modifiers,
 }
@@ -128,9 +126,8 @@ pub fn convert_mouse_event(event: MouseEvent) -> Option<Event> {
             amount: 3,
         })),
         MouseEventKind::Moved => Some(Event::Hover(position)),
-        MouseEventKind::Drag(button) => Some(Event::Drag(DragEvent {
+        MouseEventKind::Drag(_) => Some(Event::Drag(DragEvent {
             position,
-            button,
             modifiers,
         })),
         MouseEventKind::Up(_) => Some(Event::Release(position)),

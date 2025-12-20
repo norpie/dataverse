@@ -822,6 +822,7 @@ pub trait AnyList: Send + Sync + std::fmt::Debug {
         &self,
         x: u16,
         y: u16,
+        modifiers: crate::events::Modifiers,
         cx: &crate::context::AppContext,
     ) -> crate::components::events::EventResult;
 
@@ -963,10 +964,11 @@ impl<T: ListItem + std::fmt::Debug> AnyList for List<T> {
         &self,
         x: u16,
         y: u16,
+        modifiers: crate::events::Modifiers,
         cx: &crate::context::AppContext,
     ) -> crate::components::events::EventResult {
         use crate::components::events::ComponentEvents;
-        ComponentEvents::on_drag(self, x, y, cx)
+        ComponentEvents::on_drag(self, x, y, modifiers, cx)
     }
 
     fn on_release(

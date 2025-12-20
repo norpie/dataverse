@@ -11,6 +11,7 @@ use crate::theme::Theme;
 use super::state::{List, ListItem};
 
 /// Render a list with virtualization.
+#[allow(clippy::too_many_arguments)]
 pub fn render_list<T: ListItem>(
     frame: &mut Frame,
     list: &List<T>,
