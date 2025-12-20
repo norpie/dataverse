@@ -213,3 +213,11 @@ pub fn resolve_color(color: &StyleColor, theme: &dyn Theme) -> Color {
         }),
     }
 }
+
+/// Resolve a StyleColor to a concrete Color, returning None if the named color is not found.
+pub fn resolve_style_color(color: &StyleColor, theme: &dyn Theme) -> Option<Color> {
+    match color {
+        StyleColor::Concrete(c) => Some(*c),
+        StyleColor::Named(name) => theme.resolve(name),
+    }
+}

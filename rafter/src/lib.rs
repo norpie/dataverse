@@ -22,7 +22,7 @@ pub mod prelude {
     pub use crate::context::{AppContext, Toast, ToastLevel};
     pub use crate::events::{ClickEvent, ClickKind, Modifiers};
     pub use crate::focus::FocusState;
-    pub use crate::components::Input;
+    pub use crate::components::{Input, Scrollable, ScrollDirection, ScrollbarConfig, ScrollbarVisibility};
     pub use crate::keybinds::{KeybindError, KeybindInfo, Keybinds};
     pub use crate::modal::{Modal, ModalContext, ModalPosition, ModalSize};
     pub use crate::node::Node;

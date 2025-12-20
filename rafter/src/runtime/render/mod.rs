@@ -164,5 +164,110 @@ pub fn render_node(
                 hit_map.register(id.clone(), area, false);
             }
         }
+        Node::Scrollable {
+            child,
+            id,
+            style,
+            layout,
+            widget,
+        } => {
+            render_scrollable(
+                frame,
+                child,
+                id,
+                style_to_ratatui(style, theme),
+                layout,
+                widget,
+                area,
+                hit_map,
+                theme,
+                focused_id,
+            );
+        }
+    }
+}
+
+/// Render a scrollable container
+#[allow(clippy::too_many_arguments)]
+fn render_scrollable(
+    frame: &mut Frame,
+    child: &Node,
+    id: &str,
+    style: RatatuiStyle,
+    _layout: &crate::node::Layout,
+    widget: &crate::components::Scrollable,
+    area: ratatui::layout::Rect,
+    hit_map: &mut HitTestMap,
+    theme: &dyn Theme,
+    focused_id: Option<&str>,
+) {
+    use crate::components::scrollable::render::{
+        calculate_scrollable_layout, render_horizontal_scrollbar, render_vertical_scrollbar,
+    };
+    use ratatui::widgets::Block;
+
+    // Fill background if specified
+    if style.bg.is_some() {
+        let block = Block::default().style(style);
+        frame.render_widget(block, area);
+    }
+
+    // Get content intrinsic size
+    let content_size = (child.intrinsic_width(), child.intrinsic_height());
+
+    // Calculate layout (determines scrollbar visibility and content area)
+    let scroll_layout = calculate_scrollable_layout(
+        area,
+        content_size,
+        widget.direction(),
+        &widget.scrollbar_config(),
+    );
+
+    // Update widget with computed sizes
+    widget.set_sizes(content_size, (scroll_layout.content_area.width, scroll_layout.content_area.height));
+
+    // Get scroll offset
+    let (offset_x, offset_y) = widget.offset();
+
+    // Render scrollbars
+    if scroll_layout.show_vertical {
+        render_vertical_scrollbar(
+            frame.buffer_mut(),
+            area,
+            offset_y,
+            content_size.1,
+            scroll_layout.content_area.height,
+            &widget.scrollbar_config(),
+            theme,
+        );
+    }
+
+    if scroll_layout.show_horizontal {
+        render_horizontal_scrollbar(
+            frame.buffer_mut(),
+            area,
+            offset_x,
+            content_size.0,
+            scroll_layout.content_area.width,
+            &widget.scrollbar_config(),
+            theme,
+        );
+    }
+
+    // TODO: Clip and offset child rendering
+    // For now, just render the child in the content area
+    // This needs proper viewport clipping implementation
+    render_node(
+        frame,
+        child,
+        scroll_layout.content_area,
+        hit_map,
+        theme,
+        focused_id,
+    );
+
+    // Register hit box for scroll area
+    if !id.is_empty() {
+        hit_map.register(id.to_string(), area, false);
     }
 }

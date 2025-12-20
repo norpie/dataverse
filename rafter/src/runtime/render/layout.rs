@@ -208,6 +208,15 @@ pub fn intrinsic_size(node: &Node, horizontal: bool) -> u16 {
                 1
             }
         }
+        Node::Scrollable { child, layout, .. } => {
+            let border_size = if matches!(layout.border, Border::None) {
+                0
+            } else {
+                2
+            };
+            let padding = layout.padding * 2;
+            intrinsic_size(child, horizontal) + padding + border_size
+        }
     }
 }
 
@@ -265,6 +274,25 @@ pub fn child_constraint(node: &Node, horizontal: bool) -> Constraint {
             } else {
                 // For vertical layout, buttons take 1 line
                 Constraint::Length(1)
+            }
+        }
+        Node::Scrollable { layout, .. } => {
+            let size = if horizontal {
+                &layout.width
+            } else {
+                &layout.height
+            };
+            match size {
+                crate::node::Size::Fixed(v) => Constraint::Length(*v),
+                crate::node::Size::Percent(p) => Constraint::Percentage((*p * 100.0) as u16),
+                crate::node::Size::Flex(f) => Constraint::Ratio(*f as u32, 1),
+                crate::node::Size::Auto => {
+                    if let Some(flex) = layout.flex {
+                        Constraint::Ratio(flex as u32, 1)
+                    } else {
+                        Constraint::Length(intrinsic_size(node, horizontal))
+                    }
+                }
             }
         }
     }

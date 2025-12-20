@@ -419,8 +419,32 @@ pub async fn run_event_loop<A: App>(
                                 }
                             }
                         }
-                        Event::Scroll(_) => {
-                            // Scroll events - not implemented yet
+                        Event::Scroll(ref scroll) => {
+                            debug!("Scroll at ({}, {})", scroll.position.x, scroll.position.y);
+
+                            // Find the scrollable element at the scroll position
+                            if let Some(hit_box) =
+                                hit_map.hit_test(scroll.position.x, scroll.position.y)
+                            {
+                                // Look for a scrollable widget
+                                if let Some(scrollable) = view.get_scrollable_widget(&hit_box.id) {
+                                    let amount = scroll.amount as i16;
+                                    match scroll.direction {
+                                        crate::events::ScrollDirection::Up => {
+                                            scrollable.scroll_by(0, -amount);
+                                        }
+                                        crate::events::ScrollDirection::Down => {
+                                            scrollable.scroll_by(0, amount);
+                                        }
+                                        crate::events::ScrollDirection::Left => {
+                                            scrollable.scroll_by(-amount, 0);
+                                        }
+                                        crate::events::ScrollDirection::Right => {
+                                            scrollable.scroll_by(amount, 0);
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 }

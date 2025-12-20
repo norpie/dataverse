@@ -1,4 +1,4 @@
-use crate::components::Input;
+use crate::components::{Input, Scrollable};
 use crate::keybinds::HandlerId;
 use crate::style::Style;
 
@@ -153,6 +153,20 @@ pub enum Node {
         /// Style
         style: Style,
     },
+
+    /// Scrollable container
+    Scrollable {
+        /// Child node (content to scroll)
+        child: Box<Node>,
+        /// Element ID
+        id: String,
+        /// Style
+        style: Style,
+        /// Layout properties
+        layout: Layout,
+        /// Bound Scrollable component
+        widget: Scrollable,
+    },
 }
 
 impl Node {
@@ -265,6 +279,9 @@ impl Node {
                     child.collect_focusable_ids(ids);
                 }
             }
+            Self::Scrollable { child, .. } => {
+                child.collect_focusable_ids(ids);
+            }
             _ => {}
         }
     }
@@ -285,6 +302,7 @@ impl Node {
             | Self::Stack { children, .. } => {
                 children.iter().any(|c| c.element_captures_input(target_id))
             }
+            Self::Scrollable { child, .. } => child.element_captures_input(target_id),
             _ => false,
         }
     }
@@ -298,6 +316,7 @@ impl Node {
             | Self::Stack { children, .. } => {
                 children.iter().find_map(|c| c.input_value(target_id))
             }
+            Self::Scrollable { child, .. } => child.input_value(target_id),
             _ => None,
         }
     }
@@ -312,6 +331,7 @@ impl Node {
             | Self::Stack { children, .. } => children
                 .iter()
                 .find_map(|c| c.get_submit_handler(target_id)),
+            Self::Scrollable { child, .. } => child.get_submit_handler(target_id),
             _ => None,
         }
     }
@@ -325,6 +345,7 @@ impl Node {
             | Self::Stack { children, .. } => children
                 .iter()
                 .find_map(|c| c.get_change_handler(target_id)),
+            Self::Scrollable { child, .. } => child.get_change_handler(target_id),
             _ => None,
         }
     }
@@ -338,6 +359,21 @@ impl Node {
             | Self::Stack { children, .. } => children
                 .iter()
                 .find_map(|c| c.get_input_widget(target_id)),
+            Self::Scrollable { child, .. } => child.get_input_widget(target_id),
+            _ => None,
+        }
+    }
+
+    /// Get the Scrollable widget for a scrollable element by ID
+    pub fn get_scrollable_widget(&self, target_id: &str) -> Option<&Scrollable> {
+        match self {
+            Self::Scrollable { id, widget, .. } if id == target_id => Some(widget),
+            Self::Column { children, .. }
+            | Self::Row { children, .. }
+            | Self::Stack { children, .. } => children
+                .iter()
+                .find_map(|c| c.get_scrollable_widget(target_id)),
+            Self::Scrollable { child, .. } => child.get_scrollable_widget(target_id),
             _ => None,
         }
     }
@@ -407,6 +443,16 @@ impl Node {
                 (content_len + 5).max(15) as u16
             }
             Self::Button { label, .. } => (label.len() + 4) as u16,
+            Self::Scrollable { child, layout, .. } => {
+                let border_size = if matches!(layout.border, Border::None) {
+                    0
+                } else {
+                    2
+                };
+                let padding = layout.padding * 2;
+                // Scrollable reports child's intrinsic size (may be larger than viewport)
+                child.intrinsic_width() + padding + border_size
+            }
         }
     }
 
@@ -465,6 +511,16 @@ impl Node {
                 max_child + padding + border_size
             }
             Self::Input { .. } | Self::Button { .. } => 1,
+            Self::Scrollable { child, layout, .. } => {
+                let border_size = if matches!(layout.border, Border::None) {
+                    0
+                } else {
+                    2
+                };
+                let padding = layout.padding * 2;
+                // Scrollable reports child's intrinsic size (may be larger than viewport)
+                child.intrinsic_height() + padding + border_size
+            }
         }
     }
 }
