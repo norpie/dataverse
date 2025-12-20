@@ -9,7 +9,7 @@ use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 use syn::{Attribute, DeriveInput, Field, Fields, FieldsNamed, Ident, Meta, parse2};
 
-use super::field_utils::{is_resource_type, is_widget_type};
+use super::field_utils::{is_component_type, is_resource_type};
 
 /// Field attributes
 struct FieldAttrs {
@@ -39,7 +39,7 @@ impl FieldAttrs {
     }
 }
 
-/// Transform a field, wrapping in State<T> or keeping Resource<T>/widget types as-is
+/// Transform a field, wrapping in State<T> or keeping Resource<T>/component types as-is
 fn transform_field(field: &Field) -> TokenStream {
     let attrs = FieldAttrs::parse(&field.attrs);
     let vis = &field.vis;
@@ -59,8 +59,8 @@ fn transform_field(field: &Field) -> TokenStream {
             #(#other_attrs)*
             #vis #ident: #ty
         }
-    } else if is_resource_type(ty) || is_widget_type(ty) {
-        // Resource<T> and widget types manage their own state
+    } else if is_resource_type(ty) || is_component_type(ty) {
+        // Resource<T> and component types manage their own state
         quote! {
             #(#other_attrs)*
             #vis #ident: #ty
@@ -101,8 +101,8 @@ fn generate_default_impl(name: &Ident, fields: Option<&FieldsNamed>) -> TokenStr
             } else if is_resource_type(ty) {
                 // Resource<T> -> Resource::new()
                 quote! { #ident: rafter::resource::Resource::new() }
-            } else if is_widget_type(ty) {
-                // Widget types use Default
+            } else if is_component_type(ty) {
+                // Component types use Default
                 quote! { #ident: Default::default() }
             } else {
                 // Regular -> State<T>::new(Default::default())

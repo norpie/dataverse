@@ -26,7 +26,7 @@ pub fn generate_scrollable_element(elem: &ElementNode) -> TokenStream {
         }
     });
 
-    let scrollable_widget = match bind_expr {
+    let scrollable_component = match bind_expr {
         Some(expr) => expr,
         None => {
             return syn::Error::new_spanned(
@@ -80,7 +80,7 @@ pub fn generate_scrollable_element(elem: &ElementNode) -> TokenStream {
 
     quote! {
         {
-            let __component = (#scrollable_widget).clone();
+            let __component = (#scrollable_component).clone();
             #direction_setter
             rafter::node::Node::Scrollable {
                 child: Box::new(#child_node),

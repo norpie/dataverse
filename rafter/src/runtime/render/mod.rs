@@ -192,7 +192,7 @@ fn render_scrollable(
     child: &Node,
     id: &str,
     style: RatatuiStyle,
-    widget: &crate::components::Scrollable,
+    component: &crate::components::Scrollable,
     area: ratatui::layout::Rect,
     hit_map: &mut HitTestMap,
     theme: &dyn Theme,
@@ -211,15 +211,15 @@ fn render_scrollable(
     let scroll_layout = calculate_scrollable_layout(
         area,
         initial_content_size,
-        widget.direction(),
-        &widget.scrollbar_config(),
+        component.direction(),
+        &component.scrollbar_config(),
     );
 
     // Calculate actual content height with wrapping based on viewport width
     let content_size = calculate_wrapped_content_size(child, scroll_layout.content_area.width);
 
-    // Update widget with computed sizes
-    widget.set_sizes(
+    // Update component with computed sizes
+    component.set_sizes(
         content_size,
         (
             scroll_layout.content_area.width,
@@ -228,7 +228,7 @@ fn render_scrollable(
     );
 
     // Get scroll offset
-    let (offset_x, offset_y) = widget.offset();
+    let (offset_x, offset_y) = component.offset();
 
     // Render scrollbars and save geometry for hit testing
     let v_geom = if scroll_layout.show_vertical {
@@ -238,13 +238,13 @@ fn render_scrollable(
             offset_y,
             content_size.1,
             scroll_layout.content_area.height,
-            &widget.scrollbar_config(),
+            &component.scrollbar_config(),
             theme,
         )
     } else {
         None
     };
-    widget.set_vertical_scrollbar(v_geom);
+    component.set_vertical_scrollbar(v_geom);
 
     let h_geom = if scroll_layout.show_horizontal {
         render_horizontal_scrollbar(
@@ -253,13 +253,13 @@ fn render_scrollable(
             offset_x,
             content_size.0,
             scroll_layout.content_area.width,
-            &widget.scrollbar_config(),
+            &component.scrollbar_config(),
             theme,
         )
     } else {
         None
     };
-    widget.set_horizontal_scrollbar(h_geom);
+    component.set_horizontal_scrollbar(h_geom);
 
     // Render child with viewport clipping
     let viewport = scroll_layout.content_area;

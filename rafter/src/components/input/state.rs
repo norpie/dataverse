@@ -1,7 +1,7 @@
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, RwLock};
 
-/// Unique identifier for an Input widget instance
+/// Unique identifier for an Input component instance
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct InputId(usize);
 
@@ -18,7 +18,7 @@ impl std::fmt::Display for InputId {
     }
 }
 
-/// Internal state for an Input widget
+/// Internal state for an Input component
 #[derive(Debug)]
 struct InputInner {
     /// Current text value
@@ -39,9 +39,9 @@ impl Default for InputInner {
     }
 }
 
-/// A text input widget with reactive state.
+/// A text input component with reactive state.
 ///
-/// `Input` is a self-contained widget that manages its own text value,
+/// `Input` is a self-contained component that manages its own text value,
 /// cursor position, and focus state. It provides imperative methods for
 /// reading and modifying the input programmatically.
 ///

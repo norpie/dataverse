@@ -4,7 +4,7 @@ use syn::{
     Attribute, DeriveInput, Expr, ExprPath, Field, Fields, FieldsNamed, Ident, Meta, parse2,
 };
 
-use super::field_utils::{is_resource_type, is_widget_type};
+use super::field_utils::{is_component_type, is_resource_type};
 
 /// Attributes that can be applied to the #[app] macro
 struct AppAttrs {
@@ -88,8 +88,8 @@ fn transform_field(field: &Field) -> TokenStream {
             #(#other_attrs)*
             #vis #ident: #ty
         }
-    } else if is_widget_type(ty) {
-        // Widget types (Input, List<T>, etc.) manage their own state
+    } else if is_component_type(ty) {
+        // Component types (Input, List<T>, etc.) manage their own state
         quote! {
             #(#other_attrs)*
             #vis #ident: #ty
@@ -119,8 +119,8 @@ fn generate_default_impl(name: &Ident, fields: &FieldsNamed) -> TokenStream {
             } else if is_resource_type(ty) {
                 // Resource<T> -> Resource::new()
                 quote! { #ident: rafter::resource::Resource::new() }
-            } else if is_widget_type(ty) {
-                // Widget types use Default
+            } else if is_component_type(ty) {
+                // Component types use Default
                 quote! { #ident: Default::default() }
             } else {
                 // Regular -> State<T>::new(Default::default())
