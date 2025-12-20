@@ -24,7 +24,7 @@ pub mod prelude {
     pub use crate::events::{ClickEvent, ClickKind, Modifiers};
     pub use crate::focus::FocusState;
     pub use crate::components::{Input, Scrollable, ScrollDirection, ScrollbarConfig, ScrollbarVisibility};
-    pub use crate::components::{List, ListItem, ListId, SelectionMode, ActivateEvent, SelectionChangeEvent, CursorMoveEvent};
+    pub use crate::components::{List, ListItem, ListId, SelectionMode, Selection};
     pub use crate::keybinds::{KeybindError, KeybindInfo, Keybinds};
     pub use crate::modal::{Modal, ModalContext, ModalPosition, ModalSize};
     pub use crate::node::Node;

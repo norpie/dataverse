@@ -2,6 +2,7 @@
 
 use crate::components::events::{ComponentEvents, EventResult};
 use crate::components::scrollbar::{ScrollbarDrag, ScrollbarState};
+use crate::context::AppContext;
 use crate::events::ScrollDirection;
 use crate::keybinds::{Key, KeyCombo};
 
@@ -13,7 +14,7 @@ const SCROLL_LINES: i16 = 1;
 const SCROLL_PAGE_LINES: i16 = 10;
 
 impl ComponentEvents for Scrollable {
-    fn on_click(&self, x: u16, y: u16) -> EventResult {
+    fn on_click(&self, x: u16, y: u16, _cx: &AppContext) -> EventResult {
         // Check vertical scrollbar
         if let Some(geom) = self.vertical_scrollbar() {
             if geom.contains(x, y) {
@@ -65,7 +66,7 @@ impl ComponentEvents for Scrollable {
         EventResult::Ignored
     }
 
-    fn on_scroll(&self, direction: ScrollDirection, amount: u16) -> EventResult {
+    fn on_scroll(&self, direction: ScrollDirection, amount: u16, _cx: &AppContext) -> EventResult {
         let amount = amount as i16;
         match direction {
             ScrollDirection::Up => self.scroll_by(0, -amount),
@@ -76,7 +77,7 @@ impl ComponentEvents for Scrollable {
         EventResult::Consumed
     }
 
-    fn on_drag(&self, x: u16, y: u16) -> EventResult {
+    fn on_drag(&self, x: u16, y: u16, _cx: &AppContext) -> EventResult {
         if let Some(drag) = self.drag() {
             if drag.is_vertical {
                 if let Some(geom) = self.vertical_scrollbar() {
@@ -93,7 +94,7 @@ impl ComponentEvents for Scrollable {
         }
     }
 
-    fn on_release(&self) -> EventResult {
+    fn on_release(&self, _cx: &AppContext) -> EventResult {
         if self.drag().is_some() {
             self.set_drag(None);
             EventResult::Consumed
@@ -102,7 +103,7 @@ impl ComponentEvents for Scrollable {
         }
     }
 
-    fn on_key(&self, key: &KeyCombo) -> EventResult {
+    fn on_key(&self, key: &KeyCombo, _cx: &AppContext) -> EventResult {
         // Ignore keys with ctrl/alt modifiers (let app handle those)
         if key.modifiers.ctrl || key.modifiers.alt {
             return EventResult::Ignored;

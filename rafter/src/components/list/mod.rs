@@ -54,5 +54,4 @@ pub mod events;
 pub mod render;
 mod state;
 
-pub use events::{ActivateEvent, CursorMoveEvent, ListEvents, SelectionChangeEvent};
 pub use state::{AnyList, List, ListId, ListItem, Selection, SelectionMode};

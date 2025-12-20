@@ -1,6 +1,7 @@
 use crate::components::events::{ComponentEvents, EventResult};
 use crate::components::list::AnyList;
 use crate::components::{Input, Scrollable};
+use crate::context::AppContext;
 use crate::events::ScrollDirection;
 use crate::keybinds::{HandlerId, KeyCombo};
 use crate::style::Style;
@@ -468,27 +469,33 @@ impl Node {
     /// Dispatch a click event to a component.
     ///
     /// Finds the component with the given ID and delegates to its `on_click` handler.
-    pub fn dispatch_click_event(&self, target_id: &str, x: u16, y: u16) -> Option<EventResult> {
+    pub fn dispatch_click_event(
+        &self,
+        target_id: &str,
+        x: u16,
+        y: u16,
+        cx: &AppContext,
+    ) -> Option<EventResult> {
         match self {
             Self::Scrollable { id, component, .. } if id == target_id => {
-                Some(component.on_click(x, y))
+                Some(component.on_click(x, y, cx))
             }
             Self::Input { id, component, .. } if id == target_id => {
                 if let Some(component) = component {
-                    Some(component.on_click(x, y))
+                    Some(component.on_click(x, y, cx))
                 } else {
                     Some(EventResult::Ignored)
                 }
             }
             Self::List { id, component, .. } if id == target_id => {
-                Some(component.on_click(x, y))
+                Some(component.on_click(x, y, cx))
             }
             Self::Column { children, .. }
             | Self::Row { children, .. }
             | Self::Stack { children, .. } => children
                 .iter()
-                .find_map(|c| c.dispatch_click_event(target_id, x, y)),
-            Self::Scrollable { child, .. } => child.dispatch_click_event(target_id, x, y),
+                .find_map(|c| c.dispatch_click_event(target_id, x, y, cx)),
+            Self::Scrollable { child, .. } => child.dispatch_click_event(target_id, x, y, cx),
             _ => None,
         }
     }
@@ -499,21 +506,22 @@ impl Node {
         target_id: &str,
         direction: ScrollDirection,
         amount: u16,
+        cx: &AppContext,
     ) -> Option<EventResult> {
         match self {
             Self::Scrollable { id, component, .. } if id == target_id => {
-                Some(component.on_scroll(direction, amount))
+                Some(component.on_scroll(direction, amount, cx))
             }
             Self::List { id, component, .. } if id == target_id => {
-                Some(component.on_scroll(direction, amount))
+                Some(component.on_scroll(direction, amount, cx))
             }
             Self::Column { children, .. }
             | Self::Row { children, .. }
             | Self::Stack { children, .. } => children
                 .iter()
-                .find_map(|c| c.dispatch_scroll_event(target_id, direction, amount)),
+                .find_map(|c| c.dispatch_scroll_event(target_id, direction, amount, cx)),
             Self::Scrollable { child, .. } => {
-                child.dispatch_scroll_event(target_id, direction, amount)
+                child.dispatch_scroll_event(target_id, direction, amount, cx)
             }
             _ => None,
         }
@@ -522,35 +530,43 @@ impl Node {
     /// Dispatch a drag event to a component.
     ///
     /// The target ID is typically stored from a previous `StartDrag` result.
-    pub fn dispatch_drag_event(&self, target_id: &str, x: u16, y: u16) -> Option<EventResult> {
+    pub fn dispatch_drag_event(
+        &self,
+        target_id: &str,
+        x: u16,
+        y: u16,
+        cx: &AppContext,
+    ) -> Option<EventResult> {
         match self {
             Self::Scrollable { id, component, .. } if id == target_id => {
-                Some(component.on_drag(x, y))
+                Some(component.on_drag(x, y, cx))
             }
             Self::List { id, component, .. } if id == target_id => {
-                Some(component.on_drag(x, y))
+                Some(component.on_drag(x, y, cx))
             }
             Self::Column { children, .. }
             | Self::Row { children, .. }
             | Self::Stack { children, .. } => children
                 .iter()
-                .find_map(|c| c.dispatch_drag_event(target_id, x, y)),
-            Self::Scrollable { child, .. } => child.dispatch_drag_event(target_id, x, y),
+                .find_map(|c| c.dispatch_drag_event(target_id, x, y, cx)),
+            Self::Scrollable { child, .. } => child.dispatch_drag_event(target_id, x, y, cx),
             _ => None,
         }
     }
 
     /// Dispatch a drag release event to a component.
-    pub fn dispatch_release_event(&self, target_id: &str) -> Option<EventResult> {
+    pub fn dispatch_release_event(&self, target_id: &str, cx: &AppContext) -> Option<EventResult> {
         match self {
-            Self::Scrollable { id, component, .. } if id == target_id => Some(component.on_release()),
-            Self::List { id, component, .. } if id == target_id => Some(component.on_release()),
+            Self::Scrollable { id, component, .. } if id == target_id => {
+                Some(component.on_release(cx))
+            }
+            Self::List { id, component, .. } if id == target_id => Some(component.on_release(cx)),
             Self::Column { children, .. }
             | Self::Row { children, .. }
             | Self::Stack { children, .. } => children
                 .iter()
-                .find_map(|c| c.dispatch_release_event(target_id)),
-            Self::Scrollable { child, .. } => child.dispatch_release_event(target_id),
+                .find_map(|c| c.dispatch_release_event(target_id, cx)),
+            Self::Scrollable { child, .. } => child.dispatch_release_event(target_id, cx),
             _ => None,
         }
     }
@@ -560,23 +576,50 @@ impl Node {
         &self,
         target_id: &str,
         key: &KeyCombo,
+        cx: &AppContext,
     ) -> Option<EventResult> {
         match self {
             Self::Input { id, component, .. } if id == target_id => {
                 if let Some(component) = component {
-                    Some(component.on_key(key))
+                    Some(component.on_key(key, cx))
                 } else {
                     Some(EventResult::Ignored)
                 }
             }
-            Self::Scrollable { id, component, .. } if id == target_id => Some(component.on_key(key)),
-            Self::List { id, component, .. } if id == target_id => Some(component.on_key(key)),
+            Self::Scrollable { id, component, .. } if id == target_id => {
+                Some(component.on_key(key, cx))
+            }
+            Self::List { id, component, .. } if id == target_id => Some(component.on_key(key, cx)),
             Self::Column { children, .. }
             | Self::Row { children, .. }
             | Self::Stack { children, .. } => children
                 .iter()
-                .find_map(|c| c.dispatch_key_event(target_id, key)),
-            Self::Scrollable { child, .. } => child.dispatch_key_event(target_id, key),
+                .find_map(|c| c.dispatch_key_event(target_id, key, cx)),
+            Self::Scrollable { child, .. } => child.dispatch_key_event(target_id, key, cx),
+            _ => None,
+        }
+    }
+
+    /// Dispatch a hover event to a component.
+    ///
+    /// Called when the mouse moves over a component's bounds.
+    pub fn dispatch_hover_event(
+        &self,
+        target_id: &str,
+        x: u16,
+        y: u16,
+        cx: &AppContext,
+    ) -> Option<EventResult> {
+        match self {
+            Self::List { id, component, .. } if id == target_id => {
+                Some(component.on_hover(x, y, cx))
+            }
+            Self::Column { children, .. }
+            | Self::Row { children, .. }
+            | Self::Stack { children, .. } => children
+                .iter()
+                .find_map(|c| c.dispatch_hover_event(target_id, x, y, cx)),
+            Self::Scrollable { child, .. } => child.dispatch_hover_event(target_id, x, y, cx),
             _ => None,
         }
     }

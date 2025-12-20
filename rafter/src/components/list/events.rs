@@ -2,209 +2,92 @@
 
 use crate::components::events::{ComponentEvents, EventResult};
 use crate::components::scrollbar::{ScrollbarDrag, ScrollbarState};
+use crate::context::AppContext;
 use crate::events::ScrollDirection;
 use crate::keybinds::{Key, KeyCombo};
 
 use super::state::{List, ListItem, SelectionMode};
 
-/// Event fired when an item is activated (click or Enter).
-#[derive(Debug, Clone)]
-pub struct ActivateEvent {
-    /// The index of the activated item.
-    pub index: usize,
-}
-
-/// Event fired when the selection changes.
-#[derive(Debug, Clone)]
-pub struct SelectionChangeEvent {
-    /// All currently selected indices.
-    pub selected: Vec<usize>,
-    /// Indices that were added to the selection.
-    pub added: Vec<usize>,
-    /// Indices that were removed from the selection.
-    pub removed: Vec<usize>,
-}
-
-/// Event fired when the cursor moves.
-#[derive(Debug, Clone)]
-pub struct CursorMoveEvent {
-    /// Previous cursor position (None if no previous cursor).
-    pub previous: Option<usize>,
-    /// Current cursor position.
-    pub current: usize,
-}
-
-/// Pending events to be dispatched after input handling.
-#[derive(Debug, Clone, Default)]
-pub struct ListEvents {
-    pub activate: Option<ActivateEvent>,
-    pub selection_change: Option<SelectionChangeEvent>,
-    pub cursor_move: Option<CursorMoveEvent>,
-}
-
 impl<T: ListItem> List<T> {
-    /// Handle a click at the given y-offset within the list viewport.
-    /// Returns events that should be dispatched.
-    pub fn handle_click(
-        &self,
-        y_in_viewport: u16,
-        ctrl: bool,
-        shift: bool,
-    ) -> ListEvents {
-        let mut events = ListEvents::default();
-
+    /// Calculate the list item index from a y-offset within the viewport.
+    fn index_from_viewport_y(&self, y_in_viewport: u16) -> Option<usize> {
         let scroll_offset = self.scroll_offset();
         let item_height = T::HEIGHT;
         let absolute_y = scroll_offset + y_in_viewport;
         let index = (absolute_y / item_height) as usize;
 
-        if index >= self.len() {
-            return events;
+        if index < self.len() {
+            Some(index)
+        } else {
+            None
         }
-
-        // Move cursor
-        let previous = self.set_cursor(index);
-        if previous != Some(index) {
-            events.cursor_move = Some(CursorMoveEvent {
-                previous,
-                current: index,
-            });
-        }
-
-        // Handle selection based on modifiers
-        match self.selection_mode() {
-            SelectionMode::None => {
-                // Just activate on click
-                events.activate = Some(ActivateEvent { index });
-            }
-            SelectionMode::Single => {
-                if ctrl {
-                    // Toggle selection
-                    let (added, removed) = self.toggle_select(index);
-                    if !added.is_empty() || !removed.is_empty() {
-                        events.selection_change = Some(SelectionChangeEvent {
-                            selected: self.selected_indices(),
-                            added,
-                            removed,
-                        });
-                    }
-                } else {
-                    // Activate
-                    events.activate = Some(ActivateEvent { index });
-                }
-            }
-            SelectionMode::Multiple => {
-                if shift {
-                    // Range select
-                    let (added, removed) = self.range_select(index, ctrl);
-                    if !added.is_empty() || !removed.is_empty() {
-                        events.selection_change = Some(SelectionChangeEvent {
-                            selected: self.selected_indices(),
-                            added,
-                            removed,
-                        });
-                    }
-                } else if ctrl {
-                    // Toggle selection
-                    let (added, removed) = self.toggle_select(index);
-                    if !added.is_empty() || !removed.is_empty() {
-                        events.selection_change = Some(SelectionChangeEvent {
-                            selected: self.selected_indices(),
-                            added,
-                            removed,
-                        });
-                    }
-                } else {
-                    // Activate
-                    events.activate = Some(ActivateEvent { index });
-                }
-            }
-        }
-
-        // Ensure cursor is visible
-        self.scroll_to_cursor();
-
-        events
     }
 
-    /// Handle a hover at the given y-offset within the list viewport.
-    /// Only moves the cursor, doesn't trigger selection or activation.
-    /// Returns events that should be dispatched.
-    pub fn handle_hover(&self, y_in_viewport: u16) -> ListEvents {
-        let mut events = ListEvents::default();
-
-        let scroll_offset = self.scroll_offset();
-        let item_height = T::HEIGHT;
-        let absolute_y = scroll_offset + y_in_viewport;
-        let index = (absolute_y / item_height) as usize;
-
-        if index >= self.len() {
-            return events;
+    /// Handle cursor movement, setting context and returning true if cursor changed.
+    fn handle_cursor_move(&self, new_cursor: usize, cx: &AppContext) -> bool {
+        let previous = self.set_cursor(new_cursor);
+        if previous != Some(new_cursor) {
+            cx.set_list_cursor(new_cursor);
+            true
+        } else {
+            false
         }
-
-        // Move cursor (hover only moves cursor, no selection/activation)
-        let previous = self.set_cursor(index);
-        if previous != Some(index) {
-            events.cursor_move = Some(CursorMoveEvent {
-                previous,
-                current: index,
-            });
-        }
-
-        events
     }
 
-    /// Handle keyboard input. Returns events that should be dispatched.
-    pub fn handle_key(&self, key: &KeyCombo) -> (EventResult, ListEvents) {
-        let mut events = ListEvents::default();
+    /// Handle activation, setting context.
+    fn handle_activate(&self, index: usize, cx: &AppContext) {
+        cx.set_list_activated_index(index);
+    }
 
+    /// Handle selection change, setting context if selection changed.
+    fn handle_selection_change(&self, added: Vec<usize>, removed: Vec<usize>, cx: &AppContext) {
+        if !added.is_empty() || !removed.is_empty() {
+            cx.set_list_selected_indices(self.selected_indices());
+        }
+    }
+}
+
+impl<T: ListItem> ComponentEvents for List<T> {
+    fn on_key(&self, key: &KeyCombo, cx: &AppContext) -> EventResult {
         // Navigation keys
         match key.key {
-            Key::Up | Key::Char('k') if !key.modifiers.ctrl && !key.modifiers.alt => {
+            Key::Up if !key.modifiers.ctrl && !key.modifiers.alt => {
                 if let Some((prev, curr)) = self.cursor_up() {
-                    events.cursor_move = Some(CursorMoveEvent {
-                        previous: prev,
-                        current: curr,
-                    });
+                    cx.set_list_cursor(curr);
+                    let _ = prev; // Suppress unused warning
                     self.scroll_to_cursor();
-                    return (EventResult::Consumed, events);
+                    return EventResult::Consumed;
                 }
             }
-            Key::Down | Key::Char('j') if !key.modifiers.ctrl && !key.modifiers.alt => {
+            Key::Down if !key.modifiers.ctrl && !key.modifiers.alt => {
                 if let Some((prev, curr)) = self.cursor_down() {
-                    events.cursor_move = Some(CursorMoveEvent {
-                        previous: prev,
-                        current: curr,
-                    });
+                    cx.set_list_cursor(curr);
+                    let _ = prev;
                     self.scroll_to_cursor();
-                    return (EventResult::Consumed, events);
+                    return EventResult::Consumed;
                 }
             }
-            Key::Home | Key::Char('g') if !key.modifiers.ctrl && !key.modifiers.alt => {
+            Key::Home if !key.modifiers.ctrl && !key.modifiers.alt => {
                 if let Some((prev, curr)) = self.cursor_first() {
-                    events.cursor_move = Some(CursorMoveEvent {
-                        previous: prev,
-                        current: curr,
-                    });
+                    cx.set_list_cursor(curr);
+                    let _ = prev;
                     self.scroll_to_cursor();
-                    return (EventResult::Consumed, events);
+                    return EventResult::Consumed;
                 }
             }
-            Key::End | Key::Char('G') if !key.modifiers.ctrl && !key.modifiers.alt => {
+            Key::End if !key.modifiers.ctrl && !key.modifiers.alt => {
                 if let Some((prev, curr)) = self.cursor_last() {
-                    events.cursor_move = Some(CursorMoveEvent {
-                        previous: prev,
-                        current: curr,
-                    });
+                    cx.set_list_cursor(curr);
+                    let _ = prev;
                     self.scroll_to_cursor();
-                    return (EventResult::Consumed, events);
+                    return EventResult::Consumed;
                 }
             }
             Key::Enter if !key.modifiers.ctrl && !key.modifiers.alt => {
                 // Activate current cursor
                 if let Some(index) = self.cursor() {
-                    events.activate = Some(ActivateEvent { index });
-                    return (EventResult::Consumed, events);
+                    cx.set_list_activated_index(index);
+                    return EventResult::Consumed;
                 }
             }
             Key::Space if !key.modifiers.ctrl && !key.modifiers.alt => {
@@ -212,14 +95,8 @@ impl<T: ListItem> List<T> {
                 if let Some(index) = self.cursor() {
                     if self.selection_mode() != SelectionMode::None {
                         let (added, removed) = self.toggle_select(index);
-                        if !added.is_empty() || !removed.is_empty() {
-                            events.selection_change = Some(SelectionChangeEvent {
-                                selected: self.selected_indices(),
-                                added,
-                                removed,
-                            });
-                        }
-                        return (EventResult::Consumed, events);
+                        self.handle_selection_change(added, removed, cx);
+                        return EventResult::Consumed;
                     }
                 }
             }
@@ -227,26 +104,16 @@ impl<T: ListItem> List<T> {
                 // Select all
                 if self.selection_mode() == SelectionMode::Multiple {
                     let added = self.select_all();
-                    if !added.is_empty() {
-                        events.selection_change = Some(SelectionChangeEvent {
-                            selected: self.selected_indices(),
-                            added,
-                            removed: vec![],
-                        });
-                    }
-                    return (EventResult::Consumed, events);
+                    self.handle_selection_change(added, vec![], cx);
+                    return EventResult::Consumed;
                 }
             }
             Key::Escape => {
                 // Clear selection
                 let removed = self.deselect_all();
                 if !removed.is_empty() {
-                    events.selection_change = Some(SelectionChangeEvent {
-                        selected: vec![],
-                        added: vec![],
-                        removed,
-                    });
-                    return (EventResult::Consumed, events);
+                    self.handle_selection_change(vec![], removed, cx);
+                    return EventResult::Consumed;
                 }
             }
             Key::PageUp => {
@@ -255,13 +122,10 @@ impl<T: ListItem> List<T> {
                 if let Some(cursor) = self.cursor() {
                     let new_cursor = cursor.saturating_sub(viewport_items);
                     if new_cursor != cursor {
-                        let previous = self.set_cursor(new_cursor);
-                        events.cursor_move = Some(CursorMoveEvent {
-                            previous,
-                            current: new_cursor,
-                        });
+                        self.set_cursor(new_cursor);
+                        cx.set_list_cursor(new_cursor);
                         self.scroll_to_cursor();
-                        return (EventResult::Consumed, events);
+                        return EventResult::Consumed;
                     }
                 }
             }
@@ -272,31 +136,20 @@ impl<T: ListItem> List<T> {
                     let max_index = self.len().saturating_sub(1);
                     let new_cursor = (cursor + viewport_items).min(max_index);
                     if new_cursor != cursor {
-                        let previous = self.set_cursor(new_cursor);
-                        events.cursor_move = Some(CursorMoveEvent {
-                            previous,
-                            current: new_cursor,
-                        });
+                        self.set_cursor(new_cursor);
+                        cx.set_list_cursor(new_cursor);
                         self.scroll_to_cursor();
-                        return (EventResult::Consumed, events);
+                        return EventResult::Consumed;
                     }
                 }
             }
             _ => {}
         }
 
-        (EventResult::Ignored, events)
-    }
-}
-
-impl<T: ListItem> ComponentEvents for List<T> {
-    fn on_key(&self, key: &KeyCombo) -> EventResult {
-        // Basic key handling - events are handled separately via handle_key
-        let (result, _events) = self.handle_key(key);
-        result
+        EventResult::Ignored
     }
 
-    fn on_click(&self, x: u16, y: u16) -> EventResult {
+    fn on_click(&self, x: u16, y: u16, cx: &AppContext) -> EventResult {
         // Check vertical scrollbar first
         if let Some(geom) = ScrollbarState::vertical_scrollbar(self) {
             if geom.contains(x, y) {
@@ -324,12 +177,33 @@ impl<T: ListItem> ComponentEvents for List<T> {
             }
         }
 
-        // Not on scrollbar - let the event loop handle list item interaction
-        // with proper viewport-relative coordinates
+        // Handle click on list item
+        // Note: y is relative to the list's content area (set by event loop)
+        if let Some(index) = self.index_from_viewport_y(y) {
+            // Move cursor
+            self.handle_cursor_move(index, cx);
+
+            // Handle activation (simple click without modifiers)
+            // Selection with modifiers is handled by on_click_with_modifiers
+            self.handle_activate(index, cx);
+            self.scroll_to_cursor();
+            return EventResult::Consumed;
+        }
+
         EventResult::Ignored
     }
 
-    fn on_scroll(&self, direction: ScrollDirection, amount: u16) -> EventResult {
+    fn on_hover(&self, _x: u16, y: u16, cx: &AppContext) -> EventResult {
+        // Move cursor on hover (y is relative to list content area)
+        if let Some(index) = self.index_from_viewport_y(y) {
+            if self.handle_cursor_move(index, cx) {
+                return EventResult::Consumed;
+            }
+        }
+        EventResult::Ignored
+    }
+
+    fn on_scroll(&self, direction: ScrollDirection, amount: u16, _cx: &AppContext) -> EventResult {
         let amount = amount as i16;
         match direction {
             ScrollDirection::Up => ScrollbarState::scroll_by(self, 0, -amount),
@@ -342,7 +216,7 @@ impl<T: ListItem> ComponentEvents for List<T> {
         EventResult::Consumed
     }
 
-    fn on_drag(&self, x: u16, y: u16) -> EventResult {
+    fn on_drag(&self, x: u16, y: u16, _cx: &AppContext) -> EventResult {
         if let Some(drag) = ScrollbarState::drag(self) {
             if drag.is_vertical {
                 if let Some(geom) = ScrollbarState::vertical_scrollbar(self) {
@@ -356,12 +230,68 @@ impl<T: ListItem> ComponentEvents for List<T> {
         }
     }
 
-    fn on_release(&self) -> EventResult {
+    fn on_release(&self, _cx: &AppContext) -> EventResult {
         if ScrollbarState::drag(self).is_some() {
             ScrollbarState::set_drag(self, None);
             EventResult::Consumed
         } else {
             EventResult::Ignored
         }
+    }
+}
+
+impl<T: ListItem> List<T> {
+    /// Handle click with modifier keys (Ctrl, Shift).
+    /// This is called by the event loop when it has access to modifier state.
+    pub fn on_click_with_modifiers(
+        &self,
+        y_in_viewport: u16,
+        ctrl: bool,
+        shift: bool,
+        cx: &AppContext,
+    ) -> EventResult {
+        let Some(index) = self.index_from_viewport_y(y_in_viewport) else {
+            return EventResult::Ignored;
+        };
+
+        // Move cursor
+        self.handle_cursor_move(index, cx);
+
+        // Handle selection based on modifiers
+        match self.selection_mode() {
+            SelectionMode::None => {
+                // Just activate on click
+                self.handle_activate(index, cx);
+            }
+            SelectionMode::Single => {
+                if ctrl {
+                    // Toggle selection
+                    let (added, removed) = self.toggle_select(index);
+                    self.handle_selection_change(added, removed, cx);
+                } else {
+                    // Activate
+                    self.handle_activate(index, cx);
+                }
+            }
+            SelectionMode::Multiple => {
+                if shift {
+                    // Range select
+                    let (added, removed) = self.range_select(index, ctrl);
+                    self.handle_selection_change(added, removed, cx);
+                } else if ctrl {
+                    // Toggle selection
+                    let (added, removed) = self.toggle_select(index);
+                    self.handle_selection_change(added, removed, cx);
+                } else {
+                    // Activate
+                    self.handle_activate(index, cx);
+                }
+            }
+        }
+
+        // Ensure cursor is visible
+        self.scroll_to_cursor();
+
+        EventResult::Consumed
     }
 }

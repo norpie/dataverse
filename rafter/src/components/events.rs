@@ -3,7 +3,12 @@
 //! This module defines the core types for component-based event handling,
 //! allowing each component to handle its own events while keeping the
 //! event loop as a thin dispatcher.
+//!
+//! Components set their context data (e.g., cursor position, input text)
+//! via `AppContext` before returning from event handlers. The event loop
+//! then dispatches appropriate handlers based on what context was set.
 
+use crate::context::AppContext;
 use crate::events::ScrollDirection;
 use crate::keybinds::KeyCombo;
 
@@ -31,6 +36,10 @@ impl EventResult {
 /// The event loop dispatches events to components through these methods,
 /// allowing component-specific behavior to be encapsulated within the component.
 ///
+/// Components should set any relevant context data via `AppContext` (e.g.,
+/// `cx.set_list_cursor()`, `cx.set_input_text()`) before returning. The event
+/// loop will then dispatch appropriate handlers based on what context was set.
+///
 /// # Default Implementations
 ///
 /// All methods have default implementations that return `EventResult::Ignored`,
@@ -40,14 +49,21 @@ pub trait ComponentEvents {
     ///
     /// Called when the user clicks within the component's bounds.
     /// Return `EventResult::StartDrag` to begin a drag operation.
-    fn on_click(&self, _x: u16, _y: u16) -> EventResult {
+    fn on_click(&self, _x: u16, _y: u16, _cx: &AppContext) -> EventResult {
+        EventResult::Ignored
+    }
+
+    /// Handle a hover event at the given position.
+    ///
+    /// Called when the mouse moves within the component's bounds.
+    fn on_hover(&self, _x: u16, _y: u16, _cx: &AppContext) -> EventResult {
         EventResult::Ignored
     }
 
     /// Handle a scroll event.
     ///
     /// Called when the user scrolls (mouse wheel) within the component's bounds.
-    fn on_scroll(&self, _direction: ScrollDirection, _amount: u16) -> EventResult {
+    fn on_scroll(&self, _direction: ScrollDirection, _amount: u16, _cx: &AppContext) -> EventResult {
         EventResult::Ignored
     }
 
@@ -55,7 +71,7 @@ pub trait ComponentEvents {
     ///
     /// Called when the user drags after a `StartDrag` result from `on_click`.
     /// The component should track its own drag state internally.
-    fn on_drag(&self, _x: u16, _y: u16) -> EventResult {
+    fn on_drag(&self, _x: u16, _y: u16, _cx: &AppContext) -> EventResult {
         EventResult::Ignored
     }
 
@@ -63,7 +79,7 @@ pub trait ComponentEvents {
     ///
     /// Called when the user releases the mouse button after dragging.
     /// The component should clear any internal drag state.
-    fn on_release(&self) -> EventResult {
+    fn on_release(&self, _cx: &AppContext) -> EventResult {
         EventResult::Ignored
     }
 
@@ -72,7 +88,7 @@ pub trait ComponentEvents {
     /// Called when the user presses a key while this component has focus.
     /// Return `EventResult::Consumed` to prevent the key from being
     /// processed as a keybind.
-    fn on_key(&self, _key: &KeyCombo) -> EventResult {
+    fn on_key(&self, _key: &KeyCombo, _cx: &AppContext) -> EventResult {
         EventResult::Ignored
     }
 }

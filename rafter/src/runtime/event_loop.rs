@@ -7,7 +7,6 @@ use crossterm::event;
 use log::{debug, info, trace, warn};
 
 use crate::app::App;
-use crate::components::list::ListEvents;
 use crate::components::EventResult;
 use crate::context::{AppContext, Toast};
 use crate::focus::{FocusId, FocusState};
@@ -325,51 +324,44 @@ pub async fn run_event_loop<A: App>(
 
                             // Dispatch to focused component
                             if let Some(ref focus_id) = current_focus {
-                                // Check if this is a List component - handle list events specially
-                                if let Some(list_component) = view.get_list_component(focus_id) {
-                                    let (result, list_events) = list_component.handle_key_events(key_combo);
-                                    
-                                    // Dispatch list events (activate, selection change, cursor move)
-                                    dispatch_list_events(&view, focus_id, list_events, &app, &modal_stack, &cx);
-                                    
-                                    if result.is_handled() {
-                                        continue;
-                                    }
-                                    // If not handled by list (e.g. Escape with no selection), fall through
-                                }
-                                // Handle Enter key for non-list focused elements
-                                else if key_combo.key == Key::Enter {
+                                // Handle Enter key - triggers submit handler
+                                if key_combo.key == Key::Enter {
                                     debug!("Enter on focused element: {:?}", focus_id);
-                                    if let Some(handler_id) = view.get_submit_handler(focus_id) {
-                                        // For inputs, set the input text from the component
-                                        if let Some(component) = view.get_input_component(focus_id) {
-                                            cx.set_input_text(component.value());
+                                    // Dispatch to component first (sets context data)
+                                    if let Some(result) = view.dispatch_key_event(focus_id, key_combo, &cx) {
+                                        if result.is_handled() {
+                                            // Dispatch handlers based on context data
+                                            dispatch_component_handlers(&view, focus_id, &app, &modal_stack, &cx);
+                                            continue;
                                         }
-                                        dispatch_to_layer(
-                                            &app,
-                                            &modal_stack,
-                                            &handler_id,
-                                            &cx,
-                                        );
+                                    }
+                                    // Fallback for buttons etc
+                                    if let Some(handler_id) = view.get_submit_handler(focus_id) {
+                                        dispatch_to_layer(&app, &modal_stack, &handler_id, &cx);
                                     }
                                     continue;
                                 }
-                                // For Inputs, verify value change to trigger on_change
-                                else {
-                                    let old_value = view.get_input_component(focus_id).map(|c| c.value());
-                                    
-                                    if let Some(result) = view.dispatch_key_event(focus_id, key_combo) {
-                                        if result.is_handled() {
-                                            // Check if value changed
-                                            if let Some(old) = old_value {
-                                                if let Some(component) = view.get_input_component(focus_id) {
-                                                    if component.value() != old {
-                                                        notify_input_change(&view, &current_focus, &app, &modal_stack, &cx);
+                                
+                                // For all other keys, dispatch to component
+                                let old_value = view.get_input_component(focus_id).map(|c| c.value());
+                                
+                                if let Some(result) = view.dispatch_key_event(focus_id, key_combo, &cx) {
+                                    if result.is_handled() {
+                                        // Dispatch handlers based on context data
+                                        dispatch_component_handlers(&view, focus_id, &app, &modal_stack, &cx);
+                                        
+                                        // For inputs, check if value changed to trigger on_change
+                                        if let Some(old) = old_value {
+                                            if let Some(component) = view.get_input_component(focus_id) {
+                                                if component.value() != old {
+                                                    cx.set_input_text(component.value());
+                                                    if let Some(handler_id) = view.get_change_handler(focus_id) {
+                                                        dispatch_to_layer(&app, &modal_stack, &handler_id, &cx);
                                                     }
                                                 }
                                             }
-                                            continue;
                                         }
+                                        continue;
                                     }
                                 }
                             }
@@ -424,44 +416,45 @@ pub async fn run_event_loop<A: App>(
                             if let Some(hit_box) =
                                 hit_map.hit_test(click.position.x, click.position.y)
                             {
-                                // Check if this is a List component - handle list events specially
+                                // Focus the clicked element
+                                if let Some(entry) = modal_stack.last_mut() {
+                                    entry.focus_state.set_focus(hit_box.id.clone());
+                                } else {
+                                    app_focus_state.set_focus(hit_box.id.clone());
+                                }
+                                
+                                // Check if this is a List component with Ctrl/Shift modifiers
                                 if let Some(list_component) = view.get_list_component(&hit_box.id) {
                                     debug!("Clicked on list element: {}", hit_box.id);
                                     
-                                    // Focus the list
-                                    if let Some(entry) = modal_stack.last_mut() {
-                                        entry.focus_state.set_focus(hit_box.id.clone());
-                                    } else {
-                                        app_focus_state.set_focus(hit_box.id.clone());
-                                    }
-                                    
-                                    // First check if click is on scrollbar
-                                    if let Some(result) = view.dispatch_click_event(&hit_box.id, click.position.x, click.position.y) {
+                                    // First check if click is on scrollbar (dispatch_click_event handles this)
+                                    if let Some(result) = view.dispatch_click_event(&hit_box.id, click.position.x, click.position.y, &cx) {
                                         match result {
                                             EventResult::StartDrag => {
                                                 drag_component_id = Some(hit_box.id.clone());
                                                 continue;
                                             }
-                                            EventResult::Consumed => continue,
+                                            EventResult::Consumed => {
+                                                dispatch_component_handlers(&view, &hit_box.id, &app, &modal_stack, &cx);
+                                                continue;
+                                            }
                                             EventResult::Ignored => {}
                                         }
                                     }
                                     
-                                    // Calculate y position relative to list content area
+                                    // Handle click with modifiers (Ctrl/Shift)
                                     let y_in_viewport = click.position.y.saturating_sub(hit_box.rect.y);
-                                    
-                                    // Get list events (handles Ctrl/Shift modifiers)
                                     let ctrl = click.modifiers.ctrl;
                                     let shift = click.modifiers.shift;
-                                    let list_events = list_component.handle_click_events(y_in_viewport, ctrl, shift);
+                                    list_component.on_click_with_modifiers(y_in_viewport, ctrl, shift, &cx);
                                     
-                                    // Dispatch list events
-                                    dispatch_list_events(&view, &hit_box.id, list_events, &app, &modal_stack, &cx);
+                                    // Dispatch handlers based on context data
+                                    dispatch_component_handlers(&view, &hit_box.id, &app, &modal_stack, &cx);
                                     continue;
                                 }
 
                                 // First try to dispatch to component (handles scrollbars etc)
-                                if let Some(result) = view.dispatch_click_event(&hit_box.id, click.position.x, click.position.y) {
+                                if let Some(result) = view.dispatch_click_event(&hit_box.id, click.position.x, click.position.y, &cx) {
                                     match result {
                                         EventResult::StartDrag => {
                                             drag_component_id = Some(hit_box.id.clone());
@@ -473,13 +466,6 @@ pub async fn run_event_loop<A: App>(
                                 }
 
                                 debug!("Clicked element: {}", hit_box.id);
-
-                                // Focus the clicked element
-                                if let Some(entry) = modal_stack.last_mut() {
-                                    entry.focus_state.set_focus(hit_box.id.clone());
-                                } else {
-                                    app_focus_state.set_focus(hit_box.id.clone());
-                                }
 
                                 // If it's a button, dispatch click handler
                                 if !hit_box.captures_input {
@@ -513,44 +499,7 @@ pub async fn run_event_loop<A: App>(
                             if let Some(hit_box) =
                                 hit_map.hit_test(final_position.x, final_position.y)
                             {
-                                // Check if this is a List component - handle hover to move cursor
-                                if let Some(list_component) = view.get_list_component(&hit_box.id) {
-                                    // Focus the list if not already focused
-                                    let current_focus = if let Some(entry) = modal_stack.last() {
-                                        entry.focus_state.current().map(|f| f.0.clone())
-                                    } else {
-                                        app_focus_state.current().map(|f| f.0.clone())
-                                    };
-                                    if current_focus.as_deref() != Some(&hit_box.id) {
-                                        debug!("Hover focus list: {}", hit_box.id);
-                                        if let Some(entry) = modal_stack.last_mut() {
-                                            entry.focus_state.set_focus(hit_box.id.clone());
-                                        } else {
-                                            app_focus_state.set_focus(hit_box.id.clone());
-                                        }
-                                    }
-
-                                    // Calculate y position relative to list content area
-                                    let y_in_viewport =
-                                        final_position.y.saturating_sub(hit_box.rect.y);
-
-                                    // Get list events (hover only moves cursor)
-                                    let list_events =
-                                        list_component.handle_hover_events(y_in_viewport);
-
-                                    // Dispatch cursor move events
-                                    dispatch_list_events(
-                                        &view,
-                                        &hit_box.id,
-                                        list_events,
-                                        &app,
-                                        &modal_stack,
-                                        &cx,
-                                    );
-                                    continue;
-                                }
-
-                                // Non-list elements: just focus on hover
+                                // Focus if not already focused
                                 let current_focus = if let Some(entry) = modal_stack.last() {
                                     entry.focus_state.current().map(|f| f.0.clone())
                                 } else {
@@ -564,6 +513,18 @@ pub async fn run_event_loop<A: App>(
                                         app_focus_state.set_focus(hit_box.id.clone());
                                     }
                                 }
+
+                                // Dispatch hover event to component (lists use this to move cursor)
+                                if let Some(result) = view.dispatch_hover_event(
+                                    &hit_box.id,
+                                    final_position.x,
+                                    final_position.y.saturating_sub(hit_box.rect.y),
+                                    &cx,
+                                ) {
+                                    if result.is_handled() {
+                                        dispatch_component_handlers(&view, &hit_box.id, &app, &modal_stack, &cx);
+                                    }
+                                }
                             }
                         }
                         Event::Scroll(ref scroll) => {
@@ -574,17 +535,17 @@ pub async fn run_event_loop<A: App>(
                                 hit_map.hit_test(scroll.position.x, scroll.position.y)
                             {
                                 // Dispatch scroll event to component
-                                view.dispatch_scroll_event(&hit_box.id, scroll.direction, scroll.amount);
+                                view.dispatch_scroll_event(&hit_box.id, scroll.direction, scroll.amount, &cx);
                             }
                         }
                         Event::Release(_) => {
                             if let Some(id) = drag_component_id.take() {
-                                view.dispatch_release_event(&id);
+                                view.dispatch_release_event(&id, &cx);
                             }
                         }
                         Event::Drag(ref drag) => {
                             if let Some(ref id) = drag_component_id {
-                                view.dispatch_drag_event(id, drag.position.x, drag.position.y);
+                                view.dispatch_drag_event(id, drag.position.x, drag.position.y, &cx);
                             }
                         }
                     }
@@ -614,54 +575,39 @@ fn dispatch_to_layer<A: App>(
     }
 }
 
-/// Notify on_change handler if present
-fn notify_input_change<A: App>(
-    view: &Node,
-    current_focus: &Option<String>,
-    app: &A,
-    modal_stack: &[ModalStackEntry],
-    cx: &AppContext,
-) {
-    if let Some(focus_id) = current_focus {
-        if let Some(handler_id) = view.get_change_handler(focus_id) {
-            if let Some(component) = view.get_input_component(focus_id) {
-                cx.set_input_text(component.value());
-            }
-            dispatch_to_layer(app, modal_stack, &handler_id, cx);
-        }
-    }
-}
-
-/// Dispatch list events (activate, selection change, cursor move) to handlers.
-fn dispatch_list_events<A: App>(
+/// Dispatch handlers based on context data set by components.
+///
+/// Components set their event data (cursor position, selection, activation, input text)
+/// via the AppContext. This function checks what was set and dispatches the appropriate
+/// handlers.
+fn dispatch_component_handlers<A: App>(
     view: &Node,
     focus_id: &str,
-    events: ListEvents,
     app: &A,
     modal_stack: &[ModalStackEntry],
     cx: &AppContext,
 ) {
-    // Handle cursor move event
-    if let Some(cursor_event) = events.cursor_move {
-        cx.set_list_cursor(cursor_event.current);
-        if let Some(handler_id) = view.get_list_cursor_handler(focus_id) {
-            dispatch_to_layer(app, modal_stack, &handler_id, cx);
-        }
-    }
-
-    // Handle selection change event
-    if let Some(selection_event) = events.selection_change {
-        cx.set_list_selected_indices(selection_event.selected);
-        if let Some(handler_id) = view.get_list_selection_handler(focus_id) {
-            dispatch_to_layer(app, modal_stack, &handler_id, cx);
-        }
-    }
-
-    // Handle activate event
-    if let Some(activate_event) = events.activate {
-        cx.set_list_activated_index(activate_event.index);
+    // Handle list activation (Enter on list item or double-click)
+    if cx.list_activated_index().is_some() {
         if let Some(handler_id) = view.get_submit_handler(focus_id) {
             dispatch_to_layer(app, modal_stack, &handler_id, cx);
         }
+        cx.clear_list_activated_index();
+    }
+
+    // Handle list cursor movement
+    if cx.list_cursor().is_some() {
+        if let Some(handler_id) = view.get_list_cursor_handler(focus_id) {
+            dispatch_to_layer(app, modal_stack, &handler_id, cx);
+        }
+        cx.clear_list_cursor();
+    }
+
+    // Handle list selection changes
+    if cx.list_selected_indices().is_some() {
+        if let Some(handler_id) = view.get_list_selection_handler(focus_id) {
+            dispatch_to_layer(app, modal_stack, &handler_id, cx);
+        }
+        cx.clear_list_selected_indices();
     }
 }

@@ -793,36 +793,31 @@ pub trait AnyList: Send + Sync + std::fmt::Debug {
     fn as_any(&self) -> &dyn Any;
 
     /// Handle a key event (for ComponentEvents compatibility).
-    fn on_key(&self, key: &crate::keybinds::KeyCombo) -> crate::components::events::EventResult;
+    fn on_key(&self, key: &crate::keybinds::KeyCombo, cx: &crate::context::AppContext) -> crate::components::events::EventResult;
 
     /// Handle a click event at the given position within the list bounds.
-    fn on_click(&self, x: u16, y: u16) -> crate::components::events::EventResult;
+    fn on_click(&self, x: u16, y: u16, cx: &crate::context::AppContext) -> crate::components::events::EventResult;
+
+    /// Handle a hover event at the given position within the list bounds.
+    fn on_hover(&self, x: u16, y: u16, cx: &crate::context::AppContext) -> crate::components::events::EventResult;
 
     /// Handle a scroll event.
-    fn on_scroll(&self, direction: crate::events::ScrollDirection, amount: u16) -> crate::components::events::EventResult;
+    fn on_scroll(&self, direction: crate::events::ScrollDirection, amount: u16, cx: &crate::context::AppContext) -> crate::components::events::EventResult;
 
     /// Handle a drag event.
-    fn on_drag(&self, x: u16, y: u16) -> crate::components::events::EventResult;
+    fn on_drag(&self, x: u16, y: u16, cx: &crate::context::AppContext) -> crate::components::events::EventResult;
 
     /// Handle a release event.
-    fn on_release(&self) -> crate::components::events::EventResult;
+    fn on_release(&self, cx: &crate::context::AppContext) -> crate::components::events::EventResult;
 
-    /// Handle a key event and return events to dispatch.
-    fn handle_key_events(
-        &self,
-        key: &crate::keybinds::KeyCombo,
-    ) -> (crate::components::events::EventResult, super::events::ListEvents);
-
-    /// Handle a click event and return events to dispatch.
-    fn handle_click_events(
+    /// Handle a click with modifier keys (Ctrl, Shift).
+    fn on_click_with_modifiers(
         &self,
         y_in_viewport: u16,
         ctrl: bool,
         shift: bool,
-    ) -> super::events::ListEvents;
-
-    /// Handle a hover event and return events to dispatch.
-    fn handle_hover_events(&self, y_in_viewport: u16) -> super::events::ListEvents;
+        cx: &crate::context::AppContext,
+    ) -> crate::components::events::EventResult;
 
     // -------------------------------------------------------------------------
     // Scrollbar support
@@ -906,49 +901,44 @@ impl<T: ListItem + std::fmt::Debug> AnyList for List<T> {
         self
     }
 
-    fn on_key(&self, key: &crate::keybinds::KeyCombo) -> crate::components::events::EventResult {
+    fn on_key(&self, key: &crate::keybinds::KeyCombo, cx: &crate::context::AppContext) -> crate::components::events::EventResult {
         use crate::components::events::ComponentEvents;
-        ComponentEvents::on_key(self, key)
+        ComponentEvents::on_key(self, key, cx)
     }
 
-    fn on_click(&self, _x: u16, y: u16) -> crate::components::events::EventResult {
+    fn on_click(&self, x: u16, y: u16, cx: &crate::context::AppContext) -> crate::components::events::EventResult {
         use crate::components::events::ComponentEvents;
-        ComponentEvents::on_click(self, _x, y)
+        ComponentEvents::on_click(self, x, y, cx)
     }
 
-    fn on_scroll(&self, direction: crate::events::ScrollDirection, amount: u16) -> crate::components::events::EventResult {
+    fn on_hover(&self, x: u16, y: u16, cx: &crate::context::AppContext) -> crate::components::events::EventResult {
         use crate::components::events::ComponentEvents;
-        ComponentEvents::on_scroll(self, direction, amount)
+        ComponentEvents::on_hover(self, x, y, cx)
     }
 
-    fn on_drag(&self, x: u16, y: u16) -> crate::components::events::EventResult {
+    fn on_scroll(&self, direction: crate::events::ScrollDirection, amount: u16, cx: &crate::context::AppContext) -> crate::components::events::EventResult {
         use crate::components::events::ComponentEvents;
-        ComponentEvents::on_drag(self, x, y)
+        ComponentEvents::on_scroll(self, direction, amount, cx)
     }
 
-    fn on_release(&self) -> crate::components::events::EventResult {
+    fn on_drag(&self, x: u16, y: u16, cx: &crate::context::AppContext) -> crate::components::events::EventResult {
         use crate::components::events::ComponentEvents;
-        ComponentEvents::on_release(self)
+        ComponentEvents::on_drag(self, x, y, cx)
     }
 
-    fn handle_key_events(
-        &self,
-        key: &crate::keybinds::KeyCombo,
-    ) -> (crate::components::events::EventResult, super::events::ListEvents) {
-        self.handle_key(key)
+    fn on_release(&self, cx: &crate::context::AppContext) -> crate::components::events::EventResult {
+        use crate::components::events::ComponentEvents;
+        ComponentEvents::on_release(self, cx)
     }
 
-    fn handle_click_events(
+    fn on_click_with_modifiers(
         &self,
         y_in_viewport: u16,
         ctrl: bool,
         shift: bool,
-    ) -> super::events::ListEvents {
-        self.handle_click(y_in_viewport, ctrl, shift)
-    }
-
-    fn handle_hover_events(&self, y_in_viewport: u16) -> super::events::ListEvents {
-        self.handle_hover(y_in_viewport)
+        cx: &crate::context::AppContext,
+    ) -> crate::components::events::EventResult {
+        List::on_click_with_modifiers(self, y_in_viewport, ctrl, shift, cx)
     }
 
     fn scrollbar_config(&self) -> ScrollbarConfig {
