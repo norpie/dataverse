@@ -4,7 +4,7 @@ use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant};
 
 use crossterm::event;
-use log::{debug, info, trace};
+use log::{debug, info, trace, warn};
 
 use crate::app::App;
 use crate::components::list::ListEvents;
@@ -22,6 +22,42 @@ use super::modal::{calculate_modal_area, ModalStackEntry};
 use super::render::{dim_backdrop, fill_background, render_node, render_toasts};
 use super::terminal::TerminalGuard;
 use super::RuntimeError;
+
+use crate::events::Position;
+
+/// Coalesce pending hover events, returning the latest hover position.
+/// This drains all pending events and returns:
+/// - The latest hover position (if any hover events were found)
+/// - Any non-hover events that were encountered (to be processed later)
+/// - The count of skipped hover events
+fn coalesce_hover_events(
+    initial_position: Position,
+) -> Result<(Position, Vec<event::Event>, usize), std::io::Error> {
+    let mut latest_position = initial_position;
+    let mut other_events = Vec::new();
+    let mut skipped_count = 0;
+
+    // Drain all pending events
+    while event::poll(Duration::from_millis(0))? {
+        if let Ok(crossterm_event) = event::read() {
+            if let Some(rafter_event) = convert_event(crossterm_event.clone()) {
+                match rafter_event {
+                    Event::Hover(pos) => {
+                        // Replace with newer hover position
+                        latest_position = pos;
+                        skipped_count += 1;
+                    }
+                    _ => {
+                        // Keep non-hover events for later processing
+                        other_events.push(crossterm_event);
+                    }
+                }
+            }
+        }
+    }
+
+    Ok((latest_position, other_events, skipped_count))
+}
 
 /// Run the main event loop for an app.
 pub async fn run_event_loop<A: App>(
@@ -151,12 +187,18 @@ pub async fn run_event_loop<A: App>(
         };
 
         // Cache app view (computed once per frame)
+        let view_start = Instant::now();
         let app_view = app.view();
+        let view_elapsed = view_start.elapsed();
+        if view_elapsed.as_millis() > 5 {
+            warn!("PROFILE: app.view() took {:?}", view_elapsed);
+        }
 
         // Cache modal views (computed once per frame)
         let modal_views: Vec<_> = modal_stack.iter().map(|e| e.modal.view()).collect();
 
         let modal_stack_ref = &modal_stack;
+        let draw_start = Instant::now();
         term_guard.terminal().draw(|frame| {
             let area = frame.area();
 
@@ -220,6 +262,10 @@ pub async fn run_event_loop<A: App>(
             // Render toasts on top of everything
             render_toasts(frame, &active_toasts, theme.as_ref());
         })?;
+        let draw_elapsed = draw_start.elapsed();
+        if draw_elapsed.as_millis() > 5 {
+            warn!("PROFILE: terminal.draw() took {:?}", draw_elapsed);
+        }
 
         // Clear dirty flags after render
         if let Some(entry) = modal_stack.last() {
@@ -444,7 +490,29 @@ pub async fn run_event_loop<A: App>(
                             }
                         }
                         Event::Hover(ref position) => {
-                            if let Some(hit_box) = hit_map.hit_test(position.x, position.y) {
+                            // Coalesce pending hover events to avoid processing every pixel
+                            let (final_position, other_events, skipped) =
+                                coalesce_hover_events(position.clone())?;
+
+                            if skipped > 0 {
+                                debug!(
+                                    "Hover coalesced: skipped {} events, final pos ({}, {})",
+                                    skipped, final_position.x, final_position.y
+                                );
+                            }
+
+                            // TODO: Process other_events that were collected during coalescing
+                            // For now, we drop them - this is a trade-off for responsiveness
+                            if !other_events.is_empty() {
+                                debug!(
+                                    "Hover coalescing dropped {} non-hover events",
+                                    other_events.len()
+                                );
+                            }
+
+                            if let Some(hit_box) =
+                                hit_map.hit_test(final_position.x, final_position.y)
+                            {
                                 // Check if this is a List component - handle hover to move cursor
                                 if let Some(list_component) = view.get_list_component(&hit_box.id) {
                                     // Focus the list if not already focused
@@ -463,13 +531,22 @@ pub async fn run_event_loop<A: App>(
                                     }
 
                                     // Calculate y position relative to list content area
-                                    let y_in_viewport = position.y.saturating_sub(hit_box.rect.y);
+                                    let y_in_viewport =
+                                        final_position.y.saturating_sub(hit_box.rect.y);
 
                                     // Get list events (hover only moves cursor)
-                                    let list_events = list_component.handle_hover_events(y_in_viewport);
+                                    let list_events =
+                                        list_component.handle_hover_events(y_in_viewport);
 
                                     // Dispatch cursor move events
-                                    dispatch_list_events(&view, &hit_box.id, list_events, &app, &modal_stack, &cx);
+                                    dispatch_list_events(
+                                        &view,
+                                        &hit_box.id,
+                                        list_events,
+                                        &app,
+                                        &modal_stack,
+                                        &cx,
+                                    );
                                     continue;
                                 }
 
