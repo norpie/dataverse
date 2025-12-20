@@ -1,4 +1,4 @@
-use crate::input::Input;
+use crate::components::Input;
 use crate::keybinds::HandlerId;
 use crate::style::Style;
 

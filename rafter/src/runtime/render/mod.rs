@@ -1,8 +1,8 @@
 //! Rendering - convert Node tree to ratatui widgets.
 
 mod backdrop;
+mod components;
 mod layout;
-mod nodes;
 mod toasts;
 
 use ratatui::Frame;
@@ -16,11 +16,11 @@ use crate::theme::{resolve_color, Theme};
 pub use backdrop::{dim_backdrop, fill_background};
 pub use toasts::render_toasts;
 
-use layout::constrain_area;
-use nodes::{render_button, render_container, render_input, render_stack, render_text};
+use components::{render_button, render_container, render_input, render_stack, render_text};
+
 
 /// Convert a Style to ratatui Style, resolving named colors via theme
-fn style_to_ratatui(style: &Style, theme: &dyn Theme) -> RatatuiStyle {
+pub(crate) fn style_to_ratatui(style: &Style, theme: &dyn Theme) -> RatatuiStyle {
     let mut ratatui_style = RatatuiStyle::default();
 
     if let Some(ref fg) = style.fg {
@@ -62,7 +62,7 @@ pub fn render_node(
     focused_id: Option<&str>,
 ) {
     // Constrain area for auto-sized containers
-    let area = constrain_area(node, area);
+    let area = layout::constrain_area(node, area);
 
     match node {
         Node::Empty => {}
@@ -165,5 +165,3 @@ pub fn render_node(
         }
     }
 }
-
-

@@ -1,9 +1,9 @@
 pub mod app;
 pub mod color;
+pub mod components;
 pub mod context;
 pub mod events;
 pub mod focus;
-pub mod input;
 pub mod keybinds;
 pub mod modal;
 pub mod node;
@@ -22,7 +22,7 @@ pub mod prelude {
     pub use crate::context::{AppContext, Toast, ToastLevel};
     pub use crate::events::{ClickEvent, ClickKind, Modifiers};
     pub use crate::focus::FocusState;
-    pub use crate::input::Input;
+    pub use crate::components::Input;
     pub use crate::keybinds::{KeybindError, KeybindInfo, Keybinds};
     pub use crate::modal::{Modal, ModalContext, ModalPosition, ModalSize};
     pub use crate::node::Node;
