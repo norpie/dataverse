@@ -1,3 +1,9 @@
+//! Node types for the view tree.
+
+mod layout;
+
+pub use layout::{Align, Border, Direction, Justify, Layout, Size};
+
 use crate::components::events::{ComponentEvents, EventResult};
 use crate::components::list::AnyList;
 use crate::components::{Input, Scrollable};
@@ -5,97 +11,6 @@ use crate::context::AppContext;
 use crate::events::{Modifiers, ScrollDirection};
 use crate::keybinds::{HandlerId, KeyCombo};
 use crate::style::Style;
-
-/// Layout direction
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub enum Direction {
-    /// Vertical layout (column)
-    #[default]
-    Vertical,
-    /// Horizontal layout (row)
-    Horizontal,
-}
-
-/// Content alignment on the main axis
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub enum Justify {
-    #[default]
-    Start,
-    Center,
-    End,
-    SpaceBetween,
-    SpaceAround,
-}
-
-/// Content alignment on the cross axis
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub enum Align {
-    Start,
-    Center,
-    End,
-    #[default]
-    Stretch,
-}
-
-/// Border style
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub enum Border {
-    #[default]
-    None,
-    Single,
-    Double,
-    Rounded,
-    Thick,
-}
-
-/// Size specification
-#[derive(Debug, Clone, Copy, PartialEq, Default)]
-pub enum Size {
-    /// Fixed size in cells
-    Fixed(u16),
-    /// Percentage of parent
-    Percent(f32),
-    /// Flex grow factor
-    Flex(u16),
-    /// Auto size based on content
-    #[default]
-    Auto,
-}
-
-/// Layout properties for a node
-#[derive(Debug, Clone, Default)]
-pub struct Layout {
-    /// Width
-    pub width: Size,
-    /// Height
-    pub height: Size,
-    /// Minimum width
-    pub min_width: Option<u16>,
-    /// Maximum width
-    pub max_width: Option<u16>,
-    /// Minimum height
-    pub min_height: Option<u16>,
-    /// Maximum height
-    pub max_height: Option<u16>,
-    /// Flex grow factor
-    pub flex: Option<u16>,
-    /// Padding (all sides)
-    pub padding: u16,
-    /// Padding horizontal
-    pub padding_h: Option<u16>,
-    /// Padding vertical
-    pub padding_v: Option<u16>,
-    /// Margin (all sides)
-    pub margin: u16,
-    /// Gap between children
-    pub gap: u16,
-    /// Content justification (main axis)
-    pub justify: Justify,
-    /// Content alignment (cross axis)
-    pub align: Align,
-    /// Border style
-    pub border: Border,
-}
 
 /// A node in the view tree
 #[derive(Debug, Clone, Default)]
@@ -468,6 +383,34 @@ impl Node {
         }
     }
 
+    /// Dispatch an event to a component by ID using a visitor function.
+    ///
+    /// This is the core tree traversal logic used by all dispatch_*_event methods.
+    /// The visitor function is called when the target node is found.
+    fn dispatch_event<F>(&self, target_id: &str, visitor: F) -> Option<EventResult>
+    where
+        F: Fn(&Node) -> Option<EventResult> + Copy,
+    {
+        // First, check if this node matches (visitor will check if it's the right type)
+        if let Some(id) = self.id()
+            && id == target_id
+            && let Some(result) = visitor(self)
+        {
+            return Some(result);
+        }
+
+        // Recurse into children
+        match self {
+            Self::Column { children, .. }
+            | Self::Row { children, .. }
+            | Self::Stack { children, .. } => children
+                .iter()
+                .find_map(|c| c.dispatch_event(target_id, visitor)),
+            Self::Scrollable { child, .. } => child.dispatch_event(target_id, visitor),
+            _ => None,
+        }
+    }
+
     /// Dispatch a click event to a component.
     ///
     /// Finds the component with the given ID and delegates to its `on_click` handler.
@@ -478,28 +421,16 @@ impl Node {
         y: u16,
         cx: &AppContext,
     ) -> Option<EventResult> {
-        match self {
-            Self::Scrollable { id, component, .. } if id == target_id => {
-                Some(component.on_click(x, y, cx))
-            }
-            Self::Input { id, component, .. } if id == target_id => {
-                if let Some(component) = component {
-                    Some(component.on_click(x, y, cx))
-                } else {
-                    Some(EventResult::Ignored)
-                }
-            }
-            Self::List { id, component, .. } if id == target_id => {
-                Some(component.on_click(x, y, cx))
-            }
-            Self::Column { children, .. }
-            | Self::Row { children, .. }
-            | Self::Stack { children, .. } => children
-                .iter()
-                .find_map(|c| c.dispatch_click_event(target_id, x, y, cx)),
-            Self::Scrollable { child, .. } => child.dispatch_click_event(target_id, x, y, cx),
+        self.dispatch_event(target_id, |node| match node {
+            Self::Scrollable { component, .. } => Some(component.on_click(x, y, cx)),
+            Self::Input {
+                component: Some(component),
+                ..
+            } => Some(component.on_click(x, y, cx)),
+            Self::Input { component: None, .. } => Some(EventResult::Ignored),
+            Self::List { component, .. } => Some(component.on_click(x, y, cx)),
             _ => None,
-        }
+        })
     }
 
     /// Dispatch a scroll event to a component.
@@ -510,23 +441,11 @@ impl Node {
         amount: u16,
         cx: &AppContext,
     ) -> Option<EventResult> {
-        match self {
-            Self::Scrollable { id, component, .. } if id == target_id => {
-                Some(component.on_scroll(direction, amount, cx))
-            }
-            Self::List { id, component, .. } if id == target_id => {
-                Some(component.on_scroll(direction, amount, cx))
-            }
-            Self::Column { children, .. }
-            | Self::Row { children, .. }
-            | Self::Stack { children, .. } => children
-                .iter()
-                .find_map(|c| c.dispatch_scroll_event(target_id, direction, amount, cx)),
-            Self::Scrollable { child, .. } => {
-                child.dispatch_scroll_event(target_id, direction, amount, cx)
-            }
+        self.dispatch_event(target_id, |node| match node {
+            Self::Scrollable { component, .. } => Some(component.on_scroll(direction, amount, cx)),
+            Self::List { component, .. } => Some(component.on_scroll(direction, amount, cx)),
             _ => None,
-        }
+        })
     }
 
     /// Dispatch a drag event to a component.
@@ -540,38 +459,20 @@ impl Node {
         modifiers: Modifiers,
         cx: &AppContext,
     ) -> Option<EventResult> {
-        match self {
-            Self::Scrollable { id, component, .. } if id == target_id => {
-                Some(component.on_drag(x, y, modifiers, cx))
-            }
-            Self::List { id, component, .. } if id == target_id => {
-                Some(component.on_drag(x, y, modifiers, cx))
-            }
-            Self::Column { children, .. }
-            | Self::Row { children, .. }
-            | Self::Stack { children, .. } => children
-                .iter()
-                .find_map(|c| c.dispatch_drag_event(target_id, x, y, modifiers, cx)),
-            Self::Scrollable { child, .. } => child.dispatch_drag_event(target_id, x, y, modifiers, cx),
+        self.dispatch_event(target_id, |node| match node {
+            Self::Scrollable { component, .. } => Some(component.on_drag(x, y, modifiers, cx)),
+            Self::List { component, .. } => Some(component.on_drag(x, y, modifiers, cx)),
             _ => None,
-        }
+        })
     }
 
     /// Dispatch a drag release event to a component.
     pub fn dispatch_release_event(&self, target_id: &str, cx: &AppContext) -> Option<EventResult> {
-        match self {
-            Self::Scrollable { id, component, .. } if id == target_id => {
-                Some(component.on_release(cx))
-            }
-            Self::List { id, component, .. } if id == target_id => Some(component.on_release(cx)),
-            Self::Column { children, .. }
-            | Self::Row { children, .. }
-            | Self::Stack { children, .. } => children
-                .iter()
-                .find_map(|c| c.dispatch_release_event(target_id, cx)),
-            Self::Scrollable { child, .. } => child.dispatch_release_event(target_id, cx),
+        self.dispatch_event(target_id, |node| match node {
+            Self::Scrollable { component, .. } => Some(component.on_release(cx)),
+            Self::List { component, .. } => Some(component.on_release(cx)),
             _ => None,
-        }
+        })
     }
 
     /// Dispatch a key event to a component.
@@ -581,26 +482,16 @@ impl Node {
         key: &KeyCombo,
         cx: &AppContext,
     ) -> Option<EventResult> {
-        match self {
-            Self::Input { id, component, .. } if id == target_id => {
-                if let Some(component) = component {
-                    Some(component.on_key(key, cx))
-                } else {
-                    Some(EventResult::Ignored)
-                }
-            }
-            Self::Scrollable { id, component, .. } if id == target_id => {
-                Some(component.on_key(key, cx))
-            }
-            Self::List { id, component, .. } if id == target_id => Some(component.on_key(key, cx)),
-            Self::Column { children, .. }
-            | Self::Row { children, .. }
-            | Self::Stack { children, .. } => children
-                .iter()
-                .find_map(|c| c.dispatch_key_event(target_id, key, cx)),
-            Self::Scrollable { child, .. } => child.dispatch_key_event(target_id, key, cx),
+        self.dispatch_event(target_id, |node| match node {
+            Self::Input {
+                component: Some(component),
+                ..
+            } => Some(component.on_key(key, cx)),
+            Self::Input { component: None, .. } => Some(EventResult::Ignored),
+            Self::Scrollable { component, .. } => Some(component.on_key(key, cx)),
+            Self::List { component, .. } => Some(component.on_key(key, cx)),
             _ => None,
-        }
+        })
     }
 
     /// Dispatch a hover event to a component.
@@ -613,18 +504,10 @@ impl Node {
         y: u16,
         cx: &AppContext,
     ) -> Option<EventResult> {
-        match self {
-            Self::List { id, component, .. } if id == target_id => {
-                Some(component.on_hover(x, y, cx))
-            }
-            Self::Column { children, .. }
-            | Self::Row { children, .. }
-            | Self::Stack { children, .. } => children
-                .iter()
-                .find_map(|c| c.dispatch_hover_event(target_id, x, y, cx)),
-            Self::Scrollable { child, .. } => child.dispatch_hover_event(target_id, x, y, cx),
+        self.dispatch_event(target_id, |node| match node {
+            Self::List { component, .. } => Some(component.on_hover(x, y, cx)),
             _ => None,
-        }
+        })
     }
 
     /// Calculate intrinsic width of this node
@@ -638,51 +521,36 @@ impl Node {
             Self::Column {
                 children, layout, ..
             } => {
-                let border_size = if matches!(layout.border, Border::None) {
-                    0
-                } else {
-                    2
-                };
-                let padding = layout.padding * 2;
+                let (chrome_h, _) = layout.chrome_size();
                 let max_child = children
                     .iter()
                     .map(|c| c.intrinsic_width())
                     .max()
                     .unwrap_or(0);
-                max_child + padding + border_size
+                max_child + chrome_h
             }
             Self::Row {
                 children, layout, ..
             } => {
-                let border_size = if matches!(layout.border, Border::None) {
-                    0
-                } else {
-                    2
-                };
-                let padding = layout.padding * 2;
+                let (chrome_h, _) = layout.chrome_size();
                 let child_sum: u16 = children.iter().map(|c| c.intrinsic_width()).sum();
                 let gaps = if children.len() > 1 {
                     layout.gap * (children.len() as u16 - 1)
                 } else {
                     0
                 };
-                child_sum + gaps + padding + border_size
+                child_sum + gaps + chrome_h
             }
             Self::Stack {
                 children, layout, ..
             } => {
-                let border_size = if matches!(layout.border, Border::None) {
-                    0
-                } else {
-                    2
-                };
-                let padding = layout.padding * 2;
+                let (chrome_h, _) = layout.chrome_size();
                 let max_child = children
                     .iter()
                     .map(|c| c.intrinsic_width())
                     .max()
                     .unwrap_or(0);
-                max_child + padding + border_size
+                max_child + chrome_h
             }
             Self::Input {
                 value, placeholder, ..
@@ -696,24 +564,14 @@ impl Node {
             }
             Self::Button { label, .. } => (label.len() + 4) as u16,
             Self::Scrollable { child, layout, .. } => {
-                let border_size = if matches!(layout.border, Border::None) {
-                    0
-                } else {
-                    2
-                };
-                let padding = layout.padding * 2;
+                let (chrome_h, _) = layout.chrome_size();
                 // Scrollable reports child's intrinsic size (may be larger than viewport)
-                child.intrinsic_width() + padding + border_size
+                child.intrinsic_width() + chrome_h
             }
             Self::List { layout, .. } => {
                 // List width is determined by layout, not content
-                let border_size = if matches!(layout.border, Border::None) {
-                    0
-                } else {
-                    2
-                };
-                let padding = layout.padding * 2;
-                40 + padding + border_size // Default width, will be overridden by layout
+                let (chrome_h, _) = layout.chrome_size();
+                40 + chrome_h // Default width, will be overridden by layout
             }
         }
     }
@@ -726,74 +584,49 @@ impl Node {
             Self::Column {
                 children, layout, ..
             } => {
-                let border_size = if matches!(layout.border, Border::None) {
-                    0
-                } else {
-                    2
-                };
-                let padding = layout.padding * 2;
+                let (_, chrome_v) = layout.chrome_size();
                 let child_sum: u16 = children.iter().map(|c| c.intrinsic_height()).sum();
                 let gaps = if children.len() > 1 {
                     layout.gap * (children.len() as u16 - 1)
                 } else {
                     0
                 };
-                child_sum + gaps + padding + border_size
+                child_sum + gaps + chrome_v
             }
             Self::Row {
                 children, layout, ..
             } => {
-                let border_size = if matches!(layout.border, Border::None) {
-                    0
-                } else {
-                    2
-                };
-                let padding = layout.padding * 2;
+                let (_, chrome_v) = layout.chrome_size();
                 let max_child = children
                     .iter()
                     .map(|c| c.intrinsic_height())
                     .max()
                     .unwrap_or(0);
-                max_child + padding + border_size
+                max_child + chrome_v
             }
             Self::Stack {
                 children, layout, ..
             } => {
-                let border_size = if matches!(layout.border, Border::None) {
-                    0
-                } else {
-                    2
-                };
-                let padding = layout.padding * 2;
+                let (_, chrome_v) = layout.chrome_size();
                 let max_child = children
                     .iter()
                     .map(|c| c.intrinsic_height())
                     .max()
                     .unwrap_or(0);
-                max_child + padding + border_size
+                max_child + chrome_v
             }
             Self::Input { .. } | Self::Button { .. } => 1,
             Self::Scrollable { child, layout, .. } => {
-                let border_size = if matches!(layout.border, Border::None) {
-                    0
-                } else {
-                    2
-                };
-                let padding = layout.padding * 2;
+                let (_, chrome_v) = layout.chrome_size();
                 // Scrollable reports child's intrinsic size (may be larger than viewport)
-                child.intrinsic_height() + padding + border_size
+                child.intrinsic_height() + chrome_v
             }
             Self::List {
                 layout, component, ..
             } => {
-                let border_size = if matches!(layout.border, Border::None) {
-                    0
-                } else {
-                    2
-                };
-                let padding = layout.padding * 2;
+                let (_, chrome_v) = layout.chrome_size();
                 // Total height of all items
-                component.total_height() + padding + border_size
+                component.total_height() + chrome_v
             }
         }
     }
