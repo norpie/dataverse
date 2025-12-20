@@ -48,6 +48,11 @@ fn is_on_stop_method(method: &ImplItemFn) -> bool {
     method.sig.ident == "on_stop"
 }
 
+/// Check if method is named "current_view"
+fn is_current_view_method(method: &ImplItemFn) -> bool {
+    method.sig.ident == "current_view"
+}
+
 pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
     // No attributes currently supported for app_impl
     let _ = attr;
@@ -75,6 +80,7 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
     let mut has_view = false;
     let mut has_on_start = false;
     let mut has_on_stop = false;
+    let mut has_current_view = false;
 
     for item in &impl_block.items {
         if let ImplItem::Fn(method) = item {
@@ -100,6 +106,10 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
 
             if is_on_stop_method(method) {
                 has_on_stop = true;
+            }
+
+            if is_current_view_method(method) {
+                has_current_view = true;
             }
         }
     }
@@ -140,6 +150,17 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
                 async {}
             }
         }
+    };
+
+    // Generate current_view method
+    let current_view_impl = if has_current_view {
+        quote! {
+            fn current_view(&self) -> Option<String> {
+                #self_ty::current_view(self)
+            }
+        }
+    } else {
+        quote! {}
     };
 
     // Generate dirty methods
@@ -188,6 +209,7 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
             #name_impl
             #keybinds_final
             #view_impl
+            #current_view_impl
             #on_start_impl
             #on_stop_impl
             #dirty_impl
