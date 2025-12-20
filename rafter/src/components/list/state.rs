@@ -422,7 +422,8 @@ impl<T: ListItem> List<T> {
     pub fn set_cursor(&self, index: usize) -> Option<usize> {
         if let Ok(mut guard) = self.inner.write() {
             let previous = guard.cursor;
-            if index < guard.items.len() {
+            // Only update and mark dirty if cursor actually changed
+            if index < guard.items.len() && previous != Some(index) {
                 guard.cursor = Some(index);
                 self.dirty.store(true, Ordering::SeqCst);
             }
