@@ -5,7 +5,7 @@ use ratatui::layout::Rect;
 use ratatui::style::Style as RatatuiStyle;
 use ratatui::Frame;
 
-use super::state::{ScrollDirection, ScrollbarConfig, ScrollbarVisibility};
+use super::state::{ScrollDirection, ScrollbarConfig, ScrollbarGeometry, ScrollbarVisibility};
 use crate::node::Node;
 use crate::runtime::hit_test::HitTestMap;
 use crate::theme::Theme;
@@ -82,7 +82,7 @@ pub fn calculate_scrollable_layout(
     }
 }
 
-/// Render the vertical scrollbar.
+/// Render the vertical scrollbar and return its geometry.
 pub fn render_vertical_scrollbar(
     buf: &mut Buffer,
     area: Rect,
@@ -91,9 +91,9 @@ pub fn render_vertical_scrollbar(
     viewport_height: u16,
     config: &ScrollbarConfig,
     theme: &dyn Theme,
-) {
+) -> Option<ScrollbarGeometry> {
     if area.width == 0 || area.height == 0 {
-        return;
+        return None;
     }
 
     // Scrollbar is rendered in the rightmost column
@@ -140,9 +140,18 @@ pub fn render_vertical_scrollbar(
             cell.set_style(track_style);
         }
     }
+
+    Some(ScrollbarGeometry {
+        x: scrollbar_x,
+        y: area.y,
+        width: 1,
+        height: scrollbar_height,
+        handle_pos,
+        handle_size: handle_height,
+    })
 }
 
-/// Render the horizontal scrollbar.
+/// Render the horizontal scrollbar and return its geometry.
 pub fn render_horizontal_scrollbar(
     buf: &mut Buffer,
     area: Rect,
@@ -151,9 +160,9 @@ pub fn render_horizontal_scrollbar(
     viewport_width: u16,
     config: &ScrollbarConfig,
     theme: &dyn Theme,
-) {
+) -> Option<ScrollbarGeometry> {
     if area.width == 0 || area.height == 0 {
-        return;
+        return None;
     }
 
     // Scrollbar is rendered in the bottom row
@@ -200,6 +209,15 @@ pub fn render_horizontal_scrollbar(
             cell.set_style(track_style);
         }
     }
+
+    Some(ScrollbarGeometry {
+        x: area.x,
+        y: scrollbar_y,
+        width: scrollbar_width,
+        height: 1,
+        handle_pos,
+        handle_size: handle_width,
+    })
 }
 
 /// Render a node with viewport clipping (for scrollable content).

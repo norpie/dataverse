@@ -230,8 +230,8 @@ fn render_scrollable(
     // Get scroll offset
     let (offset_x, offset_y) = widget.offset();
 
-    // Render scrollbars
-    if scroll_layout.show_vertical {
+    // Render scrollbars and save geometry for hit testing
+    let v_geom = if scroll_layout.show_vertical {
         render_vertical_scrollbar(
             frame.buffer_mut(),
             area,
@@ -240,10 +240,13 @@ fn render_scrollable(
             scroll_layout.content_area.height,
             &widget.scrollbar_config(),
             theme,
-        );
-    }
+        )
+    } else {
+        None
+    };
+    widget.set_vertical_scrollbar(v_geom);
 
-    if scroll_layout.show_horizontal {
+    let h_geom = if scroll_layout.show_horizontal {
         render_horizontal_scrollbar(
             frame.buffer_mut(),
             area,
@@ -252,8 +255,11 @@ fn render_scrollable(
             scroll_layout.content_area.width,
             &widget.scrollbar_config(),
             theme,
-        );
-    }
+        )
+    } else {
+        None
+    };
+    widget.set_horizontal_scrollbar(h_geom);
 
     // Render child with viewport clipping
     let viewport = scroll_layout.content_area;

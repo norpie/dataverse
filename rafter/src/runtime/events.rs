@@ -9,6 +9,17 @@ use log::trace;
 use crate::events::{ClickEvent, ClickKind, Modifiers, Position, ScrollDirection, ScrollEvent};
 use crate::keybinds::{Key, KeyCombo};
 
+/// Drag event for mouse drag operations
+#[derive(Debug, Clone)]
+pub struct DragEvent {
+    /// Current drag position
+    pub position: Position,
+    /// Button being held
+    pub button: MouseButton,
+    /// Modifier keys held during drag
+    pub modifiers: Modifiers,
+}
+
 /// Rafter event types
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
@@ -17,8 +28,12 @@ pub enum Event {
     Key(KeyCombo),
     /// Mouse click event
     Click(ClickEvent),
+    /// Mouse button release event
+    Release(Position),
     /// Mouse hover/move event
     Hover(Position),
+    /// Mouse drag event (button held while moving)
+    Drag(DragEvent),
     /// Mouse scroll event
     Scroll(ScrollEvent),
     /// Terminal resize event
@@ -113,7 +128,12 @@ pub fn convert_mouse_event(event: MouseEvent) -> Option<Event> {
             amount: 3,
         })),
         MouseEventKind::Moved => Some(Event::Hover(position)),
-        _ => None, // Ignore other mouse events for now
+        MouseEventKind::Drag(button) => Some(Event::Drag(DragEvent {
+            position,
+            button,
+            modifiers,
+        })),
+        MouseEventKind::Up(_) => Some(Event::Release(position)),
     }
 }
 

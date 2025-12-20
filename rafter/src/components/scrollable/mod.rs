@@ -3,4 +3,7 @@
 pub mod render;
 mod state;
 
-pub use state::{Scrollable, ScrollableId, ScrollDirection, ScrollbarConfig, ScrollbarVisibility};
+pub use state::{
+    Scrollable, ScrollableId, ScrollDirection, ScrollbarConfig, ScrollbarGeometry,
+    ScrollbarVisibility,
+};

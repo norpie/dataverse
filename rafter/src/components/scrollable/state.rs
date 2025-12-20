@@ -59,6 +59,76 @@ pub struct ScrollbarConfig {
     pub handle_color: Option<StyleColor>,
 }
 
+/// Scrollbar geometry for hit testing.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct ScrollbarGeometry {
+    /// X position of the scrollbar track.
+    pub x: u16,
+    /// Y position of the scrollbar track.
+    pub y: u16,
+    /// Width of the scrollbar (1 for vertical, track length for horizontal).
+    pub width: u16,
+    /// Height of the scrollbar (track length for vertical, 1 for horizontal).
+    pub height: u16,
+    /// Position of the handle within the track (0-based).
+    pub handle_pos: u16,
+    /// Size of the handle.
+    pub handle_size: u16,
+}
+
+impl ScrollbarGeometry {
+    /// Check if a point is within the scrollbar track.
+    pub fn contains(&self, x: u16, y: u16) -> bool {
+        x >= self.x && x < self.x + self.width && y >= self.y && y < self.y + self.height
+    }
+
+    /// Check if a point is on the handle.
+    pub fn handle_contains(&self, x: u16, y: u16, vertical: bool) -> bool {
+        if !self.contains(x, y) {
+            return false;
+        }
+        if vertical {
+            let rel_y = y - self.y;
+            rel_y >= self.handle_pos && rel_y < self.handle_pos + self.handle_size
+        } else {
+            let rel_x = x - self.x;
+            rel_x >= self.handle_pos && rel_x < self.handle_pos + self.handle_size
+        }
+    }
+
+    /// Convert a position on the track to a scroll ratio (0.0 - 1.0).
+    /// Centers the handle on the click position.
+    pub fn position_to_ratio(&self, x: u16, y: u16, vertical: bool) -> f32 {
+        self.position_to_ratio_with_offset(x, y, vertical, self.handle_size / 2)
+    }
+
+    /// Convert a position on the track to a scroll ratio, with a custom offset within the handle.
+    /// `grab_offset` is where within the handle the user grabbed (0 = top/left edge).
+    pub fn position_to_ratio_with_offset(
+        &self,
+        x: u16,
+        y: u16,
+        vertical: bool,
+        grab_offset: u16,
+    ) -> f32 {
+        if vertical {
+            let track_size = self.height.saturating_sub(self.handle_size);
+            if track_size == 0 {
+                return 0.0;
+            }
+            let rel_y = y.saturating_sub(self.y).saturating_sub(grab_offset);
+            (rel_y as f32 / track_size as f32).clamp(0.0, 1.0)
+        } else {
+            let track_size = self.width.saturating_sub(self.handle_size);
+            if track_size == 0 {
+                return 0.0;
+            }
+            let rel_x = x.saturating_sub(self.x).saturating_sub(grab_offset);
+            (rel_x as f32 / track_size as f32).clamp(0.0, 1.0)
+        }
+    }
+}
+
 /// Internal state for the Scrollable component.
 #[derive(Debug)]
 struct ScrollableInner {
@@ -76,6 +146,11 @@ struct ScrollableInner {
     content_size: (u16, u16),
     /// Viewport size (width, height) - updated by renderer.
     viewport_size: (u16, u16),
+
+    /// Vertical scrollbar geometry - updated by renderer.
+    vertical_scrollbar: Option<ScrollbarGeometry>,
+    /// Horizontal scrollbar geometry - updated by renderer.
+    horizontal_scrollbar: Option<ScrollbarGeometry>,
 }
 
 impl Default for ScrollableInner {
@@ -87,6 +162,8 @@ impl Default for ScrollableInner {
             offset_y: 0,
             content_size: (0, 0),
             viewport_size: (0, 0),
+            vertical_scrollbar: None,
+            horizontal_scrollbar: None,
         }
     }
 }
@@ -378,6 +455,52 @@ impl Scrollable {
             let max_y = content.1.saturating_sub(viewport.1);
             guard.offset_x = guard.offset_x.min(max_x);
             guard.offset_y = guard.offset_y.min(max_y);
+        }
+    }
+
+    /// Update the vertical scrollbar geometry (called by renderer).
+    pub fn set_vertical_scrollbar(&self, geometry: Option<ScrollbarGeometry>) {
+        if let Ok(mut guard) = self.inner.write() {
+            guard.vertical_scrollbar = geometry;
+        }
+    }
+
+    /// Update the horizontal scrollbar geometry (called by renderer).
+    pub fn set_horizontal_scrollbar(&self, geometry: Option<ScrollbarGeometry>) {
+        if let Ok(mut guard) = self.inner.write() {
+            guard.horizontal_scrollbar = geometry;
+        }
+    }
+
+    /// Get the vertical scrollbar geometry.
+    pub fn vertical_scrollbar(&self) -> Option<ScrollbarGeometry> {
+        self.inner
+            .read()
+            .ok()
+            .and_then(|guard| guard.vertical_scrollbar)
+    }
+
+    /// Get the horizontal scrollbar geometry.
+    pub fn horizontal_scrollbar(&self) -> Option<ScrollbarGeometry> {
+        self.inner
+            .read()
+            .ok()
+            .and_then(|guard| guard.horizontal_scrollbar)
+    }
+
+    /// Scroll to a position based on a ratio (0.0 - 1.0).
+    pub fn scroll_to_ratio(&self, x_ratio: Option<f32>, y_ratio: Option<f32>) {
+        if let Ok(mut guard) = self.inner.write() {
+            if let Some(ratio) = y_ratio {
+                let max_y = guard.content_size.1.saturating_sub(guard.viewport_size.1);
+                guard.offset_y = (ratio * max_y as f32).round() as u16;
+                self.dirty.store(true, Ordering::SeqCst);
+            }
+            if let Some(ratio) = x_ratio {
+                let max_x = guard.content_size.0.saturating_sub(guard.viewport_size.0);
+                guard.offset_x = (ratio * max_x as f32).round() as u16;
+                self.dirty.store(true, Ordering::SeqCst);
+            }
         }
     }
 
