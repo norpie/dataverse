@@ -2,8 +2,14 @@
 
 use crate::components::events::{ComponentEvents, EventResult};
 use crate::events::ScrollDirection;
+use crate::keybinds::{Key, KeyCombo};
 
 use super::Scrollable;
+
+/// Lines to scroll per arrow key press.
+const SCROLL_LINES: i16 = 1;
+/// Lines to scroll per page up/down.
+const SCROLL_PAGE_LINES: i16 = 10;
 
 /// Internal drag state for scrollbar dragging.
 #[derive(Debug, Clone, Copy)]
@@ -101,6 +107,62 @@ impl ComponentEvents for Scrollable {
             EventResult::Consumed
         } else {
             EventResult::Ignored
+        }
+    }
+
+    fn on_key(&self, key: &KeyCombo) -> EventResult {
+        // Ignore keys with ctrl/alt modifiers (let app handle those)
+        if key.modifiers.ctrl || key.modifiers.alt {
+            return EventResult::Ignored;
+        }
+
+        match key.key {
+            Key::Up => {
+                self.scroll_by(0, -SCROLL_LINES);
+                EventResult::Consumed
+            }
+            Key::Down => {
+                self.scroll_by(0, SCROLL_LINES);
+                EventResult::Consumed
+            }
+            Key::Left => {
+                self.scroll_by(-SCROLL_LINES, 0);
+                EventResult::Consumed
+            }
+            Key::Right => {
+                self.scroll_by(SCROLL_LINES, 0);
+                EventResult::Consumed
+            }
+            Key::PageUp => {
+                // Scroll by viewport height, or fallback to SCROLL_PAGE_LINES
+                let viewport_height = self.viewport_size().1 as i16;
+                let amount = if viewport_height > 0 {
+                    viewport_height
+                } else {
+                    SCROLL_PAGE_LINES
+                };
+                self.scroll_by(0, -amount);
+                EventResult::Consumed
+            }
+            Key::PageDown => {
+                let viewport_height = self.viewport_size().1 as i16;
+                let amount = if viewport_height > 0 {
+                    viewport_height
+                } else {
+                    SCROLL_PAGE_LINES
+                };
+                self.scroll_by(0, amount);
+                EventResult::Consumed
+            }
+            Key::Home => {
+                self.scroll_to_top();
+                EventResult::Consumed
+            }
+            Key::End => {
+                self.scroll_to_bottom();
+                EventResult::Consumed
+            }
+            _ => EventResult::Ignored,
         }
     }
 }

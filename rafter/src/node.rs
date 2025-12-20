@@ -246,13 +246,16 @@ impl Node {
 
     /// Check if this node is focusable
     pub fn is_focusable(&self) -> bool {
-        matches!(self, Self::Input { .. } | Self::Button { .. })
+        matches!(
+            self,
+            Self::Input { .. } | Self::Button { .. } | Self::Scrollable { .. }
+        )
     }
 
     /// Get the element ID if any
     pub fn id(&self) -> Option<&str> {
         match self {
-            Self::Input { id, .. } | Self::Button { id, .. } => {
+            Self::Input { id, .. } | Self::Button { id, .. } | Self::Scrollable { id, .. } => {
                 if id.is_empty() {
                     None
                 } else {
@@ -274,15 +277,20 @@ impl Node {
             Self::Input { id, .. } | Self::Button { id, .. } if !id.is_empty() => {
                 ids.push(id.clone());
             }
+            Self::Scrollable { id, child, .. } => {
+                // Scrollable itself is focusable
+                if !id.is_empty() {
+                    ids.push(id.clone());
+                }
+                // Also collect focusable children inside the scrollable
+                child.collect_focusable_ids(ids);
+            }
             Self::Column { children, .. }
             | Self::Row { children, .. }
             | Self::Stack { children, .. } => {
                 for child in children {
                     child.collect_focusable_ids(ids);
                 }
-            }
-            Self::Scrollable { child, .. } => {
-                child.collect_focusable_ids(ids);
             }
             _ => {}
         }

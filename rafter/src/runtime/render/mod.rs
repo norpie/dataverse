@@ -285,8 +285,8 @@ fn render_scrollable(
         );
     }
 
-    // Register hit box for scroll area
+    // Register hit box for scroll area (focusable for keyboard navigation)
     if !id.is_empty() {
-        hit_map.register(id.to_string(), area, false);
+        hit_map.register(id.to_string(), area, true);
     }
 }
