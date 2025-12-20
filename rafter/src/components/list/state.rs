@@ -339,11 +339,10 @@ impl<T: ListItem> List<T> {
         if let Ok(mut guard) = self.inner.write() {
             guard.items = items;
             // Clamp cursor
-            if let Some(cursor) = guard.cursor {
-                if cursor >= guard.items.len() {
+            if let Some(cursor) = guard.cursor
+                && cursor >= guard.items.len() {
                     guard.cursor = guard.items.len().checked_sub(1);
                 }
-            }
             // Clear selection (items changed)
             guard.selection.clear();
             self.dirty.store(true, Ordering::SeqCst);
@@ -360,8 +359,8 @@ impl<T: ListItem> List<T> {
 
     /// Remove an item by index.
     pub fn remove(&self, index: usize) -> Option<T> {
-        if let Ok(mut guard) = self.inner.write() {
-            if index < guard.items.len() {
+        if let Ok(mut guard) = self.inner.write()
+            && index < guard.items.len() {
                 let item = guard.items.remove(index);
                 guard.selection.on_item_removed(index);
                 // Adjust cursor
@@ -380,7 +379,6 @@ impl<T: ListItem> List<T> {
                 self.dirty.store(true, Ordering::SeqCst);
                 return Some(item);
             }
-        }
         None
     }
 
@@ -403,11 +401,10 @@ impl<T: ListItem> List<T> {
         if let Ok(mut guard) = self.inner.write() {
             f(&mut guard.items);
             // Clamp cursor
-            if let Some(cursor) = guard.cursor {
-                if cursor >= guard.items.len() {
+            if let Some(cursor) = guard.cursor
+                && cursor >= guard.items.len() {
                     guard.cursor = guard.items.len().checked_sub(1);
                 }
-            }
             self.dirty.store(true, Ordering::SeqCst);
         }
     }
@@ -476,28 +473,26 @@ impl<T: ListItem> List<T> {
 
     /// Move cursor to first item.
     pub fn cursor_first(&self) -> Option<(Option<usize>, usize)> {
-        if let Ok(mut guard) = self.inner.write() {
-            if !guard.items.is_empty() {
+        if let Ok(mut guard) = self.inner.write()
+            && !guard.items.is_empty() {
                 let previous = guard.cursor;
                 guard.cursor = Some(0);
                 self.dirty.store(true, Ordering::SeqCst);
                 return Some((previous, 0));
             }
-        }
         None
     }
 
     /// Move cursor to last item.
     pub fn cursor_last(&self) -> Option<(Option<usize>, usize)> {
-        if let Ok(mut guard) = self.inner.write() {
-            if !guard.items.is_empty() {
+        if let Ok(mut guard) = self.inner.write()
+            && !guard.items.is_empty() {
                 let previous = guard.cursor;
                 let last = guard.items.len() - 1;
                 guard.cursor = Some(last);
                 self.dirty.store(true, Ordering::SeqCst);
                 return Some((previous, last));
             }
-        }
         None
     }
 
@@ -556,50 +551,46 @@ impl<T: ListItem> List<T> {
 
     /// Select a single item (clears other selection).
     pub fn select(&self, index: usize) -> (Vec<usize>, Vec<usize>) {
-        if let Ok(mut guard) = self.inner.write() {
-            if guard.selection_mode != SelectionMode::None && index < guard.items.len() {
+        if let Ok(mut guard) = self.inner.write()
+            && guard.selection_mode != SelectionMode::None && index < guard.items.len() {
                 let result = guard.selection.select(index);
                 self.dirty.store(true, Ordering::SeqCst);
                 return result;
             }
-        }
         (vec![], vec![])
     }
 
     /// Toggle selection of an item.
     pub fn toggle_select(&self, index: usize) -> (Vec<usize>, Vec<usize>) {
-        if let Ok(mut guard) = self.inner.write() {
-            if guard.selection_mode == SelectionMode::Multiple && index < guard.items.len() {
+        if let Ok(mut guard) = self.inner.write()
+            && guard.selection_mode == SelectionMode::Multiple && index < guard.items.len() {
                 let result = guard.selection.toggle(index);
                 self.dirty.store(true, Ordering::SeqCst);
                 return result;
             }
-        }
         (vec![], vec![])
     }
 
     /// Select a range from anchor to index.
     pub fn range_select(&self, index: usize, extend: bool) -> (Vec<usize>, Vec<usize>) {
-        if let Ok(mut guard) = self.inner.write() {
-            if guard.selection_mode == SelectionMode::Multiple && index < guard.items.len() {
+        if let Ok(mut guard) = self.inner.write()
+            && guard.selection_mode == SelectionMode::Multiple && index < guard.items.len() {
                 let result = guard.selection.range_select(index, extend);
                 self.dirty.store(true, Ordering::SeqCst);
                 return result;
             }
-        }
         (vec![], vec![])
     }
 
     /// Select all items.
     pub fn select_all(&self) -> Vec<usize> {
-        if let Ok(mut guard) = self.inner.write() {
-            if guard.selection_mode == SelectionMode::Multiple && !guard.items.is_empty() {
+        if let Ok(mut guard) = self.inner.write()
+            && guard.selection_mode == SelectionMode::Multiple && !guard.items.is_empty() {
                 let max_index = guard.items.len() - 1;
                 let result = guard.selection.select_all(max_index);
                 self.dirty.store(true, Ordering::SeqCst);
                 return result;
             }
-        }
         vec![]
     }
 
@@ -702,7 +693,7 @@ impl<T: ListItem> List<T> {
                 }
                 let item_height = T::HEIGHT;
                 let start = (g.scroll_offset / item_height) as usize;
-                let visible_count = ((g.viewport_height + item_height - 1) / item_height) as usize;
+                let visible_count = g.viewport_height.div_ceil(item_height) as usize;
                 let end = (start + visible_count + 1).min(g.items.len());
                 start..end
             })
@@ -1070,12 +1061,11 @@ impl<T: ListItem> ScrollbarState for List<T> {
     }
 
     fn scroll_to_top(&self) {
-        if let Ok(mut guard) = self.inner.write() {
-            if guard.scroll_offset != 0 {
+        if let Ok(mut guard) = self.inner.write()
+            && guard.scroll_offset != 0 {
                 guard.scroll_offset = 0;
                 self.dirty.store(true, Ordering::SeqCst);
             }
-        }
     }
 
     fn scroll_to_bottom(&self) {

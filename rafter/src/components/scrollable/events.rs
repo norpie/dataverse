@@ -16,8 +16,8 @@ const SCROLL_PAGE_LINES: i16 = 10;
 impl ComponentEvents for Scrollable {
     fn on_click(&self, x: u16, y: u16, _cx: &AppContext) -> EventResult {
         // Check vertical scrollbar
-        if let Some(geom) = self.vertical_scrollbar() {
-            if geom.contains(x, y) {
+        if let Some(geom) = self.vertical_scrollbar()
+            && geom.contains(x, y) {
                 let grab_offset = if geom.handle_contains(x, y, true) {
                     // Clicked on handle - remember offset within handle
                     y.saturating_sub(geom.y + geom.handle_pos)
@@ -37,11 +37,10 @@ impl ComponentEvents for Scrollable {
                 }));
                 return EventResult::StartDrag;
             }
-        }
 
         // Check horizontal scrollbar
-        if let Some(geom) = self.horizontal_scrollbar() {
-            if geom.contains(x, y) {
+        if let Some(geom) = self.horizontal_scrollbar()
+            && geom.contains(x, y) {
                 let grab_offset = if geom.handle_contains(x, y, false) {
                     // Clicked on handle - remember offset within handle
                     x.saturating_sub(geom.x + geom.handle_pos)
@@ -61,7 +60,6 @@ impl ComponentEvents for Scrollable {
                 }));
                 return EventResult::StartDrag;
             }
-        }
 
         EventResult::Ignored
     }

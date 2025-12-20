@@ -38,8 +38,8 @@ fn coalesce_hover_events(
 
     // Drain all pending events
     while event::poll(Duration::from_millis(0))? {
-        if let Ok(crossterm_event) = event::read() {
-            if let Some(rafter_event) = convert_event(crossterm_event.clone()) {
+        if let Ok(crossterm_event) = event::read()
+            && let Some(rafter_event) = convert_event(crossterm_event.clone()) {
                 match rafter_event {
                     Event::Hover(pos) => {
                         // Replace with newer hover position
@@ -52,7 +52,6 @@ fn coalesce_hover_events(
                     }
                 }
             }
-        }
     }
 
     Ok((latest_position, other_events, skipped_count))
@@ -131,12 +130,11 @@ pub async fn run_event_loop<A: App>(
         let in_modal = !modal_stack.is_empty();
 
         // Process any pending focus requests (only for app, not modals)
-        if !in_modal {
-            if let Some(focus_id) = cx.take_focus_request() {
+        if !in_modal
+            && let Some(focus_id) = cx.take_focus_request() {
                 debug!("Focus requested: {:?}", focus_id);
                 app_focus_state.set_focus(focus_id);
             }
-        }
 
         // Process any pending theme change requests
         if let Some(new_theme) = cx.take_theme_request() {
@@ -280,8 +278,8 @@ pub async fn run_event_loop<A: App>(
         };
 
         // Wait for events (with timeout for animations/toast expiry)
-        if event::poll(poll_timeout)? {
-            if let Ok(crossterm_event) = event::read() {
+        if event::poll(poll_timeout)?
+            && let Ok(crossterm_event) = event::read() {
                 trace!("Crossterm event: {:?}", crossterm_event);
 
                 if let Some(rafter_event) = convert_event(crossterm_event) {
@@ -327,8 +325,7 @@ pub async fn run_event_loop<A: App>(
                                     // Dispatch to component first (sets context data)
                                     if let Some(result) =
                                         view.dispatch_key_event(focus_id, key_combo, &cx)
-                                    {
-                                        if result.is_handled() {
+                                        && result.is_handled() {
                                             // Dispatch handlers based on context data
                                             dispatch_component_handlers(
                                                 &view,
@@ -339,7 +336,6 @@ pub async fn run_event_loop<A: App>(
                                             );
                                             continue;
                                         }
-                                    }
                                     // Fallback for buttons etc
                                     if let Some(handler_id) = view.get_submit_handler(focus_id) {
                                         dispatch_to_layer(&app, &modal_stack, &handler_id, &cx);
@@ -353,8 +349,7 @@ pub async fn run_event_loop<A: App>(
 
                                 if let Some(result) =
                                     view.dispatch_key_event(focus_id, key_combo, &cx)
-                                {
-                                    if result.is_handled() {
+                                    && result.is_handled() {
                                         // Dispatch handlers based on context data
                                         dispatch_component_handlers(
                                             &view,
@@ -365,11 +360,10 @@ pub async fn run_event_loop<A: App>(
                                         );
 
                                         // For inputs, check if value changed to trigger on_change
-                                        if let Some(old) = old_value {
-                                            if let Some(component) =
+                                        if let Some(old) = old_value
+                                            && let Some(component) =
                                                 view.get_input_component(focus_id)
-                                            {
-                                                if component.value() != old {
+                                                && component.value() != old {
                                                     cx.set_input_text(component.value());
                                                     if let Some(handler_id) =
                                                         view.get_change_handler(focus_id)
@@ -382,11 +376,8 @@ pub async fn run_event_loop<A: App>(
                                                         );
                                                     }
                                                 }
-                                            }
-                                        }
                                         continue;
                                     }
-                                }
                             }
 
                             // Handle Escape to clear focus (if not handled by component)
@@ -525,17 +516,16 @@ pub async fn run_event_loop<A: App>(
                                 debug!("Clicked element: {}", hit_box.id);
 
                                 // If it's a button, dispatch click handler
-                                if !hit_box.captures_input {
-                                    if let Some(handler_id) = view.get_submit_handler(&hit_box.id) {
+                                if !hit_box.captures_input
+                                    && let Some(handler_id) = view.get_submit_handler(&hit_box.id) {
                                         dispatch_to_layer(&app, &modal_stack, &handler_id, &cx);
                                     }
-                                }
                             }
                         }
                         Event::Hover(ref position) => {
                             // Coalesce pending hover events to avoid processing every pixel
                             let (final_position, other_events, skipped) =
-                                coalesce_hover_events(position.clone())?;
+                                coalesce_hover_events(*position)?;
 
                             if skipped > 0 {
                                 debug!(
@@ -577,8 +567,8 @@ pub async fn run_event_loop<A: App>(
                                     final_position.x,
                                     final_position.y.saturating_sub(hit_box.rect.y),
                                     &cx,
-                                ) {
-                                    if result.is_handled() {
+                                )
+                                    && result.is_handled() {
                                         dispatch_component_handlers(
                                             &view,
                                             &hit_box.id,
@@ -587,7 +577,6 @@ pub async fn run_event_loop<A: App>(
                                             &cx,
                                         );
                                     }
-                                }
                             }
                         }
                         Event::Scroll(ref scroll) => {
@@ -619,7 +608,6 @@ pub async fn run_event_loop<A: App>(
                     }
                 }
             }
-        }
     }
 
     // Call on_stop (async)

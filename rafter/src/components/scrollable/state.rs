@@ -36,6 +36,7 @@ pub enum ScrollDirection {
 
 /// Internal state for the Scrollable component.
 #[derive(Debug)]
+#[derive(Default)]
 struct ScrollableInner {
     /// Scroll direction configuration.
     direction: ScrollDirection,
@@ -61,21 +62,6 @@ struct ScrollableInner {
     drag: Option<ScrollbarDrag>,
 }
 
-impl Default for ScrollableInner {
-    fn default() -> Self {
-        Self {
-            direction: ScrollDirection::default(),
-            scrollbar: ScrollbarConfig::default(),
-            offset_x: 0,
-            offset_y: 0,
-            content_size: (0, 0),
-            viewport_size: (0, 0),
-            vertical_scrollbar: None,
-            horizontal_scrollbar: None,
-            drag: None,
-        }
-    }
-}
 
 /// A scrollable container component with reactive state.
 ///
@@ -212,12 +198,11 @@ impl Scrollable {
 
     /// Scroll to the left edge.
     pub fn scroll_to_left(&self) {
-        if let Ok(mut guard) = self.inner.write() {
-            if guard.offset_x != 0 {
+        if let Ok(mut guard) = self.inner.write()
+            && guard.offset_x != 0 {
                 guard.offset_x = 0;
                 self.dirty.store(true, Ordering::SeqCst);
             }
-        }
     }
 
     /// Scroll to the right edge.
@@ -398,12 +383,11 @@ impl ScrollbarState for Scrollable {
     }
 
     fn scroll_to_top(&self) {
-        if let Ok(mut guard) = self.inner.write() {
-            if guard.offset_y != 0 {
+        if let Ok(mut guard) = self.inner.write()
+            && guard.offset_y != 0 {
                 guard.offset_y = 0;
                 self.dirty.store(true, Ordering::SeqCst);
             }
-        }
     }
 
     fn scroll_to_bottom(&self) {

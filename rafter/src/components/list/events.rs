@@ -92,13 +92,12 @@ impl<T: ListItem> ComponentEvents for List<T> {
             }
             Key::Space if !key.modifiers.ctrl && !key.modifiers.alt => {
                 // Toggle selection at cursor
-                if let Some(index) = self.cursor() {
-                    if self.selection_mode() != SelectionMode::None {
+                if let Some(index) = self.cursor()
+                    && self.selection_mode() != SelectionMode::None {
                         let (added, removed) = self.toggle_select(index);
                         self.handle_selection_change(added, removed, cx);
                         return EventResult::Consumed;
                     }
-                }
             }
             Key::Char('a') if key.modifiers.ctrl => {
                 // Select all
@@ -151,8 +150,8 @@ impl<T: ListItem> ComponentEvents for List<T> {
 
     fn on_click(&self, x: u16, y: u16, _cx: &AppContext) -> EventResult {
         // Check vertical scrollbar first (uses absolute coordinates)
-        if let Some(geom) = ScrollbarState::vertical_scrollbar(self) {
-            if geom.contains(x, y) {
+        if let Some(geom) = ScrollbarState::vertical_scrollbar(self)
+            && geom.contains(x, y) {
                 let grab_offset = if geom.handle_contains(x, y, true) {
                     // Clicked on handle - remember offset within handle
                     y.saturating_sub(geom.y + geom.handle_pos)
@@ -175,7 +174,6 @@ impl<T: ListItem> ComponentEvents for List<T> {
                 );
                 return EventResult::StartDrag;
             }
-        }
 
         // If not on scrollbar, return Ignored - let the event loop handle
         // the click with modifiers via on_click_with_modifiers
@@ -184,11 +182,10 @@ impl<T: ListItem> ComponentEvents for List<T> {
 
     fn on_hover(&self, _x: u16, y: u16, cx: &AppContext) -> EventResult {
         // Move cursor on hover (y is relative to list content area)
-        if let Some(index) = self.index_from_viewport_y(y) {
-            if self.handle_cursor_move(index, cx) {
+        if let Some(index) = self.index_from_viewport_y(y)
+            && self.handle_cursor_move(index, cx) {
                 return EventResult::Consumed;
             }
-        }
         EventResult::Ignored
     }
 
@@ -207,12 +204,11 @@ impl<T: ListItem> ComponentEvents for List<T> {
 
     fn on_drag(&self, x: u16, y: u16, _cx: &AppContext) -> EventResult {
         if let Some(drag) = ScrollbarState::drag(self) {
-            if drag.is_vertical {
-                if let Some(geom) = ScrollbarState::vertical_scrollbar(self) {
+            if drag.is_vertical
+                && let Some(geom) = ScrollbarState::vertical_scrollbar(self) {
                     let ratio = geom.position_to_ratio_with_offset(x, y, true, drag.grab_offset);
                     ScrollbarState::scroll_to_ratio(self, None, Some(ratio));
                 }
-            }
             EventResult::Consumed
         } else {
             EventResult::Ignored
