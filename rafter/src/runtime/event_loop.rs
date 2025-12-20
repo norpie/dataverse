@@ -389,6 +389,18 @@ pub async fn run_event_loop<A: App>(
                                         app_focus_state.set_focus(hit_box.id.clone());
                                     }
                                     
+                                    // First check if click is on scrollbar
+                                    if let Some(result) = view.dispatch_click_event(&hit_box.id, click.position.x, click.position.y) {
+                                        match result {
+                                            EventResult::StartDrag => {
+                                                drag_component_id = Some(hit_box.id.clone());
+                                                continue;
+                                            }
+                                            EventResult::Consumed => continue,
+                                            EventResult::Ignored => {}
+                                        }
+                                    }
+                                    
                                     // Calculate y position relative to list content area
                                     let y_in_viewport = click.position.y.saturating_sub(hit_box.rect.y);
                                     

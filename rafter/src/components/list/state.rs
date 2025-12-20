@@ -5,6 +5,7 @@ use std::collections::HashSet;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, RwLock};
 
+use crate::components::scrollbar::{ScrollbarConfig, ScrollbarDrag, ScrollbarGeometry, ScrollbarState};
 use crate::node::Node;
 
 /// Unique identifier for a List component instance.
@@ -211,6 +212,12 @@ struct ListInner<T: ListItem> {
     scroll_offset: u16,
     /// Viewport height (set by renderer).
     viewport_height: u16,
+    /// Scrollbar configuration.
+    scrollbar: ScrollbarConfig,
+    /// Vertical scrollbar geometry (set by renderer for hit testing).
+    vertical_scrollbar: Option<ScrollbarGeometry>,
+    /// Drag state for scrollbar interaction.
+    drag: Option<ScrollbarDrag>,
 }
 
 impl<T: ListItem> Default for ListInner<T> {
@@ -222,6 +229,9 @@ impl<T: ListItem> Default for ListInner<T> {
             cursor: None,
             scroll_offset: 0,
             viewport_height: 0,
+            scrollbar: ScrollbarConfig::default(),
+            vertical_scrollbar: None,
+            drag: None,
         }
     }
 }
@@ -787,6 +797,15 @@ pub trait AnyList: Send + Sync + std::fmt::Debug {
     /// Handle a click event at the given position within the list bounds.
     fn on_click(&self, x: u16, y: u16) -> crate::components::events::EventResult;
 
+    /// Handle a scroll event.
+    fn on_scroll(&self, direction: crate::events::ScrollDirection, amount: u16) -> crate::components::events::EventResult;
+
+    /// Handle a drag event.
+    fn on_drag(&self, x: u16, y: u16) -> crate::components::events::EventResult;
+
+    /// Handle a release event.
+    fn on_release(&self) -> crate::components::events::EventResult;
+
     /// Handle a key event and return events to dispatch.
     fn handle_key_events(
         &self,
@@ -800,6 +819,31 @@ pub trait AnyList: Send + Sync + std::fmt::Debug {
         ctrl: bool,
         shift: bool,
     ) -> super::events::ListEvents;
+
+    // -------------------------------------------------------------------------
+    // Scrollbar support
+    // -------------------------------------------------------------------------
+
+    /// Get the scrollbar configuration.
+    fn scrollbar_config(&self) -> ScrollbarConfig;
+
+    /// Get the vertical scrollbar geometry.
+    fn vertical_scrollbar(&self) -> Option<ScrollbarGeometry>;
+
+    /// Set the vertical scrollbar geometry.
+    fn set_vertical_scrollbar(&self, geometry: Option<ScrollbarGeometry>);
+
+    /// Check if vertical scrolling is needed.
+    fn needs_vertical_scrollbar(&self) -> bool;
+
+    /// Scroll to a position based on a ratio (0.0 - 1.0).
+    fn scroll_to_ratio_y(&self, ratio: f32);
+
+    /// Get current drag state.
+    fn drag(&self) -> Option<ScrollbarDrag>;
+
+    /// Set current drag state.
+    fn set_drag(&self, drag: Option<ScrollbarDrag>);
 }
 
 impl<T: ListItem + std::fmt::Debug> AnyList for List<T> {
@@ -868,6 +912,21 @@ impl<T: ListItem + std::fmt::Debug> AnyList for List<T> {
         ComponentEvents::on_click(self, _x, y)
     }
 
+    fn on_scroll(&self, direction: crate::events::ScrollDirection, amount: u16) -> crate::components::events::EventResult {
+        use crate::components::events::ComponentEvents;
+        ComponentEvents::on_scroll(self, direction, amount)
+    }
+
+    fn on_drag(&self, x: u16, y: u16) -> crate::components::events::EventResult {
+        use crate::components::events::ComponentEvents;
+        ComponentEvents::on_drag(self, x, y)
+    }
+
+    fn on_release(&self) -> crate::components::events::EventResult {
+        use crate::components::events::ComponentEvents;
+        ComponentEvents::on_release(self)
+    }
+
     fn handle_key_events(
         &self,
         key: &crate::keybinds::KeyCombo,
@@ -883,10 +942,127 @@ impl<T: ListItem + std::fmt::Debug> AnyList for List<T> {
     ) -> super::events::ListEvents {
         self.handle_click(y_in_viewport, ctrl, shift)
     }
+
+    fn scrollbar_config(&self) -> ScrollbarConfig {
+        ScrollbarState::scrollbar_config(self)
+    }
+
+    fn vertical_scrollbar(&self) -> Option<ScrollbarGeometry> {
+        ScrollbarState::vertical_scrollbar(self)
+    }
+
+    fn set_vertical_scrollbar(&self, geometry: Option<ScrollbarGeometry>) {
+        ScrollbarState::set_vertical_scrollbar(self, geometry);
+    }
+
+    fn needs_vertical_scrollbar(&self) -> bool {
+        ScrollbarState::needs_vertical_scrollbar(self)
+    }
+
+    fn scroll_to_ratio_y(&self, ratio: f32) {
+        ScrollbarState::scroll_to_ratio(self, None, Some(ratio));
+    }
+
+    fn drag(&self) -> Option<ScrollbarDrag> {
+        ScrollbarState::drag(self)
+    }
+
+    fn set_drag(&self, drag: Option<ScrollbarDrag>) {
+        ScrollbarState::set_drag(self, drag);
+    }
 }
 
 impl Clone for Box<dyn AnyList> {
     fn clone(&self) -> Self {
         self.clone_box()
+    }
+}
+
+// =============================================================================
+// ScrollbarState trait implementation
+// =============================================================================
+
+impl<T: ListItem> ScrollbarState for List<T> {
+    fn scrollbar_config(&self) -> ScrollbarConfig {
+        self.inner
+            .read()
+            .map(|guard| guard.scrollbar.clone())
+            .unwrap_or_default()
+    }
+
+    fn set_scrollbar_config(&self, config: ScrollbarConfig) {
+        if let Ok(mut guard) = self.inner.write() {
+            guard.scrollbar = config;
+            self.dirty.store(true, Ordering::SeqCst);
+        }
+    }
+
+    fn scroll_offset_y(&self) -> u16 {
+        self.scroll_offset()
+    }
+
+    fn scroll_to_y(&self, y: u16) {
+        self.set_scroll_offset(y);
+    }
+
+    fn scroll_by(&self, _dx: i16, dy: i16) {
+        if let Ok(mut guard) = self.inner.write() {
+            let max_offset = Self::max_scroll_offset_inner(&guard);
+            let new_y = (guard.scroll_offset as i32 + dy as i32).clamp(0, max_offset as i32) as u16;
+            if new_y != guard.scroll_offset {
+                guard.scroll_offset = new_y;
+                self.dirty.store(true, Ordering::SeqCst);
+            }
+        }
+    }
+
+    fn scroll_to_top(&self) {
+        if let Ok(mut guard) = self.inner.write() {
+            if guard.scroll_offset != 0 {
+                guard.scroll_offset = 0;
+                self.dirty.store(true, Ordering::SeqCst);
+            }
+        }
+    }
+
+    fn scroll_to_bottom(&self) {
+        if let Ok(mut guard) = self.inner.write() {
+            let max_offset = Self::max_scroll_offset_inner(&guard);
+            if guard.scroll_offset != max_offset {
+                guard.scroll_offset = max_offset;
+                self.dirty.store(true, Ordering::SeqCst);
+            }
+        }
+    }
+
+    fn content_height(&self) -> u16 {
+        self.total_height()
+    }
+
+    fn viewport_height(&self) -> u16 {
+        List::viewport_height(self)
+    }
+
+    fn vertical_scrollbar(&self) -> Option<ScrollbarGeometry> {
+        self.inner
+            .read()
+            .ok()
+            .and_then(|guard| guard.vertical_scrollbar)
+    }
+
+    fn set_vertical_scrollbar(&self, geometry: Option<ScrollbarGeometry>) {
+        if let Ok(mut guard) = self.inner.write() {
+            guard.vertical_scrollbar = geometry;
+        }
+    }
+
+    fn drag(&self) -> Option<ScrollbarDrag> {
+        self.inner.read().map(|guard| guard.drag).unwrap_or(None)
+    }
+
+    fn set_drag(&self, drag: Option<ScrollbarDrag>) {
+        if let Ok(mut guard) = self.inner.write() {
+            guard.drag = drag;
+        }
     }
 }

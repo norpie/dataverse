@@ -10,6 +10,7 @@ pub mod events;
 pub mod input;
 pub mod list;
 pub mod scrollable;
+pub mod scrollbar;
 
 pub use events::{ComponentEvents, EventResult};
 pub use input::{Input, InputId};
@@ -17,6 +18,7 @@ pub use list::{
     ActivateEvent, CursorMoveEvent, List, ListId, ListItem, Selection, SelectionChangeEvent,
     SelectionMode,
 };
-pub use scrollable::{
-    Scrollable, ScrollDirection, ScrollableId, ScrollbarConfig, ScrollbarVisibility,
+pub use scrollable::{Scrollable, ScrollDirection, ScrollableId};
+pub use scrollbar::{
+    ScrollbarConfig, ScrollbarDrag, ScrollbarGeometry, ScrollbarState, ScrollbarVisibility,
 };

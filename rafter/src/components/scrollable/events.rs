@@ -1,6 +1,7 @@
 //! Event handling for the Scrollable component.
 
 use crate::components::events::{ComponentEvents, EventResult};
+use crate::components::scrollbar::{ScrollbarDrag, ScrollbarState};
 use crate::events::ScrollDirection;
 use crate::keybinds::{Key, KeyCombo};
 
@@ -10,15 +11,6 @@ use super::Scrollable;
 const SCROLL_LINES: i16 = 1;
 /// Lines to scroll per page up/down.
 const SCROLL_PAGE_LINES: i16 = 10;
-
-/// Internal drag state for scrollbar dragging.
-#[derive(Debug, Clone, Copy)]
-pub struct ScrollbarDrag {
-    /// Whether dragging the vertical scrollbar (false = horizontal).
-    pub is_vertical: bool,
-    /// Offset within the handle where the user grabbed.
-    pub grab_offset: u16,
-}
 
 impl ComponentEvents for Scrollable {
     fn on_click(&self, x: u16, y: u16) -> EventResult {
@@ -135,7 +127,7 @@ impl ComponentEvents for Scrollable {
             }
             Key::PageUp => {
                 // Scroll by viewport height, or fallback to SCROLL_PAGE_LINES
-                let viewport_height = self.viewport_size().1 as i16;
+                let viewport_height = ScrollbarState::viewport_height(self) as i16;
                 let amount = if viewport_height > 0 {
                     viewport_height
                 } else {
@@ -145,7 +137,7 @@ impl ComponentEvents for Scrollable {
                 EventResult::Consumed
             }
             Key::PageDown => {
-                let viewport_height = self.viewport_size().1 as i16;
+                let viewport_height = ScrollbarState::viewport_height(self) as i16;
                 let amount = if viewport_height > 0 {
                     viewport_height
                 } else {

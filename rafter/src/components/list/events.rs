@@ -1,6 +1,8 @@
 //! Event handling for the List component.
 
 use crate::components::events::{ComponentEvents, EventResult};
+use crate::components::scrollbar::{ScrollbarDrag, ScrollbarState};
+use crate::events::ScrollDirection;
 use crate::keybinds::{Key, KeyCombo};
 
 use super::state::{List, ListItem, SelectionMode};
@@ -267,9 +269,72 @@ impl<T: ListItem> ComponentEvents for List<T> {
         result
     }
 
-    fn on_click(&self, _x: u16, y: u16) -> EventResult {
-        // Calculate y relative to viewport (assumes click is within list bounds)
-        let _events = self.handle_click(y, false, false);
+    fn on_click(&self, x: u16, y: u16) -> EventResult {
+        // Check vertical scrollbar first
+        if let Some(geom) = ScrollbarState::vertical_scrollbar(self) {
+            if geom.contains(x, y) {
+                let grab_offset = if geom.handle_contains(x, y, true) {
+                    // Clicked on handle - remember offset within handle
+                    y.saturating_sub(geom.y + geom.handle_pos)
+                } else {
+                    // Clicked on track - calculate proportional offset and jump
+                    let track_ratio =
+                        (y.saturating_sub(geom.y) as f32) / (geom.height.max(1) as f32);
+                    let grab_offset = (track_ratio * geom.handle_size as f32) as u16;
+                    let ratio = geom.position_to_ratio_with_offset(x, y, true, grab_offset);
+                    ScrollbarState::scroll_to_ratio(self, None, Some(ratio));
+                    grab_offset
+                };
+
+                ScrollbarState::set_drag(
+                    self,
+                    Some(ScrollbarDrag {
+                        is_vertical: true,
+                        grab_offset,
+                    }),
+                );
+                return EventResult::StartDrag;
+            }
+        }
+
+        // Not on scrollbar - let the event loop handle list item interaction
+        // with proper viewport-relative coordinates
+        EventResult::Ignored
+    }
+
+    fn on_scroll(&self, direction: ScrollDirection, amount: u16) -> EventResult {
+        let amount = amount as i16;
+        match direction {
+            ScrollDirection::Up => ScrollbarState::scroll_by(self, 0, -amount),
+            ScrollDirection::Down => ScrollbarState::scroll_by(self, 0, amount),
+            ScrollDirection::Left | ScrollDirection::Right => {
+                // List only scrolls vertically
+                return EventResult::Ignored;
+            }
+        }
         EventResult::Consumed
+    }
+
+    fn on_drag(&self, x: u16, y: u16) -> EventResult {
+        if let Some(drag) = ScrollbarState::drag(self) {
+            if drag.is_vertical {
+                if let Some(geom) = ScrollbarState::vertical_scrollbar(self) {
+                    let ratio = geom.position_to_ratio_with_offset(x, y, true, drag.grab_offset);
+                    ScrollbarState::scroll_to_ratio(self, None, Some(ratio));
+                }
+            }
+            EventResult::Consumed
+        } else {
+            EventResult::Ignored
+        }
+    }
+
+    fn on_release(&self) -> EventResult {
+        if ScrollbarState::drag(self).is_some() {
+            ScrollbarState::set_drag(self, None);
+            EventResult::Consumed
+        } else {
+            EventResult::Ignored
+        }
     }
 }

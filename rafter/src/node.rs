@@ -504,6 +504,9 @@ impl Node {
             Self::Scrollable { id, component, .. } if id == target_id => {
                 Some(component.on_scroll(direction, amount))
             }
+            Self::List { id, component, .. } if id == target_id => {
+                Some(component.on_scroll(direction, amount))
+            }
             Self::Column { children, .. }
             | Self::Row { children, .. }
             | Self::Stack { children, .. } => children
@@ -524,6 +527,9 @@ impl Node {
             Self::Scrollable { id, component, .. } if id == target_id => {
                 Some(component.on_drag(x, y))
             }
+            Self::List { id, component, .. } if id == target_id => {
+                Some(component.on_drag(x, y))
+            }
             Self::Column { children, .. }
             | Self::Row { children, .. }
             | Self::Stack { children, .. } => children
@@ -538,6 +544,7 @@ impl Node {
     pub fn dispatch_release_event(&self, target_id: &str) -> Option<EventResult> {
         match self {
             Self::Scrollable { id, component, .. } if id == target_id => Some(component.on_release()),
+            Self::List { id, component, .. } if id == target_id => Some(component.on_release()),
             Self::Column { children, .. }
             | Self::Row { children, .. }
             | Self::Stack { children, .. } => children

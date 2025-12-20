@@ -4,8 +4,6 @@ pub mod events;
 pub mod render;
 mod state;
 
-pub use events::ScrollbarDrag;
-pub use state::{
-    Scrollable, ScrollableId, ScrollDirection, ScrollbarConfig, ScrollbarGeometry,
-    ScrollbarVisibility,
-};
+// Re-export scrollbar types from the shared module for backwards compatibility
+pub use super::scrollbar::{ScrollbarConfig, ScrollbarDrag, ScrollbarGeometry, ScrollbarVisibility};
+pub use state::{Scrollable, ScrollableId, ScrollDirection};

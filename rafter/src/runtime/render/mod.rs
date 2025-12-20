@@ -21,6 +21,7 @@ use crate::components::scrollable::render::{
     calculate_scrollable_layout, calculate_wrapped_content_size, render_horizontal_scrollbar,
     render_node_clipped, render_vertical_scrollbar, ClipRect,
 };
+use crate::components::scrollbar::ScrollbarState;
 use primitives::{render_button, render_container, render_stack, render_text};
 
 /// Convert a Style to ratatui Style, resolving named colors via theme
@@ -323,6 +324,7 @@ fn render_list(
     theme: &dyn Theme,
     focused_id: Option<&str>,
 ) {
+    use crate::components::scrollbar::render_vertical_scrollbar;
     use ratatui::widgets::Block;
 
     // Apply border and get inner area
@@ -336,7 +338,23 @@ fn render_list(
     }
 
     // Apply padding
-    let content_area = crate::runtime::render::layout::apply_padding(inner_area, layout.padding);
+    let padded_area = crate::runtime::render::layout::apply_padding(inner_area, layout.padding);
+
+    if padded_area.width == 0 || padded_area.height == 0 {
+        return;
+    }
+
+    // Determine if we need a scrollbar
+    let needs_scrollbar = component.needs_vertical_scrollbar();
+    let scrollbar_width = if needs_scrollbar { 1u16 } else { 0u16 };
+
+    // Content area excludes scrollbar
+    let content_area = ratatui::layout::Rect {
+        x: padded_area.x,
+        y: padded_area.y,
+        width: padded_area.width.saturating_sub(scrollbar_width),
+        height: padded_area.height,
+    };
 
     if content_area.width == 0 || content_area.height == 0 {
         return;
@@ -375,8 +393,33 @@ fn render_list(
         }
     }
 
-    // Register hit box (focusable for keyboard navigation)
+    // Render vertical scrollbar if needed
+    if needs_scrollbar {
+        let scrollbar_area = ratatui::layout::Rect {
+            x: padded_area.x + padded_area.width - 1,
+            y: padded_area.y,
+            width: 1,
+            height: padded_area.height,
+        };
+
+        let config = component.scrollbar_config();
+        let v_geom = render_vertical_scrollbar(
+            frame.buffer_mut(),
+            scrollbar_area,
+            scroll_offset,
+            component.total_height(),
+            content_area.height,
+            &config,
+            theme,
+        );
+        component.set_vertical_scrollbar(v_geom);
+    } else {
+        component.set_vertical_scrollbar(None);
+    }
+
+    // Register hit box for the content area (where items are clickable)
+    // We use padded_area so click coordinates are relative to item positions
     if !id.is_empty() {
-        hit_map.register(id.to_string(), area, true);
+        hit_map.register(id.to_string(), padded_area, true);
     }
 }
