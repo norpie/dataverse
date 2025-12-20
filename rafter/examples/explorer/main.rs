@@ -80,6 +80,53 @@ impl FileEntry {
     }
 }
 
+impl ListItem for FileEntry {
+    const HEIGHT: u16 = 1;
+
+    fn render(&self, focused: bool, selected: bool) -> Node {
+        let prefix = if selected { "[x] " } else { "[ ] " };
+        let icon = if self.is_dir { "📁" } else { "📄" };
+        let display_name = format!("{}{} {}", prefix, icon, self.name);
+        let size_display = self.size_display();
+
+        if focused {
+            // Focused row - highlighted background
+            if self.is_dir {
+                view! {
+                    row (gap: 2, bg: surface) {
+                        text (bold, fg: secondary, width: 24) { display_name }
+                        text (fg: muted, width: 10) { size_display }
+                    }
+                }
+            } else {
+                view! {
+                    row (gap: 2, bg: surface) {
+                        text (bold, fg: primary, width: 24) { display_name }
+                        text (fg: muted, width: 10) { size_display }
+                    }
+                }
+            }
+        } else {
+            // Non-focused row
+            if self.is_dir {
+                view! {
+                    row (gap: 2) {
+                        text (fg: secondary, width: 24) { display_name }
+                        text (fg: muted, width: 10) { size_display }
+                    }
+                }
+            } else {
+                view! {
+                    row (gap: 2) {
+                        text (width: 24) { display_name }
+                        text (fg: muted, width: 10) { size_display }
+                    }
+                }
+            }
+        }
+    }
+}
+
 // ============================================================================
 // Custom Theme
 // ============================================================================
@@ -131,9 +178,7 @@ pub struct Explorer {
     /// Current view
     view: View,
     /// List of files
-    files: Vec<FileEntry>,
-    /// Currently selected index in list view
-    selected: usize,
+    files: List<FileEntry>,
     /// Status message
     status: String,
 }
@@ -142,7 +187,7 @@ pub struct Explorer {
 impl Explorer {
     async fn on_start(&self, cx: &AppContext) {
         // Initialize with sample files
-        self.files.set(vec![
+        self.files.set_items(vec![
             FileEntry::new("Documents", 0, true),
             FileEntry::new("Pictures", 0, true),
             FileEntry::new("Downloads", 0, true),
@@ -152,6 +197,10 @@ impl Explorer {
             FileEntry::new("project.rs", 4096, false),
             FileEntry::new("data.json", 8192, false),
         ]);
+        // Enable multi-selection mode (Space to toggle, Ctrl+click, Shift+range)
+        self.files.set_selection_mode(SelectionMode::Multiple);
+        // Set initial cursor position
+        self.files.set_cursor(0);
         self.status.set("Ready".to_string());
         cx.toast("Explorer loaded");
     }
@@ -189,11 +238,9 @@ impl Explorer {
     #[keybinds(view = List)]
     fn list_keys() -> Keybinds {
         keybinds! {
-            "j" | "down" => move_down,
-            "k" | "up" => move_up,
-            "g" => go_top,
-            "G" => go_bottom,
-            "enter" | "l" => open_selected,
+            // Note: j/k/g/G/enter are handled by List component internally
+            // Only "l" needs a keybind for vim-style open
+            "l" => open_selected,
             "d" => delete_selected,
             "r" => rename_selected,
             "n" => new_file,
@@ -201,92 +248,56 @@ impl Explorer {
     }
 
     #[handler]
-    async fn move_down(&self) {
-        let files = self.files.get();
-        let current = self.selected.get();
-        if current < files.len().saturating_sub(1) {
-            self.selected.set(current + 1);
-        }
-    }
-
-    #[handler]
-    async fn move_up(&self) {
-        let current = self.selected.get();
-        if current > 0 {
-            self.selected.set(current - 1);
-        }
-    }
-
-    #[handler]
-    async fn go_top(&self) {
-        self.selected.set(0);
-    }
-
-    #[handler]
-    async fn go_bottom(&self) {
-        let files = self.files.get();
-        self.selected.set(files.len().saturating_sub(1));
-    }
-
-    #[handler]
     async fn open_selected(&self, cx: &AppContext) {
-        let files = self.files.get();
-        let selected = self.selected.get();
-
-        if let Some(file) = files.get(selected) {
-            if file.is_dir {
-                cx.toast(format!("Opening folder: {}", file.name));
-                // In a real app, we'd load the directory contents
-            } else {
-                // Navigate to detail view
-                self.view.set(View::Detail { index: selected });
-                self.status.set(format!("Viewing: {}", file.name));
+        // Use activated index from list event, or fall back to cursor (for keybind)
+        let selected = cx.list_activated_index().or_else(|| self.files.cursor());
+        if let Some(selected) = selected {
+            if let Some(file) = self.files.get(selected) {
+                if file.is_dir {
+                    cx.toast(format!("Opening folder: {}", file.name));
+                    // In a real app, we'd load the directory contents
+                } else {
+                    // Navigate to detail view
+                    self.view.set(View::Detail { index: selected });
+                    self.status.set(format!("Viewing: {}", file.name));
+                }
             }
         }
     }
 
     #[handler]
     async fn delete_selected(&self, cx: &AppContext) {
-        let files = self.files.get();
-        let selected = self.selected.get();
+        if let Some(selected) = self.files.cursor() {
+            if let Some(file) = self.files.get(selected) {
+                let confirmed = cx
+                    .modal(ConfirmModal::new(format!(
+                        "Delete '{}'?",
+                        file.name
+                    )))
+                    .await;
 
-        if let Some(file) = files.get(selected) {
-            let confirmed = cx
-                .modal(ConfirmModal::new(format!(
-                    "Delete '{}'?",
-                    file.name
-                )))
-                .await;
-
-            if confirmed {
-                self.files.update(|f| {
-                    f.remove(selected);
-                });
-                // Adjust selection if needed
-                let new_len = self.files.get().len();
-                if selected >= new_len && new_len > 0 {
-                    self.selected.set(new_len - 1);
+                if confirmed {
+                    self.files.remove(selected);
+                    cx.toast("File deleted");
+                    self.status.set("Deleted".to_string());
                 }
-                cx.toast("File deleted");
-                self.status.set("Deleted".to_string());
             }
         }
     }
 
     #[handler]
     async fn rename_selected(&self, cx: &AppContext) {
-        let files = self.files.get();
-        let selected = self.selected.get();
-
-        if let Some(file) = files.get(selected) {
-            if let Some(new_name) = cx.modal(RenameModal::new(file.name.clone())).await {
-                self.files.update(|f| {
-                    if let Some(entry) = f.get_mut(selected) {
-                        entry.name = new_name.clone();
-                    }
-                });
-                cx.toast(format!("Renamed to '{}'", new_name));
-                self.status.set("Renamed".to_string());
+        if let Some(selected) = self.files.cursor() {
+            if let Some(file) = self.files.get(selected) {
+                if let Some(new_name) = cx.modal(RenameModal::new(file.name.clone())).await {
+                    self.files.update(|f| {
+                        if let Some(entry) = f.get_mut(selected) {
+                            entry.name = new_name.clone();
+                        }
+                    });
+                    cx.toast(format!("Renamed to '{}'", new_name));
+                    self.status.set("Renamed".to_string());
+                }
             }
         }
     }
@@ -295,9 +306,7 @@ impl Explorer {
     async fn new_file(&self, cx: &AppContext) {
         if let Some(name) = cx.modal(RenameModal::with_title("New File", "")).await {
             if !name.is_empty() {
-                self.files.update(|f| {
-                    f.push(FileEntry::new(name.clone(), 0, false));
-                });
+                self.files.push(FileEntry::new(name.clone(), 0, false));
                 cx.toast(format!("Created '{}'", name));
                 self.status.set("Created".to_string());
             }
@@ -326,22 +335,14 @@ impl Explorer {
     #[handler]
     async fn delete_current(&self, cx: &AppContext) {
         if let View::Detail { index } = self.view.get() {
-            let files = self.files.get();
-            if let Some(file) = files.get(index) {
+            if let Some(file) = self.files.get(index) {
                 let confirmed = cx
                     .modal(ConfirmModal::new(format!("Delete '{}'?", file.name)))
                     .await;
 
                 if confirmed {
-                    self.files.update(|f| {
-                        f.remove(index);
-                    });
+                    self.files.remove(index);
                     self.view.set(View::List);
-                    // Adjust selection
-                    let new_len = self.files.get().len();
-                    if index >= new_len && new_len > 0 {
-                        self.selected.set(new_len - 1);
-                    }
                     cx.toast("File deleted");
                     self.status.set("Deleted".to_string());
                 }
@@ -352,8 +353,7 @@ impl Explorer {
     #[handler]
     async fn rename_current(&self, cx: &AppContext) {
         if let View::Detail { index } = self.view.get() {
-            let files = self.files.get();
-            if let Some(file) = files.get(index) {
+            if let Some(file) = self.files.get(index) {
                 if let Some(new_name) = cx.modal(RenameModal::new(file.name.clone())).await {
                     self.files.update(|f| {
                         if let Some(entry) = f.get_mut(index) {
@@ -373,17 +373,15 @@ impl Explorer {
 
     fn view(&self) -> Node {
         let current_view = self.view.get();
-        let files = self.files.get();
-        let selected = self.selected.get();
         let status = self.status.get();
 
         match current_view {
-            View::List => ListView::render(&files, selected, &status),
+            View::List => ListView::render(&self.files, &status),
             View::Detail { index } => {
-                if let Some(file) = files.get(index) {
-                    DetailView::render(file, &status)
+                if let Some(file) = self.files.get(index) {
+                    DetailView::render(&file, &status)
                 } else {
-                    ListView::render(&files, selected, &status)
+                    ListView::render(&self.files, &status)
                 }
             }
         }
