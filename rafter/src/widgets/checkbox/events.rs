@@ -5,13 +5,13 @@ use ratatui::Frame;
 
 use crate::context::AppContext;
 use crate::keybinds::{Key, KeyCombo};
-use crate::widgets::events::{EventResult, WidgetEvents};
+use crate::widgets::events::{EventResult, WidgetEvent, WidgetEventKind, WidgetEvents};
 use crate::widgets::traits::{AnyWidget, RenderContext};
 
 use super::Checkbox;
 
 impl WidgetEvents for Checkbox {
-    fn on_key(&self, key: &KeyCombo, _cx: &AppContext) -> EventResult {
+    fn on_key(&self, key: &KeyCombo, cx: &AppContext) -> EventResult {
         // Only handle keys without modifiers
         if key.modifiers.ctrl || key.modifiers.alt || key.modifiers.shift {
             return EventResult::Ignored;
@@ -20,6 +20,7 @@ impl WidgetEvents for Checkbox {
         match key.key {
             Key::Char(' ') | Key::Enter => {
                 self.toggle();
+                cx.push_event(WidgetEvent::new(WidgetEventKind::Change, self.id_string()));
                 EventResult::Consumed
             }
             _ => EventResult::Ignored,
@@ -48,9 +49,10 @@ impl AnyWidget for Checkbox {
         false
     }
 
-    fn dispatch_click(&self, _x: u16, _y: u16, _cx: &AppContext) -> EventResult {
+    fn dispatch_click(&self, _x: u16, _y: u16, cx: &AppContext) -> EventResult {
         // Toggle on click
         self.toggle();
+        cx.push_event(WidgetEvent::new(WidgetEventKind::Change, self.id_string()));
         EventResult::Consumed
     }
 

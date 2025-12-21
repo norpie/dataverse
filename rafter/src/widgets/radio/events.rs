@@ -5,13 +5,13 @@ use ratatui::Frame;
 
 use crate::context::AppContext;
 use crate::keybinds::{Key, KeyCombo};
-use crate::widgets::events::{EventResult, WidgetEvents};
+use crate::widgets::events::{EventResult, WidgetEvent, WidgetEventKind, WidgetEvents};
 use crate::widgets::traits::{AnyWidget, RenderContext};
 
 use super::RadioGroup;
 
 impl WidgetEvents for RadioGroup {
-    fn on_key(&self, key: &KeyCombo, _cx: &AppContext) -> EventResult {
+    fn on_key(&self, key: &KeyCombo, cx: &AppContext) -> EventResult {
         // Only handle keys without modifiers
         if key.modifiers.ctrl || key.modifiers.alt || key.modifiers.shift {
             return EventResult::Ignored;
@@ -22,10 +22,11 @@ impl WidgetEvents for RadioGroup {
             return EventResult::Ignored;
         }
 
+        let old_selection = self.selected();
+
         match key.key {
             Key::Char(' ') | Key::Enter => {
                 // Space/Enter confirms current selection (no-op if already selected)
-                // The runtime handles dispatching on_change
                 EventResult::Consumed
             }
             Key::Up | Key::Char('k') => {
@@ -33,6 +34,9 @@ impl WidgetEvents for RadioGroup {
                 let current = self.selected().unwrap_or(0);
                 let new_index = if current == 0 { len - 1 } else { current - 1 };
                 self.select(new_index);
+                if self.selected() != old_selection {
+                    cx.push_event(WidgetEvent::new(WidgetEventKind::Change, self.id_string()));
+                }
                 EventResult::Consumed
             }
             Key::Down | Key::Char('j') => {
@@ -40,16 +44,25 @@ impl WidgetEvents for RadioGroup {
                 let current = self.selected().unwrap_or(0);
                 let new_index = if current + 1 >= len { 0 } else { current + 1 };
                 self.select(new_index);
+                if self.selected() != old_selection {
+                    cx.push_event(WidgetEvent::new(WidgetEventKind::Change, self.id_string()));
+                }
                 EventResult::Consumed
             }
             Key::Home => {
                 // Select first option
                 self.select(0);
+                if self.selected() != old_selection {
+                    cx.push_event(WidgetEvent::new(WidgetEventKind::Change, self.id_string()));
+                }
                 EventResult::Consumed
             }
             Key::End => {
                 // Select last option
                 self.select(len - 1);
+                if self.selected() != old_selection {
+                    cx.push_event(WidgetEvent::new(WidgetEventKind::Change, self.id_string()));
+                }
                 EventResult::Consumed
             }
             _ => EventResult::Ignored,
@@ -78,11 +91,15 @@ impl AnyWidget for RadioGroup {
         false
     }
 
-    fn dispatch_click(&self, _x: u16, y: u16, _cx: &AppContext) -> EventResult {
+    fn dispatch_click(&self, _x: u16, y: u16, cx: &AppContext) -> EventResult {
         // Select the clicked option based on y position
         let index = y as usize;
+        let old_selection = self.selected();
         if index < self.len() {
             self.select(index);
+            if self.selected() != old_selection {
+                cx.push_event(WidgetEvent::new(WidgetEventKind::Change, self.id_string()));
+            }
         }
         EventResult::Consumed
     }

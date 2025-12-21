@@ -9,12 +9,12 @@ use std::sync::{Arc, RwLock};
 use log::debug;
 
 use crate::app::App;
-use crate::widgets::EventResult;
-use crate::widgets::events::WidgetEventKind;
 use crate::context::AppContext;
 use crate::events::{ClickEvent, Position, ScrollEvent};
 use crate::keybinds::{HandlerId, Key, KeyCombo, Keybinds};
 use crate::node::Node;
+use crate::widgets::events::WidgetEventKind;
+use crate::widgets::EventResult;
 
 use super::events::{DragEvent, Event};
 use super::hit_test::HitTestMap;
@@ -61,6 +61,7 @@ pub fn dispatch_component_handlers<A: App>(
             WidgetEventKind::Expand => page.get_expand_handler(&event.widget_id),
             WidgetEventKind::Collapse => page.get_collapse_handler(&event.widget_id),
             WidgetEventKind::Sort => page.get_sort_handler(&event.widget_id),
+            WidgetEventKind::Change => page.get_change_handler(&event.widget_id),
         };
 
         if let Some(handler_id) = handler {
@@ -117,30 +118,16 @@ pub fn handle_key_event<A: App>(
         if key_combo.key == Key::Enter {
             debug!("Enter on focused element: {:?}", focus_id);
 
-            // Check if this is a checkbox (Enter toggles it)
-            let old_checkbox_state = page
-                .get_checkbox_component(focus_id)
-                .map(|c| c.is_checked());
-
-            // Dispatch to widget first (sets context data)
+            // Dispatch to widget first (widgets push events to context)
             if let Some(result) = page.dispatch_key_event(focus_id, key_combo, cx)
                 && result.is_handled()
             {
-                // Dispatch handlers based on context data
+                // Dispatch handlers based on context data (includes Change events)
                 dispatch_component_handlers(page, focus_id, app, &state.modal_stack, cx);
-
-                // For checkboxes, dispatch on_change if state changed
-                if let Some(old) = old_checkbox_state
-                    && let Some(widget) = page.get_checkbox_component(focus_id)
-                    && widget.is_checked() != old
-                    && let Some(handler_id) = page.get_change_handler(focus_id)
-                {
-                    dispatch_to_layer(app, &state.modal_stack, &handler_id, cx);
-                }
-
                 return ControlFlow::Continue(true);
             }
-            // Fallback for buttons etc
+
+            // Fallback for buttons etc - dispatch submit handler directly
             if let Some(handler_id) = page.get_submit_handler(focus_id) {
                 dispatch_to_layer(app, &state.modal_stack, &handler_id, cx);
             }
@@ -148,49 +135,11 @@ pub fn handle_key_event<A: App>(
         }
 
         // For all other keys, dispatch to widget
-        let old_value = page.get_input_component(focus_id).map(|c| c.value());
-        let old_checkbox_state = page
-            .get_checkbox_component(focus_id)
-            .map(|c| c.is_checked());
-        let old_radio_selection = page
-            .get_radio_group_component(focus_id)
-            .map(|c| c.selected());
-
         if let Some(result) = page.dispatch_key_event(focus_id, key_combo, cx)
             && result.is_handled()
         {
-            // Dispatch handlers based on context data
+            // Dispatch handlers based on context data (includes Change events)
             dispatch_component_handlers(page, focus_id, app, &state.modal_stack, cx);
-
-            // For inputs, check if value changed to trigger on_change
-            if let Some(old) = old_value
-                && let Some(widget) = page.get_input_component(focus_id)
-                && widget.value() != old
-            {
-                cx.set_input_text(widget.value());
-                if let Some(handler_id) = page.get_change_handler(focus_id) {
-                    dispatch_to_layer(app, &state.modal_stack, &handler_id, cx);
-                }
-            }
-
-            // For checkboxes, check if state changed to trigger on_change (Space key)
-            if let Some(old) = old_checkbox_state
-                && let Some(widget) = page.get_checkbox_component(focus_id)
-                && widget.is_checked() != old
-                && let Some(handler_id) = page.get_change_handler(focus_id)
-            {
-                dispatch_to_layer(app, &state.modal_stack, &handler_id, cx);
-            }
-
-            // For radio groups, check if selection changed to trigger on_change
-            if let Some(old) = old_radio_selection
-                && let Some(widget) = page.get_radio_group_component(focus_id)
-                && widget.selected() != old
-                && let Some(handler_id) = page.get_change_handler(focus_id)
-            {
-                dispatch_to_layer(app, &state.modal_stack, &handler_id, cx);
-            }
-
             return ControlFlow::Continue(true);
         }
     }
@@ -243,8 +192,7 @@ pub fn handle_key_event<A: App>(
 
 /// Handle a click event.
 ///
-/// This function uses `AnySelectable` to handle List/Tree/Table clicks uniformly,
-/// eliminating the previous 3-way branching logic.
+/// This function uses the unified widget dispatch to handle clicks on all widgets.
 ///
 /// Returns `true` if the loop should continue to the next iteration.
 pub fn handle_click_event<A: App>(
@@ -262,9 +210,10 @@ pub fn handle_click_event<A: App>(
     // Focus the clicked element
     state.focus_state_mut().set_focus(hit_box.id.clone());
 
-    // First, check if this is a selectable widget (List/Tree/Table)
-    // Using AnySelectable for unified handling
-    if let Some(selectable) = page.get_selectable_component(&hit_box.id) {
+    // Check if this is a selectable widget (List/Tree/Table) via capability query
+    if let Some(widget) = page.get_widget(&hit_box.id)
+        && let Some(selectable) = widget.as_selectable()
+    {
         debug!("Clicked on selectable element: {}", hit_box.id);
 
         // First check if click is on scrollbar (dispatch_click_event handles this)
@@ -304,7 +253,7 @@ pub fn handle_click_event<A: App>(
         return true;
     }
 
-    // Not a selectable widget - try other widgets (ScrollArea, Input, Button)
+    // Not a selectable widget - dispatch click to widget
     if let Some(result) =
         page.dispatch_click_event(&hit_box.id, click.position.x, click.position.y, cx)
     {
@@ -313,41 +262,22 @@ pub fn handle_click_event<A: App>(
                 state.drag_widget_id = Some(hit_box.id.clone());
                 return true;
             }
-            EventResult::Consumed => return true,
+            EventResult::Consumed => {
+                // Widgets push Change events when their state changes
+                dispatch_component_handlers(page, &hit_box.id, app, &state.modal_stack, cx);
+                return true;
+            }
             EventResult::Ignored => {}
         }
     }
 
     debug!("Clicked element: {}", hit_box.id);
 
-    // If it's a checkbox, toggle it and dispatch on_change handler
-    if let Some(checkbox) = page.get_checkbox_component(&hit_box.id) {
-        checkbox.toggle();
-        if let Some(handler_id) = page.get_change_handler(&hit_box.id) {
+    // If it's a button (non-capturing widget), dispatch submit handler
+    if !hit_box.captures_input {
+        if let Some(handler_id) = page.get_submit_handler(&hit_box.id) {
             dispatch_to_layer(app, &state.modal_stack, &handler_id, cx);
         }
-        return true;
-    }
-
-    // If it's a radio group, select the clicked option and dispatch on_change handler
-    if let Some(radio_group) = page.get_radio_group_component(&hit_box.id) {
-        // Calculate which option was clicked based on Y position within the widget
-        let y_in_component = click.position.y.saturating_sub(hit_box.rect.y) as usize;
-        let old_selection = radio_group.selected();
-        radio_group.select(y_in_component);
-        if radio_group.selected() != old_selection {
-            if let Some(handler_id) = page.get_change_handler(&hit_box.id) {
-                dispatch_to_layer(app, &state.modal_stack, &handler_id, cx);
-            }
-        }
-        return true;
-    }
-
-    // If it's a button, dispatch click handler
-    if !hit_box.captures_input
-        && let Some(handler_id) = page.get_submit_handler(&hit_box.id)
-    {
-        dispatch_to_layer(app, &state.modal_stack, &handler_id, cx);
     }
 
     false

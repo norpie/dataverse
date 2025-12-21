@@ -30,6 +30,8 @@ pub enum WidgetEventKind {
     Collapse,
     /// Table column sorted
     Sort,
+    /// Value changed (input text, checkbox state, radio selection)
+    Change,
 }
 
 /// A widget event to be dispatched.

@@ -80,16 +80,19 @@ pub fn generate_list_element(elem: &ElementNode) -> TokenStream {
 
     quote! {
         {
-            let __component = (#list_component).clone();
-            rafter::node::Node::List {
-                id: __component.id_string(),
+            let __widget = (#list_component).clone();
+            rafter::node::Node::Widget {
+                widget: Box::new(__widget) as Box<dyn rafter::widgets::AnyWidget>,
+                handlers: rafter::widgets::WidgetHandlers {
+                    on_activate: #on_activate,
+                    on_selection_change: #on_selection_change,
+                    on_cursor_move: #on_cursor_move,
+                    on_scroll: #on_scroll,
+                    ..Default::default()
+                },
                 style: #style,
                 layout: #layout,
-                widget: Box::new(__component),
-                on_activate: #on_activate,
-                on_selection_change: #on_selection_change,
-                on_cursor_move: #on_cursor_move,
-                on_scroll: #on_scroll,
+                children: Vec::new(),
             }
         }
     }

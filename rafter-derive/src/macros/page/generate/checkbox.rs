@@ -5,11 +5,13 @@ use quote::quote;
 
 use crate::macros::page::ast::{AttrValue, ElementNode};
 
+use super::layout::generate_layout;
 use super::style::generate_style;
 
 /// Generate code for a checkbox element
 pub fn generate_checkbox_element(elem: &ElementNode) -> TokenStream {
     let style = generate_style(&elem.attrs);
+    let layout = generate_layout(&elem.attrs);
 
     // Find the bind: attribute - required for checkbox elements
     let bind_expr = elem.attrs.iter().find_map(|attr| {
@@ -50,12 +52,16 @@ pub fn generate_checkbox_element(elem: &ElementNode) -> TokenStream {
 
     quote! {
         {
-            let __component = (#checkbox_component).clone();
-            rafter::node::Node::Checkbox {
-                id: __component.id_string(),
+            let __widget = (#checkbox_component).clone();
+            rafter::node::Node::Widget {
+                widget: Box::new(__widget) as Box<dyn rafter::widgets::AnyWidget>,
+                handlers: rafter::widgets::WidgetHandlers {
+                    on_change: #on_change,
+                    ..Default::default()
+                },
                 style: #style,
-                widget: __component,
-                on_change: #on_change,
+                layout: #layout,
+                children: Vec::new(),
             }
         }
     }

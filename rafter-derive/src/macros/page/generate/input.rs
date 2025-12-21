@@ -5,11 +5,13 @@ use quote::quote;
 
 use crate::macros::page::ast::{AttrValue, ElementNode};
 
+use super::layout::generate_layout;
 use super::style::generate_style;
 
 /// Generate code for an input element
 pub fn generate_input_element(elem: &ElementNode) -> TokenStream {
     let style = generate_style(&elem.attrs);
+    let layout = generate_layout(&elem.attrs);
 
     // Find the bind: attribute - required for input elements
     let bind_expr = elem.attrs.iter().find_map(|attr| {
@@ -36,20 +38,12 @@ pub fn generate_input_element(elem: &ElementNode) -> TokenStream {
     };
 
     // Parse optional attributes
-    let mut placeholder_override: Option<TokenStream> = None;
     let mut on_change = quote! { None };
     let mut on_submit = quote! { None };
 
     for attr in &elem.attrs {
         let name_str = attr.name.to_string();
         match name_str.as_str() {
-            "placeholder" => {
-                if let Some(AttrValue::Str(s)) = &attr.value {
-                    placeholder_override = Some(quote! { #s.to_string() });
-                } else if let Some(AttrValue::Expr(e)) = &attr.value {
-                    placeholder_override = Some(quote! { (#e).to_string() });
-                }
-            }
             "on_change" => {
                 if let Some(AttrValue::Ident(i)) = &attr.value {
                     let handler_name = i.to_string();
@@ -68,22 +62,19 @@ pub fn generate_input_element(elem: &ElementNode) -> TokenStream {
         }
     }
 
-    let placeholder = match placeholder_override {
-        Some(p) => p,
-        None => quote! { __component.placeholder() },
-    };
-
     quote! {
         {
-            let __component = (#input_component).clone();
-            rafter::node::Node::Input {
-                value: __component.value(),
-                placeholder: #placeholder,
-                on_change: #on_change,
-                on_submit: #on_submit,
-                id: __component.id_string(),
+            let __widget = (#input_component).clone();
+            rafter::node::Node::Widget {
+                widget: Box::new(__widget) as Box<dyn rafter::widgets::AnyWidget>,
+                handlers: rafter::widgets::WidgetHandlers {
+                    on_change: #on_change,
+                    on_submit: #on_submit,
+                    ..Default::default()
+                },
                 style: #style,
-                widget: Some(__component),
+                layout: #layout,
+                children: Vec::new(),
             }
         }
     }

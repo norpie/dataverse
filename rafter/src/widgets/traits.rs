@@ -462,6 +462,7 @@ impl WidgetHandlers {
             WidgetEventKind::Expand => self.on_expand.as_ref(),
             WidgetEventKind::Collapse => self.on_collapse.as_ref(),
             WidgetEventKind::Sort => self.on_sort.as_ref(),
+            WidgetEventKind::Change => self.on_change.as_ref(),
         }
     }
 }
@@ -692,4 +693,35 @@ pub trait Selectable: Scrollable {
 
     /// Get the height of a single item (in rows).
     fn item_height(&self) -> u16;
+
+    // =========================================================================
+    // Click Handling (with defaults for non-Table widgets)
+    // =========================================================================
+
+    /// Whether this widget has a header row (Table only).
+    fn has_header(&self) -> bool {
+        false
+}
+
+
+    /// Handle header click (Table only).
+    ///
+    /// `x_in_viewport` is the x coordinate relative to the widget's left edge.
+    fn on_header_click(&self, _x_in_viewport: u16, _cx: &AppContext) -> EventResult {
+        EventResult::Ignored
+    }
+
+    /// Handle click with modifiers on a data row.
+    ///
+    /// For Table, `y_in_viewport` includes the header row offset.
+    /// The implementation should handle this internally.
+    fn on_click_with_modifiers(
+        &self,
+        _y_in_viewport: u16,
+        _ctrl: bool,
+        _shift: bool,
+        _cx: &AppContext,
+    ) -> EventResult {
+        EventResult::Ignored
+    }
 }

@@ -5,11 +5,13 @@ use quote::quote;
 
 use crate::macros::page::ast::{AttrValue, ElementNode};
 
+use super::layout::generate_layout;
 use super::style::generate_style;
 
 /// Generate code for a radio_group element
 pub fn generate_radio_group_element(elem: &ElementNode) -> TokenStream {
     let style = generate_style(&elem.attrs);
+    let layout = generate_layout(&elem.attrs);
 
     // Find the bind: attribute - required for radio_group elements
     let bind_expr = elem.attrs.iter().find_map(|attr| {
@@ -50,12 +52,16 @@ pub fn generate_radio_group_element(elem: &ElementNode) -> TokenStream {
 
     quote! {
         {
-            let __component = (#radio_group_component).clone();
-            rafter::node::Node::RadioGroup {
-                id: __component.id_string(),
+            let __widget = (#radio_group_component).clone();
+            rafter::node::Node::Widget {
+                widget: Box::new(__widget) as Box<dyn rafter::widgets::AnyWidget>,
+                handlers: rafter::widgets::WidgetHandlers {
+                    on_change: #on_change,
+                    ..Default::default()
+                },
                 style: #style,
-                widget: __component,
-                on_change: #on_change,
+                layout: #layout,
+                children: Vec::new(),
             }
         }
     }

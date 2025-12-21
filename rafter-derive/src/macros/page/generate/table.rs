@@ -80,16 +80,19 @@ pub fn generate_table_element(elem: &ElementNode) -> TokenStream {
 
     quote! {
         {
-            let __component = (#table_component).clone();
-            rafter::node::Node::Table {
-                id: __component.id_string(),
+            let __widget = (#table_component).clone();
+            rafter::node::Node::Widget {
+                widget: Box::new(__widget) as Box<dyn rafter::widgets::AnyWidget>,
+                handlers: rafter::widgets::WidgetHandlers {
+                    on_activate: #on_activate,
+                    on_selection_change: #on_selection_change,
+                    on_cursor_move: #on_cursor_move,
+                    on_sort: #on_sort,
+                    ..Default::default()
+                },
                 style: #style,
                 layout: #layout,
-                widget: Box::new(__component),
-                on_activate: #on_activate,
-                on_selection_change: #on_selection_change,
-                on_cursor_move: #on_cursor_move,
-                on_sort: #on_sort,
+                children: Vec::new(),
             }
         }
     }

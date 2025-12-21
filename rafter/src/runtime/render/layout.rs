@@ -104,7 +104,6 @@ pub fn calculate_constraints(children: &[Node], gap: u16, horizontal: bool) -> V
 }
 
 /// Calculate the intrinsic size of a node (width if horizontal, height if vertical)
-#[allow(deprecated)] // Allow legacy Node variants during migration
 pub fn intrinsic_size(node: &Node, horizontal: bool) -> u16 {
     match node {
         Node::Empty => 0,
@@ -201,119 +200,10 @@ pub fn intrinsic_size(node: &Node, horizontal: bool) -> u16 {
                 1 + padding + border_size // Default height for widgets
             }
         }
-        // Legacy variants
-        Node::Input {
-            value, placeholder, ..
-        } => {
-            if horizontal {
-                let content_len = if value.is_empty() {
-                    placeholder.len()
-                } else {
-                    value.len()
-                };
-                (content_len + 5).max(15) as u16
-            } else {
-                1
-            }
-        }
-        Node::Button { label, .. } => {
-            if horizontal {
-                (label.len() + 2) as u16 // " label " with padding
-            } else {
-                1
-            }
-        }
-        Node::Checkbox { widget, .. } => {
-            if horizontal {
-                let label = widget.label();
-                if label.is_empty() {
-                    1 // Just the indicator
-                } else {
-                    (label.len() + 2) as u16 // indicator + space + label
-                }
-            } else {
-                1
-            }
-        }
-        Node::RadioGroup { widget, .. } => {
-            if horizontal {
-                // Width is the longest option label + indicator + space
-                widget
-                    .options()
-                    .iter()
-                    .map(|label| label.len() + 2)
-                    .max()
-                    .unwrap_or(1) as u16
-            } else {
-                // Height is number of options
-                widget.len().max(1) as u16
-            }
-        }
-        Node::ScrollArea { child, layout, .. } => {
-            let border_size = if matches!(layout.border, Border::None) {
-                0
-            } else {
-                2
-            };
-            let padding = layout.padding * 2;
-            intrinsic_size(child, horizontal) + padding + border_size
-        }
-        Node::List {
-            layout, widget, ..
-        } => {
-            let border_size = if matches!(layout.border, Border::None) {
-                0
-            } else {
-                2
-            };
-            let padding = layout.padding * 2;
-            if horizontal {
-                // Width is determined by layout, use a reasonable default
-                40 + padding + border_size
-            } else {
-                // Height is total items height
-                widget.total_height() + padding + border_size
-            }
-        }
-        Node::Tree {
-            layout, widget, ..
-        } => {
-            let border_size = if matches!(layout.border, Border::None) {
-                0
-            } else {
-                2
-            };
-            let padding = layout.padding * 2;
-            if horizontal {
-                // Width is determined by layout, use a reasonable default
-                40 + padding + border_size
-            } else {
-                // Height is total visible nodes height
-                widget.total_height() + padding + border_size
-            }
-        }
-        Node::Table {
-            layout, widget, ..
-        } => {
-            let border_size = if matches!(layout.border, Border::None) {
-                0
-            } else {
-                2
-            };
-            let padding = layout.padding * 2;
-            if horizontal {
-                // Width is sum of all column widths
-                widget.total_width() + padding + border_size
-            } else {
-                // Height is total rows height + header row
-                widget.total_height() + 1 + padding + border_size
-            }
-        }
     }
 }
 
 /// Get the constraint for a single child node
-#[allow(deprecated)] // Allow legacy Node variants during migration
 pub fn child_constraint(node: &Node, horizontal: bool) -> Constraint {
     match node {
         Node::Empty => Constraint::Length(0),
@@ -360,78 +250,6 @@ pub fn child_constraint(node: &Node, horizontal: bool) -> Constraint {
                         Constraint::Ratio(flex as u32, 1)
                     } else {
                         // Calculate intrinsic size
-                        Constraint::Length(intrinsic_size(node, horizontal))
-                    }
-                }
-            }
-        }
-        Node::Input {
-            value, placeholder, ..
-        } => {
-            if horizontal {
-                let content_len = if value.is_empty() {
-                    placeholder.len()
-                } else {
-                    value.len()
-                };
-                Constraint::Min((content_len + 5).max(15) as u16)
-            } else {
-                Constraint::Length(1)
-            }
-        }
-        Node::Button { label, .. } => {
-            if horizontal {
-                // Button width: " label " = label + 2
-                Constraint::Length((label.len() + 2) as u16)
-            } else {
-                // For vertical layout, buttons take 1 line
-                Constraint::Length(1)
-            }
-        }
-        Node::Checkbox { widget, .. } => {
-            if horizontal {
-                let label = widget.label();
-                if label.is_empty() {
-                    Constraint::Length(1) // Just the indicator
-                } else {
-                    Constraint::Length((label.len() + 2) as u16) // indicator + space + label
-                }
-            } else {
-                Constraint::Length(1)
-            }
-        }
-        Node::RadioGroup { widget, .. } => {
-            if horizontal {
-                // Width is the longest option label + indicator + space
-                let max_width = widget
-                    .options()
-                    .iter()
-                    .map(|label| label.len() + 2)
-                    .max()
-                    .unwrap_or(1) as u16;
-                Constraint::Length(max_width)
-            } else {
-                // Height is number of options
-                Constraint::Length(widget.len().max(1) as u16)
-            }
-        }
-        Node::ScrollArea { layout, .. }
-        | Node::List { layout, .. }
-        | Node::Tree { layout, .. }
-        | Node::Table { layout, .. } => {
-            let size = if horizontal {
-                &layout.width
-            } else {
-                &layout.height
-            };
-            match size {
-                crate::node::Size::Fixed(v) => Constraint::Length(*v),
-                crate::node::Size::Percent(p) => Constraint::Percentage((*p * 100.0) as u16),
-                crate::node::Size::Flex(f) => Constraint::Ratio(*f as u32, 1),
-                crate::node::Size::Auto => {
-                    if let Some(flex) = layout.flex {
-                        Constraint::Ratio(flex as u32, 1)
-                    } else {
                         Constraint::Length(intrinsic_size(node, horizontal))
                     }
                 }

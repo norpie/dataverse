@@ -5,7 +5,7 @@ use ratatui::Frame;
 
 use crate::context::AppContext;
 use crate::keybinds::{Key, KeyCombo};
-use crate::widgets::events::{EventResult, WidgetEvents};
+use crate::widgets::events::{EventResult, WidgetEvent, WidgetEventKind, WidgetEvents};
 use crate::widgets::traits::{AnyWidget, RenderContext};
 
 use super::Input;
@@ -16,6 +16,8 @@ impl WidgetEvents for Input {
         if key.modifiers.ctrl || key.modifiers.alt {
             return EventResult::Ignored;
         }
+
+        let old_value = self.value();
 
         let result = match key.key {
             Key::Backspace => {
@@ -49,9 +51,13 @@ impl WidgetEvents for Input {
             _ => EventResult::Ignored,
         };
 
-        // If we consumed the event, update the context with current input value
+        // If we consumed the event and value changed, push change event
         if result == EventResult::Consumed {
-            cx.set_input_text(self.value());
+            let new_value = self.value();
+            cx.set_input_text(new_value.clone());
+            if new_value != old_value {
+                cx.push_event(WidgetEvent::new(WidgetEventKind::Change, self.id_string()));
+            }
         }
 
         result

@@ -64,34 +64,23 @@ pub fn generate_scroll_area_element(elem: &ElementNode) -> TokenStream {
     // If direction specified, set it on the widget
     let direction_setter = direction.map(|dir| {
         quote! {
-            __component.set_direction(#dir);
+            __widget.set_direction(#dir);
         }
     });
 
-    // Generate children - wrap in a column if multiple children
+    // Generate children
     let children: Vec<_> = elem.children.iter().map(super::generate_node).collect();
-    let child_node = if children.len() == 1 {
-        children.into_iter().next().unwrap()
-    } else {
-        quote! {
-            rafter::node::Node::Column {
-                children: vec![#(#children),*],
-                style: rafter::style::Style::new(),
-                layout: rafter::node::Layout::default(),
-            }
-        }
-    };
 
     quote! {
         {
-            let __component = (#scroll_area_component).clone();
+            let __widget = (#scroll_area_component).clone();
             #direction_setter
-            rafter::node::Node::ScrollArea {
-                child: Box::new(#child_node),
-                id: __component.id_string(),
+            rafter::node::Node::Widget {
+                widget: Box::new(__widget) as Box<dyn rafter::widgets::AnyWidget>,
+                handlers: rafter::widgets::WidgetHandlers::default(),
                 style: #style,
                 layout: #layout,
-                widget: __component,
+                children: vec![#(#children),*],
             }
         }
     }
