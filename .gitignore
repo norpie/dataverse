@@ -6,3 +6,4 @@ rafter/flamegraph.svg
 rafter/perf.data
 rafter/perf.data.old
 **/*.log
+.plans
