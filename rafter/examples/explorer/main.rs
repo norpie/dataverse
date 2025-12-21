@@ -201,46 +201,29 @@ impl ListItem for FileEntry {
     const HEIGHT: u16 = 1;
 
     fn render(&self, focused: bool, selected: bool) -> Node {
-        let prefix = if selected { "[x] " } else { "[ ] " };
+        // Use composable helpers: checkbox + custom icons + default colors
+        let checkbox = Self::selection_indicator(selected);
         let icon = if self.is_dir { "📁" } else { "📄" };
-        let display_name = format!("{}{} {}", prefix, icon, self.name);
+        let display_name = format!("{}{} {}", checkbox, icon, self.name);
         let size_display = self.size_display();
 
-        if focused {
-            // Focused row - highlighted background, flex: 1 fills available width
-            if self.is_dir {
-                view! {
-                    row (flex: 1, justify: space_between, bg: surface) {
-                        text (bold, fg: secondary) { display_name }
-                        text (fg: muted) { size_display }
-                    }
+        // Build custom layout with icons and two-column display
+        let content = view! {
+            row (justify: space_between) {
+                // Apply bold styling if focused, use directory color if is_dir
+                if focused {
+                    text (bold) { display_name }
+                } else if self.is_dir {
+                    text (fg: secondary) { display_name }
+                } else {
+                    text { display_name }
                 }
-            } else {
-                view! {
-                    row (flex: 1, justify: space_between, bg: surface) {
-                        text (bold, fg: primary) { display_name }
-                        text (fg: muted) { size_display }
-                    }
-                }
+                text (fg: muted) { size_display }
             }
-        } else {
-            // Non-focused row
-            if self.is_dir {
-                view! {
-                    row (flex: 1, justify: space_between) {
-                        text (fg: secondary) { display_name }
-                        text (fg: muted) { size_display }
-                    }
-                }
-            } else {
-                view! {
-                    row (flex: 1, justify: space_between) {
-                        text { display_name }
-                        text (fg: muted) { size_display }
-                    }
-                }
-            }
-        }
+        };
+
+        // Apply default focus/selection colors
+        Self::apply_default_style(content, focused, selected)
     }
 }
 

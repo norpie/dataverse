@@ -32,22 +32,11 @@ struct Record {
 }
 
 impl ListItem for Record {
-    fn render(&self, focused: bool, _selected: bool) -> Node {
+    fn render(&self, focused: bool, selected: bool) -> Node {
         let content = format!("#{:04}  {:30}  {:>8}", self.id, self.name, self.value);
 
-        if focused {
-            view! {
-                row (flex: 1, bg: surface) {
-                    text (fg: on_surface) { content }
-                }
-            }
-        } else {
-            view! {
-                row (flex: 1) {
-                    text { content }
-                }
-            }
-        }
+        // Use default styling helper - simple and consistent!
+        Self::render_default(content, focused, selected)
     }
 }
 

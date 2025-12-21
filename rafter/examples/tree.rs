@@ -58,34 +58,8 @@ impl TreeItem for FileNode {
     }
 
     fn render(&self, focused: bool, selected: bool, depth: u16, expanded: bool) -> Node {
-        // Build the prefix: indentation + expand/collapse icon
-        let indent = "  ".repeat(depth as usize);
-        let icon = if self.is_dir {
-            if expanded { "v " } else { "> " }
-        } else {
-            "  "
-        };
-
-        let line = format!("{}{}{}", indent, icon, self.name);
-
-        // Choose style based on state
-        match (focused, selected) {
-            (true, true) => view! {
-                text (fg: text, bg: primary) { line }
-            },
-            (true, false) => view! {
-                text (fg: text, bg: surface) { line }
-            },
-            (false, true) => view! {
-                text (fg: primary) { line }
-            },
-            (false, false) if self.is_dir => view! {
-                text (fg: secondary) { line }
-            },
-            (false, false) => view! {
-                text (fg: text) { line }
-            },
-        }
+        // Use default styling helpers - simple and consistent!
+        Self::render_default(&self.name, focused, selected, depth, self.is_dir, expanded)
     }
 }
 
