@@ -6,7 +6,7 @@ pub use layout::{Align, Border, Direction, Justify, Layout, Size};
 
 use crate::components::events::{ComponentEvents, EventResult};
 use crate::components::list::AnyList;
-use crate::components::{Input, Scrollable};
+use crate::components::{Input, ScrollArea};
 use crate::context::AppContext;
 use crate::events::{Modifiers, ScrollDirection};
 use crate::keybinds::{HandlerId, KeyCombo};
@@ -73,8 +73,8 @@ pub enum Node {
         style: Style,
     },
 
-    /// Scrollable container
-    Scrollable {
+    /// ScrollArea container
+    ScrollArea {
         /// Child node (content to scroll)
         child: Box<Node>,
         /// Element ID
@@ -83,8 +83,8 @@ pub enum Node {
         style: Style,
         /// Layout properties
         layout: Layout,
-        /// Bound Scrollable component
-        component: Scrollable,
+        /// Bound ScrollArea component
+        component: ScrollArea,
     },
 
     /// Virtualized list
@@ -185,7 +185,7 @@ impl Node {
     pub fn is_focusable(&self) -> bool {
         matches!(
             self,
-            Self::Input { .. } | Self::Button { .. } | Self::Scrollable { .. } | Self::List { .. }
+            Self::Input { .. } | Self::Button { .. } | Self::ScrollArea { .. } | Self::List { .. }
         )
     }
 
@@ -194,7 +194,7 @@ impl Node {
         match self {
             Self::Input { id, .. }
             | Self::Button { id, .. }
-            | Self::Scrollable { id, .. }
+            | Self::ScrollArea { id, .. }
             | Self::List { id, .. } => {
                 if id.is_empty() {
                     None
@@ -217,12 +217,12 @@ impl Node {
             Self::Input { id, .. } | Self::Button { id, .. } if !id.is_empty() => {
                 ids.push(id.clone());
             }
-            Self::Scrollable { id, child, .. } => {
-                // Scrollable itself is focusable
+            Self::ScrollArea { id, child, .. } => {
+                // ScrollArea itself is focusable
                 if !id.is_empty() {
                     ids.push(id.clone());
                 }
-                // Also collect focusable children inside the scrollable
+                // Also collect focusable children inside the scroll area
                 child.collect_focusable_ids(ids);
             }
             Self::List { id, .. } => {
@@ -258,7 +258,7 @@ impl Node {
             | Self::Stack { children, .. } => {
                 children.iter().any(|c| c.element_captures_input(target_id))
             }
-            Self::Scrollable { child, .. } => child.element_captures_input(target_id),
+            Self::ScrollArea { child, .. } => child.element_captures_input(target_id),
             _ => false,
         }
     }
@@ -272,7 +272,7 @@ impl Node {
             | Self::Stack { children, .. } => {
                 children.iter().find_map(|c| c.input_value(target_id))
             }
-            Self::Scrollable { child, .. } => child.input_value(target_id),
+            Self::ScrollArea { child, .. } => child.input_value(target_id),
             _ => None,
         }
     }
@@ -290,7 +290,7 @@ impl Node {
             | Self::Stack { children, .. } => children
                 .iter()
                 .find_map(|c| c.get_submit_handler(target_id)),
-            Self::Scrollable { child, .. } => child.get_submit_handler(target_id),
+            Self::ScrollArea { child, .. } => child.get_submit_handler(target_id),
             _ => None,
         }
     }
@@ -304,7 +304,7 @@ impl Node {
             | Self::Stack { children, .. } => children
                 .iter()
                 .find_map(|c| c.get_change_handler(target_id)),
-            Self::Scrollable { child, .. } => child.get_change_handler(target_id),
+            Self::ScrollArea { child, .. } => child.get_change_handler(target_id),
             _ => None,
         }
     }
@@ -318,21 +318,21 @@ impl Node {
             | Self::Stack { children, .. } => children
                 .iter()
                 .find_map(|c| c.get_input_component(target_id)),
-            Self::Scrollable { child, .. } => child.get_input_component(target_id),
+            Self::ScrollArea { child, .. } => child.get_input_component(target_id),
             _ => None,
         }
     }
 
-    /// Get the Scrollable component for a scrollable element by ID
-    pub fn get_scrollable_component(&self, target_id: &str) -> Option<&Scrollable> {
+    /// Get the ScrollArea component for a scroll area element by ID
+    pub fn get_scroll_area_component(&self, target_id: &str) -> Option<&ScrollArea> {
         match self {
-            Self::Scrollable { id, component, .. } if id == target_id => Some(component),
+            Self::ScrollArea { id, component, .. } if id == target_id => Some(component),
             Self::Column { children, .. }
             | Self::Row { children, .. }
             | Self::Stack { children, .. } => children
                 .iter()
-                .find_map(|c| c.get_scrollable_component(target_id)),
-            Self::Scrollable { child, .. } => child.get_scrollable_component(target_id),
+                .find_map(|c| c.get_scroll_area_component(target_id)),
+            Self::ScrollArea { child, .. } => child.get_scroll_area_component(target_id),
             _ => None,
         }
     }
@@ -346,7 +346,7 @@ impl Node {
             | Self::Stack { children, .. } => children
                 .iter()
                 .find_map(|c| c.get_list_component(target_id)),
-            Self::Scrollable { child, .. } => child.get_list_component(target_id),
+            Self::ScrollArea { child, .. } => child.get_list_component(target_id),
             _ => None,
         }
     }
@@ -364,7 +364,7 @@ impl Node {
             | Self::Stack { children, .. } => children
                 .iter()
                 .find_map(|c| c.get_list_selection_handler(target_id)),
-            Self::Scrollable { child, .. } => child.get_list_selection_handler(target_id),
+            Self::ScrollArea { child, .. } => child.get_list_selection_handler(target_id),
             _ => None,
         }
     }
@@ -380,7 +380,7 @@ impl Node {
             | Self::Stack { children, .. } => children
                 .iter()
                 .find_map(|c| c.get_list_cursor_handler(target_id)),
-            Self::Scrollable { child, .. } => child.get_list_cursor_handler(target_id),
+            Self::ScrollArea { child, .. } => child.get_list_cursor_handler(target_id),
             _ => None,
         }
     }
@@ -394,7 +394,7 @@ impl Node {
             | Self::Stack { children, .. } => children
                 .iter()
                 .find_map(|c| c.get_list_scroll_handler(target_id)),
-            Self::Scrollable { child, .. } => child.get_list_scroll_handler(target_id),
+            Self::ScrollArea { child, .. } => child.get_list_scroll_handler(target_id),
             _ => None,
         }
     }
@@ -422,7 +422,7 @@ impl Node {
             | Self::Stack { children, .. } => children
                 .iter()
                 .find_map(|c| c.dispatch_event(target_id, visitor)),
-            Self::Scrollable { child, .. } => child.dispatch_event(target_id, visitor),
+            Self::ScrollArea { child, .. } => child.dispatch_event(target_id, visitor),
             _ => None,
         }
     }
@@ -438,7 +438,7 @@ impl Node {
         cx: &AppContext,
     ) -> Option<EventResult> {
         self.dispatch_event(target_id, |node| match node {
-            Self::Scrollable { component, .. } => Some(component.on_click(x, y, cx)),
+            Self::ScrollArea { component, .. } => Some(component.on_click(x, y, cx)),
             Self::Input {
                 component: Some(component),
                 ..
@@ -458,7 +458,7 @@ impl Node {
         cx: &AppContext,
     ) -> Option<EventResult> {
         self.dispatch_event(target_id, |node| match node {
-            Self::Scrollable { component, .. } => Some(component.on_scroll(direction, amount, cx)),
+            Self::ScrollArea { component, .. } => Some(component.on_scroll(direction, amount, cx)),
             Self::List { component, .. } => Some(component.on_scroll(direction, amount, cx)),
             _ => None,
         })
@@ -476,7 +476,7 @@ impl Node {
         cx: &AppContext,
     ) -> Option<EventResult> {
         self.dispatch_event(target_id, |node| match node {
-            Self::Scrollable { component, .. } => Some(component.on_drag(x, y, modifiers, cx)),
+            Self::ScrollArea { component, .. } => Some(component.on_drag(x, y, modifiers, cx)),
             Self::List { component, .. } => Some(component.on_drag(x, y, modifiers, cx)),
             _ => None,
         })
@@ -485,7 +485,7 @@ impl Node {
     /// Dispatch a drag release event to a component.
     pub fn dispatch_release_event(&self, target_id: &str, cx: &AppContext) -> Option<EventResult> {
         self.dispatch_event(target_id, |node| match node {
-            Self::Scrollable { component, .. } => Some(component.on_release(cx)),
+            Self::ScrollArea { component, .. } => Some(component.on_release(cx)),
             Self::List { component, .. } => Some(component.on_release(cx)),
             _ => None,
         })
@@ -504,7 +504,7 @@ impl Node {
                 ..
             } => Some(component.on_key(key, cx)),
             Self::Input { component: None, .. } => Some(EventResult::Ignored),
-            Self::Scrollable { component, .. } => Some(component.on_key(key, cx)),
+            Self::ScrollArea { component, .. } => Some(component.on_key(key, cx)),
             Self::List { component, .. } => Some(component.on_key(key, cx)),
             _ => None,
         })
@@ -579,9 +579,9 @@ impl Node {
                 (content_len + 5).max(15) as u16
             }
             Self::Button { label, .. } => (label.len() + 4) as u16,
-            Self::Scrollable { child, layout, .. } => {
+            Self::ScrollArea { child, layout, .. } => {
                 let (chrome_h, _) = layout.chrome_size();
-                // Scrollable reports child's intrinsic size (may be larger than viewport)
+                // ScrollArea reports child's intrinsic size (may be larger than viewport)
                 child.intrinsic_width() + chrome_h
             }
             Self::List { layout, .. } => {
@@ -632,9 +632,9 @@ impl Node {
                 max_child + chrome_v
             }
             Self::Input { .. } | Self::Button { .. } => 1,
-            Self::Scrollable { child, layout, .. } => {
+            Self::ScrollArea { child, layout, .. } => {
                 let (_, chrome_v) = layout.chrome_size();
-                // Scrollable reports child's intrinsic size (may be larger than viewport)
+                // ScrollArea reports child's intrinsic size (may be larger than viewport)
                 child.intrinsic_height() + chrome_v
             }
             Self::List {

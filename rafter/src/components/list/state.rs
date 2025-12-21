@@ -8,6 +8,7 @@ use std::sync::{Arc, RwLock};
 use crate::components::scrollbar::{
     ScrollbarConfig, ScrollbarDrag, ScrollbarGeometry, ScrollbarState,
 };
+use crate::components::traits::ScrollableComponent;
 use crate::node::Node;
 
 /// Unique identifier for a List component instance.
@@ -1140,5 +1141,23 @@ impl<T: ListItem> ScrollbarState for List<T> {
         if let Ok(mut guard) = self.inner.write() {
             guard.drag = drag;
         }
+    }
+}
+
+// =============================================================================
+// ScrollableComponent trait implementation
+// =============================================================================
+
+impl<T: ListItem> ScrollableComponent for List<T> {
+    fn id_string(&self) -> String {
+        self.id.to_string()
+    }
+
+    fn is_dirty(&self) -> bool {
+        self.dirty.load(Ordering::SeqCst)
+    }
+
+    fn clear_dirty(&self) {
+        self.dirty.store(false, Ordering::SeqCst);
     }
 }

@@ -1,24 +1,25 @@
-//! Scrollable component state.
+//! ScrollArea component state.
 
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, RwLock};
 
 use super::super::scrollbar::{ScrollbarConfig, ScrollbarDrag, ScrollbarGeometry, ScrollbarState};
+use super::super::traits::ScrollableComponent;
 
-/// Unique identifier for a Scrollable component instance.
+/// Unique identifier for a ScrollArea component instance.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct ScrollableId(usize);
+pub struct ScrollAreaId(usize);
 
-impl ScrollableId {
+impl ScrollAreaId {
     fn new() -> Self {
         static COUNTER: AtomicUsize = AtomicUsize::new(0);
         Self(COUNTER.fetch_add(1, Ordering::SeqCst))
     }
 }
 
-impl std::fmt::Display for ScrollableId {
+impl std::fmt::Display for ScrollAreaId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "__scrollable_{}", self.0)
+        write!(f, "__scroll_area_{}", self.0)
     }
 }
 
@@ -34,10 +35,9 @@ pub enum ScrollDirection {
     Both,
 }
 
-/// Internal state for the Scrollable component.
-#[derive(Debug)]
-#[derive(Default)]
-struct ScrollableInner {
+/// Internal state for the ScrollArea component.
+#[derive(Debug, Default)]
+struct ScrollAreaInner {
     /// Scroll direction configuration.
     direction: ScrollDirection,
     /// Scrollbar configuration.
@@ -62,10 +62,9 @@ struct ScrollableInner {
     drag: Option<ScrollbarDrag>,
 }
 
-
 /// A scrollable container component with reactive state.
 ///
-/// `Scrollable` manages scroll position and provides imperative methods
+/// `ScrollArea` manages scroll position and provides imperative methods
 /// for programmatic scrolling. It supports both vertical and horizontal
 /// scrolling with configurable scrollbar visibility.
 ///
@@ -74,14 +73,14 @@ struct ScrollableInner {
 /// ```ignore
 /// #[app]
 /// struct MyApp {
-///     content_scroll: Scrollable,
+///     content_scroll: ScrollArea,
 /// }
 ///
 /// #[app_impl]
 /// impl MyApp {
 ///     fn view(&self) -> Node {
 ///         view! {
-///             scrollable(bind: self.content_scroll, direction: vertical) {
+///             scroll_area(bind: self.content_scroll, direction: vertical) {
 ///                 column {
 ///                     for item in &self.items {
 ///                         text { item.name }
@@ -98,30 +97,30 @@ struct ScrollableInner {
 /// }
 /// ```
 #[derive(Debug)]
-pub struct Scrollable {
-    /// Unique identifier for this scrollable instance.
-    id: ScrollableId,
+pub struct ScrollArea {
+    /// Unique identifier for this scroll area instance.
+    id: ScrollAreaId,
     /// Internal state.
-    inner: Arc<RwLock<ScrollableInner>>,
+    inner: Arc<RwLock<ScrollAreaInner>>,
     /// Dirty flag for re-render.
     dirty: Arc<AtomicBool>,
 }
 
-impl Scrollable {
-    /// Create a new scrollable with default settings.
+impl ScrollArea {
+    /// Create a new scroll area with default settings.
     pub fn new() -> Self {
         Self {
-            id: ScrollableId::new(),
-            inner: Arc::new(RwLock::new(ScrollableInner::default())),
+            id: ScrollAreaId::new(),
+            inner: Arc::new(RwLock::new(ScrollAreaInner::default())),
             dirty: Arc::new(AtomicBool::new(false)),
         }
     }
 
-    /// Create a scrollable with a specific direction.
+    /// Create a scroll area with a specific direction.
     pub fn with_direction(direction: ScrollDirection) -> Self {
         Self {
-            id: ScrollableId::new(),
-            inner: Arc::new(RwLock::new(ScrollableInner {
+            id: ScrollAreaId::new(),
+            inner: Arc::new(RwLock::new(ScrollAreaInner {
                 direction,
                 ..Default::default()
             })),
@@ -129,8 +128,8 @@ impl Scrollable {
         }
     }
 
-    /// Get the unique ID for this scrollable.
-    pub fn id(&self) -> ScrollableId {
+    /// Get the unique ID for this scroll area.
+    pub fn id(&self) -> ScrollAreaId {
         self.id
     }
 
@@ -199,10 +198,11 @@ impl Scrollable {
     /// Scroll to the left edge.
     pub fn scroll_to_left(&self) {
         if let Ok(mut guard) = self.inner.write()
-            && guard.offset_x != 0 {
-                guard.offset_x = 0;
-                self.dirty.store(true, Ordering::SeqCst);
-            }
+            && guard.offset_x != 0
+        {
+            guard.offset_x = 0;
+            self.dirty.store(true, Ordering::SeqCst);
+        }
     }
 
     /// Scroll to the right edge.
@@ -296,7 +296,7 @@ impl Scrollable {
     // Dirty tracking
     // -------------------------------------------------------------------------
 
-    /// Check if the scrollable state has changed.
+    /// Check if the scroll area state has changed.
     pub fn is_dirty(&self) -> bool {
         self.dirty.load(Ordering::SeqCst)
     }
@@ -307,7 +307,7 @@ impl Scrollable {
     }
 }
 
-impl Clone for Scrollable {
+impl Clone for ScrollArea {
     fn clone(&self) -> Self {
         Self {
             id: self.id,
@@ -317,7 +317,7 @@ impl Clone for Scrollable {
     }
 }
 
-impl Default for Scrollable {
+impl Default for ScrollArea {
     fn default() -> Self {
         Self::new()
     }
@@ -327,7 +327,7 @@ impl Default for Scrollable {
 // ScrollbarState trait implementation
 // =============================================================================
 
-impl ScrollbarState for Scrollable {
+impl ScrollbarState for ScrollArea {
     fn scrollbar_config(&self) -> ScrollbarConfig {
         self.inner
             .read()
@@ -384,10 +384,11 @@ impl ScrollbarState for Scrollable {
 
     fn scroll_to_top(&self) {
         if let Ok(mut guard) = self.inner.write()
-            && guard.offset_y != 0 {
-                guard.offset_y = 0;
-                self.dirty.store(true, Ordering::SeqCst);
-            }
+            && guard.offset_y != 0
+        {
+            guard.offset_y = 0;
+            self.dirty.store(true, Ordering::SeqCst);
+        }
     }
 
     fn scroll_to_bottom(&self) {
@@ -450,5 +451,23 @@ impl ScrollbarState for Scrollable {
         if let Ok(mut guard) = self.inner.write() {
             guard.drag = drag;
         }
+    }
+}
+
+// =============================================================================
+// ScrollableComponent trait implementation
+// =============================================================================
+
+impl ScrollableComponent for ScrollArea {
+    fn id_string(&self) -> String {
+        self.id.to_string()
+    }
+
+    fn is_dirty(&self) -> bool {
+        self.dirty.load(Ordering::SeqCst)
+    }
+
+    fn clear_dirty(&self) {
+        self.dirty.store(false, Ordering::SeqCst);
     }
 }

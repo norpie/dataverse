@@ -17,8 +17,8 @@ pub use backdrop::{dim_backdrop, fill_background};
 pub use toasts::render_toasts;
 
 use crate::components::input::render::render_input;
-use crate::components::scrollable::render::{
-    ClipRect, calculate_scrollable_layout, calculate_wrapped_content_size,
+use crate::components::scroll_area::render::{
+    ClipRect, calculate_scroll_area_layout, calculate_wrapped_content_size,
     render_horizontal_scrollbar, render_node_clipped, render_vertical_scrollbar,
 };
 use crate::components::scrollbar::ScrollbarState;
@@ -165,14 +165,14 @@ pub fn render_node(
                 hit_map.register(id.clone(), area, false);
             }
         }
-        Node::Scrollable {
+        Node::ScrollArea {
             child,
             id,
             style,
             component,
             ..
         } => {
-            render_scrollable(
+            render_scroll_area(
                 frame,
                 child,
                 id,
@@ -206,14 +206,14 @@ pub fn render_node(
     }
 }
 
-/// Render a scrollable container
+/// Render a scroll area container
 #[allow(clippy::too_many_arguments)]
-fn render_scrollable(
+fn render_scroll_area(
     frame: &mut Frame,
     child: &Node,
     id: &str,
     style: RatatuiStyle,
-    component: &crate::components::Scrollable,
+    component: &crate::components::ScrollArea,
     area: ratatui::layout::Rect,
     hit_map: &mut HitTestMap,
     theme: &dyn Theme,
@@ -229,7 +229,7 @@ fn render_scrollable(
 
     // Calculate layout first to get viewport dimensions
     let initial_content_size = (child.intrinsic_width(), child.intrinsic_height());
-    let scroll_layout = calculate_scrollable_layout(
+    let scroll_layout = calculate_scroll_area_layout(
         area,
         initial_content_size,
         component.direction(),

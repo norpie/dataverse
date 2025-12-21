@@ -1,4 +1,4 @@
-//! Scrollable component rendering.
+//! ScrollArea component rendering.
 
 use ratatui::Frame;
 use ratatui::layout::Rect;
@@ -19,8 +19,8 @@ pub use crate::components::scrollbar::{render_horizontal_scrollbar, render_verti
 // Re-export ClipRect for convenience
 pub use crate::utils::geometry::ClipRect;
 
-/// Render state for a scrollable, computed during rendering.
-pub struct ScrollableRenderState {
+/// Render state for a scroll area, computed during rendering.
+pub struct ScrollAreaRenderState {
     /// Area for the content (excluding scrollbars).
     pub content_area: Rect,
     /// Whether to show vertical scrollbar.
@@ -30,12 +30,12 @@ pub struct ScrollableRenderState {
 }
 
 /// Calculate the layout and determine scrollbar visibility.
-pub fn calculate_scrollable_layout(
+pub fn calculate_scroll_area_layout(
     area: Rect,
     content_size: (u16, u16),
     direction: ScrollDirection,
     config: &ScrollbarConfig,
-) -> ScrollableRenderState {
+) -> ScrollAreaRenderState {
     let (content_width, content_height) = content_size;
 
     // Determine if scrollbars are needed based on visibility settings
@@ -79,14 +79,14 @@ pub fn calculate_scrollable_layout(
         height: area.height.saturating_sub(scrollbar_height),
     };
 
-    ScrollableRenderState {
+    ScrollAreaRenderState {
         content_area,
         show_vertical,
         show_horizontal,
     }
 }
 
-/// Render a node with viewport clipping (for scrollable content).
+/// Render a node with viewport clipping (for scroll area content).
 #[allow(clippy::too_many_arguments)]
 pub fn render_node_clipped(
     frame: &mut Frame,

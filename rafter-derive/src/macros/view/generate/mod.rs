@@ -5,7 +5,7 @@ pub mod container;
 pub mod input;
 pub mod layout;
 pub mod list;
-pub mod scrollable;
+pub mod scroll_area;
 pub mod style;
 pub mod text;
 
@@ -18,7 +18,7 @@ pub use button::generate_button_element;
 pub use container::generate_container;
 pub use input::generate_input_element;
 pub use list::generate_list_element;
-pub use scrollable::generate_scrollable_element;
+pub use scroll_area::generate_scroll_area_element;
 pub use text::{generate_text, generate_text_element};
 
 /// Generate code for a view node
@@ -45,7 +45,7 @@ fn generate_element(elem: &ElementNode) -> TokenStream {
         "text" => generate_text_element(elem),
         "input" => generate_input_element(elem),
         "button" => generate_button_element(elem),
-        "scrollable" => generate_scrollable_element(elem),
+        "scroll_area" => generate_scroll_area_element(elem),
         "list" => generate_list_element(elem),
         _ => {
             // Unknown element - treat as a component function call

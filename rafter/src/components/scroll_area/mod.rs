@@ -1,4 +1,4 @@
-//! Scrollable component - a container with scrolling support.
+//! ScrollArea component - a container with scrolling support.
 
 pub mod events;
 pub mod render;
@@ -8,4 +8,4 @@ mod state;
 pub use super::scrollbar::{
     ScrollbarConfig, ScrollbarDrag, ScrollbarGeometry, ScrollbarVisibility,
 };
-pub use state::{ScrollDirection, Scrollable, ScrollableId};
+pub use state::{ScrollArea, ScrollAreaId, ScrollDirection};

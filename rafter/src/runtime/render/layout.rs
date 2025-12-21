@@ -208,7 +208,7 @@ pub fn intrinsic_size(node: &Node, horizontal: bool) -> u16 {
                 1
             }
         }
-        Node::Scrollable { child, layout, .. } => {
+        Node::ScrollArea { child, layout, .. } => {
             let border_size = if matches!(layout.border, Border::None) {
                 0
             } else {
@@ -293,7 +293,7 @@ pub fn child_constraint(node: &Node, horizontal: bool) -> Constraint {
                 Constraint::Length(1)
             }
         }
-        Node::Scrollable { layout, .. } | Node::List { layout, .. } => {
+        Node::ScrollArea { layout, .. } | Node::List { layout, .. } => {
             let size = if horizontal {
                 &layout.width
             } else {

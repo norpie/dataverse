@@ -1,7 +1,9 @@
 //! Event handling for the List component.
 
 use crate::components::events::{ComponentEvents, EventResult};
-use crate::components::scrollbar::{ScrollbarDrag, ScrollbarState};
+use crate::components::scrollbar::{
+    handle_scrollbar_click, handle_scrollbar_drag, handle_scrollbar_release, ScrollbarState,
+};
 use crate::context::AppContext;
 use crate::events::{Modifiers, ScrollDirection};
 use crate::keybinds::{Key, KeyCombo};
@@ -93,11 +95,12 @@ impl<T: ListItem> ComponentEvents for List<T> {
             Key::Space if !key.modifiers.ctrl && !key.modifiers.alt => {
                 // Toggle selection at cursor
                 if let Some(index) = self.cursor()
-                    && self.selection_mode() != SelectionMode::None {
-                        let (added, removed) = self.toggle_select(index);
-                        self.handle_selection_change(added, removed, cx);
-                        return EventResult::Consumed;
-                    }
+                    && self.selection_mode() != SelectionMode::None
+                {
+                    let (added, removed) = self.toggle_select(index);
+                    self.handle_selection_change(added, removed, cx);
+                    return EventResult::Consumed;
+                }
             }
             Key::Char('a') if key.modifiers.ctrl => {
                 // Select all
@@ -148,32 +151,11 @@ impl<T: ListItem> ComponentEvents for List<T> {
         EventResult::Ignored
     }
 
-    fn on_click(&self, x: u16, y: u16, _cx: &AppContext) -> EventResult {
-        // Check vertical scrollbar first (uses absolute coordinates)
-        if let Some(geom) = ScrollbarState::vertical_scrollbar(self)
-            && geom.contains(x, y) {
-                let grab_offset = if geom.handle_contains(x, y, true) {
-                    // Clicked on handle - remember offset within handle
-                    y.saturating_sub(geom.y + geom.handle_pos)
-                } else {
-                    // Clicked on track - calculate proportional offset and jump
-                    let track_ratio =
-                        (y.saturating_sub(geom.y) as f32) / (geom.height.max(1) as f32);
-                    let grab_offset = (track_ratio * geom.handle_size as f32) as u16;
-                    let ratio = geom.position_to_ratio_with_offset(x, y, true, grab_offset);
-                    ScrollbarState::scroll_to_ratio(self, None, Some(ratio));
-                    grab_offset
-                };
-
-                ScrollbarState::set_drag(
-                    self,
-                    Some(ScrollbarDrag {
-                        is_vertical: true,
-                        grab_offset,
-                    }),
-                );
-                return EventResult::StartDrag;
-            }
+    fn on_click(&self, x: u16, y: u16, cx: &AppContext) -> EventResult {
+        // Delegate scrollbar click handling to shared helper
+        if let Some(result) = handle_scrollbar_click(self, x, y, cx) {
+            return result;
+        }
 
         // If not on scrollbar, return Ignored - let the event loop handle
         // the click with modifiers via on_click_with_modifiers
@@ -183,9 +165,10 @@ impl<T: ListItem> ComponentEvents for List<T> {
     fn on_hover(&self, _x: u16, y: u16, cx: &AppContext) -> EventResult {
         // Move cursor on hover (y is relative to list content area)
         if let Some(index) = self.index_from_viewport_y(y)
-            && self.handle_cursor_move(index, cx) {
-                return EventResult::Consumed;
-            }
+            && self.handle_cursor_move(index, cx)
+        {
+            return EventResult::Consumed;
+        }
         EventResult::Ignored
     }
 
@@ -202,26 +185,12 @@ impl<T: ListItem> ComponentEvents for List<T> {
         EventResult::Consumed
     }
 
-    fn on_drag(&self, x: u16, y: u16, _modifiers: Modifiers, _cx: &AppContext) -> EventResult {
-        if let Some(drag) = ScrollbarState::drag(self) {
-            if drag.is_vertical
-                && let Some(geom) = ScrollbarState::vertical_scrollbar(self) {
-                    let ratio = geom.position_to_ratio_with_offset(x, y, true, drag.grab_offset);
-                    ScrollbarState::scroll_to_ratio(self, None, Some(ratio));
-                }
-            EventResult::Consumed
-        } else {
-            EventResult::Ignored
-        }
+    fn on_drag(&self, x: u16, y: u16, modifiers: Modifiers, cx: &AppContext) -> EventResult {
+        handle_scrollbar_drag(self, x, y, modifiers, cx)
     }
 
-    fn on_release(&self, _cx: &AppContext) -> EventResult {
-        if ScrollbarState::drag(self).is_some() {
-            ScrollbarState::set_drag(self, None);
-            EventResult::Consumed
-        } else {
-            EventResult::Ignored
-        }
+    fn on_release(&self, cx: &AppContext) -> EventResult {
+        handle_scrollbar_release(self, cx)
     }
 }
 

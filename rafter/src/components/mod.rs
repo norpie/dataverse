@@ -9,13 +9,15 @@
 pub mod events;
 pub mod input;
 pub mod list;
-pub mod scrollable;
+pub mod scroll_area;
 pub mod scrollbar;
+mod traits;
 
 pub use events::{ComponentEvents, EventResult};
 pub use input::{Input, InputId};
 pub use list::{List, ListId, ListItem, Selection, SelectionMode};
-pub use scrollable::{ScrollDirection, Scrollable, ScrollableId};
+pub use scroll_area::{ScrollArea, ScrollAreaId, ScrollDirection};
 pub use scrollbar::{
     ScrollbarConfig, ScrollbarDrag, ScrollbarGeometry, ScrollbarState, ScrollbarVisibility,
 };
+pub use traits::ScrollableComponent;

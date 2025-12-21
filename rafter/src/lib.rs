@@ -21,7 +21,7 @@ pub mod prelude {
     pub use crate::app::App;
     pub use crate::color::{Color, StyleColor};
     pub use crate::components::{
-        Input, ScrollDirection, Scrollable, ScrollbarConfig, ScrollbarVisibility,
+        Input, ScrollArea, ScrollDirection, ScrollbarConfig, ScrollbarVisibility,
     };
     pub use crate::components::{List, ListId, ListItem, Selection, SelectionMode};
     pub use crate::context::{AppContext, Toast, ToastLevel};

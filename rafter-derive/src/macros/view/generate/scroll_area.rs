@@ -1,4 +1,4 @@
-//! Scrollable element code generation.
+//! ScrollArea element code generation.
 
 use proc_macro2::TokenStream;
 use quote::quote;
@@ -8,12 +8,12 @@ use crate::macros::view::ast::{AttrValue, ElementNode};
 use super::layout::generate_layout;
 use super::style::generate_style;
 
-/// Generate code for a scrollable element
-pub fn generate_scrollable_element(elem: &ElementNode) -> TokenStream {
+/// Generate code for a scroll_area element
+pub fn generate_scroll_area_element(elem: &ElementNode) -> TokenStream {
     let style = generate_style(&elem.attrs);
     let layout = generate_layout(&elem.attrs);
 
-    // Find the bind: attribute - required for scrollable elements
+    // Find the bind: attribute - required for scroll_area elements
     let bind_expr = elem.attrs.iter().find_map(|attr| {
         if attr.name == "bind" {
             match &attr.value {
@@ -26,12 +26,12 @@ pub fn generate_scrollable_element(elem: &ElementNode) -> TokenStream {
         }
     });
 
-    let scrollable_component = match bind_expr {
+    let scroll_area_component = match bind_expr {
         Some(expr) => expr,
         None => {
             return syn::Error::new_spanned(
                 &elem.name,
-                "scrollable elements require a `bind:` attribute, e.g. `scrollable(bind: self.my_scroll)`",
+                "scroll_area elements require a `bind:` attribute, e.g. `scroll_area(bind: self.my_scroll)`",
             )
             .to_compile_error();
         }
@@ -84,9 +84,9 @@ pub fn generate_scrollable_element(elem: &ElementNode) -> TokenStream {
 
     quote! {
         {
-            let __component = (#scrollable_component).clone();
+            let __component = (#scroll_area_component).clone();
             #direction_setter
-            rafter::node::Node::Scrollable {
+            rafter::node::Node::ScrollArea {
                 child: Box::new(#child_node),
                 id: __component.id_string(),
                 style: #style,

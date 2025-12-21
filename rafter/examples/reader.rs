@@ -1,6 +1,6 @@
 //! Reader Example
 //!
-//! A simple scrollable text reader to test the Scrollable component.
+//! A simple scrollable text reader to test the ScrollArea component.
 
 use std::fs::File;
 
@@ -68,7 +68,7 @@ And every evening, as the sun painted the sky in colors no painter could capture
 
 #[app]
 struct Reader {
-    scroll: Scrollable,
+    scroll: ScrollArea,
 }
 
 #[app_impl]
@@ -92,7 +92,7 @@ impl Reader {
                 column(gap: 1) {
                     text(bold, fg: primary) { "Reader - Press 'q' to quit, scroll with mouse wheel" }
                     column(border: rounded, padding: 2) {
-                        scrollable(bind: self.scroll, direction: vertical) {
+                        scroll_area(bind: self.scroll, direction: vertical) {
                             text(fg: text) { LONG_TEXT }
                         }
                     }
