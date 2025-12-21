@@ -42,6 +42,7 @@
 mod any_table;
 mod events;
 mod item;
+pub mod render;
 mod state;
 
 pub use any_table::AnyTable;

@@ -1,25 +1,25 @@
-//! List component rendering.
+//! Tree component rendering.
 
 use ratatui::layout::Rect;
 use ratatui::style::Style as RatatuiStyle;
 use ratatui::Frame;
 
-use crate::components::list::AnyList;
 use crate::components::scrollbar::render_vertical_scrollbar;
+use crate::components::tree::AnyTree;
 use crate::node::Layout;
 use crate::runtime::hit_test::HitTestMap;
 use crate::runtime::render::layout::{apply_border, apply_padding};
 use crate::runtime::render::RenderNodeFn;
 use crate::theme::Theme;
 
-/// Render a list component.
+/// Render a tree component.
 #[allow(clippy::too_many_arguments)]
 pub fn render(
     frame: &mut Frame,
     id: &str,
     style: RatatuiStyle,
     layout: &Layout,
-    component: &dyn AnyList,
+    component: &dyn AnyTree,
     area: Rect,
     hit_map: &mut HitTestMap,
     theme: &dyn Theme,
@@ -47,7 +47,6 @@ pub fn render(
 
     // Determine if we need a scrollbar
     let needs_scrollbar = component.needs_vertical_scrollbar();
-    // Scrollbar takes 1 cell, plus 1 cell padding between content and scrollbar
     let scrollbar_reserved = if needs_scrollbar { 2u16 } else { 0u16 };
 
     // Content area excludes scrollbar and padding
@@ -73,7 +72,7 @@ pub fn render(
     // Calculate offset for first visible item
     let first_item_y = (visible_range.start as u16 * item_height).saturating_sub(scroll_offset);
 
-    // Render visible items
+    // Render visible nodes
     for (i, index) in visible_range.enumerate() {
         let item_y = content_area.y + first_item_y + (i as u16 * item_height);
 
@@ -89,7 +88,7 @@ pub fn render(
             height: item_height.min(content_area.y + content_area.height - item_y),
         };
 
-        // Render the item
+        // Render the node
         if let Some(item_node) = component.render_item(index) {
             render_node(frame, &item_node, item_area, hit_map, theme, focused_id);
         }
@@ -119,8 +118,7 @@ pub fn render(
         component.set_vertical_scrollbar(None);
     }
 
-    // Register hit box for the content area (where items are clickable)
-    // We use padded_area so click coordinates are relative to item positions
+    // Register hit box for the content area (where nodes are clickable)
     if !id.is_empty() {
         hit_map.register(id.to_string(), padded_area, true);
     }

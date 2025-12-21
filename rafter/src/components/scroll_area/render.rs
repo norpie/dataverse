@@ -7,8 +7,12 @@ use ratatui::style::Style as RatatuiStyle;
 use super::ScrollbarConfig;
 use super::ScrollbarVisibility;
 use super::state::ScrollDirection;
+use super::ScrollArea;
+use crate::components::scrollbar::ScrollbarState;
 use crate::node::Node;
 use crate::runtime::hit_test::HitTestMap;
+use crate::runtime::render::RenderNodeFn;
+use crate::style::Style;
 use crate::theme::Theme;
 use crate::utils::geometry::{intersect_rects, rects_overlap};
 use crate::utils::text::wrap_text;
@@ -18,6 +22,116 @@ pub use crate::components::scrollbar::{render_horizontal_scrollbar, render_verti
 
 // Re-export ClipRect for convenience
 pub use crate::utils::geometry::ClipRect;
+
+/// Function type for converting Style to RatatuiStyle.
+pub type StyleToRatatuiFn = fn(&Style, &dyn Theme) -> RatatuiStyle;
+
+/// Render a scroll area container.
+#[allow(clippy::too_many_arguments)]
+pub fn render(
+    frame: &mut Frame,
+    child: &Node,
+    id: &str,
+    style: RatatuiStyle,
+    component: &ScrollArea,
+    area: Rect,
+    hit_map: &mut HitTestMap,
+    theme: &dyn Theme,
+    focused_id: Option<&str>,
+    style_to_ratatui: StyleToRatatuiFn,
+    render_node: RenderNodeFn,
+) {
+    use ratatui::widgets::Block;
+
+    // Fill background if specified
+    if style.bg.is_some() {
+        let block = Block::default().style(style);
+        frame.render_widget(block, area);
+    }
+
+    // Calculate layout first to get viewport dimensions
+    let initial_content_size = (child.intrinsic_width(), child.intrinsic_height());
+    let scroll_layout = calculate_scroll_area_layout(
+        area,
+        initial_content_size,
+        component.direction(),
+        &component.scrollbar_config(),
+    );
+
+    // Calculate actual content height with wrapping based on viewport width
+    let content_size = calculate_wrapped_content_size(child, scroll_layout.content_area.width);
+
+    // Update component with computed sizes
+    component.set_sizes(
+        content_size,
+        (
+            scroll_layout.content_area.width,
+            scroll_layout.content_area.height,
+        ),
+    );
+
+    // Get scroll offset
+    let (offset_x, offset_y) = component.offset();
+
+    // Render scrollbars and save geometry for hit testing
+    let v_geom = if scroll_layout.show_vertical {
+        render_vertical_scrollbar(
+            frame.buffer_mut(),
+            area,
+            offset_y,
+            content_size.1,
+            scroll_layout.content_area.height,
+            &component.scrollbar_config(),
+            theme,
+        )
+    } else {
+        None
+    };
+    component.set_vertical_scrollbar(v_geom);
+
+    let h_geom = if scroll_layout.show_horizontal {
+        render_horizontal_scrollbar(
+            frame.buffer_mut(),
+            area,
+            offset_x,
+            content_size.0,
+            scroll_layout.content_area.width,
+            &component.scrollbar_config(),
+            theme,
+        )
+    } else {
+        None
+    };
+    component.set_horizontal_scrollbar(h_geom);
+
+    // Render child with viewport clipping
+    let viewport = scroll_layout.content_area;
+
+    if viewport.width > 0 && viewport.height > 0 {
+        let clip = ClipRect {
+            viewport,
+            offset_x,
+            offset_y,
+        };
+
+        render_node_clipped(
+            frame,
+            child,
+            viewport,
+            &clip,
+            hit_map,
+            theme,
+            focused_id,
+            style_to_ratatui,
+            render_node,
+        );
+    }
+
+    // Register hit box for scroll area (focusable for keyboard navigation)
+    if !id.is_empty() {
+        hit_map.register(id.to_string(), area, true);
+    }
+}
 
 /// Render state for a scroll area, computed during rendering.
 pub struct ScrollAreaRenderState {

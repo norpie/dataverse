@@ -54,6 +54,7 @@
 mod any_tree;
 mod events;
 mod item;
+pub mod render;
 mod state;
 
 pub use any_tree::AnyTree;
