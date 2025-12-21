@@ -7,3 +7,4 @@ rafter/perf.data
 rafter/perf.data.old
 **/*.log
 .plans
+CLAUDE.md
