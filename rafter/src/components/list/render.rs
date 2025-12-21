@@ -8,7 +8,8 @@ use crate::node::Node;
 use crate::runtime::hit_test::HitTestMap;
 use crate::theme::Theme;
 
-use super::state::{List, ListItem};
+use super::item::ListItem;
+use super::state::List;
 
 /// Render a list with virtualization.
 #[allow(clippy::too_many_arguments)]

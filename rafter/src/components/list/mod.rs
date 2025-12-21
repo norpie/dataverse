@@ -50,8 +50,15 @@
 //! }
 //! ```
 
+pub(crate) mod any_list;
 pub mod events;
+mod item;
 pub mod render;
-mod state;
+pub(crate) mod state;
 
-pub use state::{AnyList, List, ListId, ListItem, Selection, SelectionMode};
+pub use any_list::AnyList;
+pub use item::ListItem;
+pub use state::{List, ListId};
+
+// Re-export selection types from the shared module
+pub use super::selection::{Selection, SelectionMode};

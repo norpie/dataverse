@@ -8,7 +8,9 @@ use crate::context::AppContext;
 use crate::events::{Modifiers, ScrollDirection};
 use crate::keybinds::{Key, KeyCombo};
 
-use super::state::{List, ListItem, SelectionMode};
+use super::item::ListItem;
+use super::state::List;
+use super::SelectionMode;
 
 impl<T: ListItem> List<T> {
     /// Calculate the list item index from a y-offset within the viewport.
