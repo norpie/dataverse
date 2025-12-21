@@ -4,7 +4,7 @@ use syn::{
     Attribute, DeriveInput, Expr, ExprPath, Field, Fields, FieldsNamed, Ident, Meta, parse2,
 };
 
-use super::field_utils::{is_component_type, is_resource_type};
+use super::field_utils::{is_resource_type, is_widget_type};
 
 /// Attributes that can be applied to the #[app] macro
 struct AppAttrs {
@@ -60,7 +60,7 @@ impl FieldAttrs {
     }
 }
 
-/// Transform a field, wrapping in State<T> or keeping Resource<T> as-is
+/// Transform a field, wrapping in State<T> or keeping Resource<T>/widgets as-is
 fn transform_field(field: &Field) -> TokenStream {
     let attrs = FieldAttrs::parse(&field.attrs);
     let vis = &field.vis;
@@ -71,7 +71,7 @@ fn transform_field(field: &Field) -> TokenStream {
     let other_attrs: Vec<_> = field
         .attrs
         .iter()
-        .filter(|a| !a.path().is_ident("state"))
+        .filter(|a| !a.path().is_ident("state") && !a.path().is_ident("widget"))
         .collect();
 
     if attrs.skip {
@@ -86,8 +86,8 @@ fn transform_field(field: &Field) -> TokenStream {
             #(#other_attrs)*
             #vis #ident: #ty
         }
-    } else if is_component_type(ty) {
-        // Widget types (Input, List<T>, etc.) manage their own state
+    } else if is_widget_type(ty, &field.attrs) {
+        // Widget types (built-in or #[widget]) manage their own state
         quote! {
             #(#other_attrs)*
             #vis #ident: #ty
@@ -117,7 +117,7 @@ fn generate_default_impl(name: &Ident, fields: &FieldsNamed) -> TokenStream {
             } else if is_resource_type(ty) {
                 // Resource<T> -> Resource::new()
                 quote! { #ident: rafter::resource::Resource::new() }
-            } else if is_component_type(ty) {
+            } else if is_widget_type(ty, &f.attrs) {
                 // Widget types use Default
                 quote! { #ident: Default::default() }
             } else {

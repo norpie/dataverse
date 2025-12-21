@@ -9,7 +9,7 @@ use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 use syn::{Attribute, DeriveInput, Field, Fields, FieldsNamed, Ident, Meta, parse2};
 
-use super::field_utils::{is_component_type, is_resource_type};
+use super::field_utils::{is_resource_type, is_widget_type};
 
 /// Field attributes
 struct FieldAttrs {
@@ -50,7 +50,7 @@ fn transform_field(field: &Field) -> TokenStream {
     let other_attrs: Vec<_> = field
         .attrs
         .iter()
-        .filter(|a| !a.path().is_ident("state"))
+        .filter(|a| !a.path().is_ident("state") && !a.path().is_ident("widget"))
         .collect();
 
     if attrs.skip {
@@ -59,7 +59,7 @@ fn transform_field(field: &Field) -> TokenStream {
             #(#other_attrs)*
             #vis #ident: #ty
         }
-    } else if is_resource_type(ty) || is_component_type(ty) {
+    } else if is_resource_type(ty) || is_widget_type(ty, &field.attrs) {
         // Resource<T> and widget types manage their own state
         quote! {
             #(#other_attrs)*
@@ -101,7 +101,7 @@ fn generate_default_impl(name: &Ident, fields: Option<&FieldsNamed>) -> TokenStr
             } else if is_resource_type(ty) {
                 // Resource<T> -> Resource::new()
                 quote! { #ident: rafter::resource::Resource::new() }
-            } else if is_component_type(ty) {
+            } else if is_widget_type(ty, &f.attrs) {
                 // Widget types use Default
                 quote! { #ident: Default::default() }
             } else {
