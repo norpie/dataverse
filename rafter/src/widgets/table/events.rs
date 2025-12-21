@@ -14,7 +14,7 @@ use crate::widgets::scrollbar::{
     render_horizontal_scrollbar, render_vertical_scrollbar, ScrollbarState,
 };
 use crate::widgets::selection::SelectionMode;
-use crate::widgets::traits::{AnyWidget, RenderContext, SelectableWidget};
+use crate::widgets::traits::{AnyWidget, RenderContext, Scrollable, Selectable, SelectableWidget};
 
 use super::any_table::AnyTable;
 use super::item::TableRow;
@@ -449,5 +449,121 @@ impl<T: TableRow + std::fmt::Debug> AnyWidget for Table<T> {
 
         // Register hit box
         ctx.hit_map.register(self.id_string(), padded_area, true);
+    }
+
+    fn as_selectable(&self) -> Option<&dyn Selectable> {
+        Some(self)
+    }
+}
+
+// =============================================================================
+// Scrollable trait implementation (capability trait for runtime)
+// =============================================================================
+
+impl<T: TableRow + std::fmt::Debug> Scrollable for Table<T> {
+    fn scroll_offset(&self) -> usize {
+        self.scroll_offset_y() as usize
+    }
+
+    fn set_scroll_offset(&self, offset: usize) {
+        self.set_scroll_offset_y(offset as u16);
+    }
+
+    fn viewport_size(&self) -> usize {
+        self.data_viewport_height() as usize
+    }
+
+    fn content_size(&self) -> usize {
+        self.total_height() as usize
+    }
+}
+
+// =============================================================================
+// Selectable trait implementation (capability trait for runtime)
+// =============================================================================
+
+impl<T: TableRow + std::fmt::Debug> Selectable for Table<T> {
+    fn cursor(&self) -> Option<usize> {
+        SelectableWidget::cursor(self)
+    }
+
+    fn set_cursor(&self, index: usize) -> Option<usize> {
+        SelectableWidget::set_cursor(self, index)
+    }
+
+    fn cursor_id(&self) -> Option<String> {
+        SelectableWidget::cursor_id(self)
+    }
+
+    fn cursor_up(&self) -> Option<(Option<usize>, usize)> {
+        SelectableWidget::cursor_up(self)
+    }
+
+    fn cursor_down(&self) -> Option<(Option<usize>, usize)> {
+        SelectableWidget::cursor_down(self)
+    }
+
+    fn cursor_first(&self) -> Option<(Option<usize>, usize)> {
+        SelectableWidget::cursor_first(self)
+    }
+
+    fn cursor_last(&self) -> Option<(Option<usize>, usize)> {
+        SelectableWidget::cursor_last(self)
+    }
+
+    fn scroll_to_cursor(&self) {
+        SelectableWidget::scroll_to_cursor(self)
+    }
+
+    fn selection_mode(&self) -> SelectionMode {
+        SelectableWidget::selection_mode(self)
+    }
+
+    fn selected_ids(&self) -> Vec<String> {
+        SelectableWidget::selected_ids(self)
+    }
+
+    fn toggle_select_at_cursor(&self) -> (Vec<String>, Vec<String>) {
+        SelectableWidget::toggle_select_at_cursor(self)
+    }
+
+    fn select_all(&self) -> Vec<String> {
+        SelectableWidget::select_all(self)
+    }
+
+    fn deselect_all(&self) -> Vec<String> {
+        SelectableWidget::deselect_all(self)
+    }
+
+    fn item_count(&self) -> usize {
+        SelectableWidget::item_count(self)
+    }
+
+    fn viewport_item_count(&self) -> usize {
+        SelectableWidget::viewport_item_count(self)
+    }
+
+    fn item_height(&self) -> u16 {
+        SelectableWidget::item_height(self)
+    }
+
+    fn has_header(&self) -> bool {
+        true
+    }
+
+    fn on_header_click(&self, x_in_viewport: u16, cx: &AppContext) -> EventResult {
+        Table::on_header_click(self, x_in_viewport, cx)
+    }
+
+    fn on_click_with_modifiers(
+        &self,
+        y_in_viewport: u16,
+        ctrl: bool,
+        shift: bool,
+        cx: &AppContext,
+    ) -> EventResult {
+        // Table has a header row, so y=0 is header, y=1+ is data
+        // The caller (handlers.rs) handles header clicks separately
+        Table::on_row_click(self, y_in_viewport, ctrl, shift, cx)
     }
 }

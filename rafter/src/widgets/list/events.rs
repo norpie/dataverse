@@ -13,7 +13,7 @@ use crate::widgets::scrollbar::{
     handle_scrollbar_click, handle_scrollbar_drag, handle_scrollbar_release,
     render_vertical_scrollbar, ScrollbarState,
 };
-use crate::widgets::traits::{AnyWidget, RenderContext, SelectableWidget};
+use crate::widgets::traits::{AnyWidget, RenderContext, Scrollable, Selectable, SelectableWidget};
 
 use super::item::ListItem;
 use super::state::List;
@@ -284,5 +284,111 @@ impl<T: ListItem + std::fmt::Debug> AnyWidget for List<T> {
         // Register hit box
         ctx.hit_map
             .register(self.id_string(), padded_area, true);
+    }
+
+    fn as_selectable(&self) -> Option<&dyn Selectable> {
+        Some(self)
+    }
+}
+
+// =============================================================================
+// Scrollable trait implementation (capability trait for runtime)
+// =============================================================================
+
+impl<T: ListItem + std::fmt::Debug> Scrollable for List<T> {
+    fn scroll_offset(&self) -> usize {
+        List::scroll_offset(self) as usize
+    }
+
+    fn set_scroll_offset(&self, offset: usize) {
+        List::set_scroll_offset(self, offset as u16);
+    }
+
+    fn viewport_size(&self) -> usize {
+        List::viewport_height(self) as usize
+    }
+
+    fn content_size(&self) -> usize {
+        self.total_height() as usize
+    }
+}
+
+// =============================================================================
+// Selectable trait implementation (capability trait for runtime)
+// =============================================================================
+
+impl<T: ListItem + std::fmt::Debug> Selectable for List<T> {
+    fn cursor(&self) -> Option<usize> {
+        SelectableWidget::cursor(self)
+    }
+
+    fn set_cursor(&self, index: usize) -> Option<usize> {
+        SelectableWidget::set_cursor(self, index)
+    }
+
+    fn cursor_id(&self) -> Option<String> {
+        SelectableWidget::cursor_id(self)
+    }
+
+    fn cursor_up(&self) -> Option<(Option<usize>, usize)> {
+        SelectableWidget::cursor_up(self)
+    }
+
+    fn cursor_down(&self) -> Option<(Option<usize>, usize)> {
+        SelectableWidget::cursor_down(self)
+    }
+
+    fn cursor_first(&self) -> Option<(Option<usize>, usize)> {
+        SelectableWidget::cursor_first(self)
+    }
+
+    fn cursor_last(&self) -> Option<(Option<usize>, usize)> {
+        SelectableWidget::cursor_last(self)
+    }
+
+    fn scroll_to_cursor(&self) {
+        SelectableWidget::scroll_to_cursor(self)
+    }
+
+    fn selection_mode(&self) -> SelectionMode {
+        SelectableWidget::selection_mode(self)
+    }
+
+    fn selected_ids(&self) -> Vec<String> {
+        SelectableWidget::selected_ids(self)
+    }
+
+    fn toggle_select_at_cursor(&self) -> (Vec<String>, Vec<String>) {
+        SelectableWidget::toggle_select_at_cursor(self)
+    }
+
+    fn select_all(&self) -> Vec<String> {
+        SelectableWidget::select_all(self)
+    }
+
+    fn deselect_all(&self) -> Vec<String> {
+        SelectableWidget::deselect_all(self)
+    }
+
+    fn item_count(&self) -> usize {
+        SelectableWidget::item_count(self)
+    }
+
+    fn viewport_item_count(&self) -> usize {
+        SelectableWidget::viewport_item_count(self)
+    }
+
+    fn item_height(&self) -> u16 {
+        SelectableWidget::item_height(self)
+    }
+
+    fn on_click_with_modifiers(
+        &self,
+        y_in_viewport: u16,
+        ctrl: bool,
+        shift: bool,
+        cx: &AppContext,
+    ) -> EventResult {
+        List::on_click_with_modifiers(self, y_in_viewport, ctrl, shift, cx)
     }
 }
