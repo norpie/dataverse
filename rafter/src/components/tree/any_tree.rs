@@ -7,6 +7,7 @@ use crate::components::events::{ComponentEvents, EventResult};
 use crate::components::scrollbar::{
     ScrollbarConfig, ScrollbarDrag, ScrollbarGeometry, ScrollbarState,
 };
+use crate::components::traits::AnySelectable;
 use crate::context::AppContext;
 use crate::events::{Modifiers, ScrollDirection};
 use crate::keybinds::KeyCombo;
@@ -119,6 +120,9 @@ pub trait AnyTree: Send + Sync + std::fmt::Debug {
 
     /// Set current drag state.
     fn set_drag(&self, drag: Option<ScrollbarDrag>);
+
+    /// Get this component as an AnySelectable trait object.
+    fn as_any_selectable(&self) -> &dyn AnySelectable;
 }
 
 impl<T: TreeItem + std::fmt::Debug> AnyTree for Tree<T> {
@@ -245,10 +249,34 @@ impl<T: TreeItem + std::fmt::Debug> AnyTree for Tree<T> {
     fn set_drag(&self, drag: Option<ScrollbarDrag>) {
         ScrollbarState::set_drag(self, drag);
     }
+
+    fn as_any_selectable(&self) -> &dyn AnySelectable {
+        self
+    }
 }
 
 impl Clone for Box<dyn AnyTree> {
     fn clone(&self) -> Self {
         self.clone_box()
+    }
+}
+
+// =============================================================================
+// AnySelectable implementation
+// =============================================================================
+
+impl<T: TreeItem + std::fmt::Debug> AnySelectable for Tree<T> {
+    fn id_string(&self) -> String {
+        Tree::id_string(self)
+    }
+
+    fn on_click_with_modifiers(
+        &self,
+        y_in_viewport: u16,
+        ctrl: bool,
+        shift: bool,
+        cx: &AppContext,
+    ) -> EventResult {
+        Tree::on_click_with_modifiers(self, y_in_viewport, ctrl, shift, cx)
     }
 }

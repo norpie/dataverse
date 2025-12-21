@@ -24,5 +24,5 @@ pub use scrollbar::{
     ScrollbarConfig, ScrollbarDrag, ScrollbarGeometry, ScrollbarState, ScrollbarVisibility,
 };
 pub use table::{Alignment, AnyTable, Column, Table, TableId, TableRow};
-pub use traits::{ScrollableComponent, SelectableComponent};
+pub use traits::{AnySelectable, ScrollableComponent, SelectableComponent};
 pub use tree::{AnyTree, FlatNode, Tree, TreeId, TreeItem};

@@ -2,10 +2,12 @@
 
 mod event_loop;
 mod events;
+mod handlers;
 pub mod hit_test;
 mod input;
 mod modal;
 pub(crate) mod render;
+mod state;
 mod terminal;
 
 use std::io;

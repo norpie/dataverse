@@ -296,10 +296,7 @@ impl AppContext {
 
     /// Get the cursor index (for list).
     pub fn cursor_index(&self) -> Option<usize> {
-        self.inner
-            .read()
-            .ok()
-            .and_then(|inner| inner.cursor_index)
+        self.inner.read().ok().and_then(|inner| inner.cursor_index)
     }
 
     /// Clear cursor data.
@@ -363,10 +360,7 @@ impl AppContext {
 
     /// Get the sorted column info (column index, ascending).
     pub fn sorted_column(&self) -> Option<(usize, bool)> {
-        self.inner
-            .read()
-            .ok()
-            .and_then(|inner| inner.sorted_column)
+        self.inner.read().ok().and_then(|inner| inner.sorted_column)
     }
 
     /// Clear sorted column data.

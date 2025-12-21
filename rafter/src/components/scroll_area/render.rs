@@ -4,10 +4,10 @@ use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::Style as RatatuiStyle;
 
+use super::ScrollArea;
 use super::ScrollbarConfig;
 use super::ScrollbarVisibility;
 use super::state::ScrollDirection;
-use super::ScrollArea;
 use crate::components::scrollbar::ScrollbarState;
 use crate::node::Node;
 use crate::runtime::hit_test::HitTestMap;

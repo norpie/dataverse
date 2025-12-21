@@ -290,7 +290,9 @@ pub trait SelectableComponent: ScrollableComponent {
                 self.push_selection_event(&added, &removed, cx);
                 Some(EventResult::Consumed)
             }
-            Key::Char('a') if key.modifiers.ctrl && self.selection_mode() == SelectionMode::Multiple => {
+            Key::Char('a')
+                if key.modifiers.ctrl && self.selection_mode() == SelectionMode::Multiple =>
+            {
                 let added = self.select_all();
                 if !added.is_empty() {
                     self.push_selection_event(&added, &[], cx);
@@ -324,5 +326,59 @@ pub trait SelectableComponent: ScrollableComponent {
             self.handle_cursor_move(index, cx);
         }
         EventResult::Consumed
+    }
+}
+
+// =============================================================================
+// AnySelectable - Type-erased interface for selectable components
+// =============================================================================
+
+/// Unified interface for type-erased selectable components (List, Tree, Table).
+///
+/// This trait provides a common interface for the event loop to handle
+/// click events polymorphically without branching on component type.
+///
+/// Unlike `SelectableComponent` which is implemented on concrete generic types,
+/// this trait is object-safe and used for dynamic dispatch.
+///
+/// # Usage
+///
+/// The event loop uses this trait to handle clicks on any selectable component:
+///
+/// ```ignore
+/// if let Some(selectable) = view.get_selectable_component(&id) {
+///     if selectable.has_header() && y == 0 {
+///         selectable.on_header_click(x, cx);
+///     } else {
+///         selectable.on_click_with_modifiers(y, ctrl, shift, cx);
+///     }
+/// }
+/// ```
+pub trait AnySelectable: Send + Sync {
+    /// Get the component ID.
+    fn id_string(&self) -> String;
+
+    /// Handle click with modifiers on a data row.
+    ///
+    /// For Table, `y_in_viewport` includes the header row (y=0 is header, y=1+ is data).
+    /// The implementation should handle this offset internally.
+    fn on_click_with_modifiers(
+        &self,
+        y_in_viewport: u16,
+        ctrl: bool,
+        shift: bool,
+        cx: &AppContext,
+    ) -> EventResult;
+
+    /// Whether this component has a header row (Table only).
+    fn has_header(&self) -> bool {
+        false
+    }
+
+    /// Handle header click (Table only).
+    ///
+    /// `x_in_viewport` is the x coordinate relative to the component's left edge.
+    fn on_header_click(&self, _x_in_viewport: u16, _cx: &AppContext) -> EventResult {
+        EventResult::Ignored
     }
 }

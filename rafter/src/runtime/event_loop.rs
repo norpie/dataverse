@@ -7,23 +7,22 @@ use crossterm::event;
 use log::{debug, info, trace, warn};
 
 use crate::app::App;
-use crate::components::events::ComponentEventKind;
-use crate::components::EventResult;
-use crate::context::{AppContext, Toast};
-use crate::focus::{FocusId, FocusState};
-use crate::keybinds::{HandlerId, Key};
-use crate::node::Node;
+use crate::context::AppContext;
+use crate::focus::FocusId;
 use crate::theme::Theme;
 
 use super::RuntimeError;
 use super::events::{Event, convert_event};
+use super::handlers::dispatch_event;
 use super::hit_test::HitTestMap;
-use super::input::{InputState, KeybindMatch};
+use super::input::InputState;
 use super::modal::{ModalStackEntry, calculate_modal_area};
 use super::render::{dim_backdrop, fill_background, render_node, render_toasts};
+use super::state::EventLoopState;
 use super::terminal::TerminalGuard;
 
 use crate::events::Position;
+use crate::focus::FocusState;
 
 /// Coalesce pending hover events, returning the latest hover position.
 /// This drains all pending events and returns:
@@ -81,27 +80,12 @@ pub async fn run_event_loop<A: App>(
     // Create app context with shared keybinds
     let cx = AppContext::new(app_keybinds.clone());
 
-    // Create input state for keybind sequence tracking
-    let mut app_input_state = InputState::new();
-
-    // Create focus state
-    let mut app_focus_state = FocusState::new();
-
-    // Active toasts with their expiration times
-    let mut active_toasts: Vec<(Toast, Instant)> = Vec::new();
-
-    // Modal stack
-    let mut modal_stack: Vec<ModalStackEntry> = Vec::new();
-
-    // Component drag state (tracks which component is dragging)
-    let mut drag_component_id: Option<String> = None;
+    // Initialize event loop state
+    let mut state = EventLoopState::new(theme);
 
     // Call on_start (async)
     app.on_start(&cx).await;
     info!("App started: {}", app.name());
-
-    // Current theme (mutable for theme switching)
-    let mut current_theme = theme;
 
     // Main event loop
     loop {
@@ -111,11 +95,11 @@ pub async fn run_event_loop<A: App>(
             break;
         }
 
-        // Check for pending modal requests
+        // Process pending modal requests
         if let Some(modal) = cx.take_modal_request() {
             info!("Opening modal: {}", modal.name());
             let keybinds = modal.keybinds();
-            modal_stack.push(ModalStackEntry {
+            state.modal_stack.push(ModalStackEntry {
                 modal,
                 focus_state: FocusState::new(),
                 input_state: InputState::new(),
@@ -124,38 +108,37 @@ pub async fn run_event_loop<A: App>(
         }
 
         // Remove closed modals from the stack
-        let modal_count_before = modal_stack.len();
-        modal_stack.retain(|entry| !entry.modal.is_closed());
-        let modal_closed = modal_stack.len() < modal_count_before;
-
-        // Determine if we're in modal mode
-        let in_modal = !modal_stack.is_empty();
+        let modal_count_before = state.modal_stack.len();
+        state.modal_stack.retain(|entry| !entry.modal.is_closed());
+        let modal_closed = state.modal_stack.len() < modal_count_before;
 
         // Process any pending focus requests (only for app, not modals)
-        if !in_modal && let Some(focus_id) = cx.take_focus_request() {
+        if !state.in_modal()
+            && let Some(focus_id) = cx.take_focus_request()
+        {
             debug!("Focus requested: {:?}", focus_id);
-            app_focus_state.set_focus(focus_id);
+            state.app_focus_state.set_focus(focus_id);
         }
 
         // Process any pending theme change requests
         if let Some(new_theme) = cx.take_theme_request() {
             info!("Theme changed");
-            current_theme = new_theme;
+            state.current_theme = new_theme;
         }
 
         // Process any pending toasts
         for toast in cx.take_toasts() {
             let expiry = Instant::now() + toast.duration;
             info!("Toast: {}", toast.message);
-            active_toasts.push((toast, expiry));
+            state.active_toasts.push((toast, expiry));
         }
 
         // Remove expired toasts
         let now = Instant::now();
-        active_toasts.retain(|(_, expiry)| *expiry > now);
+        state.active_toasts.retain(|(_, expiry)| *expiry > now);
 
         // Get the view tree for app or top modal
-        let view = if let Some(entry) = modal_stack.last() {
+        let view = if let Some(entry) = state.modal_stack.last() {
             entry.modal.view()
         } else {
             app.view()
@@ -166,20 +149,16 @@ pub async fn run_event_loop<A: App>(
             view.focusable_ids().into_iter().map(FocusId::new).collect();
 
         // Update focus state for the active layer
-        if let Some(entry) = modal_stack.last_mut() {
+        if let Some(entry) = state.modal_stack.last_mut() {
             entry.focus_state.set_focusable_ids(focusable_ids);
         } else {
-            app_focus_state.set_focusable_ids(focusable_ids);
+            state.app_focus_state.set_focusable_ids(focusable_ids);
         }
 
         // Render and build hit test map
         let mut hit_map = HitTestMap::new();
-        let theme = &current_theme;
-        let focused_id = if let Some(entry) = modal_stack.last() {
-            entry.focus_state.current().map(|f| f.0.clone())
-        } else {
-            app_focus_state.current().map(|f| f.0.clone())
-        };
+        let theme = &state.current_theme;
+        let focused_id = state.focused_id();
 
         // Cache app view (computed once per frame)
         let view_start = Instant::now();
@@ -190,9 +169,9 @@ pub async fn run_event_loop<A: App>(
         }
 
         // Cache modal views (computed once per frame)
-        let modal_views: Vec<_> = modal_stack.iter().map(|e| e.modal.view()).collect();
+        let modal_views: Vec<_> = state.modal_stack.iter().map(|e| e.modal.view()).collect();
 
-        let modal_stack_ref = &modal_stack;
+        let modal_stack_ref = &state.modal_stack;
         let draw_start = Instant::now();
         term_guard.terminal().draw(|frame| {
             let area = frame.area();
@@ -255,7 +234,7 @@ pub async fn run_event_loop<A: App>(
             }
 
             // Render toasts on top of everything
-            render_toasts(frame, &active_toasts, theme.as_ref());
+            render_toasts(frame, &state.active_toasts, theme.as_ref());
         })?;
         let draw_elapsed = draw_start.elapsed();
         if draw_elapsed.as_millis() > 5 {
@@ -263,15 +242,14 @@ pub async fn run_event_loop<A: App>(
         }
 
         // Clear dirty flags after render
-        if let Some(entry) = modal_stack.last() {
+        if let Some(entry) = state.modal_stack.last() {
             entry.modal.clear_dirty();
         } else {
             app.clear_dirty();
         }
 
         // Determine poll timeout - skip waiting if state changed
-        let needs_immediate_update =
-            modal_closed || app.is_dirty() || modal_stack.iter().any(|e| e.modal.is_dirty());
+        let needs_immediate_update = state.needs_immediate_update(&app, modal_closed);
         let poll_timeout = if needs_immediate_update {
             Duration::from_millis(0)
         } else {
@@ -287,354 +265,11 @@ pub async fn run_event_loop<A: App>(
             if let Some(rafter_event) = convert_event(crossterm_event) {
                 debug!("Rafter event: {:?}", rafter_event);
 
-                match rafter_event {
-                    Event::Quit => {
-                        info!("Quit requested via system keybind");
-                        break;
-                    }
-                    Event::Key(ref key_combo) => {
-                        debug!("Key event: {:?}", key_combo);
-
-                        // Handle Tab/Shift+Tab for focus navigation
-                        if key_combo.key == Key::Tab {
-                            let focus_state = if let Some(entry) = modal_stack.last_mut() {
-                                &mut entry.focus_state
-                            } else {
-                                &mut app_focus_state
-                            };
-                            if key_combo.modifiers.shift {
-                                debug!("Focus prev");
-                                focus_state.focus_prev();
-                            } else {
-                                debug!("Focus next");
-                                focus_state.focus_next();
-                            }
-                            continue;
-                        }
-
-                        // Get current focus
-                        let current_focus = if let Some(entry) = modal_stack.last() {
-                            entry.focus_state.current().map(|f| f.0.clone())
-                        } else {
-                            app_focus_state.current().map(|f| f.0.clone())
-                        };
-
-                        // Dispatch to focused component
-                        if let Some(ref focus_id) = current_focus {
-                            // Handle Enter key - triggers submit handler
-                            if key_combo.key == Key::Enter {
-                                debug!("Enter on focused element: {:?}", focus_id);
-                                // Dispatch to component first (sets context data)
-                                if let Some(result) =
-                                    view.dispatch_key_event(focus_id, key_combo, &cx)
-                                    && result.is_handled()
-                                {
-                                    // Dispatch handlers based on context data
-                                    dispatch_component_handlers(
-                                        &view,
-                                        focus_id,
-                                        &app,
-                                        &modal_stack,
-                                        &cx,
-                                    );
-                                    continue;
-                                }
-                                // Fallback for buttons etc
-                                if let Some(handler_id) = view.get_submit_handler(focus_id) {
-                                    dispatch_to_layer(&app, &modal_stack, &handler_id, &cx);
-                                }
-                                continue;
-                            }
-
-                            // For all other keys, dispatch to component
-                            let old_value = view.get_input_component(focus_id).map(|c| c.value());
-
-                            if let Some(result) = view.dispatch_key_event(focus_id, key_combo, &cx)
-                                && result.is_handled()
-                            {
-                                // Dispatch handlers based on context data
-                                dispatch_component_handlers(
-                                    &view,
-                                    focus_id,
-                                    &app,
-                                    &modal_stack,
-                                    &cx,
-                                );
-
-                                // For inputs, check if value changed to trigger on_change
-                                if let Some(old) = old_value
-                                    && let Some(component) = view.get_input_component(focus_id)
-                                    && component.value() != old
-                                {
-                                    cx.set_input_text(component.value());
-                                    if let Some(handler_id) = view.get_change_handler(focus_id) {
-                                        dispatch_to_layer(&app, &modal_stack, &handler_id, &cx);
-                                    }
-                                }
-                                continue;
-                            }
-                        }
-
-                        // Handle Escape to clear focus (if not handled by component)
-                        if key_combo.key == Key::Escape {
-                            debug!("Escape pressed, clearing focus");
-                            if let Some(entry) = modal_stack.last_mut() {
-                                entry.focus_state.clear_focus();
-                            } else {
-                                app_focus_state.clear_focus();
-                            }
-                            continue;
-                        }
-
-                        // Process keybind (only if not handled above)
-                        let current_view = if modal_stack.is_empty() {
-                            app.current_view()
-                        } else {
-                            None
-                        };
-                        let current_view_ref = current_view.as_deref();
-
-                        let keybind_match = if let Some(entry) = modal_stack.last_mut() {
-                            entry
-                                .input_state
-                                .process_key(key_combo.clone(), &entry.keybinds, None)
-                        } else {
-                            let kb = app_keybinds.read().unwrap();
-                            app_input_state.process_key(key_combo.clone(), &kb, current_view_ref)
-                        };
-
-                        match keybind_match {
-                            KeybindMatch::Match(handler_id) => {
-                                info!("Keybind matched: {:?}", handler_id);
-                                dispatch_to_layer(&app, &modal_stack, &handler_id, &cx);
-                            }
-                            KeybindMatch::Pending => {
-                                debug!("Keybind pending (sequence in progress)");
-                            }
-                            KeybindMatch::NoMatch => {
-                                debug!("No keybind matched for key");
-                            }
-                        }
-                    }
-                    Event::Resize { width, height } => {
-                        debug!("Resize: {}x{}", width, height);
-                    }
-                    Event::Click(ref click) => {
-                        debug!("Click at ({}, {})", click.position.x, click.position.y);
-
-                        if let Some(hit_box) = hit_map.hit_test(click.position.x, click.position.y)
-                        {
-                            // Focus the clicked element
-                            if let Some(entry) = modal_stack.last_mut() {
-                                entry.focus_state.set_focus(hit_box.id.clone());
-                            } else {
-                                app_focus_state.set_focus(hit_box.id.clone());
-                            }
-
-                            // Check if this is a List component with Ctrl/Shift modifiers
-                            if let Some(list_component) = view.get_list_component(&hit_box.id) {
-                                debug!("Clicked on list element: {}", hit_box.id);
-
-                                // First check if click is on scrollbar (dispatch_click_event handles this)
-                                if let Some(result) = view.dispatch_click_event(
-                                    &hit_box.id,
-                                    click.position.x,
-                                    click.position.y,
-                                    &cx,
-                                ) {
-                                    match result {
-                                        EventResult::StartDrag => {
-                                            drag_component_id = Some(hit_box.id.clone());
-                                            continue;
-                                        }
-                                        EventResult::Consumed => {
-                                            dispatch_component_handlers(
-                                                &view,
-                                                &hit_box.id,
-                                                &app,
-                                                &modal_stack,
-                                                &cx,
-                                            );
-                                            continue;
-                                        }
-                                        EventResult::Ignored => {}
-                                    }
-                                }
-
-                                // Handle click with modifiers (Ctrl/Shift)
-                                let y_in_viewport = click.position.y.saturating_sub(hit_box.rect.y);
-                                let ctrl = click.modifiers.ctrl;
-                                let shift = click.modifiers.shift;
-                                list_component.on_click_with_modifiers(
-                                    y_in_viewport,
-                                    ctrl,
-                                    shift,
-                                    &cx,
-                                );
-
-                                // Dispatch handlers based on context data
-                                dispatch_component_handlers(
-                                    &view,
-                                    &hit_box.id,
-                                    &app,
-                                    &modal_stack,
-                                    &cx,
-                                );
-                                continue;
-                            }
-
-                            // Check if this is a Tree component with Ctrl/Shift modifiers
-                            if let Some(tree_component) = view.get_tree_component(&hit_box.id) {
-                                debug!("Clicked on tree element: {}", hit_box.id);
-
-                                // First check if click is on scrollbar (dispatch_click_event handles this)
-                                if let Some(result) = view.dispatch_click_event(
-                                    &hit_box.id,
-                                    click.position.x,
-                                    click.position.y,
-                                    &cx,
-                                ) {
-                                    match result {
-                                        EventResult::StartDrag => {
-                                            drag_component_id = Some(hit_box.id.clone());
-                                            continue;
-                                        }
-                                        EventResult::Consumed => {
-                                            dispatch_component_handlers(
-                                                &view,
-                                                &hit_box.id,
-                                                &app,
-                                                &modal_stack,
-                                                &cx,
-                                            );
-                                            continue;
-                                        }
-                                        EventResult::Ignored => {}
-                                    }
-                                }
-
-                                // Handle click with modifiers (Ctrl/Shift)
-                                let y_in_viewport = click.position.y.saturating_sub(hit_box.rect.y);
-                                let ctrl = click.modifiers.ctrl;
-                                let shift = click.modifiers.shift;
-                                tree_component.on_click_with_modifiers(
-                                    y_in_viewport,
-                                    ctrl,
-                                    shift,
-                                    &cx,
-                                );
-
-                                // Dispatch handlers based on context data
-                                dispatch_component_handlers(
-                                    &view,
-                                    &hit_box.id,
-                                    &app,
-                                    &modal_stack,
-                                    &cx,
-                                );
-                                continue;
-                            }
-
-                            // Check if this is a Table component
-                            if let Some(table_component) = view.get_table_component(&hit_box.id) {
-                                debug!("Clicked on table element: {}", hit_box.id);
-
-                                // First check if click is on scrollbar (dispatch_click_event handles this)
-                                if let Some(result) = view.dispatch_click_event(
-                                    &hit_box.id,
-                                    click.position.x,
-                                    click.position.y,
-                                    &cx,
-                                ) {
-                                    match result {
-                                        EventResult::StartDrag => {
-                                            drag_component_id = Some(hit_box.id.clone());
-                                            continue;
-                                        }
-                                        EventResult::Consumed => {
-                                            dispatch_component_handlers(
-                                                &view,
-                                                &hit_box.id,
-                                                &app,
-                                                &modal_stack,
-                                                &cx,
-                                            );
-                                            continue;
-                                        }
-                                        EventResult::Ignored => {}
-                                    }
-                                }
-
-                                // Calculate viewport-relative coordinates
-                                let x_in_viewport = click.position.x.saturating_sub(hit_box.rect.x);
-                                let y_in_viewport = click.position.y.saturating_sub(hit_box.rect.y);
-
-                                debug!(
-                                    "Table click: screen({}, {}), rect({}, {}), viewport({}, {})",
-                                    click.position.x, click.position.y,
-                                    hit_box.rect.x, hit_box.rect.y,
-                                    x_in_viewport, y_in_viewport
-                                );
-
-                                // Check if header click (y == 0) or data row click
-                                if y_in_viewport == 0 {
-                                    debug!("Header click at x={}", x_in_viewport);
-                                    table_component.on_header_click(x_in_viewport, &cx);
-                                } else {
-                                    // Data row click - y_in_viewport includes header,
-                                    // on_row_click/index_from_viewport_y handles the offset
-                                    let ctrl = click.modifiers.ctrl;
-                                    let shift = click.modifiers.shift;
-                                    table_component.on_row_click(
-                                        y_in_viewport,
-                                        ctrl,
-                                        shift,
-                                        &cx,
-                                    );
-                                }
-
-                                // Dispatch handlers based on context data
-                                dispatch_component_handlers(
-                                    &view,
-                                    &hit_box.id,
-                                    &app,
-                                    &modal_stack,
-                                    &cx,
-                                );
-                                continue;
-                            }
-
-                            // First try to dispatch to component (handles scrollbars etc)
-                            if let Some(result) = view.dispatch_click_event(
-                                &hit_box.id,
-                                click.position.x,
-                                click.position.y,
-                                &cx,
-                            ) {
-                                match result {
-                                    EventResult::StartDrag => {
-                                        drag_component_id = Some(hit_box.id.clone());
-                                        continue;
-                                    }
-                                    EventResult::Consumed => continue,
-                                    EventResult::Ignored => {}
-                                }
-                            }
-
-                            debug!("Clicked element: {}", hit_box.id);
-
-                            // If it's a button, dispatch click handler
-                            if !hit_box.captures_input
-                                && let Some(handler_id) = view.get_submit_handler(&hit_box.id)
-                            {
-                                dispatch_to_layer(&app, &modal_stack, &handler_id, &cx);
-                            }
-                        }
-                    }
-                    Event::Hover(ref position) => {
-                        // Coalesce pending hover events to avoid processing every pixel
+                // Handle hover coalescing specially
+                let event_to_dispatch = match rafter_event {
+                    Event::Hover(position) => {
                         let (final_position, other_events, skipped) =
-                            coalesce_hover_events(*position)?;
+                            coalesce_hover_events(position)?;
 
                         if skipped > 0 {
                             debug!(
@@ -652,78 +287,24 @@ pub async fn run_event_loop<A: App>(
                             );
                         }
 
-                        if let Some(hit_box) = hit_map.hit_test(final_position.x, final_position.y)
-                        {
-                            // Focus if not already focused
-                            let current_focus = if let Some(entry) = modal_stack.last() {
-                                entry.focus_state.current().map(|f| f.0.clone())
-                            } else {
-                                app_focus_state.current().map(|f| f.0.clone())
-                            };
-                            if current_focus.as_deref() != Some(&hit_box.id) {
-                                debug!("Hover focus: {}", hit_box.id);
-                                if let Some(entry) = modal_stack.last_mut() {
-                                    entry.focus_state.set_focus(hit_box.id.clone());
-                                } else {
-                                    app_focus_state.set_focus(hit_box.id.clone());
-                                }
-                            }
+                        Event::Hover(final_position)
+                    }
+                    other => other,
+                };
 
-                            // Dispatch hover event to component (lists use this to move cursor)
-                            if let Some(result) = view.dispatch_hover_event(
-                                &hit_box.id,
-                                final_position.x,
-                                final_position.y.saturating_sub(hit_box.rect.y),
-                                &cx,
-                            ) && result.is_handled()
-                            {
-                                dispatch_component_handlers(
-                                    &view,
-                                    &hit_box.id,
-                                    &app,
-                                    &modal_stack,
-                                    &cx,
-                                );
-                            }
-                        }
-                    }
-                    Event::Scroll(ref scroll) => {
-                        debug!("Scroll at ({}, {})", scroll.position.x, scroll.position.y);
-
-                        // Find the scrollable element at the scroll position
-                        if let Some(hit_box) =
-                            hit_map.hit_test(scroll.position.x, scroll.position.y)
-                        {
-                            // Dispatch scroll event to component
-                            view.dispatch_scroll_event(
-                                &hit_box.id,
-                                scroll.direction,
-                                scroll.amount,
-                                &cx,
-                            );
-
-                            // Dispatch on_scroll handler if present
-                            if let Some(handler_id) = view.get_list_scroll_handler(&hit_box.id) {
-                                dispatch_to_layer(&app, &modal_stack, &handler_id, &cx);
-                            }
-                        }
-                    }
-                    Event::Release(_) => {
-                        if let Some(id) = drag_component_id.take() {
-                            view.dispatch_release_event(&id, &cx);
-                        }
-                    }
-                    Event::Drag(ref drag) => {
-                        if let Some(ref id) = drag_component_id {
-                            view.dispatch_drag_event(
-                                id,
-                                drag.position.x,
-                                drag.position.y,
-                                drag.modifiers,
-                                &cx,
-                            );
-                        }
-                    }
+                // Dispatch the event using the unified handler
+                if dispatch_event(
+                    &event_to_dispatch,
+                    &view,
+                    &hit_map,
+                    &app,
+                    &mut state,
+                    &app_keybinds,
+                    &cx,
+                )
+                .is_break()
+                {
+                    break;
                 }
             }
         }
@@ -734,55 +315,4 @@ pub async fn run_event_loop<A: App>(
     info!("App stopped");
 
     Ok(())
-}
-
-/// Dispatch a handler to the appropriate layer (modal or app)
-fn dispatch_to_layer<A: App>(
-    app: &A,
-    modal_stack: &[ModalStackEntry],
-    handler_id: &HandlerId,
-    cx: &AppContext,
-) {
-    if let Some(entry) = modal_stack.last() {
-        entry.modal.dispatch_dyn(handler_id, cx);
-    } else {
-        app.dispatch(handler_id, cx);
-    }
-}
-
-/// Dispatch handlers based on context data set by components.
-///
-/// Components push events to the event queue via `AppContext::push_event()`.
-/// This function drains the queue and dispatches appropriate handlers based
-/// on event kind and the component ID that triggered it.
-fn dispatch_component_handlers<A: App>(
-    view: &Node,
-    _focus_id: &str,
-    app: &A,
-    modal_stack: &[ModalStackEntry],
-    cx: &AppContext,
-) {
-    // Process the unified event queue
-    for event in cx.drain_events() {
-        let handler = match event.kind {
-            ComponentEventKind::Activate => view.get_submit_handler(&event.component_id),
-            ComponentEventKind::CursorMove => view.get_cursor_handler(&event.component_id),
-            ComponentEventKind::SelectionChange => view.get_selection_handler(&event.component_id),
-            ComponentEventKind::Expand => view.get_expand_handler(&event.component_id),
-            ComponentEventKind::Collapse => view.get_collapse_handler(&event.component_id),
-            ComponentEventKind::Sort => view.get_sort_handler(&event.component_id),
-        };
-
-        if let Some(handler_id) = handler {
-            dispatch_to_layer(app, modal_stack, &handler_id, cx);
-        }
-    }
-
-    // Clear the unified fields after processing
-    cx.clear_activated();
-    cx.clear_cursor();
-    cx.clear_selected();
-    cx.clear_expanded();
-    cx.clear_collapsed();
-    cx.clear_sorted();
 }

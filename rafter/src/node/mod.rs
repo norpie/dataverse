@@ -8,7 +8,7 @@ use crate::components::events::{ComponentEvents, EventResult};
 use crate::components::list::AnyList;
 use crate::components::table::AnyTable;
 use crate::components::tree::AnyTree;
-use crate::components::{Input, ScrollArea};
+use crate::components::{AnySelectable, Input, ScrollArea};
 use crate::context::AppContext;
 use crate::events::{Modifiers, ScrollDirection};
 use crate::keybinds::{HandlerId, KeyCombo};
@@ -426,9 +426,9 @@ impl Node {
             } if id == target_id => on_cursor_move.clone(),
             Self::Column { children, .. }
             | Self::Row { children, .. }
-            | Self::Stack { children, .. } => {
-                children.iter().find_map(|c| c.get_cursor_handler(target_id))
-            }
+            | Self::Stack { children, .. } => children
+                .iter()
+                .find_map(|c| c.get_cursor_handler(target_id)),
             Self::ScrollArea { child, .. } => child.get_cursor_handler(target_id),
             _ => None,
         }
@@ -468,9 +468,9 @@ impl Node {
             Self::Tree { id, on_expand, .. } if id == target_id => on_expand.clone(),
             Self::Column { children, .. }
             | Self::Row { children, .. }
-            | Self::Stack { children, .. } => {
-                children.iter().find_map(|c| c.get_expand_handler(target_id))
-            }
+            | Self::Stack { children, .. } => children
+                .iter()
+                .find_map(|c| c.get_expand_handler(target_id)),
             Self::ScrollArea { child, .. } => child.get_expand_handler(target_id),
             _ => None,
         }
@@ -546,6 +546,26 @@ impl Node {
             Self::ScrollArea { child, .. } => child.get_table_component(target_id),
             _ => None,
         }
+    }
+
+    /// Get a type-erased selectable component (List, Tree, or Table) by ID.
+    ///
+    /// This provides a unified interface for handling click events on
+    /// selectable components without branching on component type.
+    pub fn get_selectable_component(&self, target_id: &str) -> Option<&dyn AnySelectable> {
+        // Try List
+        if let Some(list) = self.get_list_component(target_id) {
+            return Some(list.as_any_selectable());
+        }
+        // Try Tree
+        if let Some(tree) = self.get_tree_component(target_id) {
+            return Some(tree.as_any_selectable());
+        }
+        // Try Table
+        if let Some(table) = self.get_table_component(target_id) {
+            return Some(table.as_any_selectable());
+        }
+        None
     }
 
     /// Dispatch an event to a component by ID using a visitor function.

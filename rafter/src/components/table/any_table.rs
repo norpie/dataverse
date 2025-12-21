@@ -7,6 +7,7 @@ use crate::components::events::{ComponentEvents, EventResult};
 use crate::components::scrollbar::{
     ScrollbarConfig, ScrollbarDrag, ScrollbarGeometry, ScrollbarState,
 };
+use crate::components::traits::AnySelectable;
 use crate::context::AppContext;
 use crate::events::{Modifiers, ScrollDirection};
 use crate::keybinds::KeyCombo;
@@ -187,6 +188,9 @@ pub trait AnyTable: Send + Sync + std::fmt::Debug {
 
     /// Set current drag state.
     fn set_drag(&self, drag: Option<ScrollbarDrag>);
+
+    /// Get this component as an AnySelectable trait object.
+    fn as_any_selectable(&self) -> &dyn AnySelectable;
 }
 
 impl<T: TableRow + std::fmt::Debug> AnyTable for Table<T> {
@@ -390,10 +394,43 @@ impl<T: TableRow + std::fmt::Debug> AnyTable for Table<T> {
     fn set_drag(&self, drag: Option<ScrollbarDrag>) {
         ScrollbarState::set_drag(self, drag);
     }
+
+    fn as_any_selectable(&self) -> &dyn AnySelectable {
+        self
+    }
 }
 
 impl Clone for Box<dyn AnyTable> {
     fn clone(&self) -> Self {
         self.clone_box()
+    }
+}
+
+// =============================================================================
+// AnySelectable implementation
+// =============================================================================
+
+impl<T: TableRow + std::fmt::Debug> AnySelectable for Table<T> {
+    fn id_string(&self) -> String {
+        Table::id_string(self)
+    }
+
+    fn on_click_with_modifiers(
+        &self,
+        y_in_viewport: u16,
+        ctrl: bool,
+        shift: bool,
+        cx: &AppContext,
+    ) -> EventResult {
+        // y_in_viewport includes header row, on_row_click handles the offset
+        Table::on_row_click(self, y_in_viewport, ctrl, shift, cx)
+    }
+
+    fn has_header(&self) -> bool {
+        true
+    }
+
+    fn on_header_click(&self, x_in_viewport: u16, cx: &AppContext) -> EventResult {
+        Table::on_header_click(self, x_in_viewport, cx)
     }
 }

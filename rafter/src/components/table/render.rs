@@ -2,9 +2,9 @@
 
 use std::ops::Range;
 
+use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::Style as RatatuiStyle;
-use ratatui::Frame;
 
 use crate::color::Color;
 use crate::components::scrollbar::{render_horizontal_scrollbar, render_vertical_scrollbar};
@@ -130,8 +130,7 @@ pub fn render(
     }
 
     // Render visible data rows
-    let first_row_y =
-        (visible_row_range.start as u16 * row_height).saturating_sub(scroll_offset_y);
+    let first_row_y = (visible_row_range.start as u16 * row_height).saturating_sub(scroll_offset_y);
 
     for (i, row_index) in visible_row_range.clone().enumerate() {
         let row_y = data_area.y + first_row_y + (i as u16 * row_height);
@@ -230,9 +229,7 @@ fn render_header(
     use ratatui::text::Span;
 
     // Get theme colors for header
-    let header_bg = theme
-        .resolve("surface")
-        .unwrap_or(Color::hex(0x1e1e2e));
+    let header_bg = theme.resolve("surface").unwrap_or(Color::hex(0x1e1e2e));
     let header_fg = theme.resolve("text").unwrap_or(Color::hex(0xcdd6f4));
     let header_style = RStyle::default()
         .fg(ratatui::style::Color::Rgb(
@@ -300,8 +297,9 @@ fn render_header(
                     let header_len = col.header.chars().count();
                     let col_width = col.width as usize;
                     let left_padding = col_width.saturating_sub(header_len) / 2;
-                    let right_padding =
-                        col_width.saturating_sub(header_len).saturating_sub(left_padding);
+                    let right_padding = col_width
+                        .saturating_sub(header_len)
+                        .saturating_sub(left_padding);
 
                     if left_padding >= right_padding {
                         // More room on left, put indicator there
@@ -373,18 +371,14 @@ fn render_row(
     let row_style = if is_focused {
         // Bright purple for cursor
         let bg = Color::hex(0xA277FF);
-        let fg = theme
-            .resolve("background")
-            .unwrap_or(Color::hex(0x1e1e2e));
+        let fg = theme.resolve("background").unwrap_or(Color::hex(0x1e1e2e));
         RStyle::default()
             .bg(ratatui::style::Color::Rgb(bg.r(), bg.g(), bg.b()))
             .fg(ratatui::style::Color::Rgb(fg.r(), fg.g(), fg.b()))
     } else if is_selected {
         // Dimmer purple for selected
         let bg = Color::hex(0x6E5494);
-        let fg = theme
-            .resolve("background")
-            .unwrap_or(Color::hex(0x1e1e2e));
+        let fg = theme.resolve("background").unwrap_or(Color::hex(0x1e1e2e));
         RStyle::default()
             .bg(ratatui::style::Color::Rgb(bg.r(), bg.g(), bg.b()))
             .fg(ratatui::style::Color::Rgb(fg.r(), fg.g(), fg.b()))

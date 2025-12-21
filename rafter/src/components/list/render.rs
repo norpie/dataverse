@@ -1,15 +1,15 @@
 //! List component rendering.
 
+use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::Style as RatatuiStyle;
-use ratatui::Frame;
 
 use crate::components::list::AnyList;
 use crate::components::scrollbar::render_vertical_scrollbar;
 use crate::node::Layout;
 use crate::runtime::hit_test::HitTestMap;
-use crate::runtime::render::layout::{apply_border, apply_padding};
 use crate::runtime::render::RenderNodeFn;
+use crate::runtime::render::layout::{apply_border, apply_padding};
 use crate::theme::Theme;
 
 /// Render a list component.
