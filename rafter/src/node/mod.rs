@@ -8,7 +8,7 @@ use crate::components::events::{ComponentEvents, EventResult};
 use crate::components::list::AnyList;
 use crate::components::table::AnyTable;
 use crate::components::tree::AnyTree;
-use crate::components::{AnySelectable, Input, ScrollArea};
+use crate::components::{AnySelectable, Checkbox, Input, ScrollArea};
 use crate::context::AppContext;
 use crate::events::{Modifiers, ScrollDirection};
 use crate::keybinds::{HandlerId, KeyCombo};
@@ -73,6 +73,18 @@ pub enum Node {
         id: String,
         /// Style
         style: Style,
+    },
+
+    /// Checkbox toggle
+    Checkbox {
+        /// Element ID for focus
+        id: String,
+        /// Style
+        style: Style,
+        /// Bound Checkbox component
+        component: Checkbox,
+        /// Handler for state changes
+        on_change: Option<HandlerId>,
     },
 
     /// ScrollArea container
@@ -243,6 +255,7 @@ impl Node {
         match self {
             Self::Input { id, .. }
             | Self::Button { id, .. }
+            | Self::Checkbox { id, .. }
             | Self::ScrollArea { id, .. }
             | Self::List { id, .. }
             | Self::Tree { id, .. }
@@ -265,7 +278,9 @@ impl Node {
     /// Collect all focusable element IDs from this node and its children (in tree order)
     pub fn collect_focusable_ids(&self, ids: &mut Vec<String>) {
         match self {
-            Self::Input { id, .. } | Self::Button { id, .. } if !id.is_empty() => {
+            Self::Input { id, .. } | Self::Button { id, .. } | Self::Checkbox { id, .. }
+                if !id.is_empty() =>
+            {
                 ids.push(id.clone());
             }
             Self::ScrollArea { id, child, .. } => {
@@ -352,10 +367,11 @@ impl Node {
         }
     }
 
-    /// Get the on_change handler for an input element by ID
+    /// Get the on_change handler for an input or checkbox element by ID
     pub fn get_change_handler(&self, target_id: &str) -> Option<HandlerId> {
         match self {
             Self::Input { id, on_change, .. } if id == target_id => on_change.clone(),
+            Self::Checkbox { id, on_change, .. } if id == target_id => on_change.clone(),
             Self::Column { children, .. }
             | Self::Row { children, .. }
             | Self::Stack { children, .. } => children
@@ -376,6 +392,20 @@ impl Node {
                 .iter()
                 .find_map(|c| c.get_input_component(target_id)),
             Self::ScrollArea { child, .. } => child.get_input_component(target_id),
+            _ => None,
+        }
+    }
+
+    /// Get the Checkbox component for a checkbox element by ID
+    pub fn get_checkbox_component(&self, target_id: &str) -> Option<&Checkbox> {
+        match self {
+            Self::Checkbox { id, component, .. } if id == target_id => Some(component),
+            Self::Column { children, .. }
+            | Self::Row { children, .. }
+            | Self::Stack { children, .. } => children
+                .iter()
+                .find_map(|c| c.get_checkbox_component(target_id)),
+            Self::ScrollArea { child, .. } => child.get_checkbox_component(target_id),
             _ => None,
         }
     }
@@ -685,6 +715,7 @@ impl Node {
             Self::Input {
                 component: None, ..
             } => Some(EventResult::Ignored),
+            Self::Checkbox { component, .. } => Some(component.on_key(key, cx)),
             Self::ScrollArea { component, .. } => Some(component.on_key(key, cx)),
             Self::List { component, .. } => Some(component.on_key(key, cx)),
             Self::Tree { component, .. } => Some(component.on_key(key, cx)),
@@ -764,6 +795,14 @@ impl Node {
                 (content_len + 5).max(15) as u16
             }
             Self::Button { label, .. } => (label.len() + 4) as u16,
+            Self::Checkbox { component, .. } => {
+                let label = component.label();
+                if label.is_empty() {
+                    1 // Just the indicator
+                } else {
+                    (label.len() + 2) as u16 // indicator + space + label
+                }
+            }
             Self::ScrollArea { child, layout, .. } => {
                 let (chrome_h, _) = layout.chrome_size();
                 // ScrollArea reports child's intrinsic size (may be larger than viewport)
@@ -823,7 +862,7 @@ impl Node {
                     .unwrap_or(0);
                 max_child + chrome_v
             }
-            Self::Input { .. } | Self::Button { .. } => 1,
+            Self::Input { .. } | Self::Button { .. } | Self::Checkbox { .. } => 1,
             Self::ScrollArea { child, layout, .. } => {
                 let (_, chrome_v) = layout.chrome_size();
                 // ScrollArea reports child's intrinsic size (may be larger than viewport)

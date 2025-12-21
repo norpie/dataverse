@@ -163,6 +163,27 @@ pub fn render_node(
                 hit_map.register(id.clone(), area, false);
             }
         }
+        Node::Checkbox {
+            id,
+            style,
+            component,
+            ..
+        } => {
+            let is_focused = focused_id == Some(id.as_str());
+            crate::components::checkbox::render::render_checkbox(
+                frame,
+                component.is_checked(),
+                &component.label(),
+                component.checked_char(),
+                component.unchecked_char(),
+                style_to_ratatui(style, theme),
+                is_focused,
+                area,
+            );
+            if !id.is_empty() {
+                hit_map.register(id.clone(), area, false);
+            }
+        }
         Node::ScrollArea {
             child,
             id,

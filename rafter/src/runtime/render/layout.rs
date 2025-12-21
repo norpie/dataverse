@@ -208,6 +208,18 @@ pub fn intrinsic_size(node: &Node, horizontal: bool) -> u16 {
                 1
             }
         }
+        Node::Checkbox { component, .. } => {
+            if horizontal {
+                let label = component.label();
+                if label.is_empty() {
+                    1 // Just the indicator
+                } else {
+                    (label.len() + 2) as u16 // indicator + space + label
+                }
+            } else {
+                1
+            }
+        }
         Node::ScrollArea { child, layout, .. } => {
             let border_size = if matches!(layout.border, Border::None) {
                 0
@@ -324,6 +336,18 @@ pub fn child_constraint(node: &Node, horizontal: bool) -> Constraint {
                 Constraint::Length((label.len() + 2) as u16)
             } else {
                 // For vertical layout, buttons take 1 line
+                Constraint::Length(1)
+            }
+        }
+        Node::Checkbox { component, .. } => {
+            if horizontal {
+                let label = component.label();
+                if label.is_empty() {
+                    Constraint::Length(1) // Just the indicator
+                } else {
+                    Constraint::Length((label.len() + 2) as u16) // indicator + space + label
+                }
+            } else {
                 Constraint::Length(1)
             }
         }

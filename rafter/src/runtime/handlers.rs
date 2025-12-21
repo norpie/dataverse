@@ -116,12 +116,28 @@ pub fn handle_key_event<A: App>(
         // Handle Enter key - triggers submit handler
         if key_combo.key == Key::Enter {
             debug!("Enter on focused element: {:?}", focus_id);
+
+            // Check if this is a checkbox (Enter toggles it)
+            let old_checkbox_state = view
+                .get_checkbox_component(focus_id)
+                .map(|c| c.is_checked());
+
             // Dispatch to component first (sets context data)
             if let Some(result) = view.dispatch_key_event(focus_id, key_combo, cx)
                 && result.is_handled()
             {
                 // Dispatch handlers based on context data
                 dispatch_component_handlers(view, focus_id, app, &state.modal_stack, cx);
+
+                // For checkboxes, dispatch on_change if state changed
+                if let Some(old) = old_checkbox_state
+                    && let Some(component) = view.get_checkbox_component(focus_id)
+                    && component.is_checked() != old
+                    && let Some(handler_id) = view.get_change_handler(focus_id)
+                {
+                    dispatch_to_layer(app, &state.modal_stack, &handler_id, cx);
+                }
+
                 return ControlFlow::Continue(true);
             }
             // Fallback for buttons etc
@@ -133,6 +149,9 @@ pub fn handle_key_event<A: App>(
 
         // For all other keys, dispatch to component
         let old_value = view.get_input_component(focus_id).map(|c| c.value());
+        let old_checkbox_state = view
+            .get_checkbox_component(focus_id)
+            .map(|c| c.is_checked());
 
         if let Some(result) = view.dispatch_key_event(focus_id, key_combo, cx)
             && result.is_handled()
@@ -150,6 +169,16 @@ pub fn handle_key_event<A: App>(
                     dispatch_to_layer(app, &state.modal_stack, &handler_id, cx);
                 }
             }
+
+            // For checkboxes, check if state changed to trigger on_change (Space key)
+            if let Some(old) = old_checkbox_state
+                && let Some(component) = view.get_checkbox_component(focus_id)
+                && component.is_checked() != old
+                && let Some(handler_id) = view.get_change_handler(focus_id)
+            {
+                dispatch_to_layer(app, &state.modal_stack, &handler_id, cx);
+            }
+
             return ControlFlow::Continue(true);
         }
     }
@@ -278,6 +307,15 @@ pub fn handle_click_event<A: App>(
     }
 
     debug!("Clicked element: {}", hit_box.id);
+
+    // If it's a checkbox, toggle it and dispatch on_change handler
+    if let Some(checkbox) = view.get_checkbox_component(&hit_box.id) {
+        checkbox.toggle();
+        if let Some(handler_id) = view.get_change_handler(&hit_box.id) {
+            dispatch_to_layer(app, &state.modal_stack, &handler_id, cx);
+        }
+        return true;
+    }
 
     // If it's a button, dispatch click handler
     if !hit_box.captures_input

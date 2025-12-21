@@ -50,6 +50,24 @@ impl Toast {
             duration: Duration::from_secs(5),
         }
     }
+
+    /// Create a success toast
+    pub fn success(message: impl Into<String>) -> Self {
+        Self {
+            message: message.into(),
+            level: ToastLevel::Success,
+            duration: Duration::from_secs(3),
+        }
+    }
+
+    /// Create a warning toast
+    pub fn warning(message: impl Into<String>) -> Self {
+        Self {
+            message: message.into(),
+            level: ToastLevel::Warning,
+            duration: Duration::from_secs(4),
+        }
+    }
 }
 
 /// Inner state for AppContext
@@ -159,6 +177,27 @@ impl AppContext {
     pub fn toast(&self, message: impl Into<String>) {
         if let Ok(mut inner) = self.inner.write() {
             inner.pending_toasts.push(Toast::info(message));
+        }
+    }
+
+    /// Show an error toast notification
+    pub fn toast_error(&self, message: impl Into<String>) {
+        if let Ok(mut inner) = self.inner.write() {
+            inner.pending_toasts.push(Toast::error(message));
+        }
+    }
+
+    /// Show a success toast notification
+    pub fn toast_success(&self, message: impl Into<String>) {
+        if let Ok(mut inner) = self.inner.write() {
+            inner.pending_toasts.push(Toast::success(message));
+        }
+    }
+
+    /// Show a warning toast notification
+    pub fn toast_warning(&self, message: impl Into<String>) {
+        if let Ok(mut inner) = self.inner.write() {
+            inner.pending_toasts.push(Toast::warning(message));
         }
     }
 

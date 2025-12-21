@@ -3,7 +3,7 @@
 use syn::Type;
 
 /// Component types that manage their own state and shouldn't be wrapped in State<T>
-const COMPONENT_TYPES: &[&str] = &["Input", "List", "Tree", "Table", "ScrollArea"];
+const COMPONENT_TYPES: &[&str] = &["Checkbox", "Input", "List", "Tree", "Table", "ScrollArea"];
 
 /// Check if a type is Resource<T>
 pub fn is_resource_type(ty: &Type) -> bool {

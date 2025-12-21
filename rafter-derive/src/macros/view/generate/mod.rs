@@ -1,6 +1,7 @@
 //! Code generation for view nodes.
 
 pub mod button;
+pub mod checkbox;
 pub mod container;
 pub mod input;
 pub mod layout;
@@ -17,6 +18,7 @@ use quote::quote;
 use crate::macros::view::ast::{AttrValue, ControlFlowNode, ElementNode, ViewNode};
 
 pub use button::generate_button_element;
+pub use checkbox::generate_checkbox_element;
 pub use container::generate_container;
 pub use input::generate_input_element;
 pub use list::generate_list_element;
@@ -49,6 +51,7 @@ fn generate_element(elem: &ElementNode) -> TokenStream {
         "text" => generate_text_element(elem),
         "input" => generate_input_element(elem),
         "button" => generate_button_element(elem),
+        "checkbox" => generate_checkbox_element(elem),
         "scroll_area" => generate_scroll_area_element(elem),
         "list" => generate_list_element(elem),
         "tree" => generate_tree_element(elem),

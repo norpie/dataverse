@@ -6,6 +6,7 @@
 //! - `events.rs` - event handling implementation
 //! - `mod.rs` - public exports
 
+pub mod checkbox;
 pub mod events;
 pub mod input;
 pub mod list;
@@ -16,6 +17,7 @@ pub mod table;
 mod traits;
 pub mod tree;
 
+pub use checkbox::{Checkbox, CheckboxId};
 pub use events::{ComponentEvents, EventResult};
 pub use input::{Input, InputId};
 pub use list::{AnyList, List, ListId, ListItem, Selection, SelectionMode};
