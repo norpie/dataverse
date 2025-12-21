@@ -414,6 +414,8 @@ pub struct RenderContext<'a> {
     pub style: ratatui::style::Style,
     /// Layout configuration for this widget
     pub layout: &'a crate::node::Layout,
+    /// Child nodes (for container widgets like ScrollArea)
+    pub children: &'a [Node],
 }
 
 /// Handler composition for widgets.

@@ -65,6 +65,7 @@ pub enum Node {
     ///
     /// This is the unified variant for all widgets implementing `AnyWidget`.
     /// It holds the widget as a trait object along with its handlers.
+    /// Container widgets (like ScrollArea) use the `children` field for slot content.
     Widget {
         /// The widget instance (type-erased)
         widget: Box<dyn AnyWidget>,
@@ -74,6 +75,8 @@ pub enum Node {
         style: Style,
         /// Layout properties
         layout: Layout,
+        /// Child nodes (for container widgets like ScrollArea)
+        children: Vec<Node>,
     },
 
     // =========================================================================
@@ -263,6 +266,24 @@ impl Node {
             handlers,
             style,
             layout,
+            children: Vec::new(),
+        }
+    }
+
+    /// Create a container widget node with children
+    pub fn container_widget(
+        widget: Box<dyn AnyWidget>,
+        handlers: WidgetHandlers,
+        style: Style,
+        layout: Layout,
+        children: Vec<Node>,
+    ) -> Self {
+        Self::Widget {
+            widget,
+            handlers,
+            style,
+            layout,
+            children,
         }
     }
 

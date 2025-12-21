@@ -128,6 +128,7 @@ pub fn render_node(
             widget,
             style,
             layout,
+            children,
             ..
         } => {
             // Unified widget rendering - delegates to the widget's render method
@@ -140,6 +141,7 @@ pub fn render_node(
                 focused_id,
                 style: ratatui_style,
                 layout,
+                children,
             };
             widget.render(frame, area, is_focused, &mut ctx);
             ctx.hit_map.register(widget.id(), area, widget.captures_input());
