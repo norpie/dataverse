@@ -9,17 +9,19 @@ pub struct ListView;
 
 impl ListView {
     /// Render the list view.
-    pub fn render(files: &List<FileEntry>, status: &str) -> Node {
+    pub fn render(files: &List<FileEntry>, path: &str, status: &str) -> Node {
         let file_count = files.len();
         let status_str = status.to_string();
+        let path_str = path.to_string();
         let files = files.clone();
 
         view! {
             column (padding: 1, gap: 1, bg: background) {
-                // Header
-                row {
+                // Header with path
+                row (gap: 1) {
                     text (bold, fg: primary) { "Explorer" }
-                    text (fg: muted) { " - File Browser" }
+                    text (fg: muted) { " - " }
+                    text (fg: secondary) { path_str }
                 }
 
                 // File list header
@@ -38,7 +40,7 @@ impl ListView {
                 }
 
                 // Help
-                text (fg: muted) { "j/k:move  space:select  enter:open  d:delete  r:rename  n:new  ?:help  q:quit" }
+                text (fg: muted) { "j/k:move  space:select  enter/l:open  h/backspace:back  d:delete  r:rename  n:new  q:quit" }
             }
         }
     }

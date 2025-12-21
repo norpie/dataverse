@@ -13,6 +13,7 @@
 mod modals;
 mod views;
 
+use std::collections::HashMap;
 use std::fmt;
 use std::fs::File;
 
@@ -24,6 +25,122 @@ use simplelog::{Config, WriteLogger};
 
 use modals::{ConfirmModal, RenameModal};
 use views::{DetailView, ListView};
+
+// ============================================================================
+// Virtual File System
+// ============================================================================
+
+/// A simple virtual file system for the explorer demo.
+#[derive(Debug, Clone)]
+struct VirtualFS {
+    /// Map from path to list of entries in that directory
+    directories: HashMap<String, Vec<FileEntry>>,
+}
+
+impl Default for VirtualFS {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl VirtualFS {
+    fn new() -> Self {
+        let mut directories = HashMap::new();
+
+        // Root directory
+        let root = vec![
+            FileEntry::new("Documents", 0, true),
+            FileEntry::new("Pictures", 0, true),
+            FileEntry::new("Downloads", 0, true),
+            FileEntry::new("Music", 0, true),
+            FileEntry::new("Videos", 0, true),
+            FileEntry::new("Desktop", 0, true),
+            FileEntry::new("Projects", 0, true),
+            FileEntry::new("Archives", 0, true),
+            FileEntry::new("perftest", 0, true),
+            FileEntry::new("readme.txt", 1024, false),
+            FileEntry::new("config.json", 256, false),
+        ];
+        directories.insert("/".to_string(), root);
+
+        // Documents directory
+        let documents: Vec<FileEntry> = (1..=20)
+            .map(|i| FileEntry::new(format!("document_{:02}.txt", i), i as u64 * 100, false))
+            .collect();
+        directories.insert("/Documents".to_string(), documents);
+
+        // Pictures directory
+        let pictures: Vec<FileEntry> = (1..=15)
+            .map(|i| FileEntry::new(format!("photo_{:02}.jpg", i), i as u64 * 50000, false))
+            .collect();
+        directories.insert("/Pictures".to_string(), pictures);
+
+        // Downloads directory
+        let downloads = vec![
+            FileEntry::new("installer.exe", 52428800, false),
+            FileEntry::new("archive.zip", 10485760, false),
+            FileEntry::new("movie.mp4", 734003200, false),
+        ];
+        directories.insert("/Downloads".to_string(), downloads);
+
+        // Empty directories
+        for name in ["Music", "Videos", "Desktop", "Archives"] {
+            directories.insert(format!("/{}", name), vec![]);
+        }
+
+        // Projects directory with subdirectories
+        let projects = vec![
+            FileEntry::new("rust-project", 0, true),
+            FileEntry::new("web-app", 0, true),
+            FileEntry::new("notes.md", 2048, false),
+        ];
+        directories.insert("/Projects".to_string(), projects);
+
+        directories.insert(
+            "/Projects/rust-project".to_string(),
+            vec![
+                FileEntry::new("src", 0, true),
+                FileEntry::new("Cargo.toml", 512, false),
+                FileEntry::new("README.md", 1024, false),
+            ],
+        );
+
+        directories.insert(
+            "/Projects/rust-project/src".to_string(),
+            vec![
+                FileEntry::new("main.rs", 2048, false),
+                FileEntry::new("lib.rs", 4096, false),
+            ],
+        );
+
+        directories.insert(
+            "/Projects/web-app".to_string(),
+            vec![
+                FileEntry::new("index.html", 1024, false),
+                FileEntry::new("style.css", 512, false),
+                FileEntry::new("app.js", 2048, false),
+            ],
+        );
+
+        // Performance test directory with 100,000 items
+        let perftest: Vec<FileEntry> = (1..=100_000)
+            .map(|i| FileEntry::new(format!("file_{:06}.dat", i), i as u64 * 10, false))
+            .collect();
+        directories.insert("/perftest".to_string(), perftest);
+
+        Self { directories }
+    }
+
+    /// Get entries for a path.
+    fn get(&self, path: &str) -> Vec<FileEntry> {
+        self.directories.get(path).cloned().unwrap_or_default()
+    }
+
+    /// Check if a path exists as a directory.
+    fn is_dir(&self, path: &str) -> bool {
+        self.directories.contains_key(path)
+    }
+}
 
 // ============================================================================
 // View Enum
@@ -179,6 +296,13 @@ pub struct Explorer {
     view: View,
     /// List of files
     files: List<FileEntry>,
+    /// Current path in the virtual filesystem
+    path: String,
+    /// Path history stack for back navigation
+    path_stack: Vec<String>,
+    /// Virtual filesystem
+    #[state(skip)]
+    fs: VirtualFS,
     /// Status message
     status: String,
 }
@@ -186,32 +310,14 @@ pub struct Explorer {
 #[app_impl]
 impl Explorer {
     async fn on_start(&self, cx: &AppContext) {
-        // Initialize with sample files - enough to require scrolling
-        let mut files = vec![
-            FileEntry::new("Documents", 0, true),
-            FileEntry::new("Pictures", 0, true),
-            FileEntry::new("Downloads", 0, true),
-            FileEntry::new("Music", 0, true),
-            FileEntry::new("Videos", 0, true),
-            FileEntry::new("Desktop", 0, true),
-            FileEntry::new("Projects", 0, true),
-            FileEntry::new("Archives", 0, true),
-        ];
-
-        // Add many files to demonstrate scrolling
-        for i in 1..=50 {
-            files.push(FileEntry::new(
-                format!("file_{:03}.txt", i),
-                i as u64 * 100,
-                false,
-            ));
-        }
-
+        // Load root directory
+        let files = self.fs.get("/");
         self.files.set_items(files);
         // Enable multi-selection mode (Space to toggle, Ctrl+click, Shift+range)
         self.files.set_selection_mode(SelectionMode::Multiple);
         // Set initial cursor position
         self.files.set_cursor(0);
+        self.path.set("/".to_string());
         self.status.set("Ready".to_string());
         cx.toast("Explorer loaded");
     }
@@ -252,6 +358,7 @@ impl Explorer {
             // Note: j/k/g/G/enter are handled by List component internally
             // Only "l" needs a keybind for vim-style open
             "l" => open_selected,
+            "backspace" | "h" => back_directory,
             "d" => delete_selected,
             "r" => rename_selected,
             "n" => new_file,
@@ -262,17 +369,52 @@ impl Explorer {
     async fn open_selected(&self, cx: &AppContext) {
         // Use activated index from list event, or fall back to cursor (for keybind)
         let selected = cx.list_activated_index().or_else(|| self.files.cursor());
-        if let Some(selected) = selected {
-            if let Some(file) = self.files.get(selected) {
-                if file.is_dir {
-                    cx.toast(format!("Opening folder: {}", file.name));
-                    // In a real app, we'd load the directory contents
+        if let Some(selected) = selected
+            && let Some(file) = self.files.get(selected)
+        {
+            if file.is_dir {
+                // Navigate into directory
+                let current_path = self.path.get();
+                let new_path = if current_path == "/" {
+                    format!("/{}", file.name)
                 } else {
-                    // Navigate to detail view
-                    self.view.set(View::Detail { index: selected });
-                    self.status.set(format!("Viewing: {}", file.name));
+                    format!("{}/{}", current_path, file.name)
+                };
+
+                if self.fs.is_dir(&new_path) {
+                    // Push current path to stack for back navigation
+                    self.path_stack.update(|stack| stack.push(current_path));
+                    // Load new directory
+                    let entries = self.fs.get(&new_path);
+                    self.files.set_items(entries);
+                    self.files.set_cursor(0);
+                    self.path.set(new_path.clone());
+                    self.status.set(format!("Opened: {}", file.name));
                 }
+            } else {
+                // Navigate to detail view
+                self.view.set(View::Detail { index: selected });
+                self.status.set(format!("Viewing: {}", file.name));
             }
+        }
+    }
+
+    #[handler]
+    async fn back_directory(&self, cx: &AppContext) {
+        let stack = self.path_stack.get();
+        if let Some(parent_path) = stack.last().cloned() {
+            // Pop from stack
+            self.path_stack.update(|s| {
+                s.pop();
+            });
+            // Load parent directory
+            let entries = self.fs.get(&parent_path);
+            self.files.set_items(entries);
+            self.files.set_cursor(0);
+            self.path.set(parent_path);
+            self.status.set("Back".to_string());
+        } else {
+            cx.toast("Already at root");
         }
     }
 
@@ -382,14 +524,15 @@ impl Explorer {
     fn view(&self) -> Node {
         let current_view = self.view.get();
         let status = self.status.get();
+        let path = self.path.get();
 
         match current_view {
-            View::List => ListView::render(&self.files, &status),
+            View::List => ListView::render(&self.files, &path, &status),
             View::Detail { index } => {
                 if let Some(file) = self.files.get(index) {
                     DetailView::render(&file, &status)
                 } else {
-                    ListView::render(&self.files, &status)
+                    ListView::render(&self.files, &path, &status)
                 }
             }
         }
