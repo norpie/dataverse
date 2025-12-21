@@ -1,8 +1,12 @@
 //! Event handling for the Input widget.
 
-use crate::widgets::events::{WidgetEvents, EventResult};
+use ratatui::layout::Rect;
+use ratatui::Frame;
+
 use crate::context::AppContext;
 use crate::keybinds::{Key, KeyCombo};
+use crate::widgets::events::{EventResult, WidgetEvents};
+use crate::widgets::traits::AnyWidget;
 
 use super::Input;
 
@@ -51,5 +55,48 @@ impl WidgetEvents for Input {
         }
 
         result
+    }
+}
+
+impl AnyWidget for Input {
+    fn id(&self) -> String {
+        self.id_string()
+    }
+
+    fn is_dirty(&self) -> bool {
+        Input::is_dirty(self)
+    }
+
+    fn clear_dirty(&self) {
+        Input::clear_dirty(self)
+    }
+
+    fn is_focusable(&self) -> bool {
+        true
+    }
+
+    fn captures_input(&self) -> bool {
+        true // Input captures keyboard input when focused
+    }
+
+    fn dispatch_click(&self, _x: u16, _y: u16, _cx: &AppContext) -> EventResult {
+        // Click focuses the input - runtime handles focus
+        EventResult::Consumed
+    }
+
+    fn dispatch_key(&self, key: &KeyCombo, cx: &AppContext) -> EventResult {
+        self.on_key(key, cx)
+    }
+
+    fn render(&self, frame: &mut Frame, area: Rect, focused: bool) {
+        super::render::render_input(
+            frame,
+            &self.value(),
+            &self.placeholder(),
+            self.cursor(),
+            ratatui::style::Style::default(),
+            focused,
+            area,
+        );
     }
 }

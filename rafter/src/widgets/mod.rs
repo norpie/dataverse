@@ -6,6 +6,7 @@
 //! - `events.rs` - event handling implementation
 //! - `mod.rs` - public exports
 
+pub mod button;
 pub mod checkbox;
 pub mod events;
 pub mod input;
@@ -18,6 +19,7 @@ pub mod table;
 mod traits;
 pub mod tree;
 
+pub use button::{Button, ButtonId};
 pub use checkbox::{Checkbox, CheckboxId};
 pub use radio::{RadioGroup, RadioGroupId};
 pub use events::{WidgetEvents, EventResult};
