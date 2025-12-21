@@ -2,10 +2,12 @@
 //!
 //! A demo showcasing rafter's form components:
 //! - Checkbox with label and custom indicators
+//! - RadioGroup for mutually exclusive options
 //! - Input fields
 //! - Form state management
 //!
-//! Use Tab to navigate between fields, Space/Enter to toggle checkboxes.
+//! Use Tab to navigate between fields, Space/Enter to toggle checkboxes,
+//! and Up/Down arrows to navigate radio options.
 
 use std::fs::File;
 
@@ -28,6 +30,10 @@ struct FormsApp {
     newsletter: Checkbox,
     custom_checkbox: Checkbox,
 
+    // Radio groups
+    theme: RadioGroup,
+    priority: RadioGroup,
+
     // Form state
     submitted: bool,
 }
@@ -45,6 +51,14 @@ impl FormsApp {
         self.newsletter.set_label("Subscribe to newsletter");
         self.custom_checkbox.set_label("Custom indicators");
         self.custom_checkbox.set_indicators('✓', '✗');
+
+        // Set up radio groups
+        self.theme
+            .set_options(vec!["Light Mode", "Dark Mode", "System Default"]);
+        self.theme.select(2); // Default to "System Default"
+
+        self.priority.set_options(vec!["Low", "Medium", "High"]);
+        self.priority.select(1); // Default to "Medium"
     }
 
     #[keybinds]
@@ -86,6 +100,8 @@ impl FormsApp {
         self.accept_terms.set_checked(false);
         self.newsletter.set_checked(false);
         self.custom_checkbox.set_checked(false);
+        self.theme.select(2);
+        self.priority.select(1);
         self.submitted.set(false);
         cx.toast("Form reset");
     }
@@ -94,6 +110,20 @@ impl FormsApp {
     async fn on_terms_change(&self, cx: &AppContext) {
         if self.accept_terms.is_checked() {
             cx.toast("Terms accepted");
+        }
+    }
+
+    #[handler]
+    async fn on_theme_change(&self, cx: &AppContext) {
+        if let Some(label) = self.theme.selected_label() {
+            cx.toast(format!("Theme: {}", label));
+        }
+    }
+
+    #[handler]
+    async fn on_priority_change(&self, cx: &AppContext) {
+        if let Some(label) = self.priority.selected_label() {
+            cx.toast(format!("Priority: {}", label));
         }
     }
 
@@ -110,7 +140,7 @@ impl FormsApp {
             column (padding: 2, gap: 1) {
                 // Header
                 text (bold, fg: primary) { "Form Components Demo" }
-                text (fg: muted) { "Tab to navigate, Space/Enter to toggle checkboxes" }
+                text (fg: muted) { "Tab to navigate, Space/Enter to toggle, Up/Down for radios" }
 
                 // Divider
                 text (fg: muted) { divider.clone() }
@@ -140,6 +170,22 @@ impl FormsApp {
                     checkbox(bind: self.accept_terms, on_change: on_terms_change)
                     checkbox(bind: self.newsletter)
                     checkbox(bind: self.custom_checkbox)
+                }
+
+                // Divider
+                text (fg: muted) { divider.clone() }
+
+                // Radio Groups
+                row (gap: 4) {
+                    column (gap: 1) {
+                        text (bold) { "Theme" }
+                        radio_group(bind: self.theme, on_change: on_theme_change)
+                    }
+
+                    column (gap: 1) {
+                        text (bold) { "Priority" }
+                        radio_group(bind: self.priority, on_change: on_priority_change)
+                    }
                 }
 
                 // Divider

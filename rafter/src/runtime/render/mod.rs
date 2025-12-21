@@ -184,6 +184,35 @@ pub fn render_node(
                 hit_map.register(id.clone(), area, false);
             }
         }
+        Node::RadioGroup {
+            id,
+            style,
+            component,
+            ..
+        } => {
+            let is_focused = focused_id == Some(id.as_str());
+            // For radio group, focused_index is the currently selected option for keyboard nav
+            // When focused, highlight the selected option (or first if none selected)
+            let focused_index = if is_focused {
+                Some(component.selected().unwrap_or(0))
+            } else {
+                None
+            };
+            crate::components::radio::render::render_radio_group(
+                frame,
+                &component.options(),
+                component.selected(),
+                component.selected_char(),
+                component.unselected_char(),
+                style_to_ratatui(style, theme),
+                is_focused,
+                focused_index,
+                area,
+            );
+            if !id.is_empty() {
+                hit_map.register(id.clone(), area, false);
+            }
+        }
         Node::ScrollArea {
             child,
             id,

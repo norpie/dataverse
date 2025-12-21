@@ -8,7 +8,7 @@ use crate::components::events::{ComponentEvents, EventResult};
 use crate::components::list::AnyList;
 use crate::components::table::AnyTable;
 use crate::components::tree::AnyTree;
-use crate::components::{AnySelectable, Checkbox, Input, ScrollArea};
+use crate::components::{AnySelectable, Checkbox, Input, RadioGroup, ScrollArea};
 use crate::context::AppContext;
 use crate::events::{Modifiers, ScrollDirection};
 use crate::keybinds::{HandlerId, KeyCombo};
@@ -84,6 +84,18 @@ pub enum Node {
         /// Bound Checkbox component
         component: Checkbox,
         /// Handler for state changes
+        on_change: Option<HandlerId>,
+    },
+
+    /// Radio group (mutually exclusive options)
+    RadioGroup {
+        /// Element ID for focus
+        id: String,
+        /// Style
+        style: Style,
+        /// Bound RadioGroup component
+        component: RadioGroup,
+        /// Handler for selection changes
         on_change: Option<HandlerId>,
     },
 
@@ -243,6 +255,7 @@ impl Node {
             self,
             Self::Input { .. }
                 | Self::Button { .. }
+                | Self::RadioGroup { .. }
                 | Self::ScrollArea { .. }
                 | Self::List { .. }
                 | Self::Tree { .. }
@@ -256,6 +269,7 @@ impl Node {
             Self::Input { id, .. }
             | Self::Button { id, .. }
             | Self::Checkbox { id, .. }
+            | Self::RadioGroup { id, .. }
             | Self::ScrollArea { id, .. }
             | Self::List { id, .. }
             | Self::Tree { id, .. }
@@ -278,7 +292,10 @@ impl Node {
     /// Collect all focusable element IDs from this node and its children (in tree order)
     pub fn collect_focusable_ids(&self, ids: &mut Vec<String>) {
         match self {
-            Self::Input { id, .. } | Self::Button { id, .. } | Self::Checkbox { id, .. }
+            Self::Input { id, .. }
+            | Self::Button { id, .. }
+            | Self::Checkbox { id, .. }
+            | Self::RadioGroup { id, .. }
                 if !id.is_empty() =>
             {
                 ids.push(id.clone());
@@ -372,6 +389,7 @@ impl Node {
         match self {
             Self::Input { id, on_change, .. } if id == target_id => on_change.clone(),
             Self::Checkbox { id, on_change, .. } if id == target_id => on_change.clone(),
+            Self::RadioGroup { id, on_change, .. } if id == target_id => on_change.clone(),
             Self::Column { children, .. }
             | Self::Row { children, .. }
             | Self::Stack { children, .. } => children
@@ -406,6 +424,20 @@ impl Node {
                 .iter()
                 .find_map(|c| c.get_checkbox_component(target_id)),
             Self::ScrollArea { child, .. } => child.get_checkbox_component(target_id),
+            _ => None,
+        }
+    }
+
+    /// Get the RadioGroup component for a radio group element by ID
+    pub fn get_radio_group_component(&self, target_id: &str) -> Option<&RadioGroup> {
+        match self {
+            Self::RadioGroup { id, component, .. } if id == target_id => Some(component),
+            Self::Column { children, .. }
+            | Self::Row { children, .. }
+            | Self::Stack { children, .. } => children
+                .iter()
+                .find_map(|c| c.get_radio_group_component(target_id)),
+            Self::ScrollArea { child, .. } => child.get_radio_group_component(target_id),
             _ => None,
         }
     }
@@ -716,6 +748,7 @@ impl Node {
                 component: None, ..
             } => Some(EventResult::Ignored),
             Self::Checkbox { component, .. } => Some(component.on_key(key, cx)),
+            Self::RadioGroup { component, .. } => Some(component.on_key(key, cx)),
             Self::ScrollArea { component, .. } => Some(component.on_key(key, cx)),
             Self::List { component, .. } => Some(component.on_key(key, cx)),
             Self::Tree { component, .. } => Some(component.on_key(key, cx)),
@@ -803,6 +836,15 @@ impl Node {
                     (label.len() + 2) as u16 // indicator + space + label
                 }
             }
+            Self::RadioGroup { component, .. } => {
+                // Width is the longest option label + indicator + space
+                component
+                    .options()
+                    .iter()
+                    .map(|label| label.len() + 2) // indicator + space + label
+                    .max()
+                    .unwrap_or(1) as u16
+            }
             Self::ScrollArea { child, layout, .. } => {
                 let (chrome_h, _) = layout.chrome_size();
                 // ScrollArea reports child's intrinsic size (may be larger than viewport)
@@ -863,6 +905,10 @@ impl Node {
                 max_child + chrome_v
             }
             Self::Input { .. } | Self::Button { .. } | Self::Checkbox { .. } => 1,
+            Self::RadioGroup { component, .. } => {
+                // Height is the number of options
+                component.len().max(1) as u16
+            }
             Self::ScrollArea { child, layout, .. } => {
                 let (_, chrome_v) = layout.chrome_size();
                 // ScrollArea reports child's intrinsic size (may be larger than viewport)

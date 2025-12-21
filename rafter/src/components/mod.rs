@@ -10,6 +10,7 @@ pub mod checkbox;
 pub mod events;
 pub mod input;
 pub mod list;
+pub mod radio;
 pub mod scroll_area;
 pub mod scrollbar;
 pub mod selection;
@@ -18,6 +19,7 @@ mod traits;
 pub mod tree;
 
 pub use checkbox::{Checkbox, CheckboxId};
+pub use radio::{RadioGroup, RadioGroupId};
 pub use events::{ComponentEvents, EventResult};
 pub use input::{Input, InputId};
 pub use list::{AnyList, List, ListId, ListItem, Selection, SelectionMode};

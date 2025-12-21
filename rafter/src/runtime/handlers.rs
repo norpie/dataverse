@@ -152,6 +152,9 @@ pub fn handle_key_event<A: App>(
         let old_checkbox_state = view
             .get_checkbox_component(focus_id)
             .map(|c| c.is_checked());
+        let old_radio_selection = view
+            .get_radio_group_component(focus_id)
+            .map(|c| c.selected());
 
         if let Some(result) = view.dispatch_key_event(focus_id, key_combo, cx)
             && result.is_handled()
@@ -174,6 +177,15 @@ pub fn handle_key_event<A: App>(
             if let Some(old) = old_checkbox_state
                 && let Some(component) = view.get_checkbox_component(focus_id)
                 && component.is_checked() != old
+                && let Some(handler_id) = view.get_change_handler(focus_id)
+            {
+                dispatch_to_layer(app, &state.modal_stack, &handler_id, cx);
+            }
+
+            // For radio groups, check if selection changed to trigger on_change
+            if let Some(old) = old_radio_selection
+                && let Some(component) = view.get_radio_group_component(focus_id)
+                && component.selected() != old
                 && let Some(handler_id) = view.get_change_handler(focus_id)
             {
                 dispatch_to_layer(app, &state.modal_stack, &handler_id, cx);
@@ -313,6 +325,20 @@ pub fn handle_click_event<A: App>(
         checkbox.toggle();
         if let Some(handler_id) = view.get_change_handler(&hit_box.id) {
             dispatch_to_layer(app, &state.modal_stack, &handler_id, cx);
+        }
+        return true;
+    }
+
+    // If it's a radio group, select the clicked option and dispatch on_change handler
+    if let Some(radio_group) = view.get_radio_group_component(&hit_box.id) {
+        // Calculate which option was clicked based on Y position within the component
+        let y_in_component = click.position.y.saturating_sub(hit_box.rect.y) as usize;
+        let old_selection = radio_group.selected();
+        radio_group.select(y_in_component);
+        if radio_group.selected() != old_selection {
+            if let Some(handler_id) = view.get_change_handler(&hit_box.id) {
+                dispatch_to_layer(app, &state.modal_stack, &handler_id, cx);
+            }
         }
         return true;
     }

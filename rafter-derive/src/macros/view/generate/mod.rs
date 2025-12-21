@@ -6,6 +6,7 @@ pub mod container;
 pub mod input;
 pub mod layout;
 pub mod list;
+pub mod radio_group;
 pub mod scroll_area;
 pub mod style;
 pub mod table;
@@ -22,6 +23,7 @@ pub use checkbox::generate_checkbox_element;
 pub use container::generate_container;
 pub use input::generate_input_element;
 pub use list::generate_list_element;
+pub use radio_group::generate_radio_group_element;
 pub use scroll_area::generate_scroll_area_element;
 pub use table::generate_table_element;
 pub use text::{generate_text, generate_text_element};
@@ -52,6 +54,7 @@ fn generate_element(elem: &ElementNode) -> TokenStream {
         "input" => generate_input_element(elem),
         "button" => generate_button_element(elem),
         "checkbox" => generate_checkbox_element(elem),
+        "radio_group" => generate_radio_group_element(elem),
         "scroll_area" => generate_scroll_area_element(elem),
         "list" => generate_list_element(elem),
         "tree" => generate_tree_element(elem),

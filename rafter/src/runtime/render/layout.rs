@@ -220,6 +220,20 @@ pub fn intrinsic_size(node: &Node, horizontal: bool) -> u16 {
                 1
             }
         }
+        Node::RadioGroup { component, .. } => {
+            if horizontal {
+                // Width is the longest option label + indicator + space
+                component
+                    .options()
+                    .iter()
+                    .map(|label| label.len() + 2)
+                    .max()
+                    .unwrap_or(1) as u16
+            } else {
+                // Height is number of options
+                component.len().max(1) as u16
+            }
+        }
         Node::ScrollArea { child, layout, .. } => {
             let border_size = if matches!(layout.border, Border::None) {
                 0
@@ -349,6 +363,21 @@ pub fn child_constraint(node: &Node, horizontal: bool) -> Constraint {
                 }
             } else {
                 Constraint::Length(1)
+            }
+        }
+        Node::RadioGroup { component, .. } => {
+            if horizontal {
+                // Width is the longest option label + indicator + space
+                let max_width = component
+                    .options()
+                    .iter()
+                    .map(|label| label.len() + 2)
+                    .max()
+                    .unwrap_or(1) as u16;
+                Constraint::Length(max_width)
+            } else {
+                // Height is number of options
+                Constraint::Length(component.len().max(1) as u16)
             }
         }
         Node::ScrollArea { layout, .. }

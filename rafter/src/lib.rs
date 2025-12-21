@@ -22,7 +22,8 @@ pub mod prelude {
     pub use crate::color::{Color, StyleColor};
     pub use crate::components::{Alignment, Column, Table, TableId, TableRow};
     pub use crate::components::{
-        Checkbox, Input, ScrollArea, ScrollDirection, ScrollbarConfig, ScrollbarVisibility,
+        Checkbox, Input, RadioGroup, ScrollArea, ScrollDirection, ScrollbarConfig,
+        ScrollbarVisibility,
     };
     pub use crate::components::{List, ListId, ListItem, Selection, SelectionMode};
     pub use crate::components::{Tree, TreeId, TreeItem};
