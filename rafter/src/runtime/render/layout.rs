@@ -187,22 +187,52 @@ pub fn intrinsic_size(node: &Node, horizontal: bool) -> u16 {
                 .unwrap_or(0);
             max_child + padding + border_size
         }
-        Node::Widget { layout, widget, .. } => {
+        Node::Widget {
+            layout,
+            widget,
+            children,
+            ..
+        } => {
             let border_size = if matches!(layout.border, Border::None) {
                 0
             } else {
                 2
             };
             let padding = layout.padding * 2;
+
+            // For container widgets (like ScrollArea), use children's intrinsic size
+            // if the widget itself reports 0/1 (default)
+            let widget_intrinsic = if horizontal {
+                widget.intrinsic_width()
+            } else {
+                widget.intrinsic_height()
+            };
+
+            let child_intrinsic = if !children.is_empty() {
+                // Container widget - calculate based on children
+                if horizontal {
+                    children
+                        .iter()
+                        .map(|c| intrinsic_size(c, true))
+                        .max()
+                        .unwrap_or(0)
+                } else {
+                    children.iter().map(|c| intrinsic_size(c, false)).sum()
+                }
+            } else {
+                0
+            };
+
+            // Use the larger of widget's own intrinsic size or children's intrinsic size
+            let intrinsic = widget_intrinsic.max(child_intrinsic);
+
             if horizontal {
-                let intrinsic = widget.intrinsic_width();
                 if intrinsic > 0 {
                     intrinsic + padding + border_size
                 } else {
                     40 + padding + border_size // Default width for widgets
                 }
             } else {
-                let intrinsic = widget.intrinsic_height();
                 intrinsic + padding + border_size
             }
         }
