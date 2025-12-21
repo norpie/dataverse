@@ -187,7 +187,7 @@ pub fn intrinsic_size(node: &Node, horizontal: bool) -> u16 {
                 .unwrap_or(0);
             max_child + padding + border_size
         }
-        Node::Widget { layout, .. } => {
+        Node::Widget { layout, widget, .. } => {
             let border_size = if matches!(layout.border, Border::None) {
                 0
             } else {
@@ -195,9 +195,15 @@ pub fn intrinsic_size(node: &Node, horizontal: bool) -> u16 {
             };
             let padding = layout.padding * 2;
             if horizontal {
-                40 + padding + border_size // Default width for widgets
+                let intrinsic = widget.intrinsic_width();
+                if intrinsic > 0 {
+                    intrinsic + padding + border_size
+                } else {
+                    40 + padding + border_size // Default width for widgets
+                }
             } else {
-                1 + padding + border_size // Default height for widgets
+                let intrinsic = widget.intrinsic_height();
+                intrinsic + padding + border_size
             }
         }
     }

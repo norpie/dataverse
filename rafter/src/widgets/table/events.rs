@@ -256,6 +256,13 @@ impl<T: TableRow + std::fmt::Debug> AnyWidget for Table<T> {
         WidgetEvents::on_release(self, cx)
     }
 
+    fn intrinsic_height(&self) -> u16 {
+        // Table height = header (1 row) + number of data rows * row height
+        let header_height = 1u16;
+        let data_height = (self.len() as u16).saturating_mul(T::HEIGHT);
+        header_height.saturating_add(data_height).max(1)
+    }
+
     fn render(&self, frame: &mut Frame, area: Rect, _focused: bool, ctx: &mut RenderContext<'_>) {
         // Apply border and get inner area
         let (inner_area, block) = apply_border(area, &ctx.layout.border, ctx.style);

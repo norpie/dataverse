@@ -530,6 +530,26 @@ pub trait AnyWidget: Send + Sync + Debug {
     }
 
     // =========================================================================
+    // Layout
+    // =========================================================================
+
+    /// Get the intrinsic width of this widget (in columns).
+    ///
+    /// Used for auto-sizing when no explicit width is specified.
+    /// Default returns 0, meaning the widget will use available space.
+    fn intrinsic_width(&self) -> u16 {
+        0
+    }
+
+    /// Get the intrinsic height of this widget (in rows).
+    ///
+    /// Used for auto-sizing when no explicit height is specified.
+    /// Default returns 1, meaning the widget takes one row.
+    fn intrinsic_height(&self) -> u16 {
+        1
+    }
+
+    // =========================================================================
     // Event Dispatch
     // =========================================================================
 

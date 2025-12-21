@@ -85,6 +85,22 @@ impl AnyWidget for Input {
         true // Input captures keyboard input when focused
     }
 
+    fn intrinsic_height(&self) -> u16 {
+        1
+    }
+
+    fn intrinsic_width(&self) -> u16 {
+        // Width based on content or placeholder, with minimum
+        let value = self.value();
+        let placeholder = self.placeholder();
+        let content_len = if value.is_empty() {
+            placeholder.len()
+        } else {
+            value.len()
+        };
+        (content_len + 5).max(15) as u16
+    }
+
     fn dispatch_click(&self, _x: u16, _y: u16, _cx: &AppContext) -> EventResult {
         // Click focuses the input - runtime handles focus
         EventResult::Consumed

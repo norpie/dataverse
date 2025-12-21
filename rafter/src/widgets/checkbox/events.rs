@@ -49,6 +49,20 @@ impl AnyWidget for Checkbox {
         false
     }
 
+    fn intrinsic_height(&self) -> u16 {
+        1
+    }
+
+    fn intrinsic_width(&self) -> u16 {
+        // Width is indicator (☐/☑) + space + label
+        let label = self.label();
+        if label.is_empty() {
+            1 // Just the indicator
+        } else {
+            (label.len() + 2) as u16
+        }
+    }
+
     fn dispatch_click(&self, _x: u16, _y: u16, cx: &AppContext) -> EventResult {
         // Toggle on click
         self.toggle();

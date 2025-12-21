@@ -177,6 +177,11 @@ impl<T: ListItem + std::fmt::Debug> AnyWidget for List<T> {
         self.on_release(cx)
     }
 
+    fn intrinsic_height(&self) -> u16 {
+        // List height = number of items * item height
+        (self.len() as u16).saturating_mul(T::HEIGHT).max(1)
+    }
+
     fn render(&self, frame: &mut Frame, area: Rect, _focused: bool, ctx: &mut RenderContext<'_>) {
         // Apply border and get inner area
         let (inner_area, block) = apply_border(area, &ctx.layout.border, ctx.style);

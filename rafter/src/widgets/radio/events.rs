@@ -91,6 +91,20 @@ impl AnyWidget for RadioGroup {
         false
     }
 
+    fn intrinsic_height(&self) -> u16 {
+        // Height is the number of options
+        self.len().max(1) as u16
+    }
+
+    fn intrinsic_width(&self) -> u16 {
+        // Width is the longest option label + indicator (○/●) + space
+        self.options()
+            .iter()
+            .map(|label| label.len() + 2)
+            .max()
+            .unwrap_or(1) as u16
+    }
+
     fn dispatch_click(&self, _x: u16, y: u16, cx: &AppContext) -> EventResult {
         // Select the clicked option based on y position
         let index = y as usize;

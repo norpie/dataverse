@@ -233,6 +233,11 @@ impl<T: TreeItem + std::fmt::Debug> AnyWidget for Tree<T> {
         self.on_release(cx)
     }
 
+    fn intrinsic_height(&self) -> u16 {
+        // Tree height = number of visible nodes * item height
+        self.total_height().max(1)
+    }
+
     fn render(&self, frame: &mut Frame, area: Rect, _focused: bool, ctx: &mut RenderContext<'_>) {
         // Apply border and get inner area
         let (inner_area, block) = apply_border(area, &ctx.layout.border, ctx.style);
