@@ -382,3 +382,287 @@ pub trait AnySelectable: Send + Sync {
         EventResult::Ignored
     }
 }
+
+// =============================================================================
+// New Unified Widget Trait Hierarchy
+// =============================================================================
+
+use ratatui::layout::Rect;
+use ratatui::Frame;
+use std::fmt::Debug;
+
+use crate::events::Modifiers;
+use crate::keybinds::HandlerId;
+
+/// Handler composition for widgets.
+///
+/// This struct holds all possible handlers that can be attached to a widget.
+/// Any handler can be set on any widget - if a widget doesn't support a particular
+/// event type, the handler will simply never be called (similar to HTML event handlers).
+#[derive(Debug, Default, Clone)]
+pub struct WidgetHandlers {
+    /// Click handler (for buttons, interactive elements)
+    pub on_click: Option<HandlerId>,
+    /// Activation handler (Enter key, double-click on list items, etc.)
+    pub on_activate: Option<HandlerId>,
+    /// Change handler (input value changed, checkbox toggled, etc.)
+    pub on_change: Option<HandlerId>,
+    /// Submit handler (Enter on input, form submission)
+    pub on_submit: Option<HandlerId>,
+    /// Cursor movement handler (list/tree/table cursor moved)
+    pub on_cursor_move: Option<HandlerId>,
+    /// Selection change handler (list/tree/table selection changed)
+    pub on_selection_change: Option<HandlerId>,
+    /// Scroll handler (scrollable content was scrolled)
+    pub on_scroll: Option<HandlerId>,
+    /// Expand handler (tree node expanded)
+    pub on_expand: Option<HandlerId>,
+    /// Collapse handler (tree node collapsed)
+    pub on_collapse: Option<HandlerId>,
+    /// Sort handler (table column sorted)
+    pub on_sort: Option<HandlerId>,
+}
+
+impl WidgetHandlers {
+    /// Create empty handlers
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Get handler for a given event kind
+    pub fn get(&self, kind: WidgetEventKind) -> Option<&HandlerId> {
+        match kind {
+            WidgetEventKind::Activate => self.on_activate.as_ref(),
+            WidgetEventKind::CursorMove => self.on_cursor_move.as_ref(),
+            WidgetEventKind::SelectionChange => self.on_selection_change.as_ref(),
+            WidgetEventKind::Expand => self.on_expand.as_ref(),
+            WidgetEventKind::Collapse => self.on_collapse.as_ref(),
+            WidgetEventKind::Sort => self.on_sort.as_ref(),
+        }
+    }
+}
+
+/// Base trait for all widgets.
+///
+/// This is the unified interface that all widgets implement, enabling:
+/// - Storage in `Node::Widget` via `Box<dyn AnyWidget>`
+/// - Polymorphic event dispatch
+/// - Unified rendering
+/// - Capability queries for scroll/selection features
+///
+/// # Object Safety
+///
+/// This trait is designed to be object-safe, allowing widgets to be stored
+/// as trait objects. All methods either take `&self` or return types that
+/// don't prevent object safety.
+///
+/// # Implementing for External Widgets
+///
+/// External crates can implement this trait to create custom widgets:
+///
+/// ```ignore
+/// impl AnyWidget for MyCustomWidget {
+///     fn id(&self) -> String {
+///         self.id.to_string()
+///     }
+///
+///     fn is_dirty(&self) -> bool {
+///         self.dirty.load(Ordering::SeqCst)
+///     }
+///
+///     fn clear_dirty(&self) {
+///         self.dirty.store(false, Ordering::SeqCst);
+///     }
+///
+///     fn render(&self, frame: &mut Frame, area: Rect, focused: bool) {
+///         // Render using ratatui primitives
+///     }
+/// }
+/// ```
+pub trait AnyWidget: Send + Sync + Debug {
+    /// Get the unique identifier for this widget instance.
+    fn id(&self) -> String;
+
+    /// Check if the widget's state has changed since the last render.
+    fn is_dirty(&self) -> bool;
+
+    /// Clear the dirty flag after rendering.
+    fn clear_dirty(&self);
+
+    /// Check if this widget can receive keyboard focus.
+    fn is_focusable(&self) -> bool {
+        true
+    }
+
+    /// Check if this widget captures text input when focused.
+    ///
+    /// When true, keyboard events (except Tab/Escape) are sent to this widget
+    /// instead of being processed as keybinds.
+    fn captures_input(&self) -> bool {
+        false
+    }
+
+    // =========================================================================
+    // Event Dispatch
+    // =========================================================================
+
+    /// Handle a click event at the given position.
+    ///
+    /// Position is relative to the widget's top-left corner.
+    /// Return `EventResult::StartDrag` to begin a drag operation.
+    fn dispatch_click(&self, _x: u16, _y: u16, _cx: &AppContext) -> EventResult {
+        EventResult::Ignored
+    }
+
+    /// Handle a key event when this widget is focused.
+    fn dispatch_key(&self, _key: &KeyCombo, _cx: &AppContext) -> EventResult {
+        EventResult::Ignored
+    }
+
+    /// Handle a hover event at the given position.
+    fn dispatch_hover(&self, _x: u16, _y: u16, _cx: &AppContext) -> EventResult {
+        EventResult::Ignored
+    }
+
+    /// Handle a scroll event.
+    fn dispatch_scroll(
+        &self,
+        _direction: super::ScrollDirection,
+        _amount: u16,
+        _cx: &AppContext,
+    ) -> EventResult {
+        EventResult::Ignored
+    }
+
+    /// Handle ongoing drag movement.
+    fn dispatch_drag(&self, _x: u16, _y: u16, _modifiers: Modifiers, _cx: &AppContext) -> EventResult {
+        EventResult::Ignored
+    }
+
+    /// Handle drag release.
+    fn dispatch_release(&self, _cx: &AppContext) -> EventResult {
+        EventResult::Ignored
+    }
+
+    // =========================================================================
+    // Rendering
+    // =========================================================================
+
+    /// Render the widget to the frame.
+    ///
+    /// # Arguments
+    ///
+    /// * `frame` - The ratatui frame to render to
+    /// * `area` - The rectangular area allocated for this widget
+    /// * `focused` - Whether this widget currently has keyboard focus
+    fn render(&self, frame: &mut Frame, area: Rect, focused: bool);
+
+    // =========================================================================
+    // Capability Queries
+    // =========================================================================
+
+    /// Get scrollable capability if this widget supports scrolling.
+    ///
+    /// Returns `Some(&dyn Scrollable)` if the widget can be scrolled.
+    fn as_scrollable(&self) -> Option<&dyn Scrollable> {
+        None
+    }
+
+    /// Get selectable capability if this widget supports selection.
+    ///
+    /// Returns `Some(&dyn Selectable)` if the widget has cursor/selection.
+    fn as_selectable(&self) -> Option<&dyn Selectable> {
+        None
+    }
+}
+
+/// Scrollable widget capability.
+///
+/// Widgets that support scrolling implement this trait to expose their
+/// scroll state and allow programmatic scrolling.
+pub trait Scrollable: Send + Sync {
+    /// Get the current vertical scroll offset.
+    fn scroll_offset(&self) -> usize;
+
+    /// Set the vertical scroll offset.
+    fn set_scroll_offset(&self, offset: usize);
+
+    /// Get the viewport size (visible area).
+    fn viewport_size(&self) -> usize;
+
+    /// Get the total content size.
+    fn content_size(&self) -> usize;
+
+    /// Scroll to a specific position.
+    fn scroll_to(&self, position: usize) {
+        self.set_scroll_offset(position);
+    }
+
+    /// Get the maximum scroll offset.
+    fn max_scroll(&self) -> usize {
+        self.content_size().saturating_sub(self.viewport_size())
+    }
+
+    /// Check if scrolling is needed.
+    fn needs_scroll(&self) -> bool {
+        self.content_size() > self.viewport_size()
+    }
+}
+
+/// Selectable widget capability.
+///
+/// Widgets that support cursor navigation and item selection implement this trait.
+/// This is typically used by List, Tree, and Table widgets.
+///
+/// Note: This trait extends `Scrollable` because selectable widgets typically
+/// need to scroll to keep the cursor visible.
+pub trait Selectable: Scrollable {
+    /// Get the current cursor position (item index).
+    fn cursor(&self) -> Option<usize>;
+
+    /// Set the cursor position. Returns the previous position.
+    fn set_cursor(&self, index: usize) -> Option<usize>;
+
+    /// Get the ID of the item at the cursor position.
+    fn cursor_id(&self) -> Option<String>;
+
+    /// Move cursor up. Returns `(previous, new)` if moved.
+    fn cursor_up(&self) -> Option<(Option<usize>, usize)>;
+
+    /// Move cursor down. Returns `(previous, new)` if moved.
+    fn cursor_down(&self) -> Option<(Option<usize>, usize)>;
+
+    /// Move cursor to first item. Returns `(previous, new)` if moved.
+    fn cursor_first(&self) -> Option<(Option<usize>, usize)>;
+
+    /// Move cursor to last item. Returns `(previous, new)` if moved.
+    fn cursor_last(&self) -> Option<(Option<usize>, usize)>;
+
+    /// Scroll the viewport to make the cursor visible.
+    fn scroll_to_cursor(&self);
+
+    /// Get the selection mode.
+    fn selection_mode(&self) -> SelectionMode;
+
+    /// Get all selected item IDs.
+    fn selected_ids(&self) -> Vec<String>;
+
+    /// Toggle selection of the item at cursor.
+    /// Returns (added IDs, removed IDs).
+    fn toggle_select_at_cursor(&self) -> (Vec<String>, Vec<String>);
+
+    /// Select all items. Returns newly selected IDs.
+    fn select_all(&self) -> Vec<String>;
+
+    /// Clear all selection. Returns deselected IDs.
+    fn deselect_all(&self) -> Vec<String>;
+
+    /// Get the total number of items.
+    fn item_count(&self) -> usize;
+
+    /// Get the number of items that fit in the viewport.
+    fn viewport_item_count(&self) -> usize;
+
+    /// Get the height of a single item (in rows).
+    fn item_height(&self) -> u16;
+}

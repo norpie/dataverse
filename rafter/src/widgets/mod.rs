@@ -28,5 +28,10 @@ pub use scrollbar::{
     ScrollbarConfig, ScrollbarDrag, ScrollbarGeometry, ScrollbarState, ScrollbarVisibility,
 };
 pub use table::{Alignment, AnyTable, Column, Table, TableId, TableRow};
-pub use traits::{AnySelectable, ScrollableWidget, SelectableWidget};
+pub use traits::{
+    // Legacy traits (still used by existing widgets, will be migrated in Phase 5)
+    AnySelectable, ScrollableWidget, SelectableWidget,
+    // New unified widget system
+    AnyWidget, Scrollable, Selectable, WidgetHandlers,
+};
 pub use tree::{AnyTree, FlatNode, Tree, TreeId, TreeItem};

@@ -27,6 +27,8 @@ pub mod prelude {
     };
     pub use crate::widgets::{List, ListId, ListItem, Selection, SelectionMode};
     pub use crate::widgets::{Tree, TreeId, TreeItem};
+    // Widget trait system for custom widgets
+    pub use crate::widgets::{AnyWidget, Scrollable, Selectable, WidgetHandlers};
     pub use crate::context::{AppContext, Toast, ToastLevel};
     pub use crate::events::{ClickEvent, ClickKind, Modifiers};
     pub use crate::focus::FocusState;
