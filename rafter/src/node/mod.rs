@@ -103,6 +103,8 @@ pub enum Node {
         on_selection_change: Option<HandlerId>,
         /// Handler for cursor movement
         on_cursor_move: Option<HandlerId>,
+        /// Handler for scroll events (useful for pagination / infinite scroll)
+        on_scroll: Option<HandlerId>,
     },
 }
 
@@ -379,6 +381,20 @@ impl Node {
                 .iter()
                 .find_map(|c| c.get_list_cursor_handler(target_id)),
             Self::Scrollable { child, .. } => child.get_list_cursor_handler(target_id),
+            _ => None,
+        }
+    }
+
+    /// Get the on_scroll handler for a list element by ID
+    pub fn get_list_scroll_handler(&self, target_id: &str) -> Option<HandlerId> {
+        match self {
+            Self::List { id, on_scroll, .. } if id == target_id => on_scroll.clone(),
+            Self::Column { children, .. }
+            | Self::Row { children, .. }
+            | Self::Stack { children, .. } => children
+                .iter()
+                .find_map(|c| c.get_list_scroll_handler(target_id)),
+            Self::Scrollable { child, .. } => child.get_list_scroll_handler(target_id),
             _ => None,
         }
     }

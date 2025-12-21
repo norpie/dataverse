@@ -687,22 +687,53 @@ impl<T: ListItem> List<T> {
     pub fn visible_range(&self) -> std::ops::Range<usize> {
         self.inner
             .read()
-            .map(|g| {
-                if g.items.is_empty() || g.viewport_height == 0 {
-                    return 0..0;
-                }
-                let item_height = T::HEIGHT;
-                let start = (g.scroll_offset / item_height) as usize;
-                let visible_count = g.viewport_height.div_ceil(item_height) as usize;
-                let end = (start + visible_count + 1).min(g.items.len());
-                start..end
-            })
+            .map(|g| self.visible_range_inner(&g))
             .unwrap_or(0..0)
     }
 
     /// Get total content height.
     pub fn total_height(&self) -> u16 {
         self.len() as u16 * T::HEIGHT
+    }
+
+    /// Check if the visible area is near the end of the list.
+    ///
+    /// Returns `true` if the last visible item is within `threshold` items
+    /// of the end of the list. Useful for implementing infinite scroll / pagination.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// // Load more when within 10 items of the end
+    /// if self.records.is_near_end(10) && !loading && has_more {
+    ///     self.load_more(cx).await;
+    /// }
+    /// ```
+    pub fn is_near_end(&self, threshold: usize) -> bool {
+        self.inner
+            .read()
+            .map(|g| {
+                if g.items.is_empty() {
+                    return false;
+                }
+                let range = self.visible_range_inner(&g);
+                let last_visible = range.end.saturating_sub(1);
+                let total = g.items.len();
+                last_visible + threshold >= total
+            })
+            .unwrap_or(false)
+    }
+
+    /// Internal helper to compute visible range.
+    fn visible_range_inner(&self, g: &ListInner<T>) -> std::ops::Range<usize> {
+        if g.items.is_empty() || g.viewport_height == 0 {
+            return 0..0;
+        }
+        let item_height = T::HEIGHT;
+        let start = (g.scroll_offset / item_height) as usize;
+        let visible_count = g.viewport_height.div_ceil(item_height) as usize;
+        let end = (start + visible_count + 1).min(g.items.len());
+        start..end
     }
 
     // -------------------------------------------------------------------------

@@ -41,6 +41,7 @@ pub fn generate_list_element(elem: &ElementNode) -> TokenStream {
     let mut on_activate = quote! { None };
     let mut on_selection_change = quote! { None };
     let mut on_cursor_move = quote! { None };
+    let mut on_scroll = quote! { None };
 
     for attr in &elem.attrs {
         let name_str = attr.name.to_string();
@@ -66,6 +67,13 @@ pub fn generate_list_element(elem: &ElementNode) -> TokenStream {
                         quote! { Some(rafter::keybinds::HandlerId(#handler_name.to_string())) };
                 }
             }
+            "on_scroll" => {
+                if let Some(AttrValue::Ident(i)) = &attr.value {
+                    let handler_name = i.to_string();
+                    on_scroll =
+                        quote! { Some(rafter::keybinds::HandlerId(#handler_name.to_string())) };
+                }
+            }
             _ => {}
         }
     }
@@ -81,6 +89,7 @@ pub fn generate_list_element(elem: &ElementNode) -> TokenStream {
                 on_activate: #on_activate,
                 on_selection_change: #on_selection_change,
                 on_cursor_move: #on_cursor_move,
+                on_scroll: #on_scroll,
             }
         }
     }

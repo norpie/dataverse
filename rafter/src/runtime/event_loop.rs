@@ -593,6 +593,12 @@ pub async fn run_event_loop<A: App>(
                                     scroll.amount,
                                     &cx,
                                 );
+
+                                // Dispatch on_scroll handler if present
+                                if let Some(handler_id) = view.get_list_scroll_handler(&hit_box.id)
+                                {
+                                    dispatch_to_layer(&app, &modal_stack, &handler_id, &cx);
+                                }
                             }
                         }
                         Event::Release(_) => {
