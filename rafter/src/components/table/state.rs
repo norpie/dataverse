@@ -8,7 +8,7 @@ use crate::components::scrollbar::{
     ScrollbarConfig, ScrollbarDrag, ScrollbarGeometry, ScrollbarState,
 };
 use crate::components::selection::{Selection, SelectionMode};
-use crate::components::traits::ScrollableComponent;
+use crate::components::traits::{ScrollableComponent, SelectableComponent};
 
 use super::item::{Column, TableRow};
 
@@ -481,6 +481,16 @@ impl<T: TableRow> Table<T> {
         (vec![], vec![])
     }
 
+    /// Toggle selection of the row at the cursor.
+    /// Returns (added IDs, removed IDs).
+    pub fn toggle_select_at_cursor(&self) -> (Vec<String>, Vec<String>) {
+        if let Some(id) = self.cursor_id() {
+            self.toggle_select(&id)
+        } else {
+            (vec![], vec![])
+        }
+    }
+
     /// Select a range from anchor to the row with given ID.
     /// Returns (added IDs, removed IDs).
     pub fn range_select(&self, id: &str, extend: bool) -> (Vec<String>, Vec<String>) {
@@ -638,6 +648,16 @@ impl<T: TableRow> Table<T> {
             .read()
             .map(|g| g.viewport_height.saturating_sub(1))
             .unwrap_or(0)
+    }
+
+    /// Get the row height (from the row type).
+    pub fn item_height(&self) -> u16 {
+        T::HEIGHT
+    }
+
+    /// Get the number of rows that fit in the data viewport.
+    pub fn viewport_item_count(&self) -> usize {
+        (self.data_viewport_height() / T::HEIGHT) as usize
     }
 
     /// Check if vertical scrollbar is needed.
@@ -953,5 +973,96 @@ impl<T: TableRow> ScrollableComponent for Table<T> {
 
     fn clear_dirty(&self) {
         self.dirty.store(false, Ordering::SeqCst);
+    }
+}
+
+// =============================================================================
+// SelectableComponent trait implementation
+// =============================================================================
+
+impl<T: TableRow> SelectableComponent for Table<T> {
+    fn cursor(&self) -> Option<usize> {
+        Table::cursor(self)
+    }
+
+    fn set_cursor(&self, index: usize) -> Option<usize> {
+        Table::set_cursor(self, index)
+    }
+
+    fn cursor_id(&self) -> Option<String> {
+        Table::cursor_id(self)
+    }
+
+    fn cursor_up(&self) -> Option<(Option<usize>, usize)> {
+        Table::cursor_up(self)
+    }
+
+    fn cursor_down(&self) -> Option<(Option<usize>, usize)> {
+        Table::cursor_down(self)
+    }
+
+    fn cursor_first(&self) -> Option<(Option<usize>, usize)> {
+        Table::cursor_first(self)
+    }
+
+    fn cursor_last(&self) -> Option<(Option<usize>, usize)> {
+        Table::cursor_last(self)
+    }
+
+    fn scroll_to_cursor(&self) {
+        Table::scroll_to_cursor(self)
+    }
+
+    fn selection_mode(&self) -> SelectionMode {
+        Table::selection_mode(self)
+    }
+
+    fn selected_ids(&self) -> Vec<String> {
+        Table::selected_ids(self)
+    }
+
+    fn toggle_select_at_cursor(&self) -> (Vec<String>, Vec<String>) {
+        Table::toggle_select_at_cursor(self)
+    }
+
+    fn select_all(&self) -> Vec<String> {
+        Table::select_all(self)
+    }
+
+    fn deselect_all(&self) -> Vec<String> {
+        Table::deselect_all(self)
+    }
+
+    fn item_count(&self) -> usize {
+        Table::len(self)
+    }
+
+    fn viewport_item_count(&self) -> usize {
+        Table::viewport_item_count(self)
+    }
+
+    fn item_height(&self) -> u16 {
+        Table::item_height(self)
+    }
+
+    // Override to account for header row
+    fn index_from_viewport_y(&self, y: u16) -> Option<usize> {
+        // y=0 is header row, data starts at y=1
+        if y == 0 {
+            return None; // Header row, not a data row
+        }
+        let data_y = y - 1; // Adjust for header
+        let scroll_offset = self.scroll_offset_y();
+        let item_height = self.item_height();
+        if item_height == 0 {
+            return None;
+        }
+        let absolute_y = scroll_offset + data_y;
+        let index = (absolute_y / item_height) as usize;
+        if index < self.item_count() {
+            Some(index)
+        } else {
+            None
+        }
     }
 }

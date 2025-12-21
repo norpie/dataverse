@@ -5,6 +5,7 @@ use crate::components::scrollbar::{
     ScrollbarState, handle_scrollbar_click, handle_scrollbar_drag, handle_scrollbar_release,
 };
 use crate::components::selection::SelectionMode;
+use crate::components::traits::SelectableComponent;
 use crate::context::AppContext;
 use crate::events::{Modifiers, ScrollDirection};
 use crate::keybinds::{Key, KeyCombo};
@@ -16,26 +17,6 @@ use super::state::Table;
 const HORIZONTAL_SCROLL_AMOUNT: i16 = 10;
 
 impl<T: TableRow> Table<T> {
-    /// Calculate the row index from a y-offset within the data viewport.
-    /// The y offset is relative to the table's origin (0 = header row).
-    fn index_from_viewport_y(&self, y_in_viewport: u16) -> Option<usize> {
-        // First row (y=0) is the header, so data starts at y=1
-        if y_in_viewport == 0 {
-            return None; // Click on header
-        }
-        let y_in_data = y_in_viewport.saturating_sub(1);
-        let scroll_offset = self.scroll_offset_y();
-        let row_height = T::HEIGHT;
-        let absolute_y = scroll_offset + y_in_data;
-        let index = (absolute_y / row_height) as usize;
-
-        if index < self.len() {
-            Some(index)
-        } else {
-            None
-        }
-    }
-
     /// Calculate which column was clicked based on x position.
     fn column_from_x(&self, x: u16) -> Option<usize> {
         let scroll_x = self.scroll_offset_x();
@@ -55,45 +36,6 @@ impl<T: TableRow> Table<T> {
             }
             None
         })
-    }
-
-    /// Handle cursor movement, pushing event if cursor changed.
-    fn handle_cursor_move(&self, new_cursor: usize, cx: &AppContext) -> bool {
-        let previous = self.set_cursor(new_cursor);
-        if previous != Some(new_cursor) {
-            if let Some(id) = self.cursor_id() {
-                cx.set_cursor(id, None);
-                cx.push_event(ComponentEvent::new(
-                    ComponentEventKind::CursorMove,
-                    self.id_string(),
-                ));
-            }
-            true
-        } else {
-            false
-        }
-    }
-
-    /// Handle activation, pushing event.
-    fn handle_activate(&self, cx: &AppContext) {
-        if let Some(id) = self.cursor_id() {
-            cx.set_activated(id, None);
-            cx.push_event(ComponentEvent::new(
-                ComponentEventKind::Activate,
-                self.id_string(),
-            ));
-        }
-    }
-
-    /// Handle selection change, pushing event if selection changed.
-    fn handle_selection_change(&self, added: Vec<String>, removed: Vec<String>, cx: &AppContext) {
-        if !added.is_empty() || !removed.is_empty() {
-            cx.set_selected(self.selected_ids());
-            cx.push_event(ComponentEvent::new(
-                ComponentEventKind::SelectionChange,
-                self.id_string(),
-            ));
-        }
     }
 
     /// Handle header click for sorting.
@@ -149,25 +91,25 @@ impl<T: TableRow> Table<T> {
         // Handle selection based on modifiers
         match self.selection_mode() {
             SelectionMode::None => {
-                self.handle_activate(cx);
+                self.push_activate_event(cx);
             }
             SelectionMode::Single => {
                 if ctrl {
                     let (added, removed) = self.toggle_select(&id);
-                    self.handle_selection_change(added, removed, cx);
+                    self.push_selection_event(&added, &removed, cx);
                 } else {
-                    self.handle_activate(cx);
+                    self.push_activate_event(cx);
                 }
             }
             SelectionMode::Multiple => {
                 if shift {
                     let (added, removed) = self.range_select(&id, ctrl);
-                    self.handle_selection_change(added, removed, cx);
+                    self.push_selection_event(&added, &removed, cx);
                 } else if ctrl {
                     let (added, removed) = self.toggle_select(&id);
-                    self.handle_selection_change(added, removed, cx);
+                    self.push_selection_event(&added, &removed, cx);
                 } else {
-                    self.handle_activate(cx);
+                    self.push_activate_event(cx);
                 }
             }
         }
@@ -179,103 +121,8 @@ impl<T: TableRow> Table<T> {
 
 impl<T: TableRow> ComponentEvents for Table<T> {
     fn on_key(&self, key: &KeyCombo, cx: &AppContext) -> EventResult {
+        // Table-specific: Horizontal scrolling with Left/Right
         match key.key {
-            // Vertical Navigation
-            Key::Up if !key.modifiers.ctrl && !key.modifiers.alt => {
-                if let Some((_, curr)) = self.cursor_up() {
-                    if let Some(id) = self.cursor_id() {
-                        cx.set_cursor(id, None);
-                        cx.push_event(ComponentEvent::new(
-                            ComponentEventKind::CursorMove,
-                            self.id_string(),
-                        ));
-                    }
-                    let _ = curr;
-                    self.scroll_to_cursor();
-                    return EventResult::Consumed;
-                }
-            }
-            Key::Down if !key.modifiers.ctrl && !key.modifiers.alt => {
-                if let Some((_, curr)) = self.cursor_down() {
-                    if let Some(id) = self.cursor_id() {
-                        cx.set_cursor(id, None);
-                        cx.push_event(ComponentEvent::new(
-                            ComponentEventKind::CursorMove,
-                            self.id_string(),
-                        ));
-                    }
-                    let _ = curr;
-                    self.scroll_to_cursor();
-                    return EventResult::Consumed;
-                }
-            }
-            Key::Home if !key.modifiers.ctrl && !key.modifiers.alt => {
-                if let Some((_, _)) = self.cursor_first() {
-                    if let Some(id) = self.cursor_id() {
-                        cx.set_cursor(id, None);
-                        cx.push_event(ComponentEvent::new(
-                            ComponentEventKind::CursorMove,
-                            self.id_string(),
-                        ));
-                    }
-                    self.scroll_to_cursor();
-                    return EventResult::Consumed;
-                }
-            }
-            Key::End if !key.modifiers.ctrl && !key.modifiers.alt => {
-                if let Some((_, _)) = self.cursor_last() {
-                    if let Some(id) = self.cursor_id() {
-                        cx.set_cursor(id, None);
-                        cx.push_event(ComponentEvent::new(
-                            ComponentEventKind::CursorMove,
-                            self.id_string(),
-                        ));
-                    }
-                    self.scroll_to_cursor();
-                    return EventResult::Consumed;
-                }
-            }
-            Key::PageUp => {
-                let data_viewport = self.data_viewport_height();
-                let viewport_rows = (data_viewport / T::HEIGHT) as usize;
-                if let Some(cursor) = self.cursor() {
-                    let new_cursor = cursor.saturating_sub(viewport_rows);
-                    if new_cursor != cursor {
-                        self.set_cursor(new_cursor);
-                        if let Some(id) = self.cursor_id() {
-                            cx.set_cursor(id, None);
-                            cx.push_event(ComponentEvent::new(
-                                ComponentEventKind::CursorMove,
-                                self.id_string(),
-                            ));
-                        }
-                        self.scroll_to_cursor();
-                        return EventResult::Consumed;
-                    }
-                }
-            }
-            Key::PageDown => {
-                let data_viewport = self.data_viewport_height();
-                let viewport_rows = (data_viewport / T::HEIGHT) as usize;
-                if let Some(cursor) = self.cursor() {
-                    let max_index = self.len().saturating_sub(1);
-                    let new_cursor = (cursor + viewport_rows).min(max_index);
-                    if new_cursor != cursor {
-                        self.set_cursor(new_cursor);
-                        if let Some(id) = self.cursor_id() {
-                            cx.set_cursor(id, None);
-                            cx.push_event(ComponentEvent::new(
-                                ComponentEventKind::CursorMove,
-                                self.id_string(),
-                            ));
-                        }
-                        self.scroll_to_cursor();
-                        return EventResult::Consumed;
-                    }
-                }
-            }
-
-            // Horizontal Scrolling with Left/Right
             Key::Left if !key.modifiers.ctrl && !key.modifiers.alt => {
                 if self.needs_horizontal_scrollbar() {
                     self.scroll_x_by(-HORIZONTAL_SCROLL_AMOUNT);
@@ -288,41 +135,17 @@ impl<T: TableRow> ComponentEvents for Table<T> {
                     return EventResult::Consumed;
                 }
             }
-
-            // Activation
-            Key::Enter if !key.modifiers.ctrl && !key.modifiers.alt => {
-                if self.cursor().is_some() {
-                    self.handle_activate(cx);
-                    return EventResult::Consumed;
-                }
-            }
-
-            // Selection
-            Key::Space if !key.modifiers.ctrl && !key.modifiers.alt => {
-                if let Some(id) = self.cursor_id()
-                    && self.selection_mode() != SelectionMode::None
-                {
-                    let (added, removed) = self.toggle_select(&id);
-                    self.handle_selection_change(added, removed, cx);
-                    return EventResult::Consumed;
-                }
-            }
-            Key::Char('a') if key.modifiers.ctrl => {
-                if self.selection_mode() == SelectionMode::Multiple {
-                    let added = self.select_all();
-                    self.handle_selection_change(added, vec![], cx);
-                    return EventResult::Consumed;
-                }
-            }
-            Key::Escape => {
-                let removed = self.deselect_all();
-                if !removed.is_empty() {
-                    self.handle_selection_change(vec![], removed, cx);
-                    return EventResult::Consumed;
-                }
-            }
-
             _ => {}
+        }
+
+        // Try shared navigation keys (Up, Down, Home, End, PageUp, PageDown)
+        if let Some(result) = self.handle_navigation_key(key, cx) {
+            return result;
+        }
+
+        // Try shared selection keys (Space, Ctrl+A, Escape, Enter)
+        if let Some(result) = self.handle_selection_key(key, cx) {
+            return result;
         }
 
         EventResult::Ignored
@@ -350,12 +173,9 @@ impl<T: TableRow> ComponentEvents for Table<T> {
             return EventResult::Ignored;
         }
 
-        if let Some(index) = self.index_from_viewport_y(y)
-            && self.handle_cursor_move(index, cx)
-        {
-            return EventResult::Consumed;
-        }
-        EventResult::Ignored
+        // Use the trait's handle_hover which already handles the header offset
+        // via our overridden index_from_viewport_y
+        self.handle_hover(y, cx)
     }
 
     fn on_scroll(&self, direction: ScrollDirection, amount: u16, _cx: &AppContext) -> EventResult {

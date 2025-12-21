@@ -7,7 +7,7 @@ use crate::components::scrollbar::{
     ScrollbarConfig, ScrollbarDrag, ScrollbarGeometry, ScrollbarState,
 };
 use crate::components::selection::{Selection, SelectionMode};
-use crate::components::traits::ScrollableComponent;
+use crate::components::traits::{ScrollableComponent, SelectableComponent};
 
 use super::item::ListItem;
 
@@ -349,6 +349,14 @@ impl<T: ListItem> List<T> {
         None
     }
 
+    /// Get the ID of the item at the cursor position.
+    pub fn cursor_id(&self) -> Option<String> {
+        self.inner
+            .read()
+            .ok()
+            .and_then(|g| g.cursor.and_then(|i| g.items.get(i).map(|item| item.id(i))))
+    }
+
     // -------------------------------------------------------------------------
     // Selection
     // -------------------------------------------------------------------------
@@ -464,6 +472,16 @@ impl<T: ListItem> List<T> {
             return result;
         }
         (vec![], vec![])
+    }
+
+    /// Toggle selection of the item at the cursor.
+    /// Returns (added IDs, removed IDs).
+    pub fn toggle_select_at_cursor(&self) -> (Vec<String>, Vec<String>) {
+        if let Some(index) = self.cursor() {
+            self.toggle_select(index)
+        } else {
+            (vec![], vec![])
+        }
     }
 
     /// Select a range from anchor to index.
@@ -598,6 +616,16 @@ impl<T: ListItem> List<T> {
     /// Get total content height.
     pub fn total_height(&self) -> u16 {
         self.len() as u16 * T::HEIGHT
+    }
+
+    /// Get the item height (from the item type).
+    pub fn item_height(&self) -> u16 {
+        T::HEIGHT
+    }
+
+    /// Get the number of items that fit in the viewport.
+    pub fn viewport_item_count(&self) -> usize {
+        (self.viewport_height() / T::HEIGHT) as usize
     }
 
     /// Check if the visible area is near the end of the list.
@@ -775,5 +803,75 @@ impl<T: ListItem> ScrollableComponent for List<T> {
 
     fn clear_dirty(&self) {
         self.dirty.store(false, Ordering::SeqCst);
+    }
+}
+
+// =============================================================================
+// SelectableComponent trait implementation
+// =============================================================================
+
+impl<T: ListItem> SelectableComponent for List<T> {
+    fn cursor(&self) -> Option<usize> {
+        List::cursor(self)
+    }
+
+    fn set_cursor(&self, index: usize) -> Option<usize> {
+        List::set_cursor(self, index)
+    }
+
+    fn cursor_id(&self) -> Option<String> {
+        List::cursor_id(self)
+    }
+
+    fn cursor_up(&self) -> Option<(Option<usize>, usize)> {
+        List::cursor_up(self)
+    }
+
+    fn cursor_down(&self) -> Option<(Option<usize>, usize)> {
+        List::cursor_down(self)
+    }
+
+    fn cursor_first(&self) -> Option<(Option<usize>, usize)> {
+        List::cursor_first(self)
+    }
+
+    fn cursor_last(&self) -> Option<(Option<usize>, usize)> {
+        List::cursor_last(self)
+    }
+
+    fn scroll_to_cursor(&self) {
+        List::scroll_to_cursor(self)
+    }
+
+    fn selection_mode(&self) -> SelectionMode {
+        List::selection_mode(self)
+    }
+
+    fn selected_ids(&self) -> Vec<String> {
+        List::selected_ids(self)
+    }
+
+    fn toggle_select_at_cursor(&self) -> (Vec<String>, Vec<String>) {
+        List::toggle_select_at_cursor(self)
+    }
+
+    fn select_all(&self) -> Vec<String> {
+        List::select_all(self)
+    }
+
+    fn deselect_all(&self) -> Vec<String> {
+        List::deselect_all(self)
+    }
+
+    fn item_count(&self) -> usize {
+        List::len(self)
+    }
+
+    fn viewport_item_count(&self) -> usize {
+        List::viewport_item_count(self)
+    }
+
+    fn item_height(&self) -> u16 {
+        List::item_height(self)
     }
 }

@@ -8,7 +8,7 @@ use crate::components::scrollbar::{
     ScrollbarConfig, ScrollbarDrag, ScrollbarGeometry, ScrollbarState,
 };
 use crate::components::selection::{Selection, SelectionMode};
-use crate::components::traits::ScrollableComponent;
+use crate::components::traits::{ScrollableComponent, SelectableComponent};
 
 use super::item::TreeItem;
 
@@ -617,6 +617,16 @@ impl<T: TreeItem> Tree<T> {
         (vec![], vec![])
     }
 
+    /// Toggle selection of the node at the cursor.
+    /// Returns (added IDs, removed IDs).
+    pub fn toggle_select_at_cursor(&self) -> (Vec<String>, Vec<String>) {
+        if let Some(id) = self.cursor_id() {
+            self.toggle_select(&id)
+        } else {
+            (vec![], vec![])
+        }
+    }
+
     /// Range select from anchor to target ID.
     pub fn range_select(&self, id: &str, extend: bool) -> (Vec<String>, Vec<String>) {
         if let Ok(mut guard) = self.inner.write()
@@ -763,6 +773,16 @@ impl<T: TreeItem> Tree<T> {
         self.visible_len() as u16 * T::HEIGHT
     }
 
+    /// Get the item height (from the item type).
+    pub fn item_height(&self) -> u16 {
+        T::HEIGHT
+    }
+
+    /// Get the number of items that fit in the viewport.
+    pub fn viewport_item_count(&self) -> usize {
+        (self.viewport_height() / T::HEIGHT) as usize
+    }
+
     // -------------------------------------------------------------------------
     // Dirty tracking
     // -------------------------------------------------------------------------
@@ -898,5 +918,75 @@ impl<T: TreeItem> ScrollableComponent for Tree<T> {
 
     fn clear_dirty(&self) {
         self.dirty.store(false, Ordering::SeqCst);
+    }
+}
+
+// =============================================================================
+// SelectableComponent trait implementation
+// =============================================================================
+
+impl<T: TreeItem> SelectableComponent for Tree<T> {
+    fn cursor(&self) -> Option<usize> {
+        Tree::cursor(self)
+    }
+
+    fn set_cursor(&self, index: usize) -> Option<usize> {
+        Tree::set_cursor(self, index)
+    }
+
+    fn cursor_id(&self) -> Option<String> {
+        Tree::cursor_id(self)
+    }
+
+    fn cursor_up(&self) -> Option<(Option<usize>, usize)> {
+        Tree::cursor_up(self)
+    }
+
+    fn cursor_down(&self) -> Option<(Option<usize>, usize)> {
+        Tree::cursor_down(self)
+    }
+
+    fn cursor_first(&self) -> Option<(Option<usize>, usize)> {
+        Tree::cursor_first(self)
+    }
+
+    fn cursor_last(&self) -> Option<(Option<usize>, usize)> {
+        Tree::cursor_last(self)
+    }
+
+    fn scroll_to_cursor(&self) {
+        Tree::scroll_to_cursor(self)
+    }
+
+    fn selection_mode(&self) -> SelectionMode {
+        Tree::selection_mode(self)
+    }
+
+    fn selected_ids(&self) -> Vec<String> {
+        Tree::selected_ids(self)
+    }
+
+    fn toggle_select_at_cursor(&self) -> (Vec<String>, Vec<String>) {
+        Tree::toggle_select_at_cursor(self)
+    }
+
+    fn select_all(&self) -> Vec<String> {
+        Tree::select_all(self)
+    }
+
+    fn deselect_all(&self) -> Vec<String> {
+        Tree::deselect_all(self)
+    }
+
+    fn item_count(&self) -> usize {
+        Tree::visible_len(self)
+    }
+
+    fn viewport_item_count(&self) -> usize {
+        Tree::viewport_item_count(self)
+    }
+
+    fn item_height(&self) -> u16 {
+        Tree::item_height(self)
     }
 }
