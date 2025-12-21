@@ -408,10 +408,46 @@ impl Node {
         }
     }
 
-    /// Get the on_selection_change handler for a list element by ID
-    pub fn get_list_selection_handler(&self, target_id: &str) -> Option<HandlerId> {
+    // =========================================================================
+    // Unified handler getters (work for list/tree/table)
+    // =========================================================================
+
+    /// Get the on_cursor_move handler for any component (list/tree/table) by ID.
+    pub fn get_cursor_handler(&self, target_id: &str) -> Option<HandlerId> {
         match self {
             Self::List {
+                id, on_cursor_move, ..
+            } if id == target_id => on_cursor_move.clone(),
+            Self::Tree {
+                id, on_cursor_move, ..
+            } if id == target_id => on_cursor_move.clone(),
+            Self::Table {
+                id, on_cursor_move, ..
+            } if id == target_id => on_cursor_move.clone(),
+            Self::Column { children, .. }
+            | Self::Row { children, .. }
+            | Self::Stack { children, .. } => {
+                children.iter().find_map(|c| c.get_cursor_handler(target_id))
+            }
+            Self::ScrollArea { child, .. } => child.get_cursor_handler(target_id),
+            _ => None,
+        }
+    }
+
+    /// Get the on_selection_change handler for any component (list/tree/table) by ID.
+    pub fn get_selection_handler(&self, target_id: &str) -> Option<HandlerId> {
+        match self {
+            Self::List {
+                id,
+                on_selection_change,
+                ..
+            } if id == target_id => on_selection_change.clone(),
+            Self::Tree {
+                id,
+                on_selection_change,
+                ..
+            } if id == target_id => on_selection_change.clone(),
+            Self::Table {
                 id,
                 on_selection_change,
                 ..
@@ -420,24 +456,52 @@ impl Node {
             | Self::Row { children, .. }
             | Self::Stack { children, .. } => children
                 .iter()
-                .find_map(|c| c.get_list_selection_handler(target_id)),
-            Self::ScrollArea { child, .. } => child.get_list_selection_handler(target_id),
+                .find_map(|c| c.get_selection_handler(target_id)),
+            Self::ScrollArea { child, .. } => child.get_selection_handler(target_id),
             _ => None,
         }
     }
 
-    /// Get the on_cursor_move handler for a list element by ID
-    pub fn get_list_cursor_handler(&self, target_id: &str) -> Option<HandlerId> {
+    /// Get the on_expand handler for a tree element by ID.
+    pub fn get_expand_handler(&self, target_id: &str) -> Option<HandlerId> {
         match self {
-            Self::List {
-                id, on_cursor_move, ..
-            } if id == target_id => on_cursor_move.clone(),
+            Self::Tree { id, on_expand, .. } if id == target_id => on_expand.clone(),
+            Self::Column { children, .. }
+            | Self::Row { children, .. }
+            | Self::Stack { children, .. } => {
+                children.iter().find_map(|c| c.get_expand_handler(target_id))
+            }
+            Self::ScrollArea { child, .. } => child.get_expand_handler(target_id),
+            _ => None,
+        }
+    }
+
+    /// Get the on_collapse handler for a tree element by ID.
+    pub fn get_collapse_handler(&self, target_id: &str) -> Option<HandlerId> {
+        match self {
+            Self::Tree {
+                id, on_collapse, ..
+            } if id == target_id => on_collapse.clone(),
             Self::Column { children, .. }
             | Self::Row { children, .. }
             | Self::Stack { children, .. } => children
                 .iter()
-                .find_map(|c| c.get_list_cursor_handler(target_id)),
-            Self::ScrollArea { child, .. } => child.get_list_cursor_handler(target_id),
+                .find_map(|c| c.get_collapse_handler(target_id)),
+            Self::ScrollArea { child, .. } => child.get_collapse_handler(target_id),
+            _ => None,
+        }
+    }
+
+    /// Get the on_sort handler for a table element by ID.
+    pub fn get_sort_handler(&self, target_id: &str) -> Option<HandlerId> {
+        match self {
+            Self::Table { id, on_sort, .. } if id == target_id => on_sort.clone(),
+            Self::Column { children, .. }
+            | Self::Row { children, .. }
+            | Self::Stack { children, .. } => {
+                children.iter().find_map(|c| c.get_sort_handler(target_id))
+            }
+            Self::ScrollArea { child, .. } => child.get_sort_handler(target_id),
             _ => None,
         }
     }
@@ -470,70 +534,6 @@ impl Node {
         }
     }
 
-    /// Get the on_selection_change handler for a tree element by ID
-    pub fn get_tree_selection_handler(&self, target_id: &str) -> Option<HandlerId> {
-        match self {
-            Self::Tree {
-                id,
-                on_selection_change,
-                ..
-            } if id == target_id => on_selection_change.clone(),
-            Self::Column { children, .. }
-            | Self::Row { children, .. }
-            | Self::Stack { children, .. } => children
-                .iter()
-                .find_map(|c| c.get_tree_selection_handler(target_id)),
-            Self::ScrollArea { child, .. } => child.get_tree_selection_handler(target_id),
-            _ => None,
-        }
-    }
-
-    /// Get the on_cursor_move handler for a tree element by ID
-    pub fn get_tree_cursor_handler(&self, target_id: &str) -> Option<HandlerId> {
-        match self {
-            Self::Tree {
-                id, on_cursor_move, ..
-            } if id == target_id => on_cursor_move.clone(),
-            Self::Column { children, .. }
-            | Self::Row { children, .. }
-            | Self::Stack { children, .. } => children
-                .iter()
-                .find_map(|c| c.get_tree_cursor_handler(target_id)),
-            Self::ScrollArea { child, .. } => child.get_tree_cursor_handler(target_id),
-            _ => None,
-        }
-    }
-
-    /// Get the on_expand handler for a tree element by ID
-    pub fn get_tree_expand_handler(&self, target_id: &str) -> Option<HandlerId> {
-        match self {
-            Self::Tree { id, on_expand, .. } if id == target_id => on_expand.clone(),
-            Self::Column { children, .. }
-            | Self::Row { children, .. }
-            | Self::Stack { children, .. } => children
-                .iter()
-                .find_map(|c| c.get_tree_expand_handler(target_id)),
-            Self::ScrollArea { child, .. } => child.get_tree_expand_handler(target_id),
-            _ => None,
-        }
-    }
-
-    /// Get the on_collapse handler for a tree element by ID
-    pub fn get_tree_collapse_handler(&self, target_id: &str) -> Option<HandlerId> {
-        match self {
-            Self::Tree {
-                id, on_collapse, ..
-            } if id == target_id => on_collapse.clone(),
-            Self::Column { children, .. }
-            | Self::Row { children, .. }
-            | Self::Stack { children, .. } => children
-                .iter()
-                .find_map(|c| c.get_tree_collapse_handler(target_id)),
-            Self::ScrollArea { child, .. } => child.get_tree_collapse_handler(target_id),
-            _ => None,
-        }
-    }
-
     /// Get the Table component for a table element by ID
     pub fn get_table_component(&self, target_id: &str) -> Option<&dyn AnyTable> {
         match self {
@@ -544,54 +544,6 @@ impl Node {
                 .iter()
                 .find_map(|c| c.get_table_component(target_id)),
             Self::ScrollArea { child, .. } => child.get_table_component(target_id),
-            _ => None,
-        }
-    }
-
-    /// Get the on_selection_change handler for a table element by ID
-    pub fn get_table_selection_handler(&self, target_id: &str) -> Option<HandlerId> {
-        match self {
-            Self::Table {
-                id,
-                on_selection_change,
-                ..
-            } if id == target_id => on_selection_change.clone(),
-            Self::Column { children, .. }
-            | Self::Row { children, .. }
-            | Self::Stack { children, .. } => children
-                .iter()
-                .find_map(|c| c.get_table_selection_handler(target_id)),
-            Self::ScrollArea { child, .. } => child.get_table_selection_handler(target_id),
-            _ => None,
-        }
-    }
-
-    /// Get the on_cursor_move handler for a table element by ID
-    pub fn get_table_cursor_handler(&self, target_id: &str) -> Option<HandlerId> {
-        match self {
-            Self::Table {
-                id, on_cursor_move, ..
-            } if id == target_id => on_cursor_move.clone(),
-            Self::Column { children, .. }
-            | Self::Row { children, .. }
-            | Self::Stack { children, .. } => children
-                .iter()
-                .find_map(|c| c.get_table_cursor_handler(target_id)),
-            Self::ScrollArea { child, .. } => child.get_table_cursor_handler(target_id),
-            _ => None,
-        }
-    }
-
-    /// Get the on_sort handler for a table element by ID
-    pub fn get_table_sort_handler(&self, target_id: &str) -> Option<HandlerId> {
-        match self {
-            Self::Table { id, on_sort, .. } if id == target_id => on_sort.clone(),
-            Self::Column { children, .. }
-            | Self::Row { children, .. }
-            | Self::Stack { children, .. } => children
-                .iter()
-                .find_map(|c| c.get_table_sort_handler(target_id)),
-            Self::ScrollArea { child, .. } => child.get_table_sort_handler(target_id),
             _ => None,
         }
     }

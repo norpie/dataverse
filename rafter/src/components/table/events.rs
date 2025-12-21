@@ -1,6 +1,6 @@
 //! Event handling for the Table component.
 
-use crate::components::events::{ComponentEvents, EventResult};
+use crate::components::events::{ComponentEvent, ComponentEventKind, ComponentEvents, EventResult};
 use crate::components::scrollbar::{
     ScrollbarState, handle_scrollbar_click, handle_scrollbar_drag, handle_scrollbar_release,
 };
@@ -57,12 +57,16 @@ impl<T: TableRow> Table<T> {
         })
     }
 
-    /// Handle cursor movement, setting context and returning true if cursor changed.
+    /// Handle cursor movement, pushing event if cursor changed.
     fn handle_cursor_move(&self, new_cursor: usize, cx: &AppContext) -> bool {
         let previous = self.set_cursor(new_cursor);
         if previous != Some(new_cursor) {
             if let Some(id) = self.cursor_id() {
-                cx.set_table_cursor_id(id);
+                cx.set_cursor(id, None);
+                cx.push_event(ComponentEvent::new(
+                    ComponentEventKind::CursorMove,
+                    self.id_string(),
+                ));
             }
             true
         } else {
@@ -70,17 +74,25 @@ impl<T: TableRow> Table<T> {
         }
     }
 
-    /// Handle activation, setting context.
+    /// Handle activation, pushing event.
     fn handle_activate(&self, cx: &AppContext) {
         if let Some(id) = self.cursor_id() {
-            cx.set_table_activated_id(id);
+            cx.set_activated(id, None);
+            cx.push_event(ComponentEvent::new(
+                ComponentEventKind::Activate,
+                self.id_string(),
+            ));
         }
     }
 
-    /// Handle selection change, setting context if selection changed.
+    /// Handle selection change, pushing event if selection changed.
     fn handle_selection_change(&self, added: Vec<String>, removed: Vec<String>, cx: &AppContext) {
         if !added.is_empty() || !removed.is_empty() {
-            cx.set_table_selected_ids(self.selected_ids());
+            cx.set_selected(self.selected_ids());
+            cx.push_event(ComponentEvent::new(
+                ComponentEventKind::SelectionChange,
+                self.id_string(),
+            ));
         }
     }
 
@@ -103,7 +115,11 @@ impl<T: TableRow> Table<T> {
 
         // Toggle sort
         if let Some((col, asc)) = self.toggle_sort(col_idx) {
-            cx.set_table_sorted_column(col, asc);
+            cx.set_sorted(col, asc);
+            cx.push_event(ComponentEvent::new(
+                ComponentEventKind::Sort,
+                self.id_string(),
+            ));
             return EventResult::Consumed;
         }
 
@@ -168,7 +184,11 @@ impl<T: TableRow> ComponentEvents for Table<T> {
             Key::Up if !key.modifiers.ctrl && !key.modifiers.alt => {
                 if let Some((_, curr)) = self.cursor_up() {
                     if let Some(id) = self.cursor_id() {
-                        cx.set_table_cursor_id(id);
+                        cx.set_cursor(id, None);
+                        cx.push_event(ComponentEvent::new(
+                            ComponentEventKind::CursorMove,
+                            self.id_string(),
+                        ));
                     }
                     let _ = curr;
                     self.scroll_to_cursor();
@@ -178,7 +198,11 @@ impl<T: TableRow> ComponentEvents for Table<T> {
             Key::Down if !key.modifiers.ctrl && !key.modifiers.alt => {
                 if let Some((_, curr)) = self.cursor_down() {
                     if let Some(id) = self.cursor_id() {
-                        cx.set_table_cursor_id(id);
+                        cx.set_cursor(id, None);
+                        cx.push_event(ComponentEvent::new(
+                            ComponentEventKind::CursorMove,
+                            self.id_string(),
+                        ));
                     }
                     let _ = curr;
                     self.scroll_to_cursor();
@@ -188,7 +212,11 @@ impl<T: TableRow> ComponentEvents for Table<T> {
             Key::Home if !key.modifiers.ctrl && !key.modifiers.alt => {
                 if let Some((_, _)) = self.cursor_first() {
                     if let Some(id) = self.cursor_id() {
-                        cx.set_table_cursor_id(id);
+                        cx.set_cursor(id, None);
+                        cx.push_event(ComponentEvent::new(
+                            ComponentEventKind::CursorMove,
+                            self.id_string(),
+                        ));
                     }
                     self.scroll_to_cursor();
                     return EventResult::Consumed;
@@ -197,7 +225,11 @@ impl<T: TableRow> ComponentEvents for Table<T> {
             Key::End if !key.modifiers.ctrl && !key.modifiers.alt => {
                 if let Some((_, _)) = self.cursor_last() {
                     if let Some(id) = self.cursor_id() {
-                        cx.set_table_cursor_id(id);
+                        cx.set_cursor(id, None);
+                        cx.push_event(ComponentEvent::new(
+                            ComponentEventKind::CursorMove,
+                            self.id_string(),
+                        ));
                     }
                     self.scroll_to_cursor();
                     return EventResult::Consumed;
@@ -211,7 +243,11 @@ impl<T: TableRow> ComponentEvents for Table<T> {
                     if new_cursor != cursor {
                         self.set_cursor(new_cursor);
                         if let Some(id) = self.cursor_id() {
-                            cx.set_table_cursor_id(id);
+                            cx.set_cursor(id, None);
+                            cx.push_event(ComponentEvent::new(
+                                ComponentEventKind::CursorMove,
+                                self.id_string(),
+                            ));
                         }
                         self.scroll_to_cursor();
                         return EventResult::Consumed;
@@ -227,7 +263,11 @@ impl<T: TableRow> ComponentEvents for Table<T> {
                     if new_cursor != cursor {
                         self.set_cursor(new_cursor);
                         if let Some(id) = self.cursor_id() {
-                            cx.set_table_cursor_id(id);
+                            cx.set_cursor(id, None);
+                            cx.push_event(ComponentEvent::new(
+                                ComponentEventKind::CursorMove,
+                                self.id_string(),
+                            ));
                         }
                         self.scroll_to_cursor();
                         return EventResult::Consumed;

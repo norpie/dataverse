@@ -7,6 +7,7 @@ use crossterm::event;
 use log::{debug, info, trace, warn};
 
 use crate::app::App;
+use crate::components::events::ComponentEventKind;
 use crate::components::EventResult;
 use crate::context::{AppContext, Toast};
 use crate::focus::{FocusId, FocusState};
@@ -751,113 +752,37 @@ fn dispatch_to_layer<A: App>(
 
 /// Dispatch handlers based on context data set by components.
 ///
-/// Components set their event data (cursor position, selection, activation, input text)
-/// via the AppContext. This function checks what was set and dispatches the appropriate
-/// handlers.
+/// Components push events to the event queue via `AppContext::push_event()`.
+/// This function drains the queue and dispatches appropriate handlers based
+/// on event kind and the component ID that triggered it.
 fn dispatch_component_handlers<A: App>(
     view: &Node,
-    focus_id: &str,
+    _focus_id: &str,
     app: &A,
     modal_stack: &[ModalStackEntry],
     cx: &AppContext,
 ) {
-    // Handle list activation (Enter on list item or double-click)
-    if cx.list_activated_index().is_some() {
-        if let Some(handler_id) = view.get_submit_handler(focus_id) {
+    // Process the unified event queue
+    for event in cx.drain_events() {
+        let handler = match event.kind {
+            ComponentEventKind::Activate => view.get_submit_handler(&event.component_id),
+            ComponentEventKind::CursorMove => view.get_cursor_handler(&event.component_id),
+            ComponentEventKind::SelectionChange => view.get_selection_handler(&event.component_id),
+            ComponentEventKind::Expand => view.get_expand_handler(&event.component_id),
+            ComponentEventKind::Collapse => view.get_collapse_handler(&event.component_id),
+            ComponentEventKind::Sort => view.get_sort_handler(&event.component_id),
+        };
+
+        if let Some(handler_id) = handler {
             dispatch_to_layer(app, modal_stack, &handler_id, cx);
         }
-        cx.clear_list_activated_index();
     }
 
-    // Handle list cursor movement
-    if cx.list_cursor().is_some() {
-        if let Some(handler_id) = view.get_list_cursor_handler(focus_id) {
-            dispatch_to_layer(app, modal_stack, &handler_id, cx);
-        }
-        cx.clear_list_cursor();
-    }
-
-    // Handle list selection changes
-    if cx.list_selected_ids().is_some() {
-        if let Some(handler_id) = view.get_list_selection_handler(focus_id) {
-            dispatch_to_layer(app, modal_stack, &handler_id, cx);
-        }
-        cx.clear_list_selected_ids();
-    }
-
-    // Handle tree activation (Enter on tree node)
-    if cx.tree_activated_id().is_some() {
-        if let Some(handler_id) = view.get_submit_handler(focus_id) {
-            dispatch_to_layer(app, modal_stack, &handler_id, cx);
-        }
-        cx.clear_tree_activated_id();
-    }
-
-    // Handle tree cursor movement
-    if cx.tree_cursor_id().is_some() {
-        if let Some(handler_id) = view.get_tree_cursor_handler(focus_id) {
-            dispatch_to_layer(app, modal_stack, &handler_id, cx);
-        }
-        cx.clear_tree_cursor_id();
-    }
-
-    // Handle tree selection changes
-    if cx.tree_selected_ids().is_some() {
-        if let Some(handler_id) = view.get_tree_selection_handler(focus_id) {
-            dispatch_to_layer(app, modal_stack, &handler_id, cx);
-        }
-        cx.clear_tree_selected_ids();
-    }
-
-    // Handle tree node expansion
-    if cx.tree_expanded_id().is_some() {
-        if let Some(handler_id) = view.get_tree_expand_handler(focus_id) {
-            dispatch_to_layer(app, modal_stack, &handler_id, cx);
-        }
-        cx.clear_tree_expanded_id();
-    }
-
-    // Handle tree node collapse
-    if cx.tree_collapsed_id().is_some() {
-        if let Some(handler_id) = view.get_tree_collapse_handler(focus_id) {
-            dispatch_to_layer(app, modal_stack, &handler_id, cx);
-        }
-        cx.clear_tree_collapsed_id();
-    }
-
-    // Handle table activation (Enter on table row)
-    if cx.table_activated_id().is_some() {
-        if let Some(handler_id) = view.get_submit_handler(focus_id) {
-            dispatch_to_layer(app, modal_stack, &handler_id, cx);
-        }
-        cx.clear_table_activated_id();
-    }
-
-    // Handle table cursor movement
-    if cx.table_cursor_id().is_some() {
-        if let Some(handler_id) = view.get_table_cursor_handler(focus_id) {
-            dispatch_to_layer(app, modal_stack, &handler_id, cx);
-        }
-        cx.clear_table_cursor_id();
-    }
-
-    // Handle table selection changes
-    if cx.table_selected_ids().is_some() {
-        if let Some(handler_id) = view.get_table_selection_handler(focus_id) {
-            dispatch_to_layer(app, modal_stack, &handler_id, cx);
-        }
-        cx.clear_table_selected_ids();
-    }
-
-    // Handle table sorting
-    if let Some((col, asc)) = cx.table_sorted_column() {
-        debug!("Table sorted column set: col={}, asc={}", col, asc);
-        if let Some(handler_id) = view.get_table_sort_handler(focus_id) {
-            debug!("Found on_sort handler: {:?}", handler_id);
-            dispatch_to_layer(app, modal_stack, &handler_id, cx);
-        } else {
-            debug!("No on_sort handler found for focus_id={}", focus_id);
-        }
-        cx.clear_table_sorted_column();
-    }
+    // Clear the unified fields after processing
+    cx.clear_activated();
+    cx.clear_cursor();
+    cx.clear_selected();
+    cx.clear_expanded();
+    cx.clear_collapsed();
+    cx.clear_sorted();
 }

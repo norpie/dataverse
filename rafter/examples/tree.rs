@@ -433,7 +433,7 @@ impl TreeDemo {
 
     #[handler]
     async fn on_activate(&self, cx: &AppContext) {
-        if let Some(id) = cx.tree_activated_id() {
+        if let Some(id) = cx.activated_id() {
             if let Some(node) = self.tree.find(&id) {
                 if node.is_dir {
                     // Toggle expand/collapse for directories
@@ -454,7 +454,7 @@ impl TreeDemo {
 
     #[handler]
     async fn on_expand(&self, cx: &AppContext) {
-        if let Some(id) = cx.tree_expanded_id() {
+        if let Some(id) = cx.expanded_id() {
             if let Some(node) = self.tree.find(&id) {
                 self.status.set(format!("Expanded: {}", node.name));
             }
@@ -463,7 +463,7 @@ impl TreeDemo {
 
     #[handler]
     async fn on_collapse(&self, cx: &AppContext) {
-        if let Some(id) = cx.tree_collapsed_id() {
+        if let Some(id) = cx.collapsed_id() {
             if let Some(node) = self.tree.find(&id) {
                 self.status.set(format!("Collapsed: {}", node.name));
             }
@@ -472,7 +472,7 @@ impl TreeDemo {
 
     #[handler]
     async fn on_selection(&self, cx: &AppContext) {
-        if let Some(ids) = cx.tree_selected_ids() {
+        if let Some(ids) = cx.selected_ids() {
             let count = ids.len();
             if count == 0 {
                 self.status.set("Selection cleared".to_string());
@@ -486,7 +486,7 @@ impl TreeDemo {
 
     #[handler]
     async fn on_cursor(&self, cx: &AppContext) {
-        if let Some(id) = cx.tree_cursor_id() {
+        if let Some(id) = cx.cursor_id() {
             if let Some(node) = self.tree.find(&id) {
                 let kind = if node.is_dir { "dir" } else { "file" };
                 self.status.set(format!("Cursor: {} ({})", node.name, kind));

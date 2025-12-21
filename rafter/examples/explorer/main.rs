@@ -351,7 +351,7 @@ impl Explorer {
     #[handler]
     async fn open_selected(&self, cx: &AppContext) {
         // Use activated index from list event, or fall back to cursor (for keybind)
-        let selected = cx.list_activated_index().or_else(|| self.files.cursor());
+        let selected = cx.activated_index().or_else(|| self.files.cursor());
         if let Some(selected) = selected
             && let Some(file) = self.files.get(selected)
         {

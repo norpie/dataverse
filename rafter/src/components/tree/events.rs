@@ -1,6 +1,6 @@
 //! Event handling for the Tree component.
 
-use crate::components::events::{ComponentEvents, EventResult};
+use crate::components::events::{ComponentEvent, ComponentEventKind, ComponentEvents, EventResult};
 use crate::components::scrollbar::{
     ScrollbarState, handle_scrollbar_click, handle_scrollbar_drag, handle_scrollbar_release,
 };
@@ -27,12 +27,16 @@ impl<T: TreeItem> Tree<T> {
         }
     }
 
-    /// Handle cursor movement, setting context and returning true if cursor changed.
+    /// Handle cursor movement, pushing event if cursor changed.
     fn handle_cursor_move(&self, new_cursor: usize, cx: &AppContext) -> bool {
         let previous = self.set_cursor(new_cursor);
         if previous != Some(new_cursor) {
             if let Some(id) = self.cursor_id() {
-                cx.set_tree_cursor_id(id);
+                cx.set_cursor(id, None);
+                cx.push_event(ComponentEvent::new(
+                    ComponentEventKind::CursorMove,
+                    self.id_string(),
+                ));
             }
             true
         } else {
@@ -40,28 +44,44 @@ impl<T: TreeItem> Tree<T> {
         }
     }
 
-    /// Handle activation, setting context.
+    /// Handle activation, pushing event.
     fn handle_activate(&self, cx: &AppContext) {
         if let Some(id) = self.cursor_id() {
-            cx.set_tree_activated_id(id);
+            cx.set_activated(id, None);
+            cx.push_event(ComponentEvent::new(
+                ComponentEventKind::Activate,
+                self.id_string(),
+            ));
         }
     }
 
-    /// Handle selection change, setting context if selection changed.
+    /// Handle selection change, pushing event if selection changed.
     fn handle_selection_change(&self, added: Vec<String>, removed: Vec<String>, cx: &AppContext) {
         if !added.is_empty() || !removed.is_empty() {
-            cx.set_tree_selected_ids(self.selected_ids());
+            cx.set_selected(self.selected_ids());
+            cx.push_event(ComponentEvent::new(
+                ComponentEventKind::SelectionChange,
+                self.id_string(),
+            ));
         }
     }
 
-    /// Handle expand event, setting context.
+    /// Handle expand event, pushing event.
     fn handle_expand(&self, node_id: &str, cx: &AppContext) {
-        cx.set_tree_expanded_id(node_id.to_string());
+        cx.set_expanded(node_id.to_string());
+        cx.push_event(ComponentEvent::new(
+            ComponentEventKind::Expand,
+            self.id_string(),
+        ));
     }
 
-    /// Handle collapse event, setting context.
+    /// Handle collapse event, pushing event.
     fn handle_collapse(&self, node_id: &str, cx: &AppContext) {
-        cx.set_tree_collapsed_id(node_id.to_string());
+        cx.set_collapsed(node_id.to_string());
+        cx.push_event(ComponentEvent::new(
+            ComponentEventKind::Collapse,
+            self.id_string(),
+        ));
     }
 }
 
@@ -70,21 +90,27 @@ impl<T: TreeItem> ComponentEvents for Tree<T> {
         match key.key {
             // Navigation
             Key::Up if !key.modifiers.ctrl && !key.modifiers.alt => {
-                if let Some((_, curr)) = self.cursor_up() {
+                if let Some((_, _)) = self.cursor_up() {
                     if let Some(id) = self.cursor_id() {
-                        cx.set_tree_cursor_id(id);
+                        cx.set_cursor(id, None);
+                        cx.push_event(ComponentEvent::new(
+                            ComponentEventKind::CursorMove,
+                            self.id_string(),
+                        ));
                     }
-                    let _ = curr;
                     self.scroll_to_cursor();
                     return EventResult::Consumed;
                 }
             }
             Key::Down if !key.modifiers.ctrl && !key.modifiers.alt => {
-                if let Some((_, curr)) = self.cursor_down() {
+                if let Some((_, _)) = self.cursor_down() {
                     if let Some(id) = self.cursor_id() {
-                        cx.set_tree_cursor_id(id);
+                        cx.set_cursor(id, None);
+                        cx.push_event(ComponentEvent::new(
+                            ComponentEventKind::CursorMove,
+                            self.id_string(),
+                        ));
                     }
-                    let _ = curr;
                     self.scroll_to_cursor();
                     return EventResult::Consumed;
                 }
@@ -92,7 +118,11 @@ impl<T: TreeItem> ComponentEvents for Tree<T> {
             Key::Home if !key.modifiers.ctrl && !key.modifiers.alt => {
                 if let Some((_, _)) = self.cursor_first() {
                     if let Some(id) = self.cursor_id() {
-                        cx.set_tree_cursor_id(id);
+                        cx.set_cursor(id, None);
+                        cx.push_event(ComponentEvent::new(
+                            ComponentEventKind::CursorMove,
+                            self.id_string(),
+                        ));
                     }
                     self.scroll_to_cursor();
                     return EventResult::Consumed;
@@ -101,7 +131,11 @@ impl<T: TreeItem> ComponentEvents for Tree<T> {
             Key::End if !key.modifiers.ctrl && !key.modifiers.alt => {
                 if let Some((_, _)) = self.cursor_last() {
                     if let Some(id) = self.cursor_id() {
-                        cx.set_tree_cursor_id(id);
+                        cx.set_cursor(id, None);
+                        cx.push_event(ComponentEvent::new(
+                            ComponentEventKind::CursorMove,
+                            self.id_string(),
+                        ));
                     }
                     self.scroll_to_cursor();
                     return EventResult::Consumed;
@@ -114,7 +148,11 @@ impl<T: TreeItem> ComponentEvents for Tree<T> {
                     if new_cursor != cursor {
                         self.set_cursor(new_cursor);
                         if let Some(id) = self.cursor_id() {
-                            cx.set_tree_cursor_id(id);
+                            cx.set_cursor(id, None);
+                            cx.push_event(ComponentEvent::new(
+                                ComponentEventKind::CursorMove,
+                                self.id_string(),
+                            ));
                         }
                         self.scroll_to_cursor();
                         return EventResult::Consumed;
@@ -129,7 +167,11 @@ impl<T: TreeItem> ComponentEvents for Tree<T> {
                     if new_cursor != cursor {
                         self.set_cursor(new_cursor);
                         if let Some(id) = self.cursor_id() {
-                            cx.set_tree_cursor_id(id);
+                            cx.set_cursor(id, None);
+                            cx.push_event(ComponentEvent::new(
+                                ComponentEventKind::CursorMove,
+                                self.id_string(),
+                            ));
                         }
                         self.scroll_to_cursor();
                         return EventResult::Consumed;
@@ -150,7 +192,11 @@ impl<T: TreeItem> ComponentEvents for Tree<T> {
                         // Move to parent
                         if let Some((_, _)) = self.cursor_to_parent() {
                             if let Some(id) = self.cursor_id() {
-                                cx.set_tree_cursor_id(id);
+                                cx.set_cursor(id, None);
+                                cx.push_event(ComponentEvent::new(
+                                    ComponentEventKind::CursorMove,
+                                    self.id_string(),
+                                ));
                             }
                             self.scroll_to_cursor();
                             return EventResult::Consumed;
@@ -170,7 +216,11 @@ impl<T: TreeItem> ComponentEvents for Tree<T> {
                         // Move to first child
                         if let Some((_, _)) = self.cursor_to_first_child() {
                             if let Some(id) = self.cursor_id() {
-                                cx.set_tree_cursor_id(id);
+                                cx.set_cursor(id, None);
+                                cx.push_event(ComponentEvent::new(
+                                    ComponentEventKind::CursorMove,
+                                    self.id_string(),
+                                ));
                             }
                             self.scroll_to_cursor();
                             return EventResult::Consumed;

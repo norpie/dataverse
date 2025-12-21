@@ -1,6 +1,6 @@
 //! Event handling for the List component.
 
-use crate::components::events::{ComponentEvents, EventResult};
+use crate::components::events::{ComponentEvent, ComponentEventKind, ComponentEvents, EventResult};
 use crate::components::scrollbar::{
     ScrollbarState, handle_scrollbar_click, handle_scrollbar_drag, handle_scrollbar_release,
 };
@@ -27,26 +27,38 @@ impl<T: ListItem> List<T> {
         }
     }
 
-    /// Handle cursor movement, setting context and returning true if cursor changed.
+    /// Handle cursor movement, pushing event if cursor changed.
     fn handle_cursor_move(&self, new_cursor: usize, cx: &AppContext) -> bool {
         let previous = self.set_cursor(new_cursor);
         if previous != Some(new_cursor) {
-            cx.set_list_cursor(new_cursor);
+            cx.set_cursor(String::new(), Some(new_cursor));
+            cx.push_event(ComponentEvent::new(
+                ComponentEventKind::CursorMove,
+                self.id_string(),
+            ));
             true
         } else {
             false
         }
     }
 
-    /// Handle activation, setting context.
+    /// Handle activation, pushing event.
     fn handle_activate(&self, index: usize, cx: &AppContext) {
-        cx.set_list_activated_index(index);
+        cx.set_activated(String::new(), Some(index));
+        cx.push_event(ComponentEvent::new(
+            ComponentEventKind::Activate,
+            self.id_string(),
+        ));
     }
 
-    /// Handle selection change, setting context if selection changed.
+    /// Handle selection change, pushing event if selection changed.
     fn handle_selection_change(&self, added: Vec<String>, removed: Vec<String>, cx: &AppContext) {
         if !added.is_empty() || !removed.is_empty() {
-            cx.set_list_selected_ids(self.selected_ids());
+            cx.set_selected(self.selected_ids());
+            cx.push_event(ComponentEvent::new(
+                ComponentEventKind::SelectionChange,
+                self.id_string(),
+            ));
         }
     }
 }
@@ -56,33 +68,45 @@ impl<T: ListItem> ComponentEvents for List<T> {
         // Navigation keys
         match key.key {
             Key::Up if !key.modifiers.ctrl && !key.modifiers.alt => {
-                if let Some((prev, curr)) = self.cursor_up() {
-                    cx.set_list_cursor(curr);
-                    let _ = prev; // Suppress unused warning
+                if let Some((_, curr)) = self.cursor_up() {
+                    cx.set_cursor(String::new(), Some(curr));
+                    cx.push_event(ComponentEvent::new(
+                        ComponentEventKind::CursorMove,
+                        self.id_string(),
+                    ));
                     self.scroll_to_cursor();
                     return EventResult::Consumed;
                 }
             }
             Key::Down if !key.modifiers.ctrl && !key.modifiers.alt => {
-                if let Some((prev, curr)) = self.cursor_down() {
-                    cx.set_list_cursor(curr);
-                    let _ = prev;
+                if let Some((_, curr)) = self.cursor_down() {
+                    cx.set_cursor(String::new(), Some(curr));
+                    cx.push_event(ComponentEvent::new(
+                        ComponentEventKind::CursorMove,
+                        self.id_string(),
+                    ));
                     self.scroll_to_cursor();
                     return EventResult::Consumed;
                 }
             }
             Key::Home if !key.modifiers.ctrl && !key.modifiers.alt => {
-                if let Some((prev, curr)) = self.cursor_first() {
-                    cx.set_list_cursor(curr);
-                    let _ = prev;
+                if let Some((_, curr)) = self.cursor_first() {
+                    cx.set_cursor(String::new(), Some(curr));
+                    cx.push_event(ComponentEvent::new(
+                        ComponentEventKind::CursorMove,
+                        self.id_string(),
+                    ));
                     self.scroll_to_cursor();
                     return EventResult::Consumed;
                 }
             }
             Key::End if !key.modifiers.ctrl && !key.modifiers.alt => {
-                if let Some((prev, curr)) = self.cursor_last() {
-                    cx.set_list_cursor(curr);
-                    let _ = prev;
+                if let Some((_, curr)) = self.cursor_last() {
+                    cx.set_cursor(String::new(), Some(curr));
+                    cx.push_event(ComponentEvent::new(
+                        ComponentEventKind::CursorMove,
+                        self.id_string(),
+                    ));
                     self.scroll_to_cursor();
                     return EventResult::Consumed;
                 }
@@ -90,7 +114,7 @@ impl<T: ListItem> ComponentEvents for List<T> {
             Key::Enter if !key.modifiers.ctrl && !key.modifiers.alt => {
                 // Activate current cursor
                 if let Some(index) = self.cursor() {
-                    cx.set_list_activated_index(index);
+                    self.handle_activate(index, cx);
                     return EventResult::Consumed;
                 }
             }
@@ -127,7 +151,11 @@ impl<T: ListItem> ComponentEvents for List<T> {
                     let new_cursor = cursor.saturating_sub(viewport_items);
                     if new_cursor != cursor {
                         self.set_cursor(new_cursor);
-                        cx.set_list_cursor(new_cursor);
+                        cx.set_cursor(String::new(), Some(new_cursor));
+                        cx.push_event(ComponentEvent::new(
+                            ComponentEventKind::CursorMove,
+                            self.id_string(),
+                        ));
                         self.scroll_to_cursor();
                         return EventResult::Consumed;
                     }
@@ -141,7 +169,11 @@ impl<T: ListItem> ComponentEvents for List<T> {
                     let new_cursor = (cursor + viewport_items).min(max_index);
                     if new_cursor != cursor {
                         self.set_cursor(new_cursor);
-                        cx.set_list_cursor(new_cursor);
+                        cx.set_cursor(String::new(), Some(new_cursor));
+                        cx.push_event(ComponentEvent::new(
+                            ComponentEventKind::CursorMove,
+                            self.id_string(),
+                        ));
                         self.scroll_to_cursor();
                         return EventResult::Consumed;
                     }

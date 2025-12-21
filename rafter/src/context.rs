@@ -5,6 +5,7 @@ use std::time::Duration;
 use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
 
+use crate::components::events::ComponentEvent;
 use crate::focus::FocusId;
 use crate::keybinds::{KeybindError, KeybindInfo, Keybinds};
 use crate::modal::{Modal, ModalContext, ModalDyn, ModalEntry};
@@ -65,34 +66,29 @@ struct AppContextInner {
     theme_request: Option<Arc<dyn Theme>>,
     /// Pending modal to open
     modal_request: Option<Box<dyn ModalDyn>>,
-    /// Activated list item index (for list on_activate handlers)
-    list_activated_index: Option<usize>,
-    /// Selected list IDs (for list on_selection_change handlers)
-    list_selected_ids: Option<Vec<String>>,
-    /// Cursor position (for list on_cursor_move handlers)
-    list_cursor: Option<usize>,
 
-    // Tree event data
-    /// Activated tree node ID (for tree on_activate handlers)
-    tree_activated_id: Option<String>,
-    /// Selected tree node IDs (for tree on_selection_change handlers)
-    tree_selected_ids: Option<Vec<String>>,
-    /// Tree cursor node ID (for tree on_cursor_move handlers)
-    tree_cursor_id: Option<String>,
-    /// Node that was just expanded (for tree on_expand handlers)
-    tree_expanded_id: Option<String>,
-    /// Node that was just collapsed (for tree on_collapse handlers)
-    tree_collapsed_id: Option<String>,
+    // -------------------------------------------------------------------------
+    // Unified component event queue and data
+    // -------------------------------------------------------------------------
+    /// Pending component events to dispatch
+    pending_events: Vec<ComponentEvent>,
 
-    // Table event data
-    /// Activated table row ID (for table on_activate handlers)
-    table_activated_id: Option<String>,
-    /// Selected table row IDs (for table on_selection_change handlers)
-    table_selected_ids: Option<Vec<String>>,
-    /// Table cursor row ID (for table on_cursor_move handlers)
-    table_cursor_id: Option<String>,
-    /// Column that was just sorted (column index, ascending) (for table on_sort handlers)
-    table_sorted_column: Option<(usize, bool)>,
+    /// Activated item ID (works for list/tree/table)
+    activated_id: Option<String>,
+    /// Activated item index (for list - index-based access)
+    activated_index: Option<usize>,
+    /// Selected item IDs (works for list/tree/table)
+    selected_ids: Option<Vec<String>>,
+    /// Cursor item ID (works for list/tree/table)
+    cursor_id: Option<String>,
+    /// Cursor index (for list - index-based access)
+    cursor_index: Option<usize>,
+    /// Expanded node ID (for tree)
+    expanded_id: Option<String>,
+    /// Collapsed node ID (for tree)
+    collapsed_id: Option<String>,
+    /// Sorted column info (column index, ascending) (for table)
+    sorted_column: Option<(usize, bool)>,
 }
 
 /// Context passed to app handlers, providing access to framework functionality.
@@ -131,18 +127,15 @@ impl AppContext {
                 input_text: None,
                 theme_request: None,
                 modal_request: None,
-                list_activated_index: None,
-                list_selected_ids: None,
-                list_cursor: None,
-                tree_activated_id: None,
-                tree_selected_ids: None,
-                tree_cursor_id: None,
-                tree_expanded_id: None,
-                tree_collapsed_id: None,
-                table_activated_id: None,
-                table_selected_ids: None,
-                table_cursor_id: None,
-                table_sorted_column: None,
+                pending_events: Vec::new(),
+                activated_id: None,
+                activated_index: None,
+                selected_ids: None,
+                cursor_id: None,
+                cursor_index: None,
+                expanded_id: None,
+                collapsed_id: None,
+                sorted_column: None,
             })),
             keybinds,
         }
@@ -199,275 +192,187 @@ impl AppContext {
     }
 
     // -------------------------------------------------------------------------
-    // List event data (set by runtime for list handlers)
+    // Component event queue
     // -------------------------------------------------------------------------
 
-    /// Set the activated list item index (called by runtime)
-    pub fn set_list_activated_index(&self, index: usize) {
+    /// Push a component event to the queue.
+    ///
+    /// Components call this to signal that an event occurred. The event loop
+    /// will drain the queue and dispatch appropriate handlers.
+    pub fn push_event(&self, event: ComponentEvent) {
         if let Ok(mut inner) = self.inner.write() {
-            inner.list_activated_index = Some(index);
+            inner.pending_events.push(event);
         }
     }
 
-    /// Get the activated list item index
-    pub fn list_activated_index(&self) -> Option<usize> {
+    /// Drain all pending component events.
+    ///
+    /// Returns the events and clears the queue. Called by the event loop.
+    pub(crate) fn drain_events(&self) -> Vec<ComponentEvent> {
         self.inner
-            .read()
+            .write()
             .ok()
-            .and_then(|inner| inner.list_activated_index)
-    }
-
-    /// Clear the activated list item index
-    pub fn clear_list_activated_index(&self) {
-        if let Ok(mut inner) = self.inner.write() {
-            inner.list_activated_index = None;
-        }
-    }
-
-    /// Set the selected list IDs (called by runtime)
-    pub fn set_list_selected_ids(&self, ids: Vec<String>) {
-        if let Ok(mut inner) = self.inner.write() {
-            inner.list_selected_ids = Some(ids);
-        }
-    }
-
-    /// Get the selected list IDs
-    pub fn list_selected_ids(&self) -> Option<Vec<String>> {
-        self.inner
-            .read()
-            .ok()
-            .and_then(|inner| inner.list_selected_ids.clone())
-    }
-
-    /// Clear the selected list IDs
-    pub fn clear_list_selected_ids(&self) {
-        if let Ok(mut inner) = self.inner.write() {
-            inner.list_selected_ids = None;
-        }
-    }
-
-    /// Set the list cursor position (called by runtime)
-    pub fn set_list_cursor(&self, cursor: usize) {
-        if let Ok(mut inner) = self.inner.write() {
-            inner.list_cursor = Some(cursor);
-        }
-    }
-
-    /// Get the list cursor position
-    pub fn list_cursor(&self) -> Option<usize> {
-        self.inner.read().ok().and_then(|inner| inner.list_cursor)
-    }
-
-    /// Clear the list cursor position
-    pub fn clear_list_cursor(&self) {
-        if let Ok(mut inner) = self.inner.write() {
-            inner.list_cursor = None;
-        }
+            .map(|mut inner| std::mem::take(&mut inner.pending_events))
+            .unwrap_or_default()
     }
 
     // -------------------------------------------------------------------------
-    // Tree event data (set by runtime for tree handlers)
+    // Unified component event data accessors
     // -------------------------------------------------------------------------
 
-    /// Set the activated tree node ID (called by tree component)
-    pub fn set_tree_activated_id(&self, id: String) {
+    /// Set activated item (works for list/tree/table).
+    ///
+    /// For lists, also provide the index for index-based access.
+    pub fn set_activated(&self, id: impl Into<String>, index: Option<usize>) {
         if let Ok(mut inner) = self.inner.write() {
-            inner.tree_activated_id = Some(id);
+            inner.activated_id = Some(id.into());
+            inner.activated_index = index;
         }
     }
 
-    /// Get the activated tree node ID
-    pub fn tree_activated_id(&self) -> Option<String> {
+    /// Get the activated item ID.
+    pub fn activated_id(&self) -> Option<String> {
         self.inner
             .read()
             .ok()
-            .and_then(|inner| inner.tree_activated_id.clone())
+            .and_then(|inner| inner.activated_id.clone())
     }
 
-    /// Clear the activated tree node ID
-    pub fn clear_tree_activated_id(&self) {
-        if let Ok(mut inner) = self.inner.write() {
-            inner.tree_activated_id = None;
-        }
-    }
-
-    /// Set the selected tree node IDs (called by tree component)
-    pub fn set_tree_selected_ids(&self, ids: Vec<String>) {
-        if let Ok(mut inner) = self.inner.write() {
-            inner.tree_selected_ids = Some(ids);
-        }
-    }
-
-    /// Get the selected tree node IDs
-    pub fn tree_selected_ids(&self) -> Option<Vec<String>> {
+    /// Get the activated item index (for list).
+    pub fn activated_index(&self) -> Option<usize> {
         self.inner
             .read()
             .ok()
-            .and_then(|inner| inner.tree_selected_ids.clone())
+            .and_then(|inner| inner.activated_index)
     }
 
-    /// Clear the selected tree node IDs
-    pub fn clear_tree_selected_ids(&self) {
+    /// Clear activated item data.
+    pub fn clear_activated(&self) {
         if let Ok(mut inner) = self.inner.write() {
-            inner.tree_selected_ids = None;
+            inner.activated_id = None;
+            inner.activated_index = None;
         }
     }
 
-    /// Set the tree cursor node ID (called by tree component)
-    pub fn set_tree_cursor_id(&self, id: String) {
+    /// Set selected item IDs (works for list/tree/table).
+    pub fn set_selected(&self, ids: Vec<String>) {
         if let Ok(mut inner) = self.inner.write() {
-            inner.tree_cursor_id = Some(id);
+            inner.selected_ids = Some(ids);
         }
     }
 
-    /// Get the tree cursor node ID
-    pub fn tree_cursor_id(&self) -> Option<String> {
+    /// Get the selected item IDs.
+    pub fn selected_ids(&self) -> Option<Vec<String>> {
         self.inner
             .read()
             .ok()
-            .and_then(|inner| inner.tree_cursor_id.clone())
+            .and_then(|inner| inner.selected_ids.clone())
     }
 
-    /// Clear the tree cursor node ID
-    pub fn clear_tree_cursor_id(&self) {
+    /// Clear selected item data.
+    pub fn clear_selected(&self) {
         if let Ok(mut inner) = self.inner.write() {
-            inner.tree_cursor_id = None;
+            inner.selected_ids = None;
         }
     }
 
-    /// Set the expanded tree node ID (called by tree component)
-    pub fn set_tree_expanded_id(&self, id: String) {
+    /// Set cursor position (works for list/tree/table).
+    ///
+    /// For lists, also provide the index for index-based access.
+    pub fn set_cursor(&self, id: impl Into<String>, index: Option<usize>) {
         if let Ok(mut inner) = self.inner.write() {
-            inner.tree_expanded_id = Some(id);
+            inner.cursor_id = Some(id.into());
+            inner.cursor_index = index;
         }
     }
 
-    /// Get the expanded tree node ID
-    pub fn tree_expanded_id(&self) -> Option<String> {
+    /// Get the cursor item ID.
+    pub fn cursor_id(&self) -> Option<String> {
         self.inner
             .read()
             .ok()
-            .and_then(|inner| inner.tree_expanded_id.clone())
+            .and_then(|inner| inner.cursor_id.clone())
     }
 
-    /// Clear the expanded tree node ID
-    pub fn clear_tree_expanded_id(&self) {
-        if let Ok(mut inner) = self.inner.write() {
-            inner.tree_expanded_id = None;
-        }
-    }
-
-    /// Set the collapsed tree node ID (called by tree component)
-    pub fn set_tree_collapsed_id(&self, id: String) {
-        if let Ok(mut inner) = self.inner.write() {
-            inner.tree_collapsed_id = Some(id);
-        }
-    }
-
-    /// Get the collapsed tree node ID
-    pub fn tree_collapsed_id(&self) -> Option<String> {
+    /// Get the cursor index (for list).
+    pub fn cursor_index(&self) -> Option<usize> {
         self.inner
             .read()
             .ok()
-            .and_then(|inner| inner.tree_collapsed_id.clone())
+            .and_then(|inner| inner.cursor_index)
     }
 
-    /// Clear the collapsed tree node ID
-    pub fn clear_tree_collapsed_id(&self) {
+    /// Clear cursor data.
+    pub fn clear_cursor(&self) {
         if let Ok(mut inner) = self.inner.write() {
-            inner.tree_collapsed_id = None;
+            inner.cursor_id = None;
+            inner.cursor_index = None;
         }
     }
 
-    // -------------------------------------------------------------------------
-    // Table event data (set by table component for table handlers)
-    // -------------------------------------------------------------------------
-
-    /// Set the activated table row ID (called by table component)
-    pub fn set_table_activated_id(&self, id: String) {
+    /// Set expanded node ID (for tree).
+    pub fn set_expanded(&self, id: impl Into<String>) {
         if let Ok(mut inner) = self.inner.write() {
-            inner.table_activated_id = Some(id);
+            inner.expanded_id = Some(id.into());
         }
     }
 
-    /// Get the activated table row ID
-    pub fn table_activated_id(&self) -> Option<String> {
+    /// Get the expanded node ID.
+    pub fn expanded_id(&self) -> Option<String> {
         self.inner
             .read()
             .ok()
-            .and_then(|inner| inner.table_activated_id.clone())
+            .and_then(|inner| inner.expanded_id.clone())
     }
 
-    /// Clear the activated table row ID
-    pub fn clear_table_activated_id(&self) {
+    /// Clear expanded node data.
+    pub fn clear_expanded(&self) {
         if let Ok(mut inner) = self.inner.write() {
-            inner.table_activated_id = None;
+            inner.expanded_id = None;
         }
     }
 
-    /// Set the selected table row IDs (called by table component)
-    pub fn set_table_selected_ids(&self, ids: Vec<String>) {
+    /// Set collapsed node ID (for tree).
+    pub fn set_collapsed(&self, id: impl Into<String>) {
         if let Ok(mut inner) = self.inner.write() {
-            inner.table_selected_ids = Some(ids);
+            inner.collapsed_id = Some(id.into());
         }
     }
 
-    /// Get the selected table row IDs
-    pub fn table_selected_ids(&self) -> Option<Vec<String>> {
+    /// Get the collapsed node ID.
+    pub fn collapsed_id(&self) -> Option<String> {
         self.inner
             .read()
             .ok()
-            .and_then(|inner| inner.table_selected_ids.clone())
+            .and_then(|inner| inner.collapsed_id.clone())
     }
 
-    /// Clear the selected table row IDs
-    pub fn clear_table_selected_ids(&self) {
+    /// Clear collapsed node data.
+    pub fn clear_collapsed(&self) {
         if let Ok(mut inner) = self.inner.write() {
-            inner.table_selected_ids = None;
+            inner.collapsed_id = None;
         }
     }
 
-    /// Set the table cursor row ID (called by table component)
-    pub fn set_table_cursor_id(&self, id: String) {
+    /// Set sorted column info (for table).
+    pub fn set_sorted(&self, column: usize, ascending: bool) {
         if let Ok(mut inner) = self.inner.write() {
-            inner.table_cursor_id = Some(id);
+            inner.sorted_column = Some((column, ascending));
         }
     }
 
-    /// Get the table cursor row ID
-    pub fn table_cursor_id(&self) -> Option<String> {
+    /// Get the sorted column info (column index, ascending).
+    pub fn sorted_column(&self) -> Option<(usize, bool)> {
         self.inner
             .read()
             .ok()
-            .and_then(|inner| inner.table_cursor_id.clone())
+            .and_then(|inner| inner.sorted_column)
     }
 
-    /// Clear the table cursor row ID
-    pub fn clear_table_cursor_id(&self) {
+    /// Clear sorted column data.
+    pub fn clear_sorted(&self) {
         if let Ok(mut inner) = self.inner.write() {
-            inner.table_cursor_id = None;
-        }
-    }
-
-    /// Set the sorted table column (called by table component)
-    pub fn set_table_sorted_column(&self, column: usize, ascending: bool) {
-        if let Ok(mut inner) = self.inner.write() {
-            inner.table_sorted_column = Some((column, ascending));
-        }
-    }
-
-    /// Get the sorted table column (column index, ascending)
-    pub fn table_sorted_column(&self) -> Option<(usize, bool)> {
-        self.inner
-            .read()
-            .ok()
-            .and_then(|inner| inner.table_sorted_column)
-    }
-
-    /// Clear the sorted table column
-    pub fn clear_table_sorted_column(&self) {
-        if let Ok(mut inner) = self.inner.write() {
-            inner.table_sorted_column = None;
+            inner.sorted_column = None;
         }
     }
 

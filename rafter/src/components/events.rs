@@ -4,13 +4,59 @@
 //! allowing each component to handle its own events while keeping the
 //! event loop as a thin dispatcher.
 //!
-//! Components set their context data (e.g., cursor position, input text)
-//! via `AppContext` before returning from event handlers. The event loop
-//! then dispatches appropriate handlers based on what context was set.
+//! Components push events to the event queue via `AppContext::push_event()`.
+//! The event loop then drains the queue and dispatches appropriate handlers.
 
 use crate::context::AppContext;
 use crate::events::{Modifiers, ScrollDirection};
 use crate::keybinds::KeyCombo;
+
+// =============================================================================
+// Component Event Types
+// =============================================================================
+
+/// Identifies which handler to call for a component event.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ComponentEventKind {
+    /// Item/row/node activated (Enter, double-click)
+    Activate,
+    /// Cursor moved to new position
+    CursorMove,
+    /// Selection changed
+    SelectionChange,
+    /// Tree node expanded
+    Expand,
+    /// Tree node collapsed
+    Collapse,
+    /// Table column sorted
+    Sort,
+}
+
+/// A component event to be dispatched.
+///
+/// Components push these events via `AppContext::push_event()`.
+/// The event loop drains and dispatches them after each user interaction.
+#[derive(Debug, Clone)]
+pub struct ComponentEvent {
+    /// Which kind of event
+    pub kind: ComponentEventKind,
+    /// Component ID that triggered the event
+    pub component_id: String,
+}
+
+impl ComponentEvent {
+    /// Create a new component event.
+    pub fn new(kind: ComponentEventKind, component_id: impl Into<String>) -> Self {
+        Self {
+            kind,
+            component_id: component_id.into(),
+        }
+    }
+}
+
+// =============================================================================
+// Event Result
+// =============================================================================
 
 /// Result of handling an event.
 #[derive(Debug, Clone, PartialEq, Eq)]
