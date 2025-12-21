@@ -393,6 +393,28 @@ use std::fmt::Debug;
 
 use crate::events::Modifiers;
 use crate::keybinds::HandlerId;
+use crate::node::Node;
+use crate::runtime::hit_test::HitTestMap;
+use crate::theme::Theme;
+
+/// Context passed to widgets during rendering.
+///
+/// This provides widgets with access to runtime resources needed for rendering,
+/// including theme colors, hit testing registration, and recursive node rendering.
+pub struct RenderContext<'a> {
+    /// Theme for resolving colors
+    pub theme: &'a dyn Theme,
+    /// Hit test map for registering clickable areas
+    pub hit_map: &'a mut HitTestMap,
+    /// Function for rendering child nodes (used by container widgets)
+    pub render_node: fn(&mut Frame, &Node, Rect, &mut HitTestMap, &dyn Theme, Option<&str>),
+    /// ID of the currently focused widget
+    pub focused_id: Option<&'a str>,
+    /// Pre-resolved ratatui style for this widget
+    pub style: ratatui::style::Style,
+    /// Layout configuration for this widget
+    pub layout: &'a crate::node::Layout,
+}
 
 /// Handler composition for widgets.
 ///
@@ -474,8 +496,10 @@ impl WidgetHandlers {
 ///         self.dirty.store(false, Ordering::SeqCst);
 ///     }
 ///
-///     fn render(&self, frame: &mut Frame, area: Rect, focused: bool) {
+///     fn render(&self, frame: &mut Frame, area: Rect, focused: bool, ctx: &mut RenderContext<'_>) {
 ///         // Render using ratatui primitives
+///         // Access theme colors via ctx.theme
+///         // Register hit areas via ctx.hit_map
 ///     }
 /// }
 /// ```
@@ -555,7 +579,8 @@ pub trait AnyWidget: Send + Sync + Debug {
     /// * `frame` - The ratatui frame to render to
     /// * `area` - The rectangular area allocated for this widget
     /// * `focused` - Whether this widget currently has keyboard focus
-    fn render(&self, frame: &mut Frame, area: Rect, focused: bool);
+    /// * `ctx` - Render context with theme, hit_map, and render_node function
+    fn render(&self, frame: &mut Frame, area: Rect, focused: bool, ctx: &mut RenderContext<'_>);
 
     // =========================================================================
     // Capability Queries

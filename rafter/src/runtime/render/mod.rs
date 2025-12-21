@@ -20,6 +20,7 @@ pub use backdrop::{dim_backdrop, fill_background};
 pub use toasts::render_toasts;
 
 use crate::widgets::input::render::render_input;
+use crate::widgets::RenderContext;
 use primitives::{render_button, render_container, render_stack, render_text};
 
 /// Convert a Style to ratatui Style, resolving named colors via theme
@@ -125,14 +126,23 @@ pub fn render_node(
         }
         Node::Widget {
             widget,
-            style: _,
-            layout: _,
+            style,
+            layout,
             ..
         } => {
             // Unified widget rendering - delegates to the widget's render method
             let is_focused = focused_id == Some(widget.id().as_str());
-            widget.render(frame, area, is_focused);
-            hit_map.register(widget.id(), area, widget.captures_input());
+            let ratatui_style = style_to_ratatui(style, theme);
+            let mut ctx = RenderContext {
+                theme,
+                hit_map,
+                render_node,
+                focused_id,
+                style: ratatui_style,
+                layout,
+            };
+            widget.render(frame, area, is_focused, &mut ctx);
+            ctx.hit_map.register(widget.id(), area, widget.captures_input());
         }
         // Legacy variants (deprecated - to be removed in Phase 5)
         Node::Input {

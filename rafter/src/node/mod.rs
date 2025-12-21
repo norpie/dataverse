@@ -970,5 +970,3 @@ impl Node {
     }
 }
 
-// We can't derive Clone for Node because Box<dyn AnyWidget> isn't Clone.
-// This is intentional - widgets with internal state shouldn't be cloned.

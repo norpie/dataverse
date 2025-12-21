@@ -216,7 +216,7 @@ pub fn render(
 }
 
 /// Render the table header row.
-fn render_header(
+pub fn render_header(
     frame: &mut Frame,
     columns: &[Column],
     sort: Option<(usize, bool)>,
@@ -350,7 +350,7 @@ fn render_header(
 
 /// Render a single table data row with proper column alignment.
 #[allow(clippy::too_many_arguments)]
-fn render_row(
+pub fn render_row(
     frame: &mut Frame,
     widget: &dyn AnyTable,
     row_index: usize,

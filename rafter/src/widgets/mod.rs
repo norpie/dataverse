@@ -34,6 +34,6 @@ pub use traits::{
     // Legacy traits (still used by existing widgets, will be migrated in Phase 5)
     AnySelectable, ScrollableWidget, SelectableWidget,
     // New unified widget system
-    AnyWidget, Scrollable, Selectable, WidgetHandlers,
+    AnyWidget, RenderContext, Scrollable, Selectable, WidgetHandlers,
 };
 pub use tree::{AnyTree, FlatNode, Tree, TreeId, TreeItem};

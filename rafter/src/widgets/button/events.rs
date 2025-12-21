@@ -6,7 +6,7 @@ use ratatui::Frame;
 use crate::context::AppContext;
 use crate::keybinds::{Key, KeyCombo};
 use crate::widgets::events::EventResult;
-use crate::widgets::traits::AnyWidget;
+use crate::widgets::traits::{AnyWidget, RenderContext};
 
 use super::Button;
 
@@ -52,7 +52,7 @@ impl AnyWidget for Button {
         }
     }
 
-    fn render(&self, frame: &mut Frame, area: Rect, focused: bool) {
+    fn render(&self, frame: &mut Frame, area: Rect, focused: bool, _ctx: &mut RenderContext<'_>) {
         super::render::render_button(frame, &self.label(), focused, area);
     }
 }

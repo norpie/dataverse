@@ -6,7 +6,7 @@ use ratatui::Frame;
 use crate::context::AppContext;
 use crate::keybinds::{Key, KeyCombo};
 use crate::widgets::events::{EventResult, WidgetEvents};
-use crate::widgets::traits::AnyWidget;
+use crate::widgets::traits::{AnyWidget, RenderContext};
 
 use super::RadioGroup;
 
@@ -91,7 +91,7 @@ impl AnyWidget for RadioGroup {
         self.on_key(key, cx)
     }
 
-    fn render(&self, frame: &mut Frame, area: Rect, focused: bool) {
+    fn render(&self, frame: &mut Frame, area: Rect, focused: bool, _ctx: &mut RenderContext<'_>) {
         // When focused, highlight the selected option (or first if none selected)
         let focused_index = if focused {
             Some(self.selected().unwrap_or(0))
