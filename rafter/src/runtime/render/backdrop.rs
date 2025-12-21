@@ -7,7 +7,7 @@ use ratatui::widgets::Block;
 
 /// Fill the entire buffer with a background color.
 ///
-/// This should be called before rendering the view to ensure
+/// This should be called before rendering the page to ensure
 /// the entire terminal has a consistent background.
 pub fn fill_background(frame: &mut Frame, color: Color) {
     let area = frame.area();

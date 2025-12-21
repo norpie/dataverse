@@ -91,17 +91,17 @@ impl Color {
 
 // Accessors
 impl Color {
-    /// Get the red component.
+    /// Get the red widget.
     pub const fn r(&self) -> u8 {
         self.r
     }
 
-    /// Get the green component.
+    /// Get the green widget.
     pub const fn g(&self) -> u8 {
         self.g
     }
 
-    /// Get the blue component.
+    /// Get the blue widget.
     pub const fn b(&self) -> u8 {
         self.b
     }
@@ -119,7 +119,7 @@ impl Color {
 
 // Color manipulation (converts to OKLCH, manipulates, converts back)
 impl Color {
-    /// Get this color's OKLCH components.
+    /// Get this color's OKLCH widgets.
     pub fn to_oklch(&self) -> (f32, f32, f32) {
         let srgb = AlphaColor::<Srgb>::new([
             self.r as f32 / 255.0,

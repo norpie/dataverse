@@ -1,6 +1,6 @@
 //! Forms Example
 //!
-//! A demo showcasing rafter's form components:
+//! A demo showcasing rafter's form widgets:
 //! - Checkbox with label and custom indicators
 //! - RadioGroup for mutually exclusive options
 //! - Input fields
@@ -132,11 +132,11 @@ impl FormsApp {
         cx.exit();
     }
 
-    fn view(&self) -> Node {
+    fn page(&self) -> Node {
         let submitted = self.submitted.get();
         let divider = "─".repeat(50);
 
-        view! {
+        page! {
             column (padding: 2, gap: 1) {
                 // Header
                 text (bold, fg: primary) { "Form Components Demo" }

@@ -137,16 +137,16 @@ pub async fn run_event_loop<A: App>(
         let now = Instant::now();
         state.active_toasts.retain(|(_, expiry)| *expiry > now);
 
-        // Get the view tree for app or top modal
-        let view = if let Some(entry) = state.modal_stack.last() {
-            entry.modal.view()
+        // Get the page tree for app or top modal
+        let page = if let Some(entry) = state.modal_stack.last() {
+            entry.modal.page()
         } else {
-            app.view()
+            app.page()
         };
 
-        // Update focusable IDs from view tree
+        // Update focusable IDs from page tree
         let focusable_ids: Vec<FocusId> =
-            view.focusable_ids().into_iter().map(FocusId::new).collect();
+            page.focusable_ids().into_iter().map(FocusId::new).collect();
 
         // Update focus state for the active layer
         if let Some(entry) = state.modal_stack.last_mut() {
@@ -160,16 +160,16 @@ pub async fn run_event_loop<A: App>(
         let theme = &state.current_theme;
         let focused_id = state.focused_id();
 
-        // Cache app view (computed once per frame)
+        // Cache app page (computed once per frame)
         let view_start = Instant::now();
-        let app_view = app.view();
+        let app_view = app.page();
         let view_elapsed = view_start.elapsed();
         if view_elapsed.as_millis() > 5 {
-            warn!("PROFILE: app.view() took {:?}", view_elapsed);
+            warn!("PROFILE: app.page() took {:?}", view_elapsed);
         }
 
         // Cache modal views (computed once per frame)
-        let modal_views: Vec<_> = state.modal_stack.iter().map(|e| e.modal.view()).collect();
+        let modal_views: Vec<_> = state.modal_stack.iter().map(|e| e.modal.page()).collect();
 
         let modal_stack_ref = &state.modal_stack;
         let draw_start = Instant::now();
@@ -222,7 +222,7 @@ pub async fn run_event_loop<A: App>(
                     None
                 };
 
-                // Render modal view
+                // Render modal page
                 render_node(
                     frame,
                     modal_view,
@@ -295,7 +295,7 @@ pub async fn run_event_loop<A: App>(
                 // Dispatch the event using the unified handler
                 if dispatch_event(
                     &event_to_dispatch,
-                    &view,
+                    &page,
                     &hit_map,
                     &app,
                     &mut state,

@@ -265,24 +265,24 @@ impl From<&str> for HandlerId {
     }
 }
 
-/// View scope for a keybind.
+/// Page scope for a keybind.
 ///
 /// Keybinds can be scoped to specific views, meaning they are only active
-/// when the app's `current_view()` returns a matching value.
+/// when the app's `current_page()` returns a matching value.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Hash)]
 pub enum KeybindScope {
-    /// Always active (no view restriction)
+    /// Always active (no page restriction)
     #[default]
     Global,
-    /// Only active when `current_view()` returns this view name
-    View(String),
+    /// Only active when `current_page()` returns this page name
+    Page(String),
 }
 
 /// A single keybind entry (may be a sequence like "gg")
 #[derive(Debug, Clone)]
 pub struct Keybind {
     /// Unique identifier for configuration (e.g., "explorer_app.record_view.delete")
-    /// Set by the macro based on app name, view scope, and handler name.
+    /// Set by the macro based on app name, page scope, and handler name.
     pub id: String,
     /// The original key string from the macro (e.g., "ctrl+d", "gg")
     /// Used for displaying defaults and resetting overrides.
@@ -292,7 +292,7 @@ pub struct Keybind {
     pub keys: Option<Vec<KeyCombo>>,
     /// Handler to invoke
     pub handler: HandlerId,
-    /// View scope for this keybind
+    /// Page scope for this keybind
     pub scope: KeybindScope,
 }
 
@@ -314,7 +314,7 @@ impl Keybind {
         }
     }
 
-    /// Set the view scope for this keybind
+    /// Set the page scope for this keybind
     pub fn with_scope(mut self, scope: KeybindScope) -> Self {
         self.scope = scope;
         self
@@ -331,14 +331,14 @@ impl Keybind {
         self.keys.is_some()
     }
 
-    /// Check if this keybind is active for the given view
-    pub fn is_active_for(&self, current_view: Option<&str>) -> bool {
+    /// Check if this keybind is active for the given page
+    pub fn is_active_for(&self, current_page: Option<&str>) -> bool {
         if !self.is_enabled() {
             return false;
         }
         match &self.scope {
             KeybindScope::Global => true,
-            KeybindScope::View(view) => current_view == Some(view.as_str()),
+            KeybindScope::Page(page) => current_page == Some(page.as_str()),
         }
     }
 
@@ -366,7 +366,7 @@ impl Keybind {
             handler: self.handler.0.clone(),
             scope: match &self.scope {
                 KeybindScope::Global => None,
-                KeybindScope::View(v) => Some(v.clone()),
+                KeybindScope::Page(v) => Some(v.clone()),
             },
             enabled: self.is_enabled(),
         }
@@ -386,7 +386,7 @@ pub struct KeybindInfo {
     pub current_keys: Option<String>,
     /// Handler name (e.g., "delete")
     pub handler: String,
-    /// View scope name (None if global)
+    /// Page scope name (None if global)
     pub scope: Option<String>,
     /// Whether the keybind is enabled
     pub enabled: bool,
@@ -418,32 +418,32 @@ impl Keybinds {
         self.add(Keybind::new(handler.0.clone(), key_str, vec![key], handler));
     }
 
-    /// Add a simple key -> handler binding with view scope
+    /// Add a simple key -> handler binding with page scope
     /// Note: This generates an ID from the handler name. For full control, use `add()` directly.
     pub fn bind_scoped(
         &mut self,
         key: KeyCombo,
         handler: impl Into<HandlerId>,
-        view: impl Into<String>,
+        page: impl Into<String>,
     ) {
         let handler = handler.into();
-        let view = view.into();
+        let page = page.into();
         let key_str = format!("{:?}", key); // Simple debug representation
         self.add(
             Keybind::new(handler.0.clone(), key_str, vec![key], handler)
-                .with_scope(KeybindScope::View(view)),
+                .with_scope(KeybindScope::Page(page)),
         );
     }
 
-    /// Look up handler for a single key, respecting view scope
-    pub fn get_single(&self, key: &KeyCombo, current_view: Option<&str>) -> Option<&HandlerId> {
-        // First try view-scoped keybinds (higher priority)
+    /// Look up handler for a single key, respecting page scope
+    pub fn get_single(&self, key: &KeyCombo, current_page: Option<&str>) -> Option<&HandlerId> {
+        // First try page-scoped keybinds (higher priority)
         for bind in &self.binds {
             if let Some(keys) = &bind.keys
                 && keys.len() == 1
                 && keys[0] == *key
-                && let KeybindScope::View(view) = &bind.scope
-                && current_view == Some(view.as_str())
+                && let KeybindScope::Page(page) = &bind.scope
+                && current_page == Some(page.as_str())
             {
                 return Some(&bind.handler);
             }
@@ -466,11 +466,11 @@ impl Keybinds {
         &self.binds
     }
 
-    /// Get keybinds that are active for the current view
-    pub fn active_for(&self, current_view: Option<&str>) -> impl Iterator<Item = &Keybind> {
+    /// Get keybinds that are active for the current page
+    pub fn active_for(&self, current_page: Option<&str>) -> impl Iterator<Item = &Keybind> {
         self.binds
             .iter()
-            .filter(move |bind| bind.is_active_for(current_view))
+            .filter(move |bind| bind.is_active_for(current_page))
     }
 
     /// Merge another keybinds collection into this one
@@ -517,10 +517,10 @@ impl Keybinds {
     }
 
     /// Get display info for active keybinds only
-    pub fn active_infos(&self, current_view: Option<&str>) -> Vec<KeybindInfo> {
+    pub fn active_infos(&self, current_page: Option<&str>) -> Vec<KeybindInfo> {
         self.binds
             .iter()
-            .filter(|b| b.is_active_for(current_view))
+            .filter(|b| b.is_active_for(current_page))
             .map(|b| b.to_info())
             .collect()
     }

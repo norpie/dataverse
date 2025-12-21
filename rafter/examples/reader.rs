@@ -1,6 +1,6 @@
 //! Reader Example
 //!
-//! A simple scrollable text reader to test the ScrollArea component.
+//! A simple scrollable text reader to test the ScrollArea widget.
 
 use std::fs::File;
 
@@ -85,8 +85,8 @@ impl Reader {
         cx.exit();
     }
 
-    fn view(&self) -> Node {
-        view! {
+    fn page(&self) -> Node {
+        page! {
             row(padding: 2, bg: background) {
                 column(padding: 4) {}
                 column(gap: 1) {

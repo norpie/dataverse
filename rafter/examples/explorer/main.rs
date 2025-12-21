@@ -1,7 +1,7 @@
 //! Explorer Example
 //!
-//! A multi-view file explorer demo showcasing rafter's capabilities:
-//! - Multiple views with view-scoped keybinds
+//! A multi-page file explorer demo showcasing rafter's capabilities:
+//! - Multiple pages with page-scoped keybinds
 //! - Modal dialogs (confirm, input)
 //! - State management with automatic reactivity
 //! - Keyboard navigation and vim-style keybinds
@@ -11,7 +11,7 @@
 //! - Configurable keybinds
 
 mod modals;
-mod views;
+mod pages;
 
 use std::collections::HashMap;
 use std::fmt;
@@ -24,7 +24,7 @@ use rafter::theme::{DefaultTheme, Theme};
 use simplelog::{Config, WriteLogger};
 
 use modals::{ConfirmModal, RenameModal};
-use views::{DetailView, ListView};
+use pages::{DetailView, ListView};
 
 // ============================================================================
 // Virtual File System
@@ -143,11 +143,11 @@ impl VirtualFS {
 }
 
 // ============================================================================
-// View Enum
+// Page Enum
 // ============================================================================
 
 #[derive(Debug, Clone, Default)]
-pub enum View {
+pub enum Page {
     #[default]
     List,
     Detail {
@@ -155,11 +155,11 @@ pub enum View {
     },
 }
 
-impl fmt::Display for View {
+impl fmt::Display for Page {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            View::List => write!(f, "List"),
-            View::Detail { .. } => write!(f, "Detail"),
+            Page::List => write!(f, "List"),
+            Page::Detail { .. } => write!(f, "Detail"),
         }
     }
 }
@@ -208,7 +208,7 @@ impl ListItem for FileEntry {
         let size_display = self.size_display();
 
         // Build custom layout with icons and two-column display
-        let content = view! {
+        let content = page! {
             row (justify: space_between) {
                 // Apply bold styling if focused, use directory color if is_dir
                 if focused {
@@ -275,8 +275,8 @@ impl Theme for ExplorerTheme {
 
 #[app]
 pub struct Explorer {
-    /// Current view
-    view: View,
+    /// Current page
+    page: Page,
     /// List of files
     files: List<FileEntry>,
     /// Current path in the virtual filesystem
@@ -305,8 +305,8 @@ impl Explorer {
         cx.toast("Explorer loaded");
     }
 
-    fn current_view(&self) -> Option<String> {
-        Some(self.view.get().to_string())
+    fn current_page(&self) -> Option<String> {
+        Some(self.page.get().to_string())
     }
 
     // -------------------------------------------------------------------------
@@ -332,13 +332,13 @@ impl Explorer {
     }
 
     // -------------------------------------------------------------------------
-    // List View Keybinds
+    // List Page Keybinds
     // -------------------------------------------------------------------------
 
-    #[keybinds(view = List)]
+    #[keybinds(page = List)]
     fn list_keys() -> Keybinds {
         keybinds! {
-            // Note: j/k/g/G/enter are handled by List component internally
+            // Note: j/k/g/G/enter are handled by List widget internally
             // Only "l" needs a keybind for vim-style open
             "l" => open_selected,
             "backspace" | "h" => back_directory,
@@ -375,8 +375,8 @@ impl Explorer {
                     self.status.set(format!("Opened: {}", file.name));
                 }
             } else {
-                // Navigate to detail view
-                self.view.set(View::Detail { index: selected });
+                // Navigate to detail page
+                self.page.set(Page::Detail { index: selected });
                 self.status.set(format!("Viewing: {}", file.name));
             }
         }
@@ -447,10 +447,10 @@ impl Explorer {
     }
 
     // -------------------------------------------------------------------------
-    // Detail View Keybinds
+    // Detail Page Keybinds
     // -------------------------------------------------------------------------
 
-    #[keybinds(view = Detail)]
+    #[keybinds(page = Detail)]
     fn detail_keys() -> Keybinds {
         keybinds! {
             "backspace" | "h" | "escape" => back_to_list,
@@ -461,13 +461,13 @@ impl Explorer {
 
     #[handler]
     async fn back_to_list(&self) {
-        self.view.set(View::List);
+        self.page.set(Page::List);
         self.status.set("Ready".to_string());
     }
 
     #[handler]
     async fn delete_current(&self, cx: &AppContext) {
-        if let View::Detail { index } = self.view.get() {
+        if let Page::Detail { index } = self.page.get() {
             if let Some(file) = self.files.get(index) {
                 let confirmed = cx
                     .modal(ConfirmModal::new(format!("Delete '{}'?", file.name)))
@@ -475,7 +475,7 @@ impl Explorer {
 
                 if confirmed {
                     self.files.remove(index);
-                    self.view.set(View::List);
+                    self.page.set(Page::List);
                     cx.toast("File deleted");
                     self.status.set("Deleted".to_string());
                 }
@@ -485,7 +485,7 @@ impl Explorer {
 
     #[handler]
     async fn rename_current(&self, cx: &AppContext) {
-        if let View::Detail { index } = self.view.get() {
+        if let Page::Detail { index } = self.page.get() {
             if let Some(file) = self.files.get(index) {
                 if let Some(new_name) = cx.modal(RenameModal::new(file.name.clone())).await {
                     self.files.update(|f| {
@@ -501,17 +501,17 @@ impl Explorer {
     }
 
     // -------------------------------------------------------------------------
-    // View Rendering
+    // Page Rendering
     // -------------------------------------------------------------------------
 
-    fn view(&self) -> Node {
-        let current_view = self.view.get();
+    fn page(&self) -> Node {
+        let current_page = self.page.get();
         let status = self.status.get();
         let path = self.path.get();
 
-        match current_view {
-            View::List => ListView::render(&self.files, &path, &status),
-            View::Detail { index } => {
+        match current_page {
+            Page::List => ListView::render(&self.files, &path, &status),
+            Page::Detail { index } => {
                 if let Some(file) = self.files.get(index) {
                     DetailView::render(&file, &status)
                 } else {

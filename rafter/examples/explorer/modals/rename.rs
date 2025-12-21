@@ -52,10 +52,10 @@ impl RenameModal {
         mx.close(None);
     }
 
-    fn view(&self) -> Node {
+    fn page(&self) -> Node {
         let title = self.title.clone();
 
-        view! {
+        page! {
             column (padding: 2, gap: 1, bg: surface) {
                 text (bold, fg: primary) { title }
                 input (

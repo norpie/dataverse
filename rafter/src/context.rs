@@ -5,7 +5,7 @@ use std::time::Duration;
 use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
 
-use crate::components::events::ComponentEvent;
+use crate::widgets::events::WidgetEvent;
 use crate::focus::FocusId;
 use crate::keybinds::{KeybindError, KeybindInfo, Keybinds};
 use crate::modal::{Modal, ModalContext, ModalDyn, ModalEntry};
@@ -86,10 +86,10 @@ struct AppContextInner {
     modal_request: Option<Box<dyn ModalDyn>>,
 
     // -------------------------------------------------------------------------
-    // Unified component event queue and data
+    // Unified widget event queue and data
     // -------------------------------------------------------------------------
-    /// Pending component events to dispatch
-    pending_events: Vec<ComponentEvent>,
+    /// Pending widget events to dispatch
+    pending_events: Vec<WidgetEvent>,
 
     /// Activated item ID (works for list/tree/table)
     activated_id: Option<String>,
@@ -231,23 +231,23 @@ impl AppContext {
     }
 
     // -------------------------------------------------------------------------
-    // Component event queue
+    // Widget event queue
     // -------------------------------------------------------------------------
 
-    /// Push a component event to the queue.
+    /// Push a widget event to the queue.
     ///
     /// Components call this to signal that an event occurred. The event loop
     /// will drain the queue and dispatch appropriate handlers.
-    pub fn push_event(&self, event: ComponentEvent) {
+    pub fn push_event(&self, event: WidgetEvent) {
         if let Ok(mut inner) = self.inner.write() {
             inner.pending_events.push(event);
         }
     }
 
-    /// Drain all pending component events.
+    /// Drain all pending widget events.
     ///
     /// Returns the events and clears the queue. Called by the event loop.
-    pub(crate) fn drain_events(&self) -> Vec<ComponentEvent> {
+    pub(crate) fn drain_events(&self) -> Vec<WidgetEvent> {
         self.inner
             .write()
             .ok()
@@ -256,7 +256,7 @@ impl AppContext {
     }
 
     // -------------------------------------------------------------------------
-    // Unified component event data accessors
+    // Unified widget event data accessors
     // -------------------------------------------------------------------------
 
     /// Set activated item (works for list/tree/table).
@@ -425,7 +425,7 @@ impl AppContext {
 
     /// Open a modal and wait for it to return a result.
     ///
-    /// The modal will be displayed on top of the current view and will
+    /// The modal will be displayed on top of the current page and will
     /// capture all input until it is closed.
     ///
     /// # Example
@@ -499,8 +499,8 @@ impl AppContext {
 
     /// Get display info for currently active keybinds
     ///
-    /// Note: This requires knowing the current view, which is app-specific.
-    /// For now, this returns all keybinds. Use the app's `current_view()`
+    /// Note: This requires knowing the current page, which is app-specific.
+    /// For now, this returns all keybinds. Use the app's `current_page()`
     /// to filter if needed.
     pub fn all_keybinds(&self) -> Vec<KeybindInfo> {
         self.keybinds()
@@ -597,7 +597,7 @@ impl Default for AppContext {
     }
 }
 
-/// Context passed to view render functions
+/// Context passed to page render functions
 pub struct ViewContext<'a> {
     /// Whether reduce_motion is enabled
     reduce_motion: bool,
@@ -606,7 +606,7 @@ pub struct ViewContext<'a> {
 }
 
 impl<'a> ViewContext<'a> {
-    /// Create a new view context
+    /// Create a new page context
     pub fn new(app_cx: &'a AppContext) -> Self {
         Self {
             reduce_motion: false,

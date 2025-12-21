@@ -1,20 +1,20 @@
-//! Node types for the view tree.
+//! Node types for the page tree.
 
 mod layout;
 
 pub use layout::{Align, Border, Direction, Justify, Layout, Size};
 
-use crate::components::events::{ComponentEvents, EventResult};
-use crate::components::list::AnyList;
-use crate::components::table::AnyTable;
-use crate::components::tree::AnyTree;
-use crate::components::{AnySelectable, Checkbox, Input, RadioGroup, ScrollArea};
+use crate::widgets::events::{WidgetEvents, EventResult};
+use crate::widgets::list::AnyList;
+use crate::widgets::table::AnyTable;
+use crate::widgets::tree::AnyTree;
+use crate::widgets::{AnySelectable, Checkbox, Input, RadioGroup, ScrollArea};
 use crate::context::AppContext;
 use crate::events::{Modifiers, ScrollDirection};
 use crate::keybinds::{HandlerId, KeyCombo};
 use crate::style::Style;
 
-/// A node in the view tree
+/// A node in the page tree
 #[derive(Debug, Clone, Default)]
 pub enum Node {
     /// Empty node (renders nothing)
@@ -59,8 +59,8 @@ pub enum Node {
         id: String,
         /// Style
         style: Style,
-        /// Bound Input component (if using bind: syntax)
-        component: Option<Input>,
+        /// Bound Input widget (if using bind: syntax)
+        widget: Option<Input>,
     },
 
     /// Clickable button
@@ -81,8 +81,8 @@ pub enum Node {
         id: String,
         /// Style
         style: Style,
-        /// Bound Checkbox component
-        component: Checkbox,
+        /// Bound Checkbox widget
+        widget: Checkbox,
         /// Handler for state changes
         on_change: Option<HandlerId>,
     },
@@ -93,8 +93,8 @@ pub enum Node {
         id: String,
         /// Style
         style: Style,
-        /// Bound RadioGroup component
-        component: RadioGroup,
+        /// Bound RadioGroup widget
+        widget: RadioGroup,
         /// Handler for selection changes
         on_change: Option<HandlerId>,
     },
@@ -109,8 +109,8 @@ pub enum Node {
         style: Style,
         /// Layout properties
         layout: Layout,
-        /// Bound ScrollArea component
-        component: ScrollArea,
+        /// Bound ScrollArea widget
+        widget: ScrollArea,
     },
 
     /// Virtualized list
@@ -121,8 +121,8 @@ pub enum Node {
         style: Style,
         /// Layout properties
         layout: Layout,
-        /// The list component (type-erased)
-        component: Box<dyn AnyList>,
+        /// The list widget (type-erased)
+        widget: Box<dyn AnyList>,
         /// Handler for item activation
         on_activate: Option<HandlerId>,
         /// Handler for selection changes
@@ -141,8 +141,8 @@ pub enum Node {
         style: Style,
         /// Layout properties
         layout: Layout,
-        /// The tree component (type-erased)
-        component: Box<dyn AnyTree>,
+        /// The tree widget (type-erased)
+        widget: Box<dyn AnyTree>,
         /// Handler for node activation
         on_activate: Option<HandlerId>,
         /// Handler for node expansion
@@ -163,8 +163,8 @@ pub enum Node {
         style: Style,
         /// Layout properties
         layout: Layout,
-        /// The table component (type-erased)
-        component: Box<dyn AnyTable>,
+        /// The table widget (type-erased)
+        widget: Box<dyn AnyTable>,
         /// Handler for row activation
         on_activate: Option<HandlerId>,
         /// Handler for selection changes
@@ -400,10 +400,10 @@ impl Node {
         }
     }
 
-    /// Get the Input component for an input element by ID
+    /// Get the Input widget for an input element by ID
     pub fn get_input_component(&self, target_id: &str) -> Option<&Input> {
         match self {
-            Self::Input { id, component, .. } if id == target_id => component.as_ref(),
+            Self::Input { id, widget, .. } if id == target_id => widget.as_ref(),
             Self::Column { children, .. }
             | Self::Row { children, .. }
             | Self::Stack { children, .. } => children
@@ -414,10 +414,10 @@ impl Node {
         }
     }
 
-    /// Get the Checkbox component for a checkbox element by ID
+    /// Get the Checkbox widget for a checkbox element by ID
     pub fn get_checkbox_component(&self, target_id: &str) -> Option<&Checkbox> {
         match self {
-            Self::Checkbox { id, component, .. } if id == target_id => Some(component),
+            Self::Checkbox { id, widget, .. } if id == target_id => Some(widget),
             Self::Column { children, .. }
             | Self::Row { children, .. }
             | Self::Stack { children, .. } => children
@@ -428,10 +428,10 @@ impl Node {
         }
     }
 
-    /// Get the RadioGroup component for a radio group element by ID
+    /// Get the RadioGroup widget for a radio group element by ID
     pub fn get_radio_group_component(&self, target_id: &str) -> Option<&RadioGroup> {
         match self {
-            Self::RadioGroup { id, component, .. } if id == target_id => Some(component),
+            Self::RadioGroup { id, widget, .. } if id == target_id => Some(widget),
             Self::Column { children, .. }
             | Self::Row { children, .. }
             | Self::Stack { children, .. } => children
@@ -442,10 +442,10 @@ impl Node {
         }
     }
 
-    /// Get the ScrollArea component for a scroll area element by ID
+    /// Get the ScrollArea widget for a scroll area element by ID
     pub fn get_scroll_area_component(&self, target_id: &str) -> Option<&ScrollArea> {
         match self {
-            Self::ScrollArea { id, component, .. } if id == target_id => Some(component),
+            Self::ScrollArea { id, widget, .. } if id == target_id => Some(widget),
             Self::Column { children, .. }
             | Self::Row { children, .. }
             | Self::Stack { children, .. } => children
@@ -456,10 +456,10 @@ impl Node {
         }
     }
 
-    /// Get the List component for a list element by ID
+    /// Get the List widget for a list element by ID
     pub fn get_list_component(&self, target_id: &str) -> Option<&dyn AnyList> {
         match self {
-            Self::List { id, component, .. } if id == target_id => Some(component.as_ref()),
+            Self::List { id, widget, .. } if id == target_id => Some(widget.as_ref()),
             Self::Column { children, .. }
             | Self::Row { children, .. }
             | Self::Stack { children, .. } => children
@@ -474,7 +474,7 @@ impl Node {
     // Unified handler getters (work for list/tree/table)
     // =========================================================================
 
-    /// Get the on_cursor_move handler for any component (list/tree/table) by ID.
+    /// Get the on_cursor_move handler for any widget (list/tree/table) by ID.
     pub fn get_cursor_handler(&self, target_id: &str) -> Option<HandlerId> {
         match self {
             Self::List {
@@ -496,7 +496,7 @@ impl Node {
         }
     }
 
-    /// Get the on_selection_change handler for any component (list/tree/table) by ID.
+    /// Get the on_selection_change handler for any widget (list/tree/table) by ID.
     pub fn get_selection_handler(&self, target_id: &str) -> Option<HandlerId> {
         match self {
             Self::List {
@@ -582,10 +582,10 @@ impl Node {
         }
     }
 
-    /// Get the Tree component for a tree element by ID
+    /// Get the Tree widget for a tree element by ID
     pub fn get_tree_component(&self, target_id: &str) -> Option<&dyn AnyTree> {
         match self {
-            Self::Tree { id, component, .. } if id == target_id => Some(component.as_ref()),
+            Self::Tree { id, widget, .. } if id == target_id => Some(widget.as_ref()),
             Self::Column { children, .. }
             | Self::Row { children, .. }
             | Self::Stack { children, .. } => children
@@ -596,10 +596,10 @@ impl Node {
         }
     }
 
-    /// Get the Table component for a table element by ID
+    /// Get the Table widget for a table element by ID
     pub fn get_table_component(&self, target_id: &str) -> Option<&dyn AnyTable> {
         match self {
-            Self::Table { id, component, .. } if id == target_id => Some(component.as_ref()),
+            Self::Table { id, widget, .. } if id == target_id => Some(widget.as_ref()),
             Self::Column { children, .. }
             | Self::Row { children, .. }
             | Self::Stack { children, .. } => children
@@ -610,10 +610,10 @@ impl Node {
         }
     }
 
-    /// Get a type-erased selectable component (List, Tree, or Table) by ID.
+    /// Get a type-erased selectable widget (List, Tree, or Table) by ID.
     ///
     /// This provides a unified interface for handling click events on
-    /// selectable components without branching on component type.
+    /// selectable widgets without branching on widget type.
     pub fn get_selectable_component(&self, target_id: &str) -> Option<&dyn AnySelectable> {
         // Try List
         if let Some(list) = self.get_list_component(target_id) {
@@ -630,7 +630,7 @@ impl Node {
         None
     }
 
-    /// Dispatch an event to a component by ID using a visitor function.
+    /// Dispatch an event to a widget by ID using a visitor function.
     ///
     /// This is the core tree traversal logic used by all dispatch_*_event methods.
     /// The visitor function is called when the target node is found.
@@ -658,9 +658,9 @@ impl Node {
         }
     }
 
-    /// Dispatch a click event to a component.
+    /// Dispatch a click event to a widget.
     ///
-    /// Finds the component with the given ID and delegates to its `on_click` handler.
+    /// Finds the widget with the given ID and delegates to its `on_click` handler.
     pub fn dispatch_click_event(
         &self,
         target_id: &str,
@@ -669,22 +669,22 @@ impl Node {
         cx: &AppContext,
     ) -> Option<EventResult> {
         self.dispatch_event(target_id, |node| match node {
-            Self::ScrollArea { component, .. } => Some(component.on_click(x, y, cx)),
+            Self::ScrollArea { widget, .. } => Some(widget.on_click(x, y, cx)),
             Self::Input {
-                component: Some(component),
+                widget: Some(widget),
                 ..
-            } => Some(component.on_click(x, y, cx)),
+            } => Some(widget.on_click(x, y, cx)),
             Self::Input {
-                component: None, ..
+                widget: None, ..
             } => Some(EventResult::Ignored),
-            Self::List { component, .. } => Some(component.on_click(x, y, cx)),
-            Self::Tree { component, .. } => Some(component.on_click(x, y, cx)),
-            Self::Table { component, .. } => Some(component.on_click(x, y, cx)),
+            Self::List { widget, .. } => Some(widget.on_click(x, y, cx)),
+            Self::Tree { widget, .. } => Some(widget.on_click(x, y, cx)),
+            Self::Table { widget, .. } => Some(widget.on_click(x, y, cx)),
             _ => None,
         })
     }
 
-    /// Dispatch a scroll event to a component.
+    /// Dispatch a scroll event to a widget.
     pub fn dispatch_scroll_event(
         &self,
         target_id: &str,
@@ -693,15 +693,15 @@ impl Node {
         cx: &AppContext,
     ) -> Option<EventResult> {
         self.dispatch_event(target_id, |node| match node {
-            Self::ScrollArea { component, .. } => Some(component.on_scroll(direction, amount, cx)),
-            Self::List { component, .. } => Some(component.on_scroll(direction, amount, cx)),
-            Self::Tree { component, .. } => Some(component.on_scroll(direction, amount, cx)),
-            Self::Table { component, .. } => Some(component.on_scroll(direction, amount, cx)),
+            Self::ScrollArea { widget, .. } => Some(widget.on_scroll(direction, amount, cx)),
+            Self::List { widget, .. } => Some(widget.on_scroll(direction, amount, cx)),
+            Self::Tree { widget, .. } => Some(widget.on_scroll(direction, amount, cx)),
+            Self::Table { widget, .. } => Some(widget.on_scroll(direction, amount, cx)),
             _ => None,
         })
     }
 
-    /// Dispatch a drag event to a component.
+    /// Dispatch a drag event to a widget.
     ///
     /// The target ID is typically stored from a previous `StartDrag` result.
     pub fn dispatch_drag_event(
@@ -713,26 +713,26 @@ impl Node {
         cx: &AppContext,
     ) -> Option<EventResult> {
         self.dispatch_event(target_id, |node| match node {
-            Self::ScrollArea { component, .. } => Some(component.on_drag(x, y, modifiers, cx)),
-            Self::List { component, .. } => Some(component.on_drag(x, y, modifiers, cx)),
-            Self::Tree { component, .. } => Some(component.on_drag(x, y, modifiers, cx)),
-            Self::Table { component, .. } => Some(component.on_drag(x, y, modifiers, cx)),
+            Self::ScrollArea { widget, .. } => Some(widget.on_drag(x, y, modifiers, cx)),
+            Self::List { widget, .. } => Some(widget.on_drag(x, y, modifiers, cx)),
+            Self::Tree { widget, .. } => Some(widget.on_drag(x, y, modifiers, cx)),
+            Self::Table { widget, .. } => Some(widget.on_drag(x, y, modifiers, cx)),
             _ => None,
         })
     }
 
-    /// Dispatch a drag release event to a component.
+    /// Dispatch a drag release event to a widget.
     pub fn dispatch_release_event(&self, target_id: &str, cx: &AppContext) -> Option<EventResult> {
         self.dispatch_event(target_id, |node| match node {
-            Self::ScrollArea { component, .. } => Some(component.on_release(cx)),
-            Self::List { component, .. } => Some(component.on_release(cx)),
-            Self::Tree { component, .. } => Some(component.on_release(cx)),
-            Self::Table { component, .. } => Some(component.on_release(cx)),
+            Self::ScrollArea { widget, .. } => Some(widget.on_release(cx)),
+            Self::List { widget, .. } => Some(widget.on_release(cx)),
+            Self::Tree { widget, .. } => Some(widget.on_release(cx)),
+            Self::Table { widget, .. } => Some(widget.on_release(cx)),
             _ => None,
         })
     }
 
-    /// Dispatch a key event to a component.
+    /// Dispatch a key event to a widget.
     pub fn dispatch_key_event(
         &self,
         target_id: &str,
@@ -741,25 +741,25 @@ impl Node {
     ) -> Option<EventResult> {
         self.dispatch_event(target_id, |node| match node {
             Self::Input {
-                component: Some(component),
+                widget: Some(widget),
                 ..
-            } => Some(component.on_key(key, cx)),
+            } => Some(widget.on_key(key, cx)),
             Self::Input {
-                component: None, ..
+                widget: None, ..
             } => Some(EventResult::Ignored),
-            Self::Checkbox { component, .. } => Some(component.on_key(key, cx)),
-            Self::RadioGroup { component, .. } => Some(component.on_key(key, cx)),
-            Self::ScrollArea { component, .. } => Some(component.on_key(key, cx)),
-            Self::List { component, .. } => Some(component.on_key(key, cx)),
-            Self::Tree { component, .. } => Some(component.on_key(key, cx)),
-            Self::Table { component, .. } => Some(component.on_key(key, cx)),
+            Self::Checkbox { widget, .. } => Some(widget.on_key(key, cx)),
+            Self::RadioGroup { widget, .. } => Some(widget.on_key(key, cx)),
+            Self::ScrollArea { widget, .. } => Some(widget.on_key(key, cx)),
+            Self::List { widget, .. } => Some(widget.on_key(key, cx)),
+            Self::Tree { widget, .. } => Some(widget.on_key(key, cx)),
+            Self::Table { widget, .. } => Some(widget.on_key(key, cx)),
             _ => None,
         })
     }
 
-    /// Dispatch a hover event to a component.
+    /// Dispatch a hover event to a widget.
     ///
-    /// Called when the mouse moves over a component's bounds.
+    /// Called when the mouse moves over a widget's bounds.
     pub fn dispatch_hover_event(
         &self,
         target_id: &str,
@@ -768,9 +768,9 @@ impl Node {
         cx: &AppContext,
     ) -> Option<EventResult> {
         self.dispatch_event(target_id, |node| match node {
-            Self::List { component, .. } => Some(component.on_hover(x, y, cx)),
-            Self::Tree { component, .. } => Some(component.on_hover(x, y, cx)),
-            Self::Table { component, .. } => Some(component.on_hover(x, y, cx)),
+            Self::List { widget, .. } => Some(widget.on_hover(x, y, cx)),
+            Self::Tree { widget, .. } => Some(widget.on_hover(x, y, cx)),
+            Self::Table { widget, .. } => Some(widget.on_hover(x, y, cx)),
             _ => None,
         })
     }
@@ -828,17 +828,17 @@ impl Node {
                 (content_len + 5).max(15) as u16
             }
             Self::Button { label, .. } => (label.len() + 4) as u16,
-            Self::Checkbox { component, .. } => {
-                let label = component.label();
+            Self::Checkbox { widget, .. } => {
+                let label = widget.label();
                 if label.is_empty() {
                     1 // Just the indicator
                 } else {
                     (label.len() + 2) as u16 // indicator + space + label
                 }
             }
-            Self::RadioGroup { component, .. } => {
+            Self::RadioGroup { widget, .. } => {
                 // Width is the longest option label + indicator + space
-                component
+                widget
                     .options()
                     .iter()
                     .map(|label| label.len() + 2) // indicator + space + label
@@ -856,11 +856,11 @@ impl Node {
                 40 + chrome_h // Default width, will be overridden by layout
             }
             Self::Table {
-                layout, component, ..
+                layout, widget, ..
             } => {
                 let (chrome_h, _) = layout.chrome_size();
                 // Table total width is sum of column widths
-                component.total_width() + chrome_h
+                widget.total_width() + chrome_h
             }
         }
     }
@@ -905,9 +905,9 @@ impl Node {
                 max_child + chrome_v
             }
             Self::Input { .. } | Self::Button { .. } | Self::Checkbox { .. } => 1,
-            Self::RadioGroup { component, .. } => {
+            Self::RadioGroup { widget, .. } => {
                 // Height is the number of options
-                component.len().max(1) as u16
+                widget.len().max(1) as u16
             }
             Self::ScrollArea { child, layout, .. } => {
                 let (_, chrome_v) = layout.chrome_size();
@@ -915,25 +915,25 @@ impl Node {
                 child.intrinsic_height() + chrome_v
             }
             Self::List {
-                layout, component, ..
+                layout, widget, ..
             } => {
                 let (_, chrome_v) = layout.chrome_size();
                 // Total height of all items
-                component.total_height() + chrome_v
+                widget.total_height() + chrome_v
             }
             Self::Tree {
-                layout, component, ..
+                layout, widget, ..
             } => {
                 let (_, chrome_v) = layout.chrome_size();
                 // Total height of all visible nodes
-                component.total_height() + chrome_v
+                widget.total_height() + chrome_v
             }
             Self::Table {
-                layout, component, ..
+                layout, widget, ..
             } => {
                 let (_, chrome_v) = layout.chrome_size();
                 // Total height of all rows plus header
-                component.total_height() + 1 + chrome_v // +1 for header row
+                widget.total_height() + 1 + chrome_v // +1 for header row
             }
         }
     }

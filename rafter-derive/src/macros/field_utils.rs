@@ -2,7 +2,7 @@
 
 use syn::Type;
 
-/// Component types that manage their own state and shouldn't be wrapped in State<T>
+/// Widget types that manage their own state and shouldn't be wrapped in State<T>
 const COMPONENT_TYPES: &[&str] = &[
     "Checkbox",
     "Input",
@@ -23,7 +23,7 @@ pub fn is_resource_type(ty: &Type) -> bool {
     false
 }
 
-/// Check if a type is a component type (Input, List<T>, Tree<T>, etc.)
+/// Check if a type is a widget type (Input, List<T>, Tree<T>, etc.)
 pub fn is_component_type(ty: &Type) -> bool {
     if let Type::Path(type_path) = ty
         && let Some(segment) = type_path.path.segments.last()

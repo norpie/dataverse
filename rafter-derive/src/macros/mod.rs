@@ -1,6 +1,6 @@
 pub mod app;
 pub mod app_impl;
-pub mod component;
+pub mod widget;
 pub mod field_utils;
 pub mod handler;
 pub mod impl_common;
@@ -10,4 +10,4 @@ pub mod modal_impl;
 pub mod system_overlay;
 pub mod theme;
 pub mod theme_group;
-pub mod view;
+pub mod page;

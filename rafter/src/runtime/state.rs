@@ -31,8 +31,8 @@ pub struct EventLoopState {
     /// Current theme.
     pub current_theme: Arc<dyn Theme>,
 
-    /// Component currently being dragged (for scrollbar drag).
-    pub drag_component_id: Option<String>,
+    /// Widget currently being dragged (for scrollbar drag).
+    pub drag_widget_id: Option<String>,
 }
 
 impl EventLoopState {
@@ -44,7 +44,7 @@ impl EventLoopState {
             modal_stack: Vec::new(),
             active_toasts: Vec::new(),
             current_theme: theme,
-            drag_component_id: None,
+            drag_widget_id: None,
         }
     }
 

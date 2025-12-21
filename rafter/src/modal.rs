@@ -116,8 +116,8 @@ pub trait Modal: Clone + Send + Sync + 'static {
         ModalSize::default()
     }
 
-    /// Render the modal's view.
-    fn view(&self) -> Node;
+    /// Render the modal's page.
+    fn page(&self) -> Node;
 
     /// Get the modal's keybinds.
     fn keybinds(&self) -> Keybinds;
@@ -148,8 +148,8 @@ pub(crate) trait ModalDyn: Send + Sync {
     /// Get the modal's size.
     fn size(&self) -> ModalSize;
 
-    /// Render the modal's view.
-    fn view(&self) -> Node;
+    /// Render the modal's page.
+    fn page(&self) -> Node;
 
     /// Get the modal's keybinds.
     fn keybinds(&self) -> Keybinds;
@@ -193,8 +193,8 @@ impl<M: Modal> ModalDyn for ModalEntry<M> {
         self.modal.size()
     }
 
-    fn view(&self) -> Node {
-        self.modal.view()
+    fn page(&self) -> Node {
+        self.modal.page()
     }
 
     fn keybinds(&self) -> Keybinds {

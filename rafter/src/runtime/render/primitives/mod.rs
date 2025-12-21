@@ -1,7 +1,7 @@
 //! Primitive node rendering functions (containers, text, button).
 //!
-//! These are built-in node types without component state.
-//! Component-specific rendering lives with each component in `src/components/*/render.rs`.
+//! These are built-in node types without widget state.
+//! Widget-specific rendering lives with each widget in `src/widgets/*/render.rs`.
 
 mod button;
 mod container;

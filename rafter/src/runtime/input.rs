@@ -29,15 +29,15 @@ impl InputState {
     /// Process a key press and check for matching keybinds.
     /// Returns the handler ID if a match is found.
     ///
-    /// The `current_view` parameter is used to filter keybinds by scope.
-    /// View-scoped keybinds take priority over global keybinds.
+    /// The `current_page` parameter is used to filter keybinds by scope.
+    /// Page-scoped keybinds take priority over global keybinds.
     pub fn process_key(
         &mut self,
         key: KeyCombo,
         keybinds: &Keybinds,
-        current_view: Option<&str>,
+        current_page: Option<&str>,
     ) -> KeybindMatch {
-        debug!("Processing key: {:?} (view: {:?})", key, current_view);
+        debug!("Processing key: {:?} (page: {:?})", key, current_page);
 
         // Check if sequence has timed out
         if let Some(start) = self.sequence_start
@@ -56,14 +56,14 @@ impl InputState {
 
         debug!("Current sequence: {:?}", self.sequence);
 
-        // Try to match against keybinds (view-scoped first, then global)
+        // Try to match against keybinds (page-scoped first, then global)
         let mut view_exact_match: Option<HandlerId> = None;
         let mut global_exact_match: Option<HandlerId> = None;
         let mut prefix_match = false;
 
         for bind in keybinds.all() {
-            // Skip keybinds that aren't active for the current view
-            if !bind.is_active_for(current_view) {
+            // Skip keybinds that aren't active for the current page
+            if !bind.is_active_for(current_page) {
                 continue;
             }
 
@@ -77,7 +77,7 @@ impl InputState {
                 self.sequence, keys
             );
             if keys == self.sequence {
-                // Exact match - prefer view-scoped over global
+                // Exact match - prefer page-scoped over global
                 debug!(
                     "Exact match found: {:?} (scope: {:?})",
                     bind.handler, bind.scope
@@ -96,7 +96,7 @@ impl InputState {
             }
         }
 
-        // View-scoped matches take priority
+        // Page-scoped matches take priority
         let exact_match = view_exact_match.or(global_exact_match);
 
         if let Some(handler) = exact_match {

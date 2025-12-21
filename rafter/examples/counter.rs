@@ -1,7 +1,7 @@
 //! Counter Example
 //!
 //! A polished demo showcasing rafter's capabilities:
-//! - Declarative views with the `view!` macro
+//! - Declarative pages with the `page!` macro
 //! - State management with automatic reactivity
 //! - Keyboard navigation and vim-style keybinds
 //! - Focus system with Tab navigation
@@ -89,8 +89,8 @@ impl ReallySureModal {
         mx.close(false);
     }
 
-    fn view(&self) -> Node {
-        view! {
+    fn page(&self) -> Node {
+        page! {
             column (padding: 2, gap: 1, bg: surface) {
                 text (bold, fg: error) { "Are you REALLY sure?" }
                 text (fg: muted) { "This action cannot be undone!" }
@@ -138,9 +138,9 @@ impl ConfirmModal {
         mx.close(false);
     }
 
-    fn view(&self) -> Node {
+    fn page(&self) -> Node {
         let message = self.message.clone();
-        view! {
+        page! {
             column (padding: 2, gap: 1, bg: surface) {
                 text (bold, fg: warning) { "Confirm" }
                 text { message }
@@ -253,14 +253,14 @@ impl Counter {
         cx.exit();
     }
 
-    fn view(&self) -> Node {
+    fn page(&self) -> Node {
         let value_str = self.value.get().to_string();
         let step_str = self.step.get().to_string();
 
         // Build data status display
         let data_state = self.data.get();
 
-        view! {
+        page! {
             column (padding: 1, gap: 1, bg: background) {
                 column {
                     text (bold, fg: primary) { "Counter" }

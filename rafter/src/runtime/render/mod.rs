@@ -19,7 +19,7 @@ use crate::theme::{Theme, resolve_color};
 pub use backdrop::{dim_backdrop, fill_background};
 pub use toasts::render_toasts;
 
-use crate::components::input::render::render_input;
+use crate::widgets::input::render::render_input;
 use primitives::{render_button, render_container, render_stack, render_text};
 
 /// Convert a Style to ratatui Style, resolving named colors via theme
@@ -127,11 +127,11 @@ pub fn render_node(
             placeholder,
             style,
             id,
-            component,
+            widget,
             ..
         } => {
             let is_focused = focused_id == Some(id.as_str());
-            let (display_value, cursor_pos) = component
+            let (display_value, cursor_pos) = widget
                 .as_ref()
                 .map(|c| (c.value(), c.cursor()))
                 .unwrap_or_else(|| (value.clone(), value.len()));
@@ -166,16 +166,16 @@ pub fn render_node(
         Node::Checkbox {
             id,
             style,
-            component,
+            widget,
             ..
         } => {
             let is_focused = focused_id == Some(id.as_str());
-            crate::components::checkbox::render::render_checkbox(
+            crate::widgets::checkbox::render::render_checkbox(
                 frame,
-                component.is_checked(),
-                &component.label(),
-                component.checked_char(),
-                component.unchecked_char(),
+                widget.is_checked(),
+                &widget.label(),
+                widget.checked_char(),
+                widget.unchecked_char(),
                 style_to_ratatui(style, theme),
                 is_focused,
                 area,
@@ -187,23 +187,23 @@ pub fn render_node(
         Node::RadioGroup {
             id,
             style,
-            component,
+            widget,
             ..
         } => {
             let is_focused = focused_id == Some(id.as_str());
             // For radio group, focused_index is the currently selected option for keyboard nav
             // When focused, highlight the selected option (or first if none selected)
             let focused_index = if is_focused {
-                Some(component.selected().unwrap_or(0))
+                Some(widget.selected().unwrap_or(0))
             } else {
                 None
             };
-            crate::components::radio::render::render_radio_group(
+            crate::widgets::radio::render::render_radio_group(
                 frame,
-                &component.options(),
-                component.selected(),
-                component.selected_char(),
-                component.unselected_char(),
+                &widget.options(),
+                widget.selected(),
+                widget.selected_char(),
+                widget.unselected_char(),
                 style_to_ratatui(style, theme),
                 is_focused,
                 focused_index,
@@ -217,15 +217,15 @@ pub fn render_node(
             child,
             id,
             style,
-            component,
+            widget,
             ..
         } => {
-            crate::components::scroll_area::render::render(
+            crate::widgets::scroll_area::render::render(
                 frame,
                 child,
                 id,
                 style_to_ratatui(style, theme),
-                component,
+                widget,
                 area,
                 hit_map,
                 theme,
@@ -238,15 +238,15 @@ pub fn render_node(
             id,
             style,
             layout,
-            component,
+            widget,
             ..
         } => {
-            crate::components::list::render::render(
+            crate::widgets::list::render::render(
                 frame,
                 id,
                 style_to_ratatui(style, theme),
                 layout,
-                component.as_ref(),
+                widget.as_ref(),
                 area,
                 hit_map,
                 theme,
@@ -258,15 +258,15 @@ pub fn render_node(
             id,
             style,
             layout,
-            component,
+            widget,
             ..
         } => {
-            crate::components::tree::render::render(
+            crate::widgets::tree::render::render(
                 frame,
                 id,
                 style_to_ratatui(style, theme),
                 layout,
-                component.as_ref(),
+                widget.as_ref(),
                 area,
                 hit_map,
                 theme,
@@ -278,15 +278,15 @@ pub fn render_node(
             id,
             style,
             layout,
-            component,
+            widget,
             ..
         } => {
-            crate::components::table::render::render(
+            crate::widgets::table::render::render(
                 frame,
                 id,
                 style_to_ratatui(style, theme),
                 layout,
-                component.as_ref(),
+                widget.as_ref(),
                 area,
                 hit_map,
                 theme,

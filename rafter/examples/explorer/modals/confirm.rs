@@ -51,12 +51,12 @@ impl ConfirmModal {
         mx.close(false);
     }
 
-    fn view(&self) -> Node {
+    fn page(&self) -> Node {
         let message = self.message.clone();
         let confirm_label = format!("{} [y]", self.confirm_text);
         let cancel_label = format!("{} [n]", self.cancel_text);
 
-        view! {
+        page! {
             column (padding: 2, gap: 1, bg: surface) {
                 text (bold, fg: warning) { "Confirm" }
                 text { message }

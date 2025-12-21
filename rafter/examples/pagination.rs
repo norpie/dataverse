@@ -1,6 +1,6 @@
 //! Pagination example - demonstrates infinite scroll with List<T>
 //!
-//! This example shows how to implement cursor-based pagination with a List component.
+//! This example shows how to implement cursor-based pagination with a List widget.
 //! Records are loaded in pages of 20, with more loaded automatically when scrolling
 //! near the end of the list.
 //!
@@ -218,7 +218,7 @@ impl PaginationApp {
         self.maybe_load_more().await;
     }
 
-    fn view(&self) -> Node {
+    fn page(&self) -> Node {
         let loading = self.loading.get();
         let has_more = self.next_cursor.get().is_some();
         let total = self.total_loaded.get();
@@ -234,7 +234,7 @@ impl PaginationApp {
             format!("{} records (end)", total)
         };
 
-        view! {
+        page! {
             column (bg: background, height: fill, width: fill, padding: 1) {
                 // Header
                 text (fg: primary, bold: true) { "Pagination Demo" }

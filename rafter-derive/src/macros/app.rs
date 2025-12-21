@@ -87,7 +87,7 @@ fn transform_field(field: &Field) -> TokenStream {
             #vis #ident: #ty
         }
     } else if is_component_type(ty) {
-        // Component types (Input, List<T>, etc.) manage their own state
+        // Widget types (Input, List<T>, etc.) manage their own state
         quote! {
             #(#other_attrs)*
             #vis #ident: #ty
@@ -118,7 +118,7 @@ fn generate_default_impl(name: &Ident, fields: &FieldsNamed) -> TokenStream {
                 // Resource<T> -> Resource::new()
                 quote! { #ident: rafter::resource::Resource::new() }
             } else if is_component_type(ty) {
-                // Component types use Default
+                // Widget types use Default
                 quote! { #ident: Default::default() }
             } else {
                 // Regular -> State<T>::new(Default::default())

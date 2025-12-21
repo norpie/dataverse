@@ -40,7 +40,7 @@
 //!
 //! // Use in views - named colors resolve via theme
 //! fn my_view() -> Node {
-//!     view! {
+//!     page! {
 //!         text (color: primary) { "Hello" }
 //!         text (color: text_muted) { "Muted" }
 //!     }

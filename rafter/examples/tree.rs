@@ -1,6 +1,6 @@
 //! Tree Example
 //!
-//! Demonstrates the Tree component:
+//! Demonstrates the Tree widget:
 //! - Hierarchical data with expand/collapse
 //! - Keyboard navigation (arrows, Enter, Space)
 //! - Selection modes (single, multi)
@@ -90,98 +90,98 @@ impl TreeDemo {
                     FileNode::file("/src/prelude.rs", "prelude.rs"),
                     // Components directory
                     FileNode::dir(
-                        "/src/components",
-                        "components",
+                        "/src/widgets",
+                        "widgets",
                         vec![
-                            FileNode::file("/src/components/mod.rs", "mod.rs"),
+                            FileNode::file("/src/widgets/mod.rs", "mod.rs"),
                             FileNode::dir(
-                                "/src/components/button",
+                                "/src/widgets/button",
                                 "button",
                                 vec![
-                                    FileNode::file("/src/components/button/mod.rs", "mod.rs"),
-                                    FileNode::file("/src/components/button/state.rs", "state.rs"),
-                                    FileNode::file("/src/components/button/render.rs", "render.rs"),
-                                    FileNode::file("/src/components/button/events.rs", "events.rs"),
+                                    FileNode::file("/src/widgets/button/mod.rs", "mod.rs"),
+                                    FileNode::file("/src/widgets/button/state.rs", "state.rs"),
+                                    FileNode::file("/src/widgets/button/render.rs", "render.rs"),
+                                    FileNode::file("/src/widgets/button/events.rs", "events.rs"),
                                 ],
                             ),
                             FileNode::dir(
-                                "/src/components/input",
+                                "/src/widgets/input",
                                 "input",
                                 vec![
-                                    FileNode::file("/src/components/input/mod.rs", "mod.rs"),
-                                    FileNode::file("/src/components/input/state.rs", "state.rs"),
-                                    FileNode::file("/src/components/input/render.rs", "render.rs"),
-                                    FileNode::file("/src/components/input/events.rs", "events.rs"),
+                                    FileNode::file("/src/widgets/input/mod.rs", "mod.rs"),
+                                    FileNode::file("/src/widgets/input/state.rs", "state.rs"),
+                                    FileNode::file("/src/widgets/input/render.rs", "render.rs"),
+                                    FileNode::file("/src/widgets/input/events.rs", "events.rs"),
                                     FileNode::file(
-                                        "/src/components/input/validation.rs",
+                                        "/src/widgets/input/validation.rs",
                                         "validation.rs",
                                     ),
                                 ],
                             ),
                             FileNode::dir(
-                                "/src/components/list",
+                                "/src/widgets/list",
                                 "list",
                                 vec![
-                                    FileNode::file("/src/components/list/mod.rs", "mod.rs"),
-                                    FileNode::file("/src/components/list/state.rs", "state.rs"),
-                                    FileNode::file("/src/components/list/render.rs", "render.rs"),
-                                    FileNode::file("/src/components/list/events.rs", "events.rs"),
-                                    FileNode::file("/src/components/list/item.rs", "item.rs"),
+                                    FileNode::file("/src/widgets/list/mod.rs", "mod.rs"),
+                                    FileNode::file("/src/widgets/list/state.rs", "state.rs"),
+                                    FileNode::file("/src/widgets/list/render.rs", "render.rs"),
+                                    FileNode::file("/src/widgets/list/events.rs", "events.rs"),
+                                    FileNode::file("/src/widgets/list/item.rs", "item.rs"),
                                     FileNode::file(
-                                        "/src/components/list/any_list.rs",
+                                        "/src/widgets/list/any_list.rs",
                                         "any_list.rs",
                                     ),
                                 ],
                             ),
                             FileNode::dir(
-                                "/src/components/tree",
+                                "/src/widgets/tree",
                                 "tree",
                                 vec![
-                                    FileNode::file("/src/components/tree/mod.rs", "mod.rs"),
-                                    FileNode::file("/src/components/tree/state.rs", "state.rs"),
-                                    FileNode::file("/src/components/tree/render.rs", "render.rs"),
-                                    FileNode::file("/src/components/tree/events.rs", "events.rs"),
-                                    FileNode::file("/src/components/tree/item.rs", "item.rs"),
+                                    FileNode::file("/src/widgets/tree/mod.rs", "mod.rs"),
+                                    FileNode::file("/src/widgets/tree/state.rs", "state.rs"),
+                                    FileNode::file("/src/widgets/tree/render.rs", "render.rs"),
+                                    FileNode::file("/src/widgets/tree/events.rs", "events.rs"),
+                                    FileNode::file("/src/widgets/tree/item.rs", "item.rs"),
                                     FileNode::file(
-                                        "/src/components/tree/any_tree.rs",
+                                        "/src/widgets/tree/any_tree.rs",
                                         "any_tree.rs",
                                     ),
                                 ],
                             ),
                             FileNode::dir(
-                                "/src/components/scroll_area",
+                                "/src/widgets/scroll_area",
                                 "scroll_area",
                                 vec![
-                                    FileNode::file("/src/components/scroll_area/mod.rs", "mod.rs"),
+                                    FileNode::file("/src/widgets/scroll_area/mod.rs", "mod.rs"),
                                     FileNode::file(
-                                        "/src/components/scroll_area/state.rs",
+                                        "/src/widgets/scroll_area/state.rs",
                                         "state.rs",
                                     ),
                                     FileNode::file(
-                                        "/src/components/scroll_area/render.rs",
+                                        "/src/widgets/scroll_area/render.rs",
                                         "render.rs",
                                     ),
                                     FileNode::file(
-                                        "/src/components/scroll_area/events.rs",
+                                        "/src/widgets/scroll_area/events.rs",
                                         "events.rs",
                                     ),
                                 ],
                             ),
                             FileNode::dir(
-                                "/src/components/scrollbar",
+                                "/src/widgets/scrollbar",
                                 "scrollbar",
                                 vec![
-                                    FileNode::file("/src/components/scrollbar/mod.rs", "mod.rs"),
+                                    FileNode::file("/src/widgets/scrollbar/mod.rs", "mod.rs"),
                                     FileNode::file(
-                                        "/src/components/scrollbar/state.rs",
+                                        "/src/widgets/scrollbar/state.rs",
                                         "state.rs",
                                     ),
                                     FileNode::file(
-                                        "/src/components/scrollbar/render.rs",
+                                        "/src/widgets/scrollbar/render.rs",
                                         "render.rs",
                                     ),
                                     FileNode::file(
-                                        "/src/components/scrollbar/types.rs",
+                                        "/src/widgets/scrollbar/types.rs",
                                         "types.rs",
                                     ),
                                 ],
@@ -270,12 +270,12 @@ impl TreeDemo {
                     FileNode::file("/tests/text.rs", "text.rs"),
                     FileNode::file("/tests/theme.rs", "theme.rs"),
                     FileNode::dir(
-                        "/tests/components",
-                        "components",
+                        "/tests/widgets",
+                        "widgets",
                         vec![
-                            FileNode::file("/tests/components/list.rs", "list.rs"),
-                            FileNode::file("/tests/components/tree.rs", "tree.rs"),
-                            FileNode::file("/tests/components/input.rs", "input.rs"),
+                            FileNode::file("/tests/widgets/list.rs", "list.rs"),
+                            FileNode::file("/tests/widgets/tree.rs", "tree.rs"),
+                            FileNode::file("/tests/widgets/input.rs", "input.rs"),
                         ],
                     ),
                 ],
@@ -295,13 +295,13 @@ impl TreeDemo {
                         vec![
                             FileNode::file("/examples/explorer/main.rs", "main.rs"),
                             FileNode::dir(
-                                "/examples/explorer/views",
-                                "views",
+                                "/examples/explorer/pages",
+                                "pages",
                                 vec![
-                                    FileNode::file("/examples/explorer/views/mod.rs", "mod.rs"),
-                                    FileNode::file("/examples/explorer/views/list.rs", "list.rs"),
+                                    FileNode::file("/examples/explorer/pages/mod.rs", "mod.rs"),
+                                    FileNode::file("/examples/explorer/pages/list.rs", "list.rs"),
                                     FileNode::file(
-                                        "/examples/explorer/views/detail.rs",
+                                        "/examples/explorer/pages/detail.rs",
                                         "detail.rs",
                                     ),
                                 ],
@@ -332,7 +332,7 @@ impl TreeDemo {
                 vec![
                     FileNode::file("/docs/overview.md", "overview.md"),
                     FileNode::file("/docs/architecture.md", "architecture.md"),
-                    FileNode::file("/docs/views.md", "views.md"),
+                    FileNode::file("/docs/pages.md", "pages.md"),
                     FileNode::file("/docs/state.md", "state.md"),
                     FileNode::file("/docs/styling.md", "styling.md"),
                     FileNode::file("/docs/interactions.md", "interactions.md"),
@@ -399,7 +399,7 @@ impl TreeDemo {
         self.tree.set_selection_mode(SelectionMode::Multiple);
         // Expand a few directories by default to show some depth
         self.tree.expand("/src");
-        self.tree.expand("/src/components");
+        self.tree.expand("/src/widgets");
         self.status.set(
             "Ready. Use arrows to navigate, Enter to expand/collapse, Space to select.".to_string(),
         );
@@ -494,12 +494,12 @@ impl TreeDemo {
         }
     }
 
-    fn view(&self) -> Node {
+    fn page(&self) -> Node {
         let status = self.status.get();
         let selected_count = self.tree.selected_ids().len();
         let visible_count = self.tree.visible_len();
 
-        view! {
+        page! {
             column (padding: 1, gap: 1, bg: background) {
                 // Header
                 column {

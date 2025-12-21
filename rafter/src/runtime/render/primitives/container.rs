@@ -1,4 +1,4 @@
-//! Container (column/row) component rendering.
+//! Container (column/row) widget rendering.
 
 use ratatui::Frame;
 use ratatui::layout::{Direction, Flex, Layout, Rect};

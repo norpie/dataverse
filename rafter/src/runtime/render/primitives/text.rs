@@ -1,4 +1,4 @@
-//! Text component rendering.
+//! Text widget rendering.
 
 use ratatui::Frame;
 use ratatui::layout::Rect;

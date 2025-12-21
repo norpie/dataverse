@@ -38,9 +38,9 @@ pub enum PanicBehavior {
 ///         self.value.update(|v| *v += 1);
 ///     }
 ///
-///     fn view(&self) -> Node {
+///     fn page(&self) -> Node {
 ///         let val = self.value.get();
-///         view! { text { val.to_string() } }
+///         page! { text { val.to_string() } }
 ///     }
 /// }
 /// ```
@@ -53,39 +53,39 @@ pub trait App: Clone + Send + Sync + 'static {
         Keybinds::new()
     }
 
-    /// Render the app's view.
+    /// Render the app's page.
     ///
-    /// The view tree is used by the runtime to:
+    /// The page tree is used by the runtime to:
     /// - Determine focusable elements (buttons, inputs)
     /// - Get handler references (on_click, on_change, on_submit)
     /// - Sync input values when focus changes
-    fn view(&self) -> Node;
+    fn page(&self) -> Node;
 
-    /// Get the current view identifier for keybind scoping.
+    /// Get the current page identifier for keybind scoping.
     ///
-    /// Return `Some(name)` to enable view-scoped keybinds.
-    /// Keybinds marked with `#[keybinds(view = X)]` will only be active
+    /// Return `Some(name)` to enable page-scoped keybinds.
+    /// Keybinds marked with `#[keybinds(page = X)]` will only be active
     /// when this method returns a string matching `X`.
     ///
     /// The recommended pattern is to use an enum that implements `Display`:
     ///
     /// ```ignore
     /// #[derive(strum::Display)]
-    /// enum View { List, Record }
+    /// enum Page { List, Record }
     ///
     /// #[app]
     /// struct MyApp {
-    ///     view: View,
+    ///     page: Page,
     /// }
     ///
     /// #[app_impl]
     /// impl MyApp {
-    ///     fn current_view(&self) -> Option<String> {
-    ///         Some(self.view.get().to_string())
+    ///     fn current_page(&self) -> Option<String> {
+    ///         Some(self.page.get().to_string())
     ///     }
     /// }
     /// ```
-    fn current_view(&self) -> Option<String> {
+    fn current_page(&self) -> Option<String> {
         None
     }
 

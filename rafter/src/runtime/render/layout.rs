@@ -208,9 +208,9 @@ pub fn intrinsic_size(node: &Node, horizontal: bool) -> u16 {
                 1
             }
         }
-        Node::Checkbox { component, .. } => {
+        Node::Checkbox { widget, .. } => {
             if horizontal {
-                let label = component.label();
+                let label = widget.label();
                 if label.is_empty() {
                     1 // Just the indicator
                 } else {
@@ -220,10 +220,10 @@ pub fn intrinsic_size(node: &Node, horizontal: bool) -> u16 {
                 1
             }
         }
-        Node::RadioGroup { component, .. } => {
+        Node::RadioGroup { widget, .. } => {
             if horizontal {
                 // Width is the longest option label + indicator + space
-                component
+                widget
                     .options()
                     .iter()
                     .map(|label| label.len() + 2)
@@ -231,7 +231,7 @@ pub fn intrinsic_size(node: &Node, horizontal: bool) -> u16 {
                     .unwrap_or(1) as u16
             } else {
                 // Height is number of options
-                component.len().max(1) as u16
+                widget.len().max(1) as u16
             }
         }
         Node::ScrollArea { child, layout, .. } => {
@@ -244,7 +244,7 @@ pub fn intrinsic_size(node: &Node, horizontal: bool) -> u16 {
             intrinsic_size(child, horizontal) + padding + border_size
         }
         Node::List {
-            layout, component, ..
+            layout, widget, ..
         } => {
             let border_size = if matches!(layout.border, Border::None) {
                 0
@@ -257,11 +257,11 @@ pub fn intrinsic_size(node: &Node, horizontal: bool) -> u16 {
                 40 + padding + border_size
             } else {
                 // Height is total items height
-                component.total_height() + padding + border_size
+                widget.total_height() + padding + border_size
             }
         }
         Node::Tree {
-            layout, component, ..
+            layout, widget, ..
         } => {
             let border_size = if matches!(layout.border, Border::None) {
                 0
@@ -274,11 +274,11 @@ pub fn intrinsic_size(node: &Node, horizontal: bool) -> u16 {
                 40 + padding + border_size
             } else {
                 // Height is total visible nodes height
-                component.total_height() + padding + border_size
+                widget.total_height() + padding + border_size
             }
         }
         Node::Table {
-            layout, component, ..
+            layout, widget, ..
         } => {
             let border_size = if matches!(layout.border, Border::None) {
                 0
@@ -288,10 +288,10 @@ pub fn intrinsic_size(node: &Node, horizontal: bool) -> u16 {
             let padding = layout.padding * 2;
             if horizontal {
                 // Width is sum of all column widths
-                component.total_width() + padding + border_size
+                widget.total_width() + padding + border_size
             } else {
                 // Height is total rows height + header row
-                component.total_height() + 1 + padding + border_size
+                widget.total_height() + 1 + padding + border_size
             }
         }
     }
@@ -353,9 +353,9 @@ pub fn child_constraint(node: &Node, horizontal: bool) -> Constraint {
                 Constraint::Length(1)
             }
         }
-        Node::Checkbox { component, .. } => {
+        Node::Checkbox { widget, .. } => {
             if horizontal {
-                let label = component.label();
+                let label = widget.label();
                 if label.is_empty() {
                     Constraint::Length(1) // Just the indicator
                 } else {
@@ -365,10 +365,10 @@ pub fn child_constraint(node: &Node, horizontal: bool) -> Constraint {
                 Constraint::Length(1)
             }
         }
-        Node::RadioGroup { component, .. } => {
+        Node::RadioGroup { widget, .. } => {
             if horizontal {
                 // Width is the longest option label + indicator + space
-                let max_width = component
+                let max_width = widget
                     .options()
                     .iter()
                     .map(|label| label.len() + 2)
@@ -377,7 +377,7 @@ pub fn child_constraint(node: &Node, horizontal: bool) -> Constraint {
                 Constraint::Length(max_width)
             } else {
                 // Height is number of options
-                Constraint::Length(component.len().max(1) as u16)
+                Constraint::Length(widget.len().max(1) as u16)
             }
         }
         Node::ScrollArea { layout, .. }

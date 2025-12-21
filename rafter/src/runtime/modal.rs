@@ -26,14 +26,14 @@ pub fn calculate_modal_area(
     screen: Rect,
     position: ModalPosition,
     size: ModalSize,
-    view: &Node,
+    page: &Node,
 ) -> Rect {
     // Calculate dimensions
     let (width, height) = match size {
         ModalSize::Auto => {
-            // Use intrinsic size from view
-            let w = view.intrinsic_width().min(screen.width.saturating_sub(4));
-            let h = view.intrinsic_height().min(screen.height.saturating_sub(4));
+            // Use intrinsic size from page
+            let w = page.intrinsic_width().min(screen.width.saturating_sub(4));
+            let h = page.intrinsic_height().min(screen.height.saturating_sub(4));
             (w.max(10), h.max(3))
         }
         ModalSize::Fixed { width, height } => (width.min(screen.width), height.min(screen.height)),

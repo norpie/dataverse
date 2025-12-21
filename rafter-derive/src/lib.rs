@@ -18,8 +18,8 @@ pub fn handler(attr: TokenStream, item: TokenStream) -> TokenStream {
 }
 
 #[proc_macro_attribute]
-pub fn component(attr: TokenStream, item: TokenStream) -> TokenStream {
-    macros::component::expand(attr.into(), item.into()).into()
+pub fn widget(attr: TokenStream, item: TokenStream) -> TokenStream {
+    macros::widget::expand(attr.into(), item.into()).into()
 }
 
 #[proc_macro_attribute]
@@ -48,8 +48,8 @@ pub fn system_overlay(attr: TokenStream, item: TokenStream) -> TokenStream {
 }
 
 #[proc_macro]
-pub fn view(input: TokenStream) -> TokenStream {
-    macros::view::expand(input.into()).into()
+pub fn page(input: TokenStream) -> TokenStream {
+    macros::page::expand(input.into()).into()
 }
 
 #[proc_macro]

@@ -1,4 +1,4 @@
-//! Shared types for component rendering.
+//! Shared types for widget rendering.
 
 use ratatui::Frame;
 use ratatui::layout::Rect;

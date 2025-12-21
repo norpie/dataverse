@@ -19,12 +19,12 @@ fn parse_keybinds_scope(attrs: &[Attribute]) -> KeybindScope {
             if let syn::Meta::List(list) = meta {
                 let mut scope = KeybindScope::Global;
                 let _ = list.parse_nested_meta(|meta| {
-                    if meta.path.is_ident("view") {
+                    if meta.path.is_ident("page") {
                         let value: syn::Expr = meta.value()?.parse()?;
                         if let syn::Expr::Path(path) = value
                             && let Some(ident) = path.path.get_ident()
                         {
-                            scope = KeybindScope::View(ident.to_string());
+                            scope = KeybindScope::Page(ident.to_string());
                         }
                     } else if meta.path.is_ident("global") {
                         scope = KeybindScope::Global;
@@ -48,9 +48,9 @@ fn is_on_stop_method(method: &ImplItemFn) -> bool {
     method.sig.ident == "on_stop"
 }
 
-/// Check if method is named "current_view"
-fn is_current_view_method(method: &ImplItemFn) -> bool {
-    method.sig.ident == "current_view"
+/// Check if method is named "current_page"
+fn is_current_page_method(method: &ImplItemFn) -> bool {
+    method.sig.ident == "current_page"
 }
 
 pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
@@ -80,7 +80,7 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
     let mut has_view = false;
     let mut has_on_start = false;
     let mut has_on_stop = false;
-    let mut has_current_view = false;
+    let mut has_current_page = false;
 
     for item in &impl_block.items {
         if let ImplItem::Fn(method) = item {
@@ -108,8 +108,8 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
                 has_on_stop = true;
             }
 
-            if is_current_view_method(method) {
-                has_current_view = true;
+            if is_current_page_method(method) {
+                has_current_page = true;
             }
         }
     }
@@ -152,11 +152,11 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
         }
     };
 
-    // Generate current_view method
-    let current_view_impl = if has_current_view {
+    // Generate current_page method
+    let current_page_impl = if has_current_page {
         quote! {
-            fn current_view(&self) -> Option<String> {
-                #self_ty::current_view(self)
+            fn current_page(&self) -> Option<String> {
+                #self_ty::current_page(self)
             }
         }
     } else {
@@ -209,7 +209,7 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
             #name_impl
             #keybinds_final
             #view_impl
-            #current_view_impl
+            #current_page_impl
             #on_start_impl
             #on_stop_impl
             #dirty_impl

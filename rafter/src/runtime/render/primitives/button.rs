@@ -1,4 +1,4 @@
-//! Button component rendering.
+//! Button widget rendering.
 
 use ratatui::Frame;
 use ratatui::layout::Rect;

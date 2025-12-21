@@ -6,14 +6,14 @@ use syn::{Ident, ImplItem, ImplItemFn, ItemImpl, Type};
 
 use super::handler::HandlerParams;
 
-/// Keybind scope parsed from #[keybinds(view = X)] attribute
+/// Keybind scope parsed from #[keybinds(page = X)] attribute
 #[derive(Clone, Debug, Default)]
 pub enum KeybindScope {
     /// No scope specified - global keybinds
     #[default]
     Global,
-    /// View-scoped keybinds
-    View(String),
+    /// Page-scoped keybinds
+    Page(String),
 }
 
 /// Information about a keybinds method
@@ -83,9 +83,9 @@ pub fn detect_handler_params_from_impl_fn(method: &ImplItemFn) -> HandlerParams 
     }
 }
 
-/// Check if method is named "view"
+/// Check if method is named "page"
 pub fn is_view_method(method: &ImplItemFn) -> bool {
-    method.sig.ident == "view"
+    method.sig.ident == "page"
 }
 
 /// Extract the type name from a Type
@@ -181,15 +181,15 @@ pub fn generate_keybinds_impl(
                             );
                         }
                     }
-                    KeybindScope::View(view_name) => {
-                        // ID prefix includes the view name for scoped keybinds
+                    KeybindScope::Page(view_name) => {
+                        // ID prefix includes the page name for scoped keybinds
                         let view_name_snake = to_snake_case(view_name);
                         let id_prefix = format!("{}.{}", app_name_snake, view_name_snake);
                         quote! {
                             __keybinds.merge(
                                 Self::#name()
                                     .with_id_prefix(#id_prefix)
-                                    .with_scope(rafter::keybinds::KeybindScope::View(#view_name.to_string()))
+                                    .with_scope(rafter::keybinds::KeybindScope::Page(#view_name.to_string()))
                             );
                         }
                     }
@@ -207,17 +207,17 @@ pub fn generate_keybinds_impl(
     }
 }
 
-/// Generate view trait method implementation
+/// Generate page trait method implementation
 pub fn generate_view_impl(has_view: bool, self_ty: &Type) -> TokenStream {
     if has_view {
         quote! {
-            fn view(&self) -> rafter::node::Node {
-                #self_ty::view(self)
+            fn page(&self) -> rafter::node::Node {
+                #self_ty::page(self)
             }
         }
     } else {
         quote! {
-            fn view(&self) -> rafter::node::Node {
+            fn page(&self) -> rafter::node::Node {
                 rafter::node::Node::empty()
             }
         }

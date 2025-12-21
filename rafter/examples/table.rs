@@ -1,6 +1,6 @@
-//! Table example - demonstrates the Table component with sorting and selection.
+//! Table example - demonstrates the Table widget with sorting and selection.
 //!
-//! This example shows how to use the Table component with:
+//! This example shows how to use the Table widget with:
 //! - Column definitions with fixed widths
 //! - TableRow trait implementation
 //! - Sorting with on_sort handler
@@ -89,26 +89,26 @@ impl TableRow for User {
 
     fn render_cell(&self, column_index: usize, _focused: bool, _selected: bool) -> Option<Node> {
         let content = match column_index {
-            0 => view! { text { format!("{:04}", self.id) } },
-            1 => view! { text { self.name.clone() } },
-            2 => view! { text { self.email.clone() } },
-            3 => view! { text { self.age.to_string() } },
+            0 => page! { text { format!("{:04}", self.id) } },
+            1 => page! { text { self.name.clone() } },
+            2 => page! { text { self.email.clone() } },
+            3 => page! { text { self.age.to_string() } },
             4 => {
                 // Color-code status
                 match self.status.as_str() {
-                    "Active" => view! { text (fg: success) { self.status.clone() } },
-                    "Pending" => view! { text (fg: warning) { self.status.clone() } },
-                    "Inactive" => view! { text (fg: muted) { self.status.clone() } },
-                    "Suspended" => view! { text (fg: error) { self.status.clone() } },
-                    _ => view! { text { self.status.clone() } },
+                    "Active" => page! { text (fg: success) { self.status.clone() } },
+                    "Pending" => page! { text (fg: warning) { self.status.clone() } },
+                    "Inactive" => page! { text (fg: muted) { self.status.clone() } },
+                    "Suspended" => page! { text (fg: error) { self.status.clone() } },
+                    _ => page! { text { self.status.clone() } },
                 }
             }
             5 => {
                 // Color-code score (positive=green, negative=red)
                 if self.score >= 0 {
-                    view! { text (fg: success) { format!("{:+}", self.score) } }
+                    page! { text (fg: success) { format!("{:+}", self.score) } }
                 } else {
-                    view! { text (fg: error) { format!("{:+}", self.score) } }
+                    page! { text (fg: error) { format!("{:+}", self.score) } }
                 }
             }
             _ => return None,
@@ -197,7 +197,7 @@ impl TableApp {
 
     #[handler]
     async fn on_activate(&self, cx: &AppContext) {
-        // Read from component state (context is cleared after dispatch)
+        // Read from widget state (context is cleared after dispatch)
         if let Some(id) = self.users.cursor_id() {
             cx.show_toast(Toast::info(format!("Activated row: {}", id)));
         }
@@ -211,8 +211,8 @@ impl TableApp {
 
     #[handler]
     async fn on_sort(&self, _cx: &AppContext) {
-        // Read sort state from the table component
-        // (Context value is cleared after dispatch, so we read from component state)
+        // Read sort state from the table widget
+        // (Context value is cleared after dispatch, so we read from widget state)
         let Some((column, ascending)) = self.users.sort() else {
             return;
         };
@@ -239,7 +239,7 @@ impl TableApp {
         self.users.set_rows(users);
     }
 
-    fn view(&self) -> Node {
+    fn page(&self) -> Node {
         let selected_count = self.users.selected_ids().len();
         let total_count = self.users.len();
 
@@ -255,7 +255,7 @@ impl TableApp {
             "Not sorted (click header to sort)".to_string()
         };
 
-        view! {
+        page! {
             column (bg: background, height: fill, width: fill, padding: 1) {
                 // Header
                 text (fg: primary, bold: true) { "Table Demo" }
