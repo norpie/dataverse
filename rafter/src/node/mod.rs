@@ -4,25 +4,37 @@ mod layout;
 
 pub use layout::{Align, Border, Direction, Justify, Layout, Size};
 
-use crate::widgets::events::{WidgetEvents, EventResult};
+use crate::widgets::events::{EventResult, WidgetEvents};
 use crate::widgets::list::AnyList;
 use crate::widgets::table::AnyTable;
 use crate::widgets::tree::AnyTree;
-use crate::widgets::{AnySelectable, Checkbox, Input, RadioGroup, ScrollArea};
+use crate::widgets::{
+    AnySelectable, AnyWidget, Checkbox, Input, RadioGroup, ScrollArea, WidgetHandlers,
+};
 use crate::context::AppContext;
 use crate::events::{Modifiers, ScrollDirection};
 use crate::keybinds::{HandlerId, KeyCombo};
 use crate::style::Style;
 
-/// A node in the page tree
-#[derive(Debug, Clone, Default)]
+/// A node in the page tree.
+///
+/// Nodes are either primitives (layout containers and text) or widgets
+/// (interactive elements with state).
+#[derive(Debug, Default)]
 pub enum Node {
+    // =========================================================================
+    // Primitives (stateless layout nodes)
+    // =========================================================================
+
     /// Empty node (renders nothing)
     #[default]
     Empty,
 
     /// Text content
-    Text { content: String, style: Style },
+    Text {
+        content: String,
+        style: Style,
+    },
 
     /// Container with vertical layout
     Column {
@@ -45,138 +57,127 @@ pub enum Node {
         layout: Layout,
     },
 
-    /// Text input field
-    Input {
-        /// Current input value
-        value: String,
-        /// Placeholder text
-        placeholder: String,
-        /// Handler for value changes
-        on_change: Option<HandlerId>,
-        /// Handler for submit (Enter)
-        on_submit: Option<HandlerId>,
-        /// Element ID for focus (auto-generated if not specified)
-        id: String,
+    // =========================================================================
+    // Unified Widget variant (for widgets implementing AnyWidget)
+    // =========================================================================
+
+    /// A widget node.
+    ///
+    /// This is the unified variant for all widgets implementing `AnyWidget`.
+    /// It holds the widget as a trait object along with its handlers.
+    Widget {
+        /// The widget instance (type-erased)
+        widget: Box<dyn AnyWidget>,
+        /// Event handlers for this widget
+        handlers: WidgetHandlers,
         /// Style
         style: Style,
-        /// Bound Input widget (if using bind: syntax)
+        /// Layout properties
+        layout: Layout,
+    },
+
+    // =========================================================================
+    // Legacy widget variants (to be removed in Phase 5)
+    // These exist temporarily while we migrate built-in widgets to AnyWidget
+    // =========================================================================
+
+    /// Text input field (legacy - will be migrated to Widget)
+    #[deprecated(note = "Use Widget variant with AnyWidget instead")]
+    Input {
+        value: String,
+        placeholder: String,
+        on_change: Option<HandlerId>,
+        on_submit: Option<HandlerId>,
+        id: String,
+        style: Style,
         widget: Option<Input>,
     },
 
-    /// Clickable button
+    /// Clickable button (legacy - will be migrated to Widget)
+    #[deprecated(note = "Use Widget variant with AnyWidget instead")]
     Button {
-        /// Button label
         label: String,
-        /// Click handler
         on_click: Option<HandlerId>,
-        /// Element ID for focus (auto-generated if not specified)
         id: String,
-        /// Style
         style: Style,
     },
 
-    /// Checkbox toggle
+    /// Checkbox toggle (legacy - will be migrated to Widget)
+    #[deprecated(note = "Use Widget variant with AnyWidget instead")]
     Checkbox {
-        /// Element ID for focus
         id: String,
-        /// Style
         style: Style,
-        /// Bound Checkbox widget
         widget: Checkbox,
-        /// Handler for state changes
         on_change: Option<HandlerId>,
     },
 
-    /// Radio group (mutually exclusive options)
+    /// Radio group (legacy - will be migrated to Widget)
+    #[deprecated(note = "Use Widget variant with AnyWidget instead")]
     RadioGroup {
-        /// Element ID for focus
         id: String,
-        /// Style
         style: Style,
-        /// Bound RadioGroup widget
         widget: RadioGroup,
-        /// Handler for selection changes
         on_change: Option<HandlerId>,
     },
 
-    /// ScrollArea container
+    /// ScrollArea container (legacy - will be migrated to Widget)
+    #[deprecated(note = "Use Widget variant with AnyWidget instead")]
     ScrollArea {
-        /// Child node (content to scroll)
         child: Box<Node>,
-        /// Element ID
         id: String,
-        /// Style
         style: Style,
-        /// Layout properties
         layout: Layout,
-        /// Bound ScrollArea widget
         widget: ScrollArea,
     },
 
-    /// Virtualized list
+    /// Virtualized list (legacy - will be migrated to Widget)
+    #[deprecated(note = "Use Widget variant with AnyWidget instead")]
     List {
-        /// Element ID
         id: String,
-        /// Style
         style: Style,
-        /// Layout properties
         layout: Layout,
-        /// The list widget (type-erased)
         widget: Box<dyn AnyList>,
-        /// Handler for item activation
         on_activate: Option<HandlerId>,
-        /// Handler for selection changes
         on_selection_change: Option<HandlerId>,
-        /// Handler for cursor movement
         on_cursor_move: Option<HandlerId>,
-        /// Handler for scroll events (useful for pagination / infinite scroll)
         on_scroll: Option<HandlerId>,
     },
 
-    /// Virtualized tree
+    /// Virtualized tree (legacy - will be migrated to Widget)
+    #[deprecated(note = "Use Widget variant with AnyWidget instead")]
     Tree {
-        /// Element ID
         id: String,
-        /// Style
         style: Style,
-        /// Layout properties
         layout: Layout,
-        /// The tree widget (type-erased)
         widget: Box<dyn AnyTree>,
-        /// Handler for node activation
         on_activate: Option<HandlerId>,
-        /// Handler for node expansion
         on_expand: Option<HandlerId>,
-        /// Handler for node collapse
         on_collapse: Option<HandlerId>,
-        /// Handler for selection changes
         on_selection_change: Option<HandlerId>,
-        /// Handler for cursor movement
         on_cursor_move: Option<HandlerId>,
     },
 
-    /// Virtualized table with columns
+    /// Virtualized table (legacy - will be migrated to Widget)
+    #[deprecated(note = "Use Widget variant with AnyWidget instead")]
     Table {
-        /// Element ID
         id: String,
-        /// Style
         style: Style,
-        /// Layout properties
         layout: Layout,
-        /// The table widget (type-erased)
         widget: Box<dyn AnyTable>,
-        /// Handler for row activation
         on_activate: Option<HandlerId>,
-        /// Handler for selection changes
         on_selection_change: Option<HandlerId>,
-        /// Handler for cursor movement
         on_cursor_move: Option<HandlerId>,
-        /// Handler for column sort
         on_sort: Option<HandlerId>,
     },
 }
 
+// Allow deprecated variants within this module during migration
+#[allow(deprecated)]
 impl Node {
+    // =========================================================================
+    // Constructors
+    // =========================================================================
+
     /// Create an empty node
     pub const fn empty() -> Self {
         Self::Empty
@@ -239,7 +240,8 @@ impl Node {
         matches!(self, Self::Empty)
     }
 
-    /// Create a button node
+    /// Create a button node (legacy)
+    #[deprecated(note = "Use Widget variant instead")]
     pub fn button(label: impl Into<String>) -> Self {
         Self::Button {
             label: label.into(),
@@ -249,23 +251,47 @@ impl Node {
         }
     }
 
+    /// Create a widget node
+    pub fn widget(
+        widget: Box<dyn AnyWidget>,
+        handlers: WidgetHandlers,
+        style: Style,
+        layout: Layout,
+    ) -> Self {
+        Self::Widget {
+            widget,
+            handlers,
+            style,
+            layout,
+        }
+    }
+
+    // =========================================================================
+    // Node Properties
+    // =========================================================================
+
     /// Check if this node is focusable
     pub fn is_focusable(&self) -> bool {
-        matches!(
-            self,
+        match self {
+            Self::Widget { widget, .. } => widget.is_focusable(),
+            // Legacy variants
             Self::Input { .. }
-                | Self::Button { .. }
-                | Self::RadioGroup { .. }
-                | Self::ScrollArea { .. }
-                | Self::List { .. }
-                | Self::Tree { .. }
-                | Self::Table { .. }
-        )
+            | Self::Button { .. }
+            | Self::Checkbox { .. }
+            | Self::RadioGroup { .. }
+            | Self::ScrollArea { .. }
+            | Self::List { .. }
+            | Self::Tree { .. }
+            | Self::Table { .. } => true,
+            _ => false,
+        }
     }
 
     /// Get the element ID if any
     pub fn id(&self) -> Option<&str> {
         match self {
+            Self::Widget { widget, .. } => Some(widget.id().leak()), // TODO: avoid leak
+            // Legacy variants
             Self::Input { id, .. }
             | Self::Button { id, .. }
             | Self::Checkbox { id, .. }
@@ -286,12 +312,26 @@ impl Node {
 
     /// Check if this node captures text input when focused
     pub fn captures_input(&self) -> bool {
-        matches!(self, Self::Input { .. })
+        match self {
+            Self::Widget { widget, .. } => widget.captures_input(),
+            Self::Input { .. } => true,
+            _ => false,
+        }
     }
+
+    // =========================================================================
+    // Focus Management
+    // =========================================================================
 
     /// Collect all focusable element IDs from this node and its children (in tree order)
     pub fn collect_focusable_ids(&self, ids: &mut Vec<String>) {
         match self {
+            Self::Widget { widget, .. } => {
+                if widget.is_focusable() {
+                    ids.push(widget.id());
+                }
+            }
+            // Legacy variants
             Self::Input { id, .. }
             | Self::Button { id, .. }
             | Self::Checkbox { id, .. }
@@ -301,15 +341,12 @@ impl Node {
                 ids.push(id.clone());
             }
             Self::ScrollArea { id, child, .. } => {
-                // ScrollArea itself is focusable
                 if !id.is_empty() {
                     ids.push(id.clone());
                 }
-                // Also collect focusable children inside the scroll area
                 child.collect_focusable_ids(ids);
             }
             Self::List { id, .. } | Self::Tree { id, .. } | Self::Table { id, .. } => {
-                // List/Tree/Table is focusable (no children to collect)
                 if !id.is_empty() {
                     ids.push(id.clone());
                 }
@@ -335,6 +372,7 @@ impl Node {
     /// Check if an element with the given ID captures text input
     pub fn element_captures_input(&self, target_id: &str) -> bool {
         match self {
+            Self::Widget { widget, .. } if widget.id() == target_id => widget.captures_input(),
             Self::Input { id, .. } if id == target_id => true,
             Self::Column { children, .. }
             | Self::Row { children, .. }
@@ -346,6 +384,44 @@ impl Node {
         }
     }
 
+    // =========================================================================
+    // Widget Access (New Unified API)
+    // =========================================================================
+
+    /// Get a widget by ID.
+    ///
+    /// This is the unified way to access any widget implementing `AnyWidget`.
+    pub fn get_widget(&self, target_id: &str) -> Option<&dyn AnyWidget> {
+        match self {
+            Self::Widget { widget, .. } if widget.id() == target_id => Some(widget.as_ref()),
+            Self::Column { children, .. }
+            | Self::Row { children, .. }
+            | Self::Stack { children, .. } => {
+                children.iter().find_map(|c| c.get_widget(target_id))
+            }
+            Self::ScrollArea { child, .. } => child.get_widget(target_id),
+            _ => None,
+        }
+    }
+
+    /// Get widget handlers by ID.
+    pub fn get_widget_handlers(&self, target_id: &str) -> Option<&WidgetHandlers> {
+        match self {
+            Self::Widget { widget, handlers, .. } if widget.id() == target_id => Some(handlers),
+            Self::Column { children, .. }
+            | Self::Row { children, .. }
+            | Self::Stack { children, .. } => {
+                children.iter().find_map(|c| c.get_widget_handlers(target_id))
+            }
+            Self::ScrollArea { child, .. } => child.get_widget_handlers(target_id),
+            _ => None,
+        }
+    }
+
+    // =========================================================================
+    // Legacy Widget Access (to be removed in Phase 5)
+    // =========================================================================
+
     /// Get the current value of an input element by ID
     pub fn input_value(&self, target_id: &str) -> Option<String> {
         match self {
@@ -356,46 +432,6 @@ impl Node {
                 children.iter().find_map(|c| c.input_value(target_id))
             }
             Self::ScrollArea { child, .. } => child.input_value(target_id),
-            _ => None,
-        }
-    }
-
-    /// Get the handler for a focusable element (on_click for buttons, on_submit for inputs)
-    pub fn get_submit_handler(&self, target_id: &str) -> Option<HandlerId> {
-        match self {
-            Self::Button { id, on_click, .. } if id == target_id => on_click.clone(),
-            Self::Input { id, on_submit, .. } if id == target_id => on_submit.clone(),
-            Self::List {
-                id, on_activate, ..
-            } if id == target_id => on_activate.clone(),
-            Self::Tree {
-                id, on_activate, ..
-            } if id == target_id => on_activate.clone(),
-            Self::Table {
-                id, on_activate, ..
-            } if id == target_id => on_activate.clone(),
-            Self::Column { children, .. }
-            | Self::Row { children, .. }
-            | Self::Stack { children, .. } => children
-                .iter()
-                .find_map(|c| c.get_submit_handler(target_id)),
-            Self::ScrollArea { child, .. } => child.get_submit_handler(target_id),
-            _ => None,
-        }
-    }
-
-    /// Get the on_change handler for an input or checkbox element by ID
-    pub fn get_change_handler(&self, target_id: &str) -> Option<HandlerId> {
-        match self {
-            Self::Input { id, on_change, .. } if id == target_id => on_change.clone(),
-            Self::Checkbox { id, on_change, .. } if id == target_id => on_change.clone(),
-            Self::RadioGroup { id, on_change, .. } if id == target_id => on_change.clone(),
-            Self::Column { children, .. }
-            | Self::Row { children, .. }
-            | Self::Stack { children, .. } => children
-                .iter()
-                .find_map(|c| c.get_change_handler(target_id)),
-            Self::ScrollArea { child, .. } => child.get_change_handler(target_id),
             _ => None,
         }
     }
@@ -470,118 +506,6 @@ impl Node {
         }
     }
 
-    // =========================================================================
-    // Unified handler getters (work for list/tree/table)
-    // =========================================================================
-
-    /// Get the on_cursor_move handler for any widget (list/tree/table) by ID.
-    pub fn get_cursor_handler(&self, target_id: &str) -> Option<HandlerId> {
-        match self {
-            Self::List {
-                id, on_cursor_move, ..
-            } if id == target_id => on_cursor_move.clone(),
-            Self::Tree {
-                id, on_cursor_move, ..
-            } if id == target_id => on_cursor_move.clone(),
-            Self::Table {
-                id, on_cursor_move, ..
-            } if id == target_id => on_cursor_move.clone(),
-            Self::Column { children, .. }
-            | Self::Row { children, .. }
-            | Self::Stack { children, .. } => children
-                .iter()
-                .find_map(|c| c.get_cursor_handler(target_id)),
-            Self::ScrollArea { child, .. } => child.get_cursor_handler(target_id),
-            _ => None,
-        }
-    }
-
-    /// Get the on_selection_change handler for any widget (list/tree/table) by ID.
-    pub fn get_selection_handler(&self, target_id: &str) -> Option<HandlerId> {
-        match self {
-            Self::List {
-                id,
-                on_selection_change,
-                ..
-            } if id == target_id => on_selection_change.clone(),
-            Self::Tree {
-                id,
-                on_selection_change,
-                ..
-            } if id == target_id => on_selection_change.clone(),
-            Self::Table {
-                id,
-                on_selection_change,
-                ..
-            } if id == target_id => on_selection_change.clone(),
-            Self::Column { children, .. }
-            | Self::Row { children, .. }
-            | Self::Stack { children, .. } => children
-                .iter()
-                .find_map(|c| c.get_selection_handler(target_id)),
-            Self::ScrollArea { child, .. } => child.get_selection_handler(target_id),
-            _ => None,
-        }
-    }
-
-    /// Get the on_expand handler for a tree element by ID.
-    pub fn get_expand_handler(&self, target_id: &str) -> Option<HandlerId> {
-        match self {
-            Self::Tree { id, on_expand, .. } if id == target_id => on_expand.clone(),
-            Self::Column { children, .. }
-            | Self::Row { children, .. }
-            | Self::Stack { children, .. } => children
-                .iter()
-                .find_map(|c| c.get_expand_handler(target_id)),
-            Self::ScrollArea { child, .. } => child.get_expand_handler(target_id),
-            _ => None,
-        }
-    }
-
-    /// Get the on_collapse handler for a tree element by ID.
-    pub fn get_collapse_handler(&self, target_id: &str) -> Option<HandlerId> {
-        match self {
-            Self::Tree {
-                id, on_collapse, ..
-            } if id == target_id => on_collapse.clone(),
-            Self::Column { children, .. }
-            | Self::Row { children, .. }
-            | Self::Stack { children, .. } => children
-                .iter()
-                .find_map(|c| c.get_collapse_handler(target_id)),
-            Self::ScrollArea { child, .. } => child.get_collapse_handler(target_id),
-            _ => None,
-        }
-    }
-
-    /// Get the on_sort handler for a table element by ID.
-    pub fn get_sort_handler(&self, target_id: &str) -> Option<HandlerId> {
-        match self {
-            Self::Table { id, on_sort, .. } if id == target_id => on_sort.clone(),
-            Self::Column { children, .. }
-            | Self::Row { children, .. }
-            | Self::Stack { children, .. } => {
-                children.iter().find_map(|c| c.get_sort_handler(target_id))
-            }
-            Self::ScrollArea { child, .. } => child.get_sort_handler(target_id),
-            _ => None,
-        }
-    }
-
-    /// Get the on_scroll handler for a list element by ID
-    pub fn get_list_scroll_handler(&self, target_id: &str) -> Option<HandlerId> {
-        match self {
-            Self::List { id, on_scroll, .. } if id == target_id => on_scroll.clone(),
-            Self::Column { children, .. }
-            | Self::Row { children, .. }
-            | Self::Stack { children, .. } => children
-                .iter()
-                .find_map(|c| c.get_list_scroll_handler(target_id)),
-            Self::ScrollArea { child, .. } => child.get_list_scroll_handler(target_id),
-            _ => None,
-        }
-    }
-
     /// Get the Tree widget for a tree element by ID
     pub fn get_tree_component(&self, target_id: &str) -> Option<&dyn AnyTree> {
         match self {
@@ -611,34 +535,180 @@ impl Node {
     }
 
     /// Get a type-erased selectable widget (List, Tree, or Table) by ID.
-    ///
-    /// This provides a unified interface for handling click events on
-    /// selectable widgets without branching on widget type.
     pub fn get_selectable_component(&self, target_id: &str) -> Option<&dyn AnySelectable> {
-        // Try List
         if let Some(list) = self.get_list_component(target_id) {
             return Some(list.as_any_selectable());
         }
-        // Try Tree
         if let Some(tree) = self.get_tree_component(target_id) {
             return Some(tree.as_any_selectable());
         }
-        // Try Table
         if let Some(table) = self.get_table_component(target_id) {
             return Some(table.as_any_selectable());
         }
         None
     }
 
+    // =========================================================================
+    // Handler Getters
+    // =========================================================================
+
+    /// Get the handler for a focusable element (on_click for buttons, on_submit for inputs, on_activate for lists)
+    pub fn get_submit_handler(&self, target_id: &str) -> Option<HandlerId> {
+        match self {
+            // New Widget variant
+            Self::Widget { widget, handlers, .. } if widget.id() == target_id => {
+                handlers.on_activate.clone().or_else(|| handlers.on_submit.clone())
+            }
+            // Legacy variants
+            Self::Button { id, on_click, .. } if id == target_id => on_click.clone(),
+            Self::Input { id, on_submit, .. } if id == target_id => on_submit.clone(),
+            Self::List { id, on_activate, .. } if id == target_id => on_activate.clone(),
+            Self::Tree { id, on_activate, .. } if id == target_id => on_activate.clone(),
+            Self::Table { id, on_activate, .. } if id == target_id => on_activate.clone(),
+            Self::Column { children, .. }
+            | Self::Row { children, .. }
+            | Self::Stack { children, .. } => children
+                .iter()
+                .find_map(|c| c.get_submit_handler(target_id)),
+            Self::ScrollArea { child, .. } => child.get_submit_handler(target_id),
+            _ => None,
+        }
+    }
+
+    /// Get the on_change handler for an input or checkbox element by ID
+    pub fn get_change_handler(&self, target_id: &str) -> Option<HandlerId> {
+        match self {
+            Self::Widget { widget, handlers, .. } if widget.id() == target_id => {
+                handlers.on_change.clone()
+            }
+            Self::Input { id, on_change, .. } if id == target_id => on_change.clone(),
+            Self::Checkbox { id, on_change, .. } if id == target_id => on_change.clone(),
+            Self::RadioGroup { id, on_change, .. } if id == target_id => on_change.clone(),
+            Self::Column { children, .. }
+            | Self::Row { children, .. }
+            | Self::Stack { children, .. } => children
+                .iter()
+                .find_map(|c| c.get_change_handler(target_id)),
+            Self::ScrollArea { child, .. } => child.get_change_handler(target_id),
+            _ => None,
+        }
+    }
+
+    /// Get the on_cursor_move handler by ID.
+    pub fn get_cursor_handler(&self, target_id: &str) -> Option<HandlerId> {
+        match self {
+            Self::Widget { widget, handlers, .. } if widget.id() == target_id => {
+                handlers.on_cursor_move.clone()
+            }
+            Self::List { id, on_cursor_move, .. } if id == target_id => on_cursor_move.clone(),
+            Self::Tree { id, on_cursor_move, .. } if id == target_id => on_cursor_move.clone(),
+            Self::Table { id, on_cursor_move, .. } if id == target_id => on_cursor_move.clone(),
+            Self::Column { children, .. }
+            | Self::Row { children, .. }
+            | Self::Stack { children, .. } => children
+                .iter()
+                .find_map(|c| c.get_cursor_handler(target_id)),
+            Self::ScrollArea { child, .. } => child.get_cursor_handler(target_id),
+            _ => None,
+        }
+    }
+
+    /// Get the on_selection_change handler by ID.
+    pub fn get_selection_handler(&self, target_id: &str) -> Option<HandlerId> {
+        match self {
+            Self::Widget { widget, handlers, .. } if widget.id() == target_id => {
+                handlers.on_selection_change.clone()
+            }
+            Self::List { id, on_selection_change, .. } if id == target_id => on_selection_change.clone(),
+            Self::Tree { id, on_selection_change, .. } if id == target_id => on_selection_change.clone(),
+            Self::Table { id, on_selection_change, .. } if id == target_id => on_selection_change.clone(),
+            Self::Column { children, .. }
+            | Self::Row { children, .. }
+            | Self::Stack { children, .. } => children
+                .iter()
+                .find_map(|c| c.get_selection_handler(target_id)),
+            Self::ScrollArea { child, .. } => child.get_selection_handler(target_id),
+            _ => None,
+        }
+    }
+
+    /// Get the on_expand handler by ID.
+    pub fn get_expand_handler(&self, target_id: &str) -> Option<HandlerId> {
+        match self {
+            Self::Widget { widget, handlers, .. } if widget.id() == target_id => {
+                handlers.on_expand.clone()
+            }
+            Self::Tree { id, on_expand, .. } if id == target_id => on_expand.clone(),
+            Self::Column { children, .. }
+            | Self::Row { children, .. }
+            | Self::Stack { children, .. } => children
+                .iter()
+                .find_map(|c| c.get_expand_handler(target_id)),
+            Self::ScrollArea { child, .. } => child.get_expand_handler(target_id),
+            _ => None,
+        }
+    }
+
+    /// Get the on_collapse handler by ID.
+    pub fn get_collapse_handler(&self, target_id: &str) -> Option<HandlerId> {
+        match self {
+            Self::Widget { widget, handlers, .. } if widget.id() == target_id => {
+                handlers.on_collapse.clone()
+            }
+            Self::Tree { id, on_collapse, .. } if id == target_id => on_collapse.clone(),
+            Self::Column { children, .. }
+            | Self::Row { children, .. }
+            | Self::Stack { children, .. } => children
+                .iter()
+                .find_map(|c| c.get_collapse_handler(target_id)),
+            Self::ScrollArea { child, .. } => child.get_collapse_handler(target_id),
+            _ => None,
+        }
+    }
+
+    /// Get the on_sort handler by ID.
+    pub fn get_sort_handler(&self, target_id: &str) -> Option<HandlerId> {
+        match self {
+            Self::Widget { widget, handlers, .. } if widget.id() == target_id => {
+                handlers.on_sort.clone()
+            }
+            Self::Table { id, on_sort, .. } if id == target_id => on_sort.clone(),
+            Self::Column { children, .. }
+            | Self::Row { children, .. }
+            | Self::Stack { children, .. } => {
+                children.iter().find_map(|c| c.get_sort_handler(target_id))
+            }
+            Self::ScrollArea { child, .. } => child.get_sort_handler(target_id),
+            _ => None,
+        }
+    }
+
+    /// Get the on_scroll handler by ID
+    pub fn get_list_scroll_handler(&self, target_id: &str) -> Option<HandlerId> {
+        match self {
+            Self::Widget { widget, handlers, .. } if widget.id() == target_id => {
+                handlers.on_scroll.clone()
+            }
+            Self::List { id, on_scroll, .. } if id == target_id => on_scroll.clone(),
+            Self::Column { children, .. }
+            | Self::Row { children, .. }
+            | Self::Stack { children, .. } => children
+                .iter()
+                .find_map(|c| c.get_list_scroll_handler(target_id)),
+            Self::ScrollArea { child, .. } => child.get_list_scroll_handler(target_id),
+            _ => None,
+        }
+    }
+
+    // =========================================================================
+    // Event Dispatch
+    // =========================================================================
+
     /// Dispatch an event to a widget by ID using a visitor function.
-    ///
-    /// This is the core tree traversal logic used by all dispatch_*_event methods.
-    /// The visitor function is called when the target node is found.
     fn dispatch_event<F>(&self, target_id: &str, visitor: F) -> Option<EventResult>
     where
         F: Fn(&Node) -> Option<EventResult> + Copy,
     {
-        // First, check if this node matches (visitor will check if it's the right type)
         if let Some(id) = self.id()
             && id == target_id
             && let Some(result) = visitor(self)
@@ -646,7 +716,6 @@ impl Node {
             return Some(result);
         }
 
-        // Recurse into children
         match self {
             Self::Column { children, .. }
             | Self::Row { children, .. }
@@ -659,8 +728,6 @@ impl Node {
     }
 
     /// Dispatch a click event to a widget.
-    ///
-    /// Finds the widget with the given ID and delegates to its `on_click` handler.
     pub fn dispatch_click_event(
         &self,
         target_id: &str,
@@ -669,14 +736,11 @@ impl Node {
         cx: &AppContext,
     ) -> Option<EventResult> {
         self.dispatch_event(target_id, |node| match node {
+            Self::Widget { widget, .. } => Some(widget.dispatch_click(x, y, cx)),
+            // Legacy variants
             Self::ScrollArea { widget, .. } => Some(widget.on_click(x, y, cx)),
-            Self::Input {
-                widget: Some(widget),
-                ..
-            } => Some(widget.on_click(x, y, cx)),
-            Self::Input {
-                widget: None, ..
-            } => Some(EventResult::Ignored),
+            Self::Input { widget: Some(widget), .. } => Some(widget.on_click(x, y, cx)),
+            Self::Input { widget: None, .. } => Some(EventResult::Ignored),
             Self::List { widget, .. } => Some(widget.on_click(x, y, cx)),
             Self::Tree { widget, .. } => Some(widget.on_click(x, y, cx)),
             Self::Table { widget, .. } => Some(widget.on_click(x, y, cx)),
@@ -693,6 +757,7 @@ impl Node {
         cx: &AppContext,
     ) -> Option<EventResult> {
         self.dispatch_event(target_id, |node| match node {
+            Self::Widget { widget, .. } => Some(widget.dispatch_scroll(direction, amount, cx)),
             Self::ScrollArea { widget, .. } => Some(widget.on_scroll(direction, amount, cx)),
             Self::List { widget, .. } => Some(widget.on_scroll(direction, amount, cx)),
             Self::Tree { widget, .. } => Some(widget.on_scroll(direction, amount, cx)),
@@ -702,8 +767,6 @@ impl Node {
     }
 
     /// Dispatch a drag event to a widget.
-    ///
-    /// The target ID is typically stored from a previous `StartDrag` result.
     pub fn dispatch_drag_event(
         &self,
         target_id: &str,
@@ -713,6 +776,7 @@ impl Node {
         cx: &AppContext,
     ) -> Option<EventResult> {
         self.dispatch_event(target_id, |node| match node {
+            Self::Widget { widget, .. } => Some(widget.dispatch_drag(x, y, modifiers, cx)),
             Self::ScrollArea { widget, .. } => Some(widget.on_drag(x, y, modifiers, cx)),
             Self::List { widget, .. } => Some(widget.on_drag(x, y, modifiers, cx)),
             Self::Tree { widget, .. } => Some(widget.on_drag(x, y, modifiers, cx)),
@@ -724,6 +788,7 @@ impl Node {
     /// Dispatch a drag release event to a widget.
     pub fn dispatch_release_event(&self, target_id: &str, cx: &AppContext) -> Option<EventResult> {
         self.dispatch_event(target_id, |node| match node {
+            Self::Widget { widget, .. } => Some(widget.dispatch_release(cx)),
             Self::ScrollArea { widget, .. } => Some(widget.on_release(cx)),
             Self::List { widget, .. } => Some(widget.on_release(cx)),
             Self::Tree { widget, .. } => Some(widget.on_release(cx)),
@@ -740,13 +805,9 @@ impl Node {
         cx: &AppContext,
     ) -> Option<EventResult> {
         self.dispatch_event(target_id, |node| match node {
-            Self::Input {
-                widget: Some(widget),
-                ..
-            } => Some(widget.on_key(key, cx)),
-            Self::Input {
-                widget: None, ..
-            } => Some(EventResult::Ignored),
+            Self::Widget { widget, .. } => Some(widget.dispatch_key(key, cx)),
+            Self::Input { widget: Some(widget), .. } => Some(widget.on_key(key, cx)),
+            Self::Input { widget: None, .. } => Some(EventResult::Ignored),
             Self::Checkbox { widget, .. } => Some(widget.on_key(key, cx)),
             Self::RadioGroup { widget, .. } => Some(widget.on_key(key, cx)),
             Self::ScrollArea { widget, .. } => Some(widget.on_key(key, cx)),
@@ -758,8 +819,6 @@ impl Node {
     }
 
     /// Dispatch a hover event to a widget.
-    ///
-    /// Called when the mouse moves over a widget's bounds.
     pub fn dispatch_hover_event(
         &self,
         target_id: &str,
@@ -768,6 +827,7 @@ impl Node {
         cx: &AppContext,
     ) -> Option<EventResult> {
         self.dispatch_event(target_id, |node| match node {
+            Self::Widget { widget, .. } => Some(widget.dispatch_hover(x, y, cx)),
             Self::List { widget, .. } => Some(widget.on_hover(x, y, cx)),
             Self::Tree { widget, .. } => Some(widget.on_hover(x, y, cx)),
             Self::Table { widget, .. } => Some(widget.on_hover(x, y, cx)),
@@ -775,17 +835,18 @@ impl Node {
         })
     }
 
+    // =========================================================================
+    // Intrinsic Size Calculations
+    // =========================================================================
+
     /// Calculate intrinsic width of this node
     pub fn intrinsic_width(&self) -> u16 {
         match self {
             Self::Empty => 0,
             Self::Text { content, .. } => {
-                // Max line width, not total length
                 content.lines().map(|l| l.len()).max().unwrap_or(0) as u16
             }
-            Self::Column {
-                children, layout, ..
-            } => {
+            Self::Column { children, layout, .. } => {
                 let (chrome_h, _) = layout.chrome_size();
                 let max_child = children
                     .iter()
@@ -794,9 +855,7 @@ impl Node {
                     .unwrap_or(0);
                 max_child + chrome_h
             }
-            Self::Row {
-                children, layout, ..
-            } => {
+            Self::Row { children, layout, .. } => {
                 let (chrome_h, _) = layout.chrome_size();
                 let child_sum: u16 = children.iter().map(|c| c.intrinsic_width()).sum();
                 let gaps = if children.len() > 1 {
@@ -806,9 +865,7 @@ impl Node {
                 };
                 child_sum + gaps + chrome_h
             }
-            Self::Stack {
-                children, layout, ..
-            } => {
+            Self::Stack { children, layout, .. } => {
                 let (chrome_h, _) = layout.chrome_size();
                 let max_child = children
                     .iter()
@@ -817,9 +874,12 @@ impl Node {
                     .unwrap_or(0);
                 max_child + chrome_h
             }
-            Self::Input {
-                value, placeholder, ..
-            } => {
+            Self::Widget { layout, .. } => {
+                let (chrome_h, _) = layout.chrome_size();
+                40 + chrome_h // Default width for widgets
+            }
+            // Legacy variants
+            Self::Input { value, placeholder, .. } => {
                 let content_len = if value.is_empty() {
                     placeholder.len()
                 } else {
@@ -830,36 +890,21 @@ impl Node {
             Self::Button { label, .. } => (label.len() + 4) as u16,
             Self::Checkbox { widget, .. } => {
                 let label = widget.label();
-                if label.is_empty() {
-                    1 // Just the indicator
-                } else {
-                    (label.len() + 2) as u16 // indicator + space + label
-                }
+                if label.is_empty() { 1 } else { (label.len() + 2) as u16 }
             }
             Self::RadioGroup { widget, .. } => {
-                // Width is the longest option label + indicator + space
-                widget
-                    .options()
-                    .iter()
-                    .map(|label| label.len() + 2) // indicator + space + label
-                    .max()
-                    .unwrap_or(1) as u16
+                widget.options().iter().map(|l| l.len() + 2).max().unwrap_or(1) as u16
             }
             Self::ScrollArea { child, layout, .. } => {
                 let (chrome_h, _) = layout.chrome_size();
-                // ScrollArea reports child's intrinsic size (may be larger than viewport)
                 child.intrinsic_width() + chrome_h
             }
             Self::List { layout, .. } | Self::Tree { layout, .. } => {
-                // List/Tree width is determined by layout, not content
                 let (chrome_h, _) = layout.chrome_size();
-                40 + chrome_h // Default width, will be overridden by layout
+                40 + chrome_h
             }
-            Self::Table {
-                layout, widget, ..
-            } => {
+            Self::Table { layout, widget, .. } => {
                 let (chrome_h, _) = layout.chrome_size();
-                // Table total width is sum of column widths
                 widget.total_width() + chrome_h
             }
         }
@@ -870,9 +915,7 @@ impl Node {
         match self {
             Self::Empty => 0,
             Self::Text { content, .. } => content.lines().count().max(1) as u16,
-            Self::Column {
-                children, layout, ..
-            } => {
+            Self::Column { children, layout, .. } => {
                 let (_, chrome_v) = layout.chrome_size();
                 let child_sum: u16 = children.iter().map(|c| c.intrinsic_height()).sum();
                 let gaps = if children.len() > 1 {
@@ -882,9 +925,7 @@ impl Node {
                 };
                 child_sum + gaps + chrome_v
             }
-            Self::Row {
-                children, layout, ..
-            } => {
+            Self::Row { children, layout, .. } => {
                 let (_, chrome_v) = layout.chrome_size();
                 let max_child = children
                     .iter()
@@ -893,9 +934,7 @@ impl Node {
                     .unwrap_or(0);
                 max_child + chrome_v
             }
-            Self::Stack {
-                children, layout, ..
-            } => {
+            Self::Stack { children, layout, .. } => {
                 let (_, chrome_v) = layout.chrome_size();
                 let max_child = children
                     .iter()
@@ -904,37 +943,32 @@ impl Node {
                     .unwrap_or(0);
                 max_child + chrome_v
             }
+            Self::Widget { layout, .. } => {
+                let (_, chrome_v) = layout.chrome_size();
+                1 + chrome_v // Default height for widgets
+            }
+            // Legacy variants
             Self::Input { .. } | Self::Button { .. } | Self::Checkbox { .. } => 1,
-            Self::RadioGroup { widget, .. } => {
-                // Height is the number of options
-                widget.len().max(1) as u16
-            }
+            Self::RadioGroup { widget, .. } => widget.len().max(1) as u16,
             Self::ScrollArea { child, layout, .. } => {
                 let (_, chrome_v) = layout.chrome_size();
-                // ScrollArea reports child's intrinsic size (may be larger than viewport)
                 child.intrinsic_height() + chrome_v
             }
-            Self::List {
-                layout, widget, ..
-            } => {
+            Self::List { layout, widget, .. } => {
                 let (_, chrome_v) = layout.chrome_size();
-                // Total height of all items
                 widget.total_height() + chrome_v
             }
-            Self::Tree {
-                layout, widget, ..
-            } => {
+            Self::Tree { layout, widget, .. } => {
                 let (_, chrome_v) = layout.chrome_size();
-                // Total height of all visible nodes
                 widget.total_height() + chrome_v
             }
-            Self::Table {
-                layout, widget, ..
-            } => {
+            Self::Table { layout, widget, .. } => {
                 let (_, chrome_v) = layout.chrome_size();
-                // Total height of all rows plus header
-                widget.total_height() + 1 + chrome_v // +1 for header row
+                widget.total_height() + 1 + chrome_v
             }
         }
     }
 }
+
+// We can't derive Clone for Node because Box<dyn AnyWidget> isn't Clone.
+// This is intentional - widgets with internal state shouldn't be cloned.

@@ -104,6 +104,7 @@ pub fn calculate_constraints(children: &[Node], gap: u16, horizontal: bool) -> V
 }
 
 /// Calculate the intrinsic size of a node (width if horizontal, height if vertical)
+#[allow(deprecated)] // Allow legacy Node variants during migration
 pub fn intrinsic_size(node: &Node, horizontal: bool) -> u16 {
     match node {
         Node::Empty => 0,
@@ -187,6 +188,20 @@ pub fn intrinsic_size(node: &Node, horizontal: bool) -> u16 {
                 .unwrap_or(0);
             max_child + padding + border_size
         }
+        Node::Widget { layout, .. } => {
+            let border_size = if matches!(layout.border, Border::None) {
+                0
+            } else {
+                2
+            };
+            let padding = layout.padding * 2;
+            if horizontal {
+                40 + padding + border_size // Default width for widgets
+            } else {
+                1 + padding + border_size // Default height for widgets
+            }
+        }
+        // Legacy variants
         Node::Input {
             value, placeholder, ..
         } => {
@@ -298,9 +313,29 @@ pub fn intrinsic_size(node: &Node, horizontal: bool) -> u16 {
 }
 
 /// Get the constraint for a single child node
+#[allow(deprecated)] // Allow legacy Node variants during migration
 pub fn child_constraint(node: &Node, horizontal: bool) -> Constraint {
     match node {
         Node::Empty => Constraint::Length(0),
+        Node::Widget { layout, .. } => {
+            let size = if horizontal {
+                &layout.width
+            } else {
+                &layout.height
+            };
+            match size {
+                crate::node::Size::Fixed(v) => Constraint::Length(*v),
+                crate::node::Size::Percent(p) => Constraint::Percentage((*p * 100.0) as u16),
+                crate::node::Size::Flex(f) => Constraint::Ratio(*f as u32, 1),
+                crate::node::Size::Auto => {
+                    if let Some(flex) = layout.flex {
+                        Constraint::Ratio(flex as u32, 1)
+                    } else {
+                        Constraint::Length(intrinsic_size(node, horizontal))
+                    }
+                }
+            }
+        }
         Node::Text { content, .. } => {
             if horizontal {
                 let width = content.len() as u16;

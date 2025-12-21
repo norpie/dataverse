@@ -527,7 +527,7 @@ pub trait AnyWidget: Send + Sync + Debug {
     /// Handle a scroll event.
     fn dispatch_scroll(
         &self,
-        _direction: super::ScrollDirection,
+        _direction: crate::events::ScrollDirection,
         _amount: u16,
         _cx: &AppContext,
     ) -> EventResult {

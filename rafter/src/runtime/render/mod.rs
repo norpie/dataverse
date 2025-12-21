@@ -56,6 +56,7 @@ pub(crate) fn style_to_ratatui(style: &Style, theme: &dyn Theme) -> RatatuiStyle
 }
 
 /// Render a Node tree to a ratatui Frame
+#[allow(deprecated)] // Allow legacy Node variants during migration
 pub fn render_node(
     frame: &mut Frame,
     node: &Node,
@@ -122,6 +123,18 @@ pub fn render_node(
                 focused_id,
             );
         }
+        Node::Widget {
+            widget,
+            style: _,
+            layout: _,
+            ..
+        } => {
+            // Unified widget rendering - delegates to the widget's render method
+            let is_focused = focused_id == Some(widget.id().as_str());
+            widget.render(frame, area, is_focused);
+            hit_map.register(widget.id(), area, widget.captures_input());
+        }
+        // Legacy variants (deprecated - to be removed in Phase 5)
         Node::Input {
             value,
             placeholder,
