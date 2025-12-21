@@ -6,6 +6,7 @@ pub use layout::{Align, Border, Direction, Justify, Layout, Size};
 
 use crate::components::events::{ComponentEvents, EventResult};
 use crate::components::list::AnyList;
+use crate::components::tree::AnyTree;
 use crate::components::{Input, ScrollArea};
 use crate::context::AppContext;
 use crate::events::{Modifiers, ScrollDirection};
@@ -106,6 +107,28 @@ pub enum Node {
         /// Handler for scroll events (useful for pagination / infinite scroll)
         on_scroll: Option<HandlerId>,
     },
+
+    /// Virtualized tree
+    Tree {
+        /// Element ID
+        id: String,
+        /// Style
+        style: Style,
+        /// Layout properties
+        layout: Layout,
+        /// The tree component (type-erased)
+        component: Box<dyn AnyTree>,
+        /// Handler for node activation
+        on_activate: Option<HandlerId>,
+        /// Handler for node expansion
+        on_expand: Option<HandlerId>,
+        /// Handler for node collapse
+        on_collapse: Option<HandlerId>,
+        /// Handler for selection changes
+        on_selection_change: Option<HandlerId>,
+        /// Handler for cursor movement
+        on_cursor_move: Option<HandlerId>,
+    },
 }
 
 impl Node {
@@ -185,7 +208,11 @@ impl Node {
     pub fn is_focusable(&self) -> bool {
         matches!(
             self,
-            Self::Input { .. } | Self::Button { .. } | Self::ScrollArea { .. } | Self::List { .. }
+            Self::Input { .. }
+                | Self::Button { .. }
+                | Self::ScrollArea { .. }
+                | Self::List { .. }
+                | Self::Tree { .. }
         )
     }
 
@@ -195,7 +222,8 @@ impl Node {
             Self::Input { id, .. }
             | Self::Button { id, .. }
             | Self::ScrollArea { id, .. }
-            | Self::List { id, .. } => {
+            | Self::List { id, .. }
+            | Self::Tree { id, .. } => {
                 if id.is_empty() {
                     None
                 } else {
@@ -225,8 +253,8 @@ impl Node {
                 // Also collect focusable children inside the scroll area
                 child.collect_focusable_ids(ids);
             }
-            Self::List { id, .. } => {
-                // List is focusable (no children to collect)
+            Self::List { id, .. } | Self::Tree { id, .. } => {
+                // List/Tree is focusable (no children to collect)
                 if !id.is_empty() {
                     ids.push(id.clone());
                 }
@@ -283,6 +311,9 @@ impl Node {
             Self::Button { id, on_click, .. } if id == target_id => on_click.clone(),
             Self::Input { id, on_submit, .. } if id == target_id => on_submit.clone(),
             Self::List {
+                id, on_activate, ..
+            } if id == target_id => on_activate.clone(),
+            Self::Tree {
                 id, on_activate, ..
             } if id == target_id => on_activate.clone(),
             Self::Column { children, .. }
@@ -399,6 +430,84 @@ impl Node {
         }
     }
 
+    /// Get the Tree component for a tree element by ID
+    pub fn get_tree_component(&self, target_id: &str) -> Option<&dyn AnyTree> {
+        match self {
+            Self::Tree { id, component, .. } if id == target_id => Some(component.as_ref()),
+            Self::Column { children, .. }
+            | Self::Row { children, .. }
+            | Self::Stack { children, .. } => children
+                .iter()
+                .find_map(|c| c.get_tree_component(target_id)),
+            Self::ScrollArea { child, .. } => child.get_tree_component(target_id),
+            _ => None,
+        }
+    }
+
+    /// Get the on_selection_change handler for a tree element by ID
+    pub fn get_tree_selection_handler(&self, target_id: &str) -> Option<HandlerId> {
+        match self {
+            Self::Tree {
+                id,
+                on_selection_change,
+                ..
+            } if id == target_id => on_selection_change.clone(),
+            Self::Column { children, .. }
+            | Self::Row { children, .. }
+            | Self::Stack { children, .. } => children
+                .iter()
+                .find_map(|c| c.get_tree_selection_handler(target_id)),
+            Self::ScrollArea { child, .. } => child.get_tree_selection_handler(target_id),
+            _ => None,
+        }
+    }
+
+    /// Get the on_cursor_move handler for a tree element by ID
+    pub fn get_tree_cursor_handler(&self, target_id: &str) -> Option<HandlerId> {
+        match self {
+            Self::Tree {
+                id, on_cursor_move, ..
+            } if id == target_id => on_cursor_move.clone(),
+            Self::Column { children, .. }
+            | Self::Row { children, .. }
+            | Self::Stack { children, .. } => children
+                .iter()
+                .find_map(|c| c.get_tree_cursor_handler(target_id)),
+            Self::ScrollArea { child, .. } => child.get_tree_cursor_handler(target_id),
+            _ => None,
+        }
+    }
+
+    /// Get the on_expand handler for a tree element by ID
+    pub fn get_tree_expand_handler(&self, target_id: &str) -> Option<HandlerId> {
+        match self {
+            Self::Tree { id, on_expand, .. } if id == target_id => on_expand.clone(),
+            Self::Column { children, .. }
+            | Self::Row { children, .. }
+            | Self::Stack { children, .. } => children
+                .iter()
+                .find_map(|c| c.get_tree_expand_handler(target_id)),
+            Self::ScrollArea { child, .. } => child.get_tree_expand_handler(target_id),
+            _ => None,
+        }
+    }
+
+    /// Get the on_collapse handler for a tree element by ID
+    pub fn get_tree_collapse_handler(&self, target_id: &str) -> Option<HandlerId> {
+        match self {
+            Self::Tree {
+                id, on_collapse, ..
+            } if id == target_id => on_collapse.clone(),
+            Self::Column { children, .. }
+            | Self::Row { children, .. }
+            | Self::Stack { children, .. } => children
+                .iter()
+                .find_map(|c| c.get_tree_collapse_handler(target_id)),
+            Self::ScrollArea { child, .. } => child.get_tree_collapse_handler(target_id),
+            _ => None,
+        }
+    }
+
     /// Dispatch an event to a component by ID using a visitor function.
     ///
     /// This is the core tree traversal logic used by all dispatch_*_event methods.
@@ -443,8 +552,11 @@ impl Node {
                 component: Some(component),
                 ..
             } => Some(component.on_click(x, y, cx)),
-            Self::Input { component: None, .. } => Some(EventResult::Ignored),
+            Self::Input {
+                component: None, ..
+            } => Some(EventResult::Ignored),
             Self::List { component, .. } => Some(component.on_click(x, y, cx)),
+            Self::Tree { component, .. } => Some(component.on_click(x, y, cx)),
             _ => None,
         })
     }
@@ -460,6 +572,7 @@ impl Node {
         self.dispatch_event(target_id, |node| match node {
             Self::ScrollArea { component, .. } => Some(component.on_scroll(direction, amount, cx)),
             Self::List { component, .. } => Some(component.on_scroll(direction, amount, cx)),
+            Self::Tree { component, .. } => Some(component.on_scroll(direction, amount, cx)),
             _ => None,
         })
     }
@@ -478,6 +591,7 @@ impl Node {
         self.dispatch_event(target_id, |node| match node {
             Self::ScrollArea { component, .. } => Some(component.on_drag(x, y, modifiers, cx)),
             Self::List { component, .. } => Some(component.on_drag(x, y, modifiers, cx)),
+            Self::Tree { component, .. } => Some(component.on_drag(x, y, modifiers, cx)),
             _ => None,
         })
     }
@@ -487,6 +601,7 @@ impl Node {
         self.dispatch_event(target_id, |node| match node {
             Self::ScrollArea { component, .. } => Some(component.on_release(cx)),
             Self::List { component, .. } => Some(component.on_release(cx)),
+            Self::Tree { component, .. } => Some(component.on_release(cx)),
             _ => None,
         })
     }
@@ -503,9 +618,12 @@ impl Node {
                 component: Some(component),
                 ..
             } => Some(component.on_key(key, cx)),
-            Self::Input { component: None, .. } => Some(EventResult::Ignored),
+            Self::Input {
+                component: None, ..
+            } => Some(EventResult::Ignored),
             Self::ScrollArea { component, .. } => Some(component.on_key(key, cx)),
             Self::List { component, .. } => Some(component.on_key(key, cx)),
+            Self::Tree { component, .. } => Some(component.on_key(key, cx)),
             _ => None,
         })
     }
@@ -522,6 +640,7 @@ impl Node {
     ) -> Option<EventResult> {
         self.dispatch_event(target_id, |node| match node {
             Self::List { component, .. } => Some(component.on_hover(x, y, cx)),
+            Self::Tree { component, .. } => Some(component.on_hover(x, y, cx)),
             _ => None,
         })
     }
@@ -584,8 +703,8 @@ impl Node {
                 // ScrollArea reports child's intrinsic size (may be larger than viewport)
                 child.intrinsic_width() + chrome_h
             }
-            Self::List { layout, .. } => {
-                // List width is determined by layout, not content
+            Self::List { layout, .. } | Self::Tree { layout, .. } => {
+                // List/Tree width is determined by layout, not content
                 let (chrome_h, _) = layout.chrome_size();
                 40 + chrome_h // Default width, will be overridden by layout
             }
@@ -642,6 +761,13 @@ impl Node {
             } => {
                 let (_, chrome_v) = layout.chrome_size();
                 // Total height of all items
+                component.total_height() + chrome_v
+            }
+            Self::Tree {
+                layout, component, ..
+            } => {
+                let (_, chrome_v) = layout.chrome_size();
+                // Total height of all visible nodes
                 component.total_height() + chrome_v
             }
         }

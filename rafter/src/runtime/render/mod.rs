@@ -203,6 +203,25 @@ pub fn render_node(
                 focused_id,
             );
         }
+        Node::Tree {
+            id,
+            style,
+            layout,
+            component,
+            ..
+        } => {
+            render_tree(
+                frame,
+                id,
+                style_to_ratatui(style, theme),
+                layout,
+                component.as_ref(),
+                area,
+                hit_map,
+                theme,
+                focused_id,
+            );
+        }
     }
 }
 
@@ -421,6 +440,119 @@ fn render_list(
 
     // Register hit box for the content area (where items are clickable)
     // We use padded_area so click coordinates are relative to item positions
+    if !id.is_empty() {
+        hit_map.register(id.to_string(), padded_area, true);
+    }
+}
+
+/// Render a tree component
+#[allow(clippy::too_many_arguments)]
+fn render_tree(
+    frame: &mut Frame,
+    id: &str,
+    style: RatatuiStyle,
+    layout: &crate::node::Layout,
+    component: &dyn crate::components::tree::AnyTree,
+    area: ratatui::layout::Rect,
+    hit_map: &mut HitTestMap,
+    theme: &dyn Theme,
+    focused_id: Option<&str>,
+) {
+    use crate::components::scrollbar::render_vertical_scrollbar;
+    use ratatui::widgets::Block;
+
+    // Apply border and get inner area
+    let (inner_area, block) =
+        crate::runtime::render::layout::apply_border(area, &layout.border, style);
+    if let Some(block) = block {
+        frame.render_widget(block, area);
+    } else if style.bg.is_some() {
+        // Fill background if no border but has background
+        let bg_block = Block::default().style(style);
+        frame.render_widget(bg_block, area);
+    }
+
+    // Apply padding
+    let padded_area = crate::runtime::render::layout::apply_padding(inner_area, layout.padding);
+
+    if padded_area.width == 0 || padded_area.height == 0 {
+        return;
+    }
+
+    // Determine if we need a scrollbar
+    let needs_scrollbar = component.needs_vertical_scrollbar();
+    let scrollbar_reserved = if needs_scrollbar { 2u16 } else { 0u16 };
+
+    // Content area excludes scrollbar and padding
+    let content_area = ratatui::layout::Rect {
+        x: padded_area.x,
+        y: padded_area.y,
+        width: padded_area.width.saturating_sub(scrollbar_reserved),
+        height: padded_area.height,
+    };
+
+    if content_area.width == 0 || content_area.height == 0 {
+        return;
+    }
+
+    // Update component's viewport height
+    component.set_viewport_height(content_area.height);
+
+    // Get visible range
+    let visible_range = component.visible_range();
+    let item_height = component.item_height();
+    let scroll_offset = component.scroll_offset();
+
+    // Calculate offset for first visible item
+    let first_item_y = (visible_range.start as u16 * item_height).saturating_sub(scroll_offset);
+
+    // Render visible nodes
+    for (i, index) in visible_range.enumerate() {
+        let item_y = content_area.y + first_item_y + (i as u16 * item_height);
+
+        // Skip if outside viewport
+        if item_y >= content_area.y + content_area.height {
+            break;
+        }
+
+        let item_area = ratatui::layout::Rect {
+            x: content_area.x,
+            y: item_y,
+            width: content_area.width,
+            height: item_height.min(content_area.y + content_area.height - item_y),
+        };
+
+        // Render the node
+        if let Some(item_node) = component.render_item(index) {
+            render_node(frame, &item_node, item_area, hit_map, theme, focused_id);
+        }
+    }
+
+    // Render vertical scrollbar if needed
+    if needs_scrollbar {
+        let scrollbar_area = ratatui::layout::Rect {
+            x: padded_area.x + padded_area.width - 1,
+            y: padded_area.y,
+            width: 1,
+            height: padded_area.height,
+        };
+
+        let config = component.scrollbar_config();
+        let v_geom = render_vertical_scrollbar(
+            frame.buffer_mut(),
+            scrollbar_area,
+            scroll_offset,
+            component.total_height(),
+            content_area.height,
+            &config,
+            theme,
+        );
+        component.set_vertical_scrollbar(v_geom);
+    } else {
+        component.set_vertical_scrollbar(None);
+    }
+
+    // Register hit box for the content area (where nodes are clickable)
     if !id.is_empty() {
         hit_map.register(id.to_string(), padded_area, true);
     }

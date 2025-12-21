@@ -1,5 +1,6 @@
-//! List component state.
+//! Tree component state.
 
+use std::collections::HashSet;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, RwLock};
 
@@ -9,52 +10,71 @@ use crate::components::scrollbar::{
 use crate::components::selection::{Selection, SelectionMode};
 use crate::components::traits::ScrollableComponent;
 
-use super::item::ListItem;
+use super::item::TreeItem;
 
-/// Unique identifier for a List component instance.
+/// Unique identifier for a Tree component instance.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct ListId(usize);
+pub struct TreeId(usize);
 
-impl ListId {
+impl TreeId {
     fn new() -> Self {
         static COUNTER: AtomicUsize = AtomicUsize::new(0);
         Self(COUNTER.fetch_add(1, Ordering::SeqCst))
     }
 }
 
-impl std::fmt::Display for ListId {
+impl std::fmt::Display for TreeId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "__list_{}", self.0)
+        write!(f, "__tree_{}", self.0)
     }
 }
 
-/// Internal state for the List component.
+/// A visible node in the flattened tree view.
+#[derive(Debug, Clone)]
+pub struct FlatNode<T: TreeItem> {
+    /// The item itself.
+    pub item: T,
+    /// Depth in tree (0 = root).
+    pub depth: u16,
+    /// Whether this node has children.
+    pub has_children: bool,
+    /// Whether this node is currently expanded.
+    pub is_expanded: bool,
+}
+
+/// Internal state for the Tree component.
 #[derive(Debug)]
-pub(super) struct ListInner<T: ListItem> {
-    /// The items in the list.
-    pub items: Vec<T>,
+pub(super) struct TreeInner<T: TreeItem> {
+    /// Root items.
+    pub roots: Vec<T>,
+    /// Set of expanded node IDs.
+    pub expanded: HashSet<String>,
+    /// Flattened visible nodes (rebuilt on expand/collapse).
+    pub visible: Vec<FlatNode<T>>,
     /// Selection state (by ID).
     pub selection: Selection,
     /// Selection mode.
     pub selection_mode: SelectionMode,
-    /// Current cursor position (focused item).
+    /// Cursor (index into visible list).
     pub cursor: Option<usize>,
-    /// Scroll offset in pixels/rows.
+    /// Scroll offset in rows.
     pub scroll_offset: u16,
-    /// Viewport height (set by renderer).
+    /// Viewport height.
     pub viewport_height: u16,
     /// Scrollbar configuration.
     pub scrollbar: ScrollbarConfig,
-    /// Vertical scrollbar geometry (set by renderer for hit testing).
+    /// Vertical scrollbar geometry.
     pub vertical_scrollbar: Option<ScrollbarGeometry>,
-    /// Drag state for scrollbar interaction.
+    /// Drag state.
     pub drag: Option<ScrollbarDrag>,
 }
 
-impl<T: ListItem> Default for ListInner<T> {
+impl<T: TreeItem> Default for TreeInner<T> {
     fn default() -> Self {
         Self {
-            items: Vec::new(),
+            roots: Vec::new(),
+            expanded: HashSet::new(),
+            visible: Vec::new(),
             selection: Selection::new(),
             selection_mode: SelectionMode::None,
             cursor: None,
@@ -67,50 +87,77 @@ impl<T: ListItem> Default for ListInner<T> {
     }
 }
 
-/// A virtualized list component with selection support.
+/// A virtualized tree component with selection and expand/collapse support.
 ///
-/// `List<T>` manages a collection of items with:
-/// - Virtualized rendering (only visible items are rendered)
-/// - Cursor navigation (keyboard focus on single item)
-/// - Selection (single or multi-select)
-/// - Activation (Enter/click to activate an item)
+/// `Tree<T>` manages hierarchical data with:
+/// - Virtualized rendering (only visible nodes are rendered)
+/// - Expand/collapse state per node
+/// - Cursor navigation
+/// - Selection (single or multi-select by node ID)
+///
+/// # Example
+///
+/// ```ignore
+/// #[derive(Clone)]
+/// struct FileNode {
+///     path: String,
+///     name: String,
+///     children: Vec<FileNode>,
+/// }
+///
+/// impl TreeItem for FileNode {
+///     fn id(&self) -> String { self.path.clone() }
+///     fn children(&self) -> Vec<Self> { self.children.clone() }
+///     fn render(&self, focused: bool, selected: bool, depth: u16, expanded: bool) -> Node {
+///         // ...
+///     }
+/// }
+///
+/// let tree = Tree::with_items(vec![root_node]);
+/// tree.expand("/home");
+/// ```
 #[derive(Debug)]
-pub struct List<T: ListItem> {
+pub struct Tree<T: TreeItem> {
     /// Unique identifier.
-    id: ListId,
+    id: TreeId,
     /// Internal state.
-    pub(super) inner: Arc<RwLock<ListInner<T>>>,
+    pub(super) inner: Arc<RwLock<TreeInner<T>>>,
     /// Dirty flag for re-render.
     pub(super) dirty: Arc<AtomicBool>,
 }
 
-impl<T: ListItem> List<T> {
-    /// Create a new empty list.
+impl<T: TreeItem> Tree<T> {
+    /// Create a new empty tree.
     pub fn new() -> Self {
         Self {
-            id: ListId::new(),
-            inner: Arc::new(RwLock::new(ListInner::default())),
+            id: TreeId::new(),
+            inner: Arc::new(RwLock::new(TreeInner::default())),
             dirty: Arc::new(AtomicBool::new(false)),
         }
     }
 
-    /// Create a list with initial items.
-    pub fn with_items(items: Vec<T>) -> Self {
-        Self {
-            id: ListId::new(),
-            inner: Arc::new(RwLock::new(ListInner {
-                items,
+    /// Create a tree with initial root items.
+    pub fn with_items(roots: Vec<T>) -> Self {
+        let tree = Self {
+            id: TreeId::new(),
+            inner: Arc::new(RwLock::new(TreeInner {
+                roots,
                 ..Default::default()
             })),
             dirty: Arc::new(AtomicBool::new(false)),
+        };
+        // Build initial visible list
+        if let Ok(mut guard) = tree.inner.write() {
+            Self::rebuild_visible(&mut guard);
         }
+        tree
     }
 
-    /// Create a list with selection mode.
+    /// Create a tree with selection mode.
     pub fn with_selection_mode(mode: SelectionMode) -> Self {
         Self {
-            id: ListId::new(),
-            inner: Arc::new(RwLock::new(ListInner {
+            id: TreeId::new(),
+            inner: Arc::new(RwLock::new(TreeInner {
                 selection_mode: mode,
                 ..Default::default()
             })),
@@ -119,7 +166,7 @@ impl<T: ListItem> List<T> {
     }
 
     /// Get the unique ID.
-    pub fn id(&self) -> ListId {
+    pub fn id(&self) -> TreeId {
         self.id
     }
 
@@ -132,131 +179,194 @@ impl<T: ListItem> List<T> {
     // Item access
     // -------------------------------------------------------------------------
 
-    /// Get the number of items.
-    pub fn len(&self) -> usize {
-        self.inner.read().map(|g| g.items.len()).unwrap_or(0)
-    }
-
-    /// Check if the list is empty.
-    pub fn is_empty(&self) -> bool {
-        self.len() == 0
-    }
-
-    /// Get an item by index.
-    pub fn get(&self, index: usize) -> Option<T> {
+    /// Get the root items.
+    pub fn roots(&self) -> Vec<T> {
         self.inner
             .read()
-            .ok()
-            .and_then(|g| g.items.get(index).cloned())
-    }
-
-    /// Get all items.
-    pub fn items(&self) -> Vec<T> {
-        self.inner
-            .read()
-            .map(|g| g.items.clone())
+            .map(|g| g.roots.clone())
             .unwrap_or_default()
     }
 
-    /// Get the ID of an item at the given index.
-    pub fn item_id(&self, index: usize) -> Option<String> {
+    /// Set the root items (rebuilds visible list).
+    pub fn set_items(&self, roots: Vec<T>) {
+        if let Ok(mut guard) = self.inner.write() {
+            guard.roots = roots;
+            // Keep expanded state, rebuild visible
+            Self::rebuild_visible(&mut guard);
+            // Clamp cursor
+            if let Some(cursor) = guard.cursor
+                && cursor >= guard.visible.len()
+            {
+                guard.cursor = guard.visible.len().checked_sub(1);
+            }
+            self.dirty.store(true, Ordering::SeqCst);
+        }
+    }
+
+    /// Get the number of visible nodes.
+    pub fn visible_len(&self) -> usize {
+        self.inner.read().map(|g| g.visible.len()).unwrap_or(0)
+    }
+
+    /// Check if the tree has no items.
+    pub fn is_empty(&self) -> bool {
+        self.inner
+            .read()
+            .map(|g| g.roots.is_empty())
+            .unwrap_or(true)
+    }
+
+    /// Get a visible node by index.
+    pub fn visible_node(&self, index: usize) -> Option<FlatNode<T>> {
         self.inner
             .read()
             .ok()
-            .and_then(|g| g.items.get(index).map(|item| item.id(index)))
+            .and_then(|g| g.visible.get(index).cloned())
     }
 
-    /// Get all item IDs in order.
-    fn all_ids(guard: &ListInner<T>) -> Vec<String> {
-        guard
-            .items
-            .iter()
-            .enumerate()
-            .map(|(i, item)| item.id(i))
-            .collect()
+    /// Get all visible node IDs in order.
+    fn all_visible_ids(guard: &TreeInner<T>) -> Vec<String> {
+        guard.visible.iter().map(|n| n.item.id()).collect()
     }
 
-    // -------------------------------------------------------------------------
-    // Item mutation
-    // -------------------------------------------------------------------------
+    /// Find a node by ID in the entire tree (including collapsed).
+    pub fn find(&self, id: &str) -> Option<T> {
+        self.inner
+            .read()
+            .ok()
+            .and_then(|g| Self::find_in_items(&g.roots, id))
+    }
 
-    /// Set all items.
-    pub fn set_items(&self, items: Vec<T>) {
-        if let Ok(mut guard) = self.inner.write() {
-            guard.items = items;
-            // Clamp cursor
-            if let Some(cursor) = guard.cursor
-                && cursor >= guard.items.len()
-            {
-                guard.cursor = guard.items.len().checked_sub(1);
+    /// Recursively search for a node by ID.
+    fn find_in_items(items: &[T], id: &str) -> Option<T> {
+        for item in items {
+            if item.id() == id {
+                return Some(item.clone());
             }
-            // Clear selection (items changed)
-            guard.selection.clear();
-            self.dirty.store(true, Ordering::SeqCst);
-        }
-    }
-
-    /// Push an item to the end.
-    pub fn push(&self, item: T) {
-        if let Ok(mut guard) = self.inner.write() {
-            guard.items.push(item);
-            self.dirty.store(true, Ordering::SeqCst);
-        }
-    }
-
-    /// Remove an item by index.
-    pub fn remove(&self, index: usize) -> Option<T> {
-        if let Ok(mut guard) = self.inner.write()
-            && index < guard.items.len()
-        {
-            let item = guard.items.remove(index);
-            // Note: With string-based IDs, we don't need to shift selection indices.
-            // Stale IDs simply won't match any item.
-
-            // Adjust cursor
-            if let Some(cursor) = guard.cursor {
-                if cursor == index {
-                    // Stay at same position or move to last
-                    guard.cursor = if guard.items.is_empty() {
-                        None
-                    } else {
-                        Some(cursor.min(guard.items.len() - 1))
-                    };
-                } else if cursor > index {
-                    guard.cursor = Some(cursor - 1);
-                }
+            if let Some(found) = Self::find_in_items(&item.children(), id) {
+                return Some(found);
             }
-            self.dirty.store(true, Ordering::SeqCst);
-            return Some(item);
         }
         None
     }
 
-    /// Clear all items.
-    pub fn clear(&self) {
-        if let Ok(mut guard) = self.inner.write() {
-            guard.items.clear();
-            guard.selection.clear();
-            guard.cursor = None;
-            guard.scroll_offset = 0;
+    // -------------------------------------------------------------------------
+    // Expand/Collapse
+    // -------------------------------------------------------------------------
+
+    /// Expand a node by ID.
+    pub fn expand(&self, node_id: &str) {
+        if let Ok(mut guard) = self.inner.write()
+            && guard.expanded.insert(node_id.to_string())
+        {
+            Self::rebuild_visible(&mut guard);
             self.dirty.store(true, Ordering::SeqCst);
         }
     }
 
-    /// Update items with a closure.
-    pub fn update<F>(&self, f: F)
-    where
-        F: FnOnce(&mut Vec<T>),
-    {
-        if let Ok(mut guard) = self.inner.write() {
-            f(&mut guard.items);
-            // Clamp cursor
-            if let Some(cursor) = guard.cursor
-                && cursor >= guard.items.len()
-            {
-                guard.cursor = guard.items.len().checked_sub(1);
-            }
+    /// Collapse a node by ID.
+    pub fn collapse(&self, node_id: &str) {
+        if let Ok(mut guard) = self.inner.write()
+            && guard.expanded.remove(node_id)
+        {
+            Self::rebuild_visible(&mut guard);
             self.dirty.store(true, Ordering::SeqCst);
+        }
+    }
+
+    /// Toggle expand/collapse for a node.
+    pub fn toggle(&self, node_id: &str) {
+        if let Ok(mut guard) = self.inner.write() {
+            if guard.expanded.contains(node_id) {
+                guard.expanded.remove(node_id);
+            } else {
+                guard.expanded.insert(node_id.to_string());
+            }
+            Self::rebuild_visible(&mut guard);
+            self.dirty.store(true, Ordering::SeqCst);
+        }
+    }
+
+    /// Check if a node is expanded.
+    pub fn is_expanded(&self, node_id: &str) -> bool {
+        self.inner
+            .read()
+            .map(|g| g.expanded.contains(node_id))
+            .unwrap_or(false)
+    }
+
+    /// Expand all expandable nodes.
+    pub fn expand_all(&self) {
+        if let Ok(mut guard) = self.inner.write() {
+            let roots = guard.roots.clone();
+            Self::collect_all_expandable_ids(&roots, &mut guard.expanded);
+            Self::rebuild_visible(&mut guard);
+            self.dirty.store(true, Ordering::SeqCst);
+        }
+    }
+
+    /// Collapse all nodes.
+    pub fn collapse_all(&self) {
+        if let Ok(mut guard) = self.inner.write() {
+            guard.expanded.clear();
+            Self::rebuild_visible(&mut guard);
+            self.dirty.store(true, Ordering::SeqCst);
+        }
+    }
+
+    /// Recursively collect IDs of all expandable nodes.
+    fn collect_all_expandable_ids(items: &[T], expanded: &mut HashSet<String>) {
+        for item in items {
+            let children = item.children();
+            if !children.is_empty() {
+                expanded.insert(item.id());
+                Self::collect_all_expandable_ids(&children, expanded);
+            }
+        }
+    }
+
+    /// Rebuild the flattened visible node list.
+    fn rebuild_visible(inner: &mut TreeInner<T>) {
+        inner.visible.clear();
+        Self::collect_visible(&inner.roots, &inner.expanded, 0, &mut inner.visible);
+
+        // Clamp cursor if out of bounds
+        if let Some(cursor) = inner.cursor
+            && cursor >= inner.visible.len()
+        {
+            inner.cursor = inner.visible.len().checked_sub(1);
+        }
+
+        // Clamp scroll offset
+        let max_scroll = Self::max_scroll_offset_inner(inner);
+        if inner.scroll_offset > max_scroll {
+            inner.scroll_offset = max_scroll;
+        }
+    }
+
+    /// Recursively collect visible nodes into the flat list.
+    fn collect_visible(
+        items: &[T],
+        expanded: &HashSet<String>,
+        depth: u16,
+        out: &mut Vec<FlatNode<T>>,
+    ) {
+        for item in items {
+            let id = item.id();
+            let children = item.children();
+            let has_children = !children.is_empty();
+            let is_expanded = expanded.contains(&id);
+
+            out.push(FlatNode {
+                item: item.clone(),
+                depth,
+                has_children,
+                is_expanded,
+            });
+
+            if is_expanded && has_children {
+                Self::collect_visible(&children, expanded, depth + 1, out);
+            }
         }
     }
 
@@ -264,17 +374,32 @@ impl<T: ListItem> List<T> {
     // Cursor
     // -------------------------------------------------------------------------
 
-    /// Get the current cursor position.
+    /// Get the current cursor position (index into visible list).
     pub fn cursor(&self) -> Option<usize> {
         self.inner.read().ok().and_then(|g| g.cursor)
+    }
+
+    /// Get the node at the cursor.
+    pub fn cursor_node(&self) -> Option<T> {
+        self.inner.read().ok().and_then(|g| {
+            g.cursor
+                .and_then(|i| g.visible.get(i).map(|n| n.item.clone()))
+        })
+    }
+
+    /// Get the ID of the node at the cursor.
+    pub fn cursor_id(&self) -> Option<String> {
+        self.inner
+            .read()
+            .ok()
+            .and_then(|g| g.cursor.and_then(|i| g.visible.get(i).map(|n| n.item.id())))
     }
 
     /// Set the cursor position.
     pub fn set_cursor(&self, index: usize) -> Option<usize> {
         if let Ok(mut guard) = self.inner.write() {
             let previous = guard.cursor;
-            // Only update and mark dirty if cursor actually changed
-            if index < guard.items.len() && previous != Some(index) {
+            if index < guard.visible.len() && previous != Some(index) {
                 guard.cursor = Some(index);
                 self.dirty.store(true, Ordering::SeqCst);
             }
@@ -293,7 +418,7 @@ impl<T: ListItem> List<T> {
                     self.dirty.store(true, Ordering::SeqCst);
                     return Some((previous, cursor - 1));
                 }
-            } else if !guard.items.is_empty() {
+            } else if !guard.visible.is_empty() {
                 guard.cursor = Some(0);
                 self.dirty.store(true, Ordering::SeqCst);
                 return Some((None, 0));
@@ -306,14 +431,14 @@ impl<T: ListItem> List<T> {
     pub fn cursor_down(&self) -> Option<(Option<usize>, usize)> {
         if let Ok(mut guard) = self.inner.write() {
             let previous = guard.cursor;
-            let max_index = guard.items.len().saturating_sub(1);
+            let max_index = guard.visible.len().saturating_sub(1);
             if let Some(cursor) = guard.cursor {
                 if cursor < max_index {
                     guard.cursor = Some(cursor + 1);
                     self.dirty.store(true, Ordering::SeqCst);
                     return Some((previous, cursor + 1));
                 }
-            } else if !guard.items.is_empty() {
+            } else if !guard.visible.is_empty() {
                 guard.cursor = Some(0);
                 self.dirty.store(true, Ordering::SeqCst);
                 return Some((None, 0));
@@ -322,10 +447,10 @@ impl<T: ListItem> List<T> {
         None
     }
 
-    /// Move cursor to first item.
+    /// Move cursor to first visible node.
     pub fn cursor_first(&self) -> Option<(Option<usize>, usize)> {
         if let Ok(mut guard) = self.inner.write()
-            && !guard.items.is_empty()
+            && !guard.visible.is_empty()
         {
             let previous = guard.cursor;
             guard.cursor = Some(0);
@@ -335,16 +460,68 @@ impl<T: ListItem> List<T> {
         None
     }
 
-    /// Move cursor to last item.
+    /// Move cursor to last visible node.
     pub fn cursor_last(&self) -> Option<(Option<usize>, usize)> {
         if let Ok(mut guard) = self.inner.write()
-            && !guard.items.is_empty()
+            && !guard.visible.is_empty()
         {
             let previous = guard.cursor;
-            let last = guard.items.len() - 1;
+            let last = guard.visible.len() - 1;
             guard.cursor = Some(last);
             self.dirty.store(true, Ordering::SeqCst);
             return Some((previous, last));
+        }
+        None
+    }
+
+    /// Move cursor to parent node.
+    ///
+    /// Searches backwards in the visible list for a node at depth - 1.
+    /// Returns None if cursor is at root level or not set.
+    pub fn cursor_to_parent(&self) -> Option<(Option<usize>, usize)> {
+        let mut guard = self.inner.write().ok()?;
+        let cursor = guard.cursor?;
+        let current = guard.visible.get(cursor)?;
+        if current.depth == 0 {
+            return None; // Already at root
+        }
+        let target_depth = current.depth - 1;
+
+        // Search backwards for parent
+        for i in (0..cursor).rev() {
+            if let Some(node) = guard.visible.get(i)
+                && node.depth == target_depth
+            {
+                let previous = guard.cursor;
+                guard.cursor = Some(i);
+                self.dirty.store(true, Ordering::SeqCst);
+                return Some((previous, i));
+            }
+        }
+        None
+    }
+
+    /// Move cursor to first child of current node.
+    ///
+    /// Only works if current node is expanded and has children.
+    pub fn cursor_to_first_child(&self) -> Option<(Option<usize>, usize)> {
+        let mut guard = self.inner.write().ok()?;
+        let cursor = guard.cursor?;
+        let current = guard.visible.get(cursor)?;
+        if !current.is_expanded || !current.has_children {
+            return None;
+        }
+
+        // First child is the next node (if it's at depth + 1)
+        let next_index = cursor + 1;
+        let target_depth = current.depth + 1;
+        if let Some(next) = guard.visible.get(next_index)
+            && next.depth == target_depth
+        {
+            let previous = guard.cursor;
+            guard.cursor = Some(next_index);
+            self.dirty.store(true, Ordering::SeqCst);
+            return Some((previous, next_index));
         }
         None
     }
@@ -372,7 +549,7 @@ impl<T: ListItem> List<T> {
         }
     }
 
-    /// Get all selected IDs.
+    /// Get all selected node IDs.
     pub fn selected_ids(&self) -> Vec<String> {
         self.inner
             .read()
@@ -380,116 +557,86 @@ impl<T: ListItem> List<T> {
             .unwrap_or_default()
     }
 
-    /// Get all selected indices.
-    ///
-    /// Note: This finds indices by matching IDs, which may not find items
-    /// if the list contents have changed since selection.
-    pub fn selected_indices(&self) -> Vec<usize> {
+    /// Get all selected nodes.
+    pub fn selected_nodes(&self) -> Vec<T> {
         self.inner
             .read()
             .map(|g| {
                 let selected = g.selection.selected();
-                g.items
+                g.visible
                     .iter()
-                    .enumerate()
-                    .filter(|(i, item)| selected.contains(&item.id(*i)))
-                    .map(|(i, _)| i)
+                    .filter(|n| selected.contains(&n.item.id()))
+                    .map(|n| n.item.clone())
                     .collect()
             })
             .unwrap_or_default()
     }
 
-    /// Get all selected items.
-    pub fn selected_items(&self) -> Vec<T> {
-        self.inner
-            .read()
-            .map(|g| {
-                let selected = g.selection.selected();
-                g.items
-                    .iter()
-                    .enumerate()
-                    .filter(|(i, item)| selected.contains(&item.id(*i)))
-                    .map(|(_, item)| item.clone())
-                    .collect()
-            })
-            .unwrap_or_default()
-    }
-
-    /// Check if an index is selected.
-    pub fn is_selected(&self, index: usize) -> bool {
-        self.inner
-            .read()
-            .map(|g| {
-                g.items
-                    .get(index)
-                    .map(|item| g.selection.is_selected(&item.id(index)))
-                    .unwrap_or(false)
-            })
-            .unwrap_or(false)
-    }
-
-    /// Check if an ID is selected.
-    pub fn is_id_selected(&self, id: &str) -> bool {
+    /// Check if a node is selected by ID.
+    pub fn is_selected(&self, id: &str) -> bool {
         self.inner
             .read()
             .map(|g| g.selection.is_selected(id))
             .unwrap_or(false)
     }
 
-    /// Select a single item by index (clears other selection).
-    /// Returns (added IDs, removed IDs).
-    pub fn select(&self, index: usize) -> (Vec<String>, Vec<String>) {
+    /// Check if the node at a visible index is selected.
+    pub fn is_selected_at(&self, visible_index: usize) -> bool {
+        self.inner
+            .read()
+            .map(|g| {
+                g.visible
+                    .get(visible_index)
+                    .map(|n| g.selection.is_selected(&n.item.id()))
+                    .unwrap_or(false)
+            })
+            .unwrap_or(false)
+    }
+
+    /// Select a node by ID (clears other selection in Single mode).
+    pub fn select(&self, id: &str) -> (Vec<String>, Vec<String>) {
         if let Ok(mut guard) = self.inner.write()
             && guard.selection_mode != SelectionMode::None
-            && index < guard.items.len()
         {
-            let id = guard.items[index].id(index);
-            let result = guard.selection.select(&id);
+            let result = guard.selection.select(id);
             self.dirty.store(true, Ordering::SeqCst);
             return result;
         }
         (vec![], vec![])
     }
 
-    /// Toggle selection of an item by index.
-    /// Returns (added IDs, removed IDs).
-    pub fn toggle_select(&self, index: usize) -> (Vec<String>, Vec<String>) {
+    /// Toggle selection of a node by ID.
+    pub fn toggle_select(&self, id: &str) -> (Vec<String>, Vec<String>) {
         if let Ok(mut guard) = self.inner.write()
             && guard.selection_mode == SelectionMode::Multiple
-            && index < guard.items.len()
         {
-            let id = guard.items[index].id(index);
-            let result = guard.selection.toggle(&id);
+            let result = guard.selection.toggle(id);
             self.dirty.store(true, Ordering::SeqCst);
             return result;
         }
         (vec![], vec![])
     }
 
-    /// Select a range from anchor to index.
-    /// Returns (added IDs, removed IDs).
-    pub fn range_select(&self, index: usize, extend: bool) -> (Vec<String>, Vec<String>) {
+    /// Range select from anchor to target ID.
+    pub fn range_select(&self, id: &str, extend: bool) -> (Vec<String>, Vec<String>) {
         if let Ok(mut guard) = self.inner.write()
             && guard.selection_mode == SelectionMode::Multiple
-            && index < guard.items.len()
         {
-            let id = guard.items[index].id(index);
-            let all_ids = Self::all_ids(&guard);
-            let result = guard.selection.range_select(&id, &all_ids, extend);
+            let all_ids = Self::all_visible_ids(&guard);
+            let result = guard.selection.range_select(id, &all_ids, extend);
             self.dirty.store(true, Ordering::SeqCst);
             return result;
         }
         (vec![], vec![])
     }
 
-    /// Select all items.
-    /// Returns the IDs that were newly selected.
+    /// Select all visible nodes.
     pub fn select_all(&self) -> Vec<String> {
         if let Ok(mut guard) = self.inner.write()
             && guard.selection_mode == SelectionMode::Multiple
-            && !guard.items.is_empty()
+            && !guard.visible.is_empty()
         {
-            let all_ids = Self::all_ids(&guard);
+            let all_ids = Self::all_visible_ids(&guard);
             let result = guard.selection.select_all(&all_ids);
             self.dirty.store(true, Ordering::SeqCst);
             return result;
@@ -498,7 +645,6 @@ impl<T: ListItem> List<T> {
     }
 
     /// Clear all selection.
-    /// Returns the IDs that were deselected.
     pub fn deselect_all(&self) -> Vec<String> {
         if let Ok(mut guard) = self.inner.write() {
             let result = guard.selection.clear();
@@ -526,10 +672,10 @@ impl<T: ListItem> List<T> {
         }
     }
 
-    /// Scroll to make an item visible.
-    pub fn scroll_to_item(&self, index: usize) {
+    /// Scroll to make a node visible by its visible index.
+    pub fn scroll_to_index(&self, index: usize) {
         if let Ok(mut guard) = self.inner.write() {
-            if index >= guard.items.len() {
+            if index >= guard.visible.len() {
                 return;
             }
             let item_height = T::HEIGHT;
@@ -541,40 +687,46 @@ impl<T: ListItem> List<T> {
                 return;
             }
 
-            // If item is above viewport, scroll up
             if item_top < guard.scroll_offset {
                 guard.scroll_offset = item_top;
                 self.dirty.store(true, Ordering::SeqCst);
-            }
-            // If item is below viewport, scroll down
-            else if item_bottom > guard.scroll_offset + viewport {
+            } else if item_bottom > guard.scroll_offset + viewport {
                 guard.scroll_offset = item_bottom.saturating_sub(viewport);
                 self.dirty.store(true, Ordering::SeqCst);
             }
         }
     }
 
-    /// Scroll to cursor if it exists.
+    /// Scroll to make the cursor visible.
     pub fn scroll_to_cursor(&self) {
         if let Some(cursor) = self.cursor() {
-            self.scroll_to_item(cursor);
+            self.scroll_to_index(cursor);
         }
     }
 
-    pub(super) fn max_scroll_offset_inner(guard: &ListInner<T>) -> u16 {
-        let total_height = guard.items.len() as u16 * T::HEIGHT;
-        total_height.saturating_sub(guard.viewport_height)
+    /// Scroll to make a node visible by ID.
+    pub fn scroll_to_node(&self, id: &str) {
+        if let Ok(guard) = self.inner.read()
+            && let Some(index) = guard.visible.iter().position(|n| n.item.id() == id)
+        {
+            drop(guard);
+            self.scroll_to_index(index);
+        }
+    }
+
+    fn max_scroll_offset_inner(inner: &TreeInner<T>) -> u16 {
+        let total_height = inner.visible.len() as u16 * T::HEIGHT;
+        total_height.saturating_sub(inner.viewport_height)
     }
 
     // -------------------------------------------------------------------------
-    // Viewport (set by renderer)
+    // Viewport
     // -------------------------------------------------------------------------
 
     /// Set the viewport height (called by renderer).
     pub fn set_viewport_height(&self, height: u16) {
         if let Ok(mut guard) = self.inner.write() {
             guard.viewport_height = height;
-            // Clamp scroll offset
             let max_offset = Self::max_scroll_offset_inner(&guard);
             if guard.scroll_offset > max_offset {
                 guard.scroll_offset = max_offset;
@@ -587,64 +739,35 @@ impl<T: ListItem> List<T> {
         self.inner.read().map(|g| g.viewport_height).unwrap_or(0)
     }
 
-    /// Get the visible item range.
+    /// Get the visible node range for rendering.
     pub fn visible_range(&self) -> std::ops::Range<usize> {
         self.inner
             .read()
-            .map(|g| self.visible_range_inner(&g))
+            .map(|g| Self::visible_range_inner(&g))
             .unwrap_or(0..0)
     }
 
-    /// Get total content height.
-    pub fn total_height(&self) -> u16 {
-        self.len() as u16 * T::HEIGHT
-    }
-
-    /// Check if the visible area is near the end of the list.
-    ///
-    /// Returns `true` if the last visible item is within `threshold` items
-    /// of the end of the list. Useful for implementing infinite scroll / pagination.
-    ///
-    /// # Example
-    ///
-    /// ```ignore
-    /// // Load more when within 10 items of the end
-    /// if self.records.is_near_end(10) && !loading && has_more {
-    ///     self.load_more(cx).await;
-    /// }
-    /// ```
-    pub fn is_near_end(&self, threshold: usize) -> bool {
-        self.inner
-            .read()
-            .map(|g| {
-                if g.items.is_empty() {
-                    return false;
-                }
-                let range = self.visible_range_inner(&g);
-                let last_visible = range.end.saturating_sub(1);
-                let total = g.items.len();
-                last_visible + threshold >= total
-            })
-            .unwrap_or(false)
-    }
-
-    /// Internal helper to compute visible range.
-    fn visible_range_inner(&self, g: &ListInner<T>) -> std::ops::Range<usize> {
-        if g.items.is_empty() || g.viewport_height == 0 {
+    fn visible_range_inner(g: &TreeInner<T>) -> std::ops::Range<usize> {
+        if g.visible.is_empty() || g.viewport_height == 0 {
             return 0..0;
         }
         let item_height = T::HEIGHT;
         let start = (g.scroll_offset / item_height) as usize;
         let visible_count = g.viewport_height.div_ceil(item_height) as usize;
-        let end = (start + visible_count + 1).min(g.items.len());
+        let end = (start + visible_count + 1).min(g.visible.len());
         start..end
+    }
+
+    /// Get total content height.
+    pub fn total_height(&self) -> u16 {
+        self.visible_len() as u16 * T::HEIGHT
     }
 
     // -------------------------------------------------------------------------
     // Dirty tracking
     // -------------------------------------------------------------------------
 
-    /// Check if the list has changed.
+    /// Check if the tree has changed.
     pub fn is_dirty(&self) -> bool {
         self.dirty.load(Ordering::SeqCst)
     }
@@ -655,7 +778,7 @@ impl<T: ListItem> List<T> {
     }
 }
 
-impl<T: ListItem> Clone for List<T> {
+impl<T: TreeItem> Clone for Tree<T> {
     fn clone(&self) -> Self {
         Self {
             id: self.id,
@@ -665,7 +788,7 @@ impl<T: ListItem> Clone for List<T> {
     }
 }
 
-impl<T: ListItem> Default for List<T> {
+impl<T: TreeItem> Default for Tree<T> {
     fn default() -> Self {
         Self::new()
     }
@@ -675,7 +798,7 @@ impl<T: ListItem> Default for List<T> {
 // ScrollbarState trait implementation
 // =============================================================================
 
-impl<T: ListItem> ScrollbarState for List<T> {
+impl<T: TreeItem> ScrollbarState for Tree<T> {
     fn scrollbar_config(&self) -> ScrollbarConfig {
         self.inner
             .read()
@@ -733,7 +856,7 @@ impl<T: ListItem> ScrollbarState for List<T> {
     }
 
     fn viewport_height(&self) -> u16 {
-        List::viewport_height(self)
+        Tree::viewport_height(self)
     }
 
     fn vertical_scrollbar(&self) -> Option<ScrollbarGeometry> {
@@ -764,7 +887,7 @@ impl<T: ListItem> ScrollbarState for List<T> {
 // ScrollableComponent trait implementation
 // =============================================================================
 
-impl<T: ListItem> ScrollableComponent for List<T> {
+impl<T: TreeItem> ScrollableComponent for Tree<T> {
     fn id_string(&self) -> String {
         self.id.to_string()
     }

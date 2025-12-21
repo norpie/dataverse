@@ -122,10 +122,7 @@ pub fn handle_scrollbar_drag<S: ScrollbarState>(
 ///
 /// Ends any active scrollbar drag.
 /// Returns `EventResult::Consumed` if a drag was active, `EventResult::Ignored` otherwise.
-pub fn handle_scrollbar_release<S: ScrollbarState>(
-    component: &S,
-    _cx: &AppContext,
-) -> EventResult {
+pub fn handle_scrollbar_release<S: ScrollbarState>(component: &S, _cx: &AppContext) -> EventResult {
     if component.drag().is_some() {
         component.set_drag(None);
         EventResult::Consumed

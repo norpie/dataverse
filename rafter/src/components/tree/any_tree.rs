@@ -1,6 +1,7 @@
-//! Type-erased list trait for use in Node.
+//! Type-erased tree trait for use in Node.
 
 use std::any::Any;
+use std::ops::Range;
 
 use crate::components::events::{ComponentEvents, EventResult};
 use crate::components::scrollbar::{
@@ -11,18 +12,18 @@ use crate::events::{Modifiers, ScrollDirection};
 use crate::keybinds::KeyCombo;
 use crate::node::Node;
 
-use super::item::ListItem;
-use super::state::List;
+use super::item::TreeItem;
+use super::state::Tree;
 
-/// Type-erased list operations for use in Node.
-pub trait AnyList: Send + Sync + std::fmt::Debug {
-    /// Get the list ID as a string.
+/// Type-erased tree operations for use in Node.
+pub trait AnyTree: Send + Sync + std::fmt::Debug {
+    /// Get the tree ID as a string.
     fn id_string(&self) -> String;
 
     /// Get the item height.
     fn item_height(&self) -> u16;
 
-    /// Get the number of items.
+    /// Get the number of visible nodes.
     fn len(&self) -> usize;
 
     /// Check if empty.
@@ -30,11 +31,14 @@ pub trait AnyList: Send + Sync + std::fmt::Debug {
         self.len() == 0
     }
 
-    /// Get the cursor position.
+    /// Get the cursor position (index into visible list).
     fn cursor(&self) -> Option<usize>;
 
-    /// Check if an index is selected.
-    fn is_selected(&self, index: usize) -> bool;
+    /// Get the cursor node ID.
+    fn cursor_id(&self) -> Option<String>;
+
+    /// Check if a visible index is selected.
+    fn is_selected_at(&self, visible_index: usize) -> bool;
 
     /// Get the scroll offset.
     fn scroll_offset(&self) -> u16;
@@ -45,28 +49,32 @@ pub trait AnyList: Send + Sync + std::fmt::Debug {
     /// Get the viewport height.
     fn viewport_height(&self) -> u16;
 
-    /// Get the visible item range.
-    fn visible_range(&self) -> std::ops::Range<usize>;
+    /// Get the visible node range.
+    fn visible_range(&self) -> Range<usize>;
 
     /// Get the total content height.
     fn total_height(&self) -> u16;
 
-    /// Render a specific item.
-    fn render_item(&self, index: usize) -> Option<Node>;
+    /// Render a specific visible node.
+    fn render_item(&self, visible_index: usize) -> Option<Node>;
 
     /// Clone as boxed trait object.
-    fn clone_box(&self) -> Box<dyn AnyList>;
+    fn clone_box(&self) -> Box<dyn AnyTree>;
 
     /// As Any for downcasting.
     fn as_any(&self) -> &dyn Any;
 
-    /// Handle a key event (for ComponentEvents compatibility).
+    // -------------------------------------------------------------------------
+    // Event handlers
+    // -------------------------------------------------------------------------
+
+    /// Handle a key event.
     fn on_key(&self, key: &KeyCombo, cx: &AppContext) -> EventResult;
 
-    /// Handle a click event at the given position within the list bounds.
+    /// Handle a click event at the given position within the tree bounds.
     fn on_click(&self, x: u16, y: u16, cx: &AppContext) -> EventResult;
 
-    /// Handle a hover event at the given position within the list bounds.
+    /// Handle a hover event at the given position within the tree bounds.
     fn on_hover(&self, x: u16, y: u16, cx: &AppContext) -> EventResult;
 
     /// Handle a scroll event.
@@ -113,7 +121,7 @@ pub trait AnyList: Send + Sync + std::fmt::Debug {
     fn set_drag(&self, drag: Option<ScrollbarDrag>);
 }
 
-impl<T: ListItem + std::fmt::Debug> AnyList for List<T> {
+impl<T: TreeItem + std::fmt::Debug> AnyTree for Tree<T> {
     fn id_string(&self) -> String {
         self.id_string()
     }
@@ -123,15 +131,19 @@ impl<T: ListItem + std::fmt::Debug> AnyList for List<T> {
     }
 
     fn len(&self) -> usize {
-        self.len()
+        self.visible_len()
     }
 
     fn cursor(&self) -> Option<usize> {
         self.cursor()
     }
 
-    fn is_selected(&self, index: usize) -> bool {
-        self.is_selected(index)
+    fn cursor_id(&self) -> Option<String> {
+        self.cursor_id()
+    }
+
+    fn is_selected_at(&self, visible_index: usize) -> bool {
+        self.is_selected_at(visible_index)
     }
 
     fn scroll_offset(&self) -> u16 {
@@ -146,7 +158,7 @@ impl<T: ListItem + std::fmt::Debug> AnyList for List<T> {
         self.viewport_height()
     }
 
-    fn visible_range(&self) -> std::ops::Range<usize> {
+    fn visible_range(&self) -> Range<usize> {
         self.visible_range()
     }
 
@@ -154,14 +166,17 @@ impl<T: ListItem + std::fmt::Debug> AnyList for List<T> {
         self.total_height()
     }
 
-    fn render_item(&self, index: usize) -> Option<Node> {
-        let item = self.get(index)?;
-        let is_focused = self.cursor() == Some(index);
-        let is_selected = self.is_selected(index);
-        Some(item.render(is_focused, is_selected))
+    fn render_item(&self, visible_index: usize) -> Option<Node> {
+        let node = self.visible_node(visible_index)?;
+        let is_focused = self.cursor() == Some(visible_index);
+        let is_selected = self.is_selected_at(visible_index);
+        Some(
+            node.item
+                .render(is_focused, is_selected, node.depth, node.is_expanded),
+        )
     }
 
-    fn clone_box(&self) -> Box<dyn AnyList> {
+    fn clone_box(&self) -> Box<dyn AnyTree> {
         Box::new(self.clone())
     }
 
@@ -200,7 +215,7 @@ impl<T: ListItem + std::fmt::Debug> AnyList for List<T> {
         shift: bool,
         cx: &AppContext,
     ) -> EventResult {
-        List::on_click_with_modifiers(self, y_in_viewport, ctrl, shift, cx)
+        Tree::on_click_with_modifiers(self, y_in_viewport, ctrl, shift, cx)
     }
 
     fn scrollbar_config(&self) -> ScrollbarConfig {
@@ -232,7 +247,7 @@ impl<T: ListItem + std::fmt::Debug> AnyList for List<T> {
     }
 }
 
-impl Clone for Box<dyn AnyList> {
+impl Clone for Box<dyn AnyTree> {
     fn clone(&self) -> Self {
         self.clone_box()
     }

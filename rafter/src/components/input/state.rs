@@ -19,8 +19,7 @@ impl std::fmt::Display for InputId {
 }
 
 /// Internal state for an Input component
-#[derive(Debug)]
-#[derive(Default)]
+#[derive(Debug, Default)]
 struct InputInner {
     /// Current text value
     value: String,
@@ -29,7 +28,6 @@ struct InputInner {
     /// Cursor position (byte offset)
     cursor: usize,
 }
-
 
 /// A text input component with reactive state.
 ///
@@ -222,17 +220,18 @@ impl Input {
     /// Delete the character before the cursor (backspace)
     pub fn delete_char_before(&self) {
         if let Ok(mut guard) = self.inner.write()
-            && guard.cursor > 0 {
-                // Find the previous character boundary
-                let prev_cursor = guard.value[..guard.cursor]
-                    .char_indices()
-                    .last()
-                    .map(|(i, _)| i)
-                    .unwrap_or(0);
-                guard.value.remove(prev_cursor);
-                guard.cursor = prev_cursor;
-                self.dirty.store(true, Ordering::SeqCst);
-            }
+            && guard.cursor > 0
+        {
+            // Find the previous character boundary
+            let prev_cursor = guard.value[..guard.cursor]
+                .char_indices()
+                .last()
+                .map(|(i, _)| i)
+                .unwrap_or(0);
+            guard.value.remove(prev_cursor);
+            guard.cursor = prev_cursor;
+            self.dirty.store(true, Ordering::SeqCst);
+        }
     }
 
     /// Delete the character at the cursor (delete key)
@@ -249,36 +248,39 @@ impl Input {
     /// Move cursor left
     pub fn cursor_left(&self) {
         if let Ok(mut guard) = self.inner.write()
-            && guard.cursor > 0 {
-                guard.cursor = guard.value[..guard.cursor]
-                    .char_indices()
-                    .last()
-                    .map(|(i, _)| i)
-                    .unwrap_or(0);
-                self.dirty.store(true, Ordering::SeqCst);
-            }
+            && guard.cursor > 0
+        {
+            guard.cursor = guard.value[..guard.cursor]
+                .char_indices()
+                .last()
+                .map(|(i, _)| i)
+                .unwrap_or(0);
+            self.dirty.store(true, Ordering::SeqCst);
+        }
     }
 
     /// Move cursor right
     pub fn cursor_right(&self) {
         if let Ok(mut guard) = self.inner.write()
-            && guard.cursor < guard.value.len() {
-                guard.cursor = guard.value[guard.cursor..]
-                    .char_indices()
-                    .nth(1)
-                    .map(|(i, _)| guard.cursor + i)
-                    .unwrap_or(guard.value.len());
-                self.dirty.store(true, Ordering::SeqCst);
-            }
+            && guard.cursor < guard.value.len()
+        {
+            guard.cursor = guard.value[guard.cursor..]
+                .char_indices()
+                .nth(1)
+                .map(|(i, _)| guard.cursor + i)
+                .unwrap_or(guard.value.len());
+            self.dirty.store(true, Ordering::SeqCst);
+        }
     }
 
     /// Move cursor to start
     pub fn cursor_home(&self) {
         if let Ok(mut guard) = self.inner.write()
-            && guard.cursor != 0 {
-                guard.cursor = 0;
-                self.dirty.store(true, Ordering::SeqCst);
-            }
+            && guard.cursor != 0
+        {
+            guard.cursor = 0;
+            self.dirty.store(true, Ordering::SeqCst);
+        }
     }
 
     /// Move cursor to end

@@ -24,6 +24,7 @@ pub mod prelude {
         Input, ScrollArea, ScrollDirection, ScrollbarConfig, ScrollbarVisibility,
     };
     pub use crate::components::{List, ListId, ListItem, Selection, SelectionMode};
+    pub use crate::components::{Tree, TreeId, TreeItem};
     pub use crate::context::{AppContext, Toast, ToastLevel};
     pub use crate::events::{ClickEvent, ClickKind, Modifiers};
     pub use crate::focus::FocusState;

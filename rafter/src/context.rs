@@ -67,10 +67,22 @@ struct AppContextInner {
     modal_request: Option<Box<dyn ModalDyn>>,
     /// Activated list item index (for list on_activate handlers)
     list_activated_index: Option<usize>,
-    /// Selected list indices (for list on_selection_change handlers)
-    list_selected_indices: Option<Vec<usize>>,
+    /// Selected list IDs (for list on_selection_change handlers)
+    list_selected_ids: Option<Vec<String>>,
     /// Cursor position (for list on_cursor_move handlers)
     list_cursor: Option<usize>,
+
+    // Tree event data
+    /// Activated tree node ID (for tree on_activate handlers)
+    tree_activated_id: Option<String>,
+    /// Selected tree node IDs (for tree on_selection_change handlers)
+    tree_selected_ids: Option<Vec<String>>,
+    /// Tree cursor node ID (for tree on_cursor_move handlers)
+    tree_cursor_id: Option<String>,
+    /// Node that was just expanded (for tree on_expand handlers)
+    tree_expanded_id: Option<String>,
+    /// Node that was just collapsed (for tree on_collapse handlers)
+    tree_collapsed_id: Option<String>,
 }
 
 /// Context passed to app handlers, providing access to framework functionality.
@@ -110,8 +122,13 @@ impl AppContext {
                 theme_request: None,
                 modal_request: None,
                 list_activated_index: None,
-                list_selected_indices: None,
+                list_selected_ids: None,
                 list_cursor: None,
+                tree_activated_id: None,
+                tree_selected_ids: None,
+                tree_cursor_id: None,
+                tree_expanded_id: None,
+                tree_collapsed_id: None,
             })),
             keybinds,
         }
@@ -193,25 +210,25 @@ impl AppContext {
         }
     }
 
-    /// Set the selected list indices (called by runtime)
-    pub fn set_list_selected_indices(&self, indices: Vec<usize>) {
+    /// Set the selected list IDs (called by runtime)
+    pub fn set_list_selected_ids(&self, ids: Vec<String>) {
         if let Ok(mut inner) = self.inner.write() {
-            inner.list_selected_indices = Some(indices);
+            inner.list_selected_ids = Some(ids);
         }
     }
 
-    /// Get the selected list indices
-    pub fn list_selected_indices(&self) -> Option<Vec<usize>> {
+    /// Get the selected list IDs
+    pub fn list_selected_ids(&self) -> Option<Vec<String>> {
         self.inner
             .read()
             .ok()
-            .and_then(|inner| inner.list_selected_indices.clone())
+            .and_then(|inner| inner.list_selected_ids.clone())
     }
 
-    /// Clear the selected list indices
-    pub fn clear_list_selected_indices(&self) {
+    /// Clear the selected list IDs
+    pub fn clear_list_selected_ids(&self) {
         if let Ok(mut inner) = self.inner.write() {
-            inner.list_selected_indices = None;
+            inner.list_selected_ids = None;
         }
     }
 
@@ -231,6 +248,120 @@ impl AppContext {
     pub fn clear_list_cursor(&self) {
         if let Ok(mut inner) = self.inner.write() {
             inner.list_cursor = None;
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // Tree event data (set by runtime for tree handlers)
+    // -------------------------------------------------------------------------
+
+    /// Set the activated tree node ID (called by tree component)
+    pub fn set_tree_activated_id(&self, id: String) {
+        if let Ok(mut inner) = self.inner.write() {
+            inner.tree_activated_id = Some(id);
+        }
+    }
+
+    /// Get the activated tree node ID
+    pub fn tree_activated_id(&self) -> Option<String> {
+        self.inner
+            .read()
+            .ok()
+            .and_then(|inner| inner.tree_activated_id.clone())
+    }
+
+    /// Clear the activated tree node ID
+    pub fn clear_tree_activated_id(&self) {
+        if let Ok(mut inner) = self.inner.write() {
+            inner.tree_activated_id = None;
+        }
+    }
+
+    /// Set the selected tree node IDs (called by tree component)
+    pub fn set_tree_selected_ids(&self, ids: Vec<String>) {
+        if let Ok(mut inner) = self.inner.write() {
+            inner.tree_selected_ids = Some(ids);
+        }
+    }
+
+    /// Get the selected tree node IDs
+    pub fn tree_selected_ids(&self) -> Option<Vec<String>> {
+        self.inner
+            .read()
+            .ok()
+            .and_then(|inner| inner.tree_selected_ids.clone())
+    }
+
+    /// Clear the selected tree node IDs
+    pub fn clear_tree_selected_ids(&self) {
+        if let Ok(mut inner) = self.inner.write() {
+            inner.tree_selected_ids = None;
+        }
+    }
+
+    /// Set the tree cursor node ID (called by tree component)
+    pub fn set_tree_cursor_id(&self, id: String) {
+        if let Ok(mut inner) = self.inner.write() {
+            inner.tree_cursor_id = Some(id);
+        }
+    }
+
+    /// Get the tree cursor node ID
+    pub fn tree_cursor_id(&self) -> Option<String> {
+        self.inner
+            .read()
+            .ok()
+            .and_then(|inner| inner.tree_cursor_id.clone())
+    }
+
+    /// Clear the tree cursor node ID
+    pub fn clear_tree_cursor_id(&self) {
+        if let Ok(mut inner) = self.inner.write() {
+            inner.tree_cursor_id = None;
+        }
+    }
+
+    /// Set the expanded tree node ID (called by tree component)
+    pub fn set_tree_expanded_id(&self, id: String) {
+        if let Ok(mut inner) = self.inner.write() {
+            inner.tree_expanded_id = Some(id);
+        }
+    }
+
+    /// Get the expanded tree node ID
+    pub fn tree_expanded_id(&self) -> Option<String> {
+        self.inner
+            .read()
+            .ok()
+            .and_then(|inner| inner.tree_expanded_id.clone())
+    }
+
+    /// Clear the expanded tree node ID
+    pub fn clear_tree_expanded_id(&self) {
+        if let Ok(mut inner) = self.inner.write() {
+            inner.tree_expanded_id = None;
+        }
+    }
+
+    /// Set the collapsed tree node ID (called by tree component)
+    pub fn set_tree_collapsed_id(&self, id: String) {
+        if let Ok(mut inner) = self.inner.write() {
+            inner.tree_collapsed_id = Some(id);
+        }
+    }
+
+    /// Get the collapsed tree node ID
+    pub fn tree_collapsed_id(&self) -> Option<String> {
+        self.inner
+            .read()
+            .ok()
+            .and_then(|inner| inner.tree_collapsed_id.clone())
+    }
+
+    /// Clear the collapsed tree node ID
+    pub fn clear_tree_collapsed_id(&self) {
+        if let Ok(mut inner) = self.inner.write() {
+            inner.tree_collapsed_id = None;
         }
     }
 

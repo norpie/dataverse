@@ -13,6 +13,7 @@ pub mod scroll_area;
 pub mod scrollbar;
 pub mod selection;
 mod traits;
+pub mod tree;
 
 pub use events::{ComponentEvents, EventResult};
 pub use input::{Input, InputId};
@@ -22,3 +23,4 @@ pub use scrollbar::{
     ScrollbarConfig, ScrollbarDrag, ScrollbarGeometry, ScrollbarState, ScrollbarVisibility,
 };
 pub use traits::ScrollableComponent;
+pub use tree::{AnyTree, FlatNode, Tree, TreeId, TreeItem};

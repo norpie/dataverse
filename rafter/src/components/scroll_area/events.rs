@@ -2,8 +2,8 @@
 
 use crate::components::events::{ComponentEvents, EventResult};
 use crate::components::scrollbar::{
-    handle_scroll, handle_scrollbar_click, handle_scrollbar_drag, handle_scrollbar_release,
-    ScrollbarState,
+    ScrollbarState, handle_scroll, handle_scrollbar_click, handle_scrollbar_drag,
+    handle_scrollbar_release,
 };
 use crate::context::AppContext;
 use crate::events::{Modifiers, ScrollDirection};

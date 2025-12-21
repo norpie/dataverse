@@ -29,12 +29,13 @@ impl ModalImplAttrs {
             let meta: syn::Meta = parse2(attr)?;
             if let syn::Meta::NameValue(nv) = meta
                 && nv.path.is_ident("Result")
-                    && let syn::Expr::Path(expr_path) = &nv.value {
-                        result_type = Some(Type::Path(syn::TypePath {
-                            qself: None,
-                            path: expr_path.path.clone(),
-                        }));
-                    }
+                && let syn::Expr::Path(expr_path) = &nv.value
+            {
+                result_type = Some(Type::Path(syn::TypePath {
+                    qself: None,
+                    path: expr_path.path.clone(),
+                }));
+            }
         }
 
         Ok(Self { result_type })
@@ -60,17 +61,17 @@ fn extract_result_type_from_handlers(methods: &[&ImplItemFn]) -> Option<Type> {
                 for arg in &method.sig.inputs {
                     if let syn::FnArg::Typed(pat_type) = arg
                         && let Type::Reference(type_ref) = &*pat_type.ty
-                            && let Type::Path(type_path) = &*type_ref.elem
-                                && let Some(segment) = type_path.path.segments.last()
-                                    && segment.ident == "ModalContext"
-                                        && let PathArguments::AngleBracketed(
-                                            AngleBracketedGenericArguments { args, .. },
-                                        ) = &segment.arguments
-                                            && let Some(GenericArgument::Type(result_ty)) =
-                                                args.first()
-                                            {
-                                                return Some(result_ty.clone());
-                                            }
+                        && let Type::Path(type_path) = &*type_ref.elem
+                        && let Some(segment) = type_path.path.segments.last()
+                        && segment.ident == "ModalContext"
+                        && let PathArguments::AngleBracketed(AngleBracketedGenericArguments {
+                            args,
+                            ..
+                        }) = &segment.arguments
+                        && let Some(GenericArgument::Type(result_ty)) = args.first()
+                    {
+                        return Some(result_ty.clone());
+                    }
                 }
             }
         }

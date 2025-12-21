@@ -8,6 +8,7 @@ pub mod list;
 pub mod scroll_area;
 pub mod style;
 pub mod text;
+pub mod tree;
 
 use proc_macro2::TokenStream;
 use quote::quote;
@@ -20,6 +21,7 @@ pub use input::generate_input_element;
 pub use list::generate_list_element;
 pub use scroll_area::generate_scroll_area_element;
 pub use text::{generate_text, generate_text_element};
+pub use tree::generate_tree_element;
 
 /// Generate code for a view node
 pub fn generate_node(node: &ViewNode) -> TokenStream {
@@ -47,6 +49,7 @@ fn generate_element(elem: &ElementNode) -> TokenStream {
         "button" => generate_button_element(elem),
         "scroll_area" => generate_scroll_area_element(elem),
         "list" => generate_list_element(elem),
+        "tree" => generate_tree_element(elem),
         _ => {
             // Unknown element - treat as a component function call
             let name = &elem.name;

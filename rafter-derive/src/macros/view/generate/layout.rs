@@ -149,10 +149,11 @@ fn parse_size_value(value: &Option<AttrValue>) -> TokenStream {
         Some(AttrValue::Str(s)) => {
             // Handle percentage strings like "50%"
             if let Some(stripped) = s.strip_suffix('%')
-                && let Ok(pct) = stripped.parse::<f32>() {
-                    let pct = pct / 100.0;
-                    return quote! { rafter::node::Size::Percent(#pct) };
-                }
+                && let Ok(pct) = stripped.parse::<f32>()
+            {
+                let pct = pct / 100.0;
+                return quote! { rafter::node::Size::Percent(#pct) };
+            }
             quote! { rafter::node::Size::Auto }
         }
         _ => quote! { rafter::node::Size::Auto },

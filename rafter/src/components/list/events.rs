@@ -2,15 +2,15 @@
 
 use crate::components::events::{ComponentEvents, EventResult};
 use crate::components::scrollbar::{
-    handle_scrollbar_click, handle_scrollbar_drag, handle_scrollbar_release, ScrollbarState,
+    ScrollbarState, handle_scrollbar_click, handle_scrollbar_drag, handle_scrollbar_release,
 };
 use crate::context::AppContext;
 use crate::events::{Modifiers, ScrollDirection};
 use crate::keybinds::{Key, KeyCombo};
 
+use super::SelectionMode;
 use super::item::ListItem;
 use super::state::List;
-use super::SelectionMode;
 
 impl<T: ListItem> List<T> {
     /// Calculate the list item index from a y-offset within the viewport.
@@ -44,9 +44,9 @@ impl<T: ListItem> List<T> {
     }
 
     /// Handle selection change, setting context if selection changed.
-    fn handle_selection_change(&self, added: Vec<usize>, removed: Vec<usize>, cx: &AppContext) {
+    fn handle_selection_change(&self, added: Vec<String>, removed: Vec<String>, cx: &AppContext) {
         if !added.is_empty() || !removed.is_empty() {
-            cx.set_list_selected_indices(self.selected_indices());
+            cx.set_list_selected_ids(self.selected_ids());
         }
     }
 }
