@@ -163,10 +163,6 @@ pub trait ListItem: Send + Sync + Clone + 'static {
     /// Self::apply_default_style(content, focused, selected)
     /// ```
     fn selection_indicator(selected: bool) -> &'static str {
-        if selected {
-            "■ "
-        } else {
-            "□ "
-        }
+        if selected { "■ " } else { "□ " }
     }
 }

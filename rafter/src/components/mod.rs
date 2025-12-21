@@ -12,6 +12,7 @@ pub mod list;
 pub mod scroll_area;
 pub mod scrollbar;
 pub mod selection;
+pub mod table;
 mod traits;
 pub mod tree;
 
@@ -22,5 +23,6 @@ pub use scroll_area::{ScrollArea, ScrollAreaId, ScrollDirection};
 pub use scrollbar::{
     ScrollbarConfig, ScrollbarDrag, ScrollbarGeometry, ScrollbarState, ScrollbarVisibility,
 };
+pub use table::{Alignment, AnyTable, Column, Table, TableId, TableRow};
 pub use traits::ScrollableComponent;
 pub use tree::{AnyTree, FlatNode, Tree, TreeId, TreeItem};

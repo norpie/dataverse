@@ -6,6 +6,7 @@ pub use layout::{Align, Border, Direction, Justify, Layout, Size};
 
 use crate::components::events::{ComponentEvents, EventResult};
 use crate::components::list::AnyList;
+use crate::components::table::AnyTable;
 use crate::components::tree::AnyTree;
 use crate::components::{Input, ScrollArea};
 use crate::context::AppContext;
@@ -129,6 +130,26 @@ pub enum Node {
         /// Handler for cursor movement
         on_cursor_move: Option<HandlerId>,
     },
+
+    /// Virtualized table with columns
+    Table {
+        /// Element ID
+        id: String,
+        /// Style
+        style: Style,
+        /// Layout properties
+        layout: Layout,
+        /// The table component (type-erased)
+        component: Box<dyn AnyTable>,
+        /// Handler for row activation
+        on_activate: Option<HandlerId>,
+        /// Handler for selection changes
+        on_selection_change: Option<HandlerId>,
+        /// Handler for cursor movement
+        on_cursor_move: Option<HandlerId>,
+        /// Handler for column sort
+        on_sort: Option<HandlerId>,
+    },
 }
 
 impl Node {
@@ -213,6 +234,7 @@ impl Node {
                 | Self::ScrollArea { .. }
                 | Self::List { .. }
                 | Self::Tree { .. }
+                | Self::Table { .. }
         )
     }
 
@@ -223,7 +245,8 @@ impl Node {
             | Self::Button { id, .. }
             | Self::ScrollArea { id, .. }
             | Self::List { id, .. }
-            | Self::Tree { id, .. } => {
+            | Self::Tree { id, .. }
+            | Self::Table { id, .. } => {
                 if id.is_empty() {
                     None
                 } else {
@@ -253,8 +276,8 @@ impl Node {
                 // Also collect focusable children inside the scroll area
                 child.collect_focusable_ids(ids);
             }
-            Self::List { id, .. } | Self::Tree { id, .. } => {
-                // List/Tree is focusable (no children to collect)
+            Self::List { id, .. } | Self::Tree { id, .. } | Self::Table { id, .. } => {
+                // List/Tree/Table is focusable (no children to collect)
                 if !id.is_empty() {
                     ids.push(id.clone());
                 }
@@ -314,6 +337,9 @@ impl Node {
                 id, on_activate, ..
             } if id == target_id => on_activate.clone(),
             Self::Tree {
+                id, on_activate, ..
+            } if id == target_id => on_activate.clone(),
+            Self::Table {
                 id, on_activate, ..
             } if id == target_id => on_activate.clone(),
             Self::Column { children, .. }
@@ -508,6 +534,68 @@ impl Node {
         }
     }
 
+    /// Get the Table component for a table element by ID
+    pub fn get_table_component(&self, target_id: &str) -> Option<&dyn AnyTable> {
+        match self {
+            Self::Table { id, component, .. } if id == target_id => Some(component.as_ref()),
+            Self::Column { children, .. }
+            | Self::Row { children, .. }
+            | Self::Stack { children, .. } => children
+                .iter()
+                .find_map(|c| c.get_table_component(target_id)),
+            Self::ScrollArea { child, .. } => child.get_table_component(target_id),
+            _ => None,
+        }
+    }
+
+    /// Get the on_selection_change handler for a table element by ID
+    pub fn get_table_selection_handler(&self, target_id: &str) -> Option<HandlerId> {
+        match self {
+            Self::Table {
+                id,
+                on_selection_change,
+                ..
+            } if id == target_id => on_selection_change.clone(),
+            Self::Column { children, .. }
+            | Self::Row { children, .. }
+            | Self::Stack { children, .. } => children
+                .iter()
+                .find_map(|c| c.get_table_selection_handler(target_id)),
+            Self::ScrollArea { child, .. } => child.get_table_selection_handler(target_id),
+            _ => None,
+        }
+    }
+
+    /// Get the on_cursor_move handler for a table element by ID
+    pub fn get_table_cursor_handler(&self, target_id: &str) -> Option<HandlerId> {
+        match self {
+            Self::Table {
+                id, on_cursor_move, ..
+            } if id == target_id => on_cursor_move.clone(),
+            Self::Column { children, .. }
+            | Self::Row { children, .. }
+            | Self::Stack { children, .. } => children
+                .iter()
+                .find_map(|c| c.get_table_cursor_handler(target_id)),
+            Self::ScrollArea { child, .. } => child.get_table_cursor_handler(target_id),
+            _ => None,
+        }
+    }
+
+    /// Get the on_sort handler for a table element by ID
+    pub fn get_table_sort_handler(&self, target_id: &str) -> Option<HandlerId> {
+        match self {
+            Self::Table { id, on_sort, .. } if id == target_id => on_sort.clone(),
+            Self::Column { children, .. }
+            | Self::Row { children, .. }
+            | Self::Stack { children, .. } => children
+                .iter()
+                .find_map(|c| c.get_table_sort_handler(target_id)),
+            Self::ScrollArea { child, .. } => child.get_table_sort_handler(target_id),
+            _ => None,
+        }
+    }
+
     /// Dispatch an event to a component by ID using a visitor function.
     ///
     /// This is the core tree traversal logic used by all dispatch_*_event methods.
@@ -557,6 +645,7 @@ impl Node {
             } => Some(EventResult::Ignored),
             Self::List { component, .. } => Some(component.on_click(x, y, cx)),
             Self::Tree { component, .. } => Some(component.on_click(x, y, cx)),
+            Self::Table { component, .. } => Some(component.on_click(x, y, cx)),
             _ => None,
         })
     }
@@ -573,6 +662,7 @@ impl Node {
             Self::ScrollArea { component, .. } => Some(component.on_scroll(direction, amount, cx)),
             Self::List { component, .. } => Some(component.on_scroll(direction, amount, cx)),
             Self::Tree { component, .. } => Some(component.on_scroll(direction, amount, cx)),
+            Self::Table { component, .. } => Some(component.on_scroll(direction, amount, cx)),
             _ => None,
         })
     }
@@ -592,6 +682,7 @@ impl Node {
             Self::ScrollArea { component, .. } => Some(component.on_drag(x, y, modifiers, cx)),
             Self::List { component, .. } => Some(component.on_drag(x, y, modifiers, cx)),
             Self::Tree { component, .. } => Some(component.on_drag(x, y, modifiers, cx)),
+            Self::Table { component, .. } => Some(component.on_drag(x, y, modifiers, cx)),
             _ => None,
         })
     }
@@ -602,6 +693,7 @@ impl Node {
             Self::ScrollArea { component, .. } => Some(component.on_release(cx)),
             Self::List { component, .. } => Some(component.on_release(cx)),
             Self::Tree { component, .. } => Some(component.on_release(cx)),
+            Self::Table { component, .. } => Some(component.on_release(cx)),
             _ => None,
         })
     }
@@ -624,6 +716,7 @@ impl Node {
             Self::ScrollArea { component, .. } => Some(component.on_key(key, cx)),
             Self::List { component, .. } => Some(component.on_key(key, cx)),
             Self::Tree { component, .. } => Some(component.on_key(key, cx)),
+            Self::Table { component, .. } => Some(component.on_key(key, cx)),
             _ => None,
         })
     }
@@ -641,6 +734,7 @@ impl Node {
         self.dispatch_event(target_id, |node| match node {
             Self::List { component, .. } => Some(component.on_hover(x, y, cx)),
             Self::Tree { component, .. } => Some(component.on_hover(x, y, cx)),
+            Self::Table { component, .. } => Some(component.on_hover(x, y, cx)),
             _ => None,
         })
     }
@@ -708,6 +802,13 @@ impl Node {
                 let (chrome_h, _) = layout.chrome_size();
                 40 + chrome_h // Default width, will be overridden by layout
             }
+            Self::Table {
+                layout, component, ..
+            } => {
+                let (chrome_h, _) = layout.chrome_size();
+                // Table total width is sum of column widths
+                component.total_width() + chrome_h
+            }
         }
     }
 
@@ -769,6 +870,13 @@ impl Node {
                 let (_, chrome_v) = layout.chrome_size();
                 // Total height of all visible nodes
                 component.total_height() + chrome_v
+            }
+            Self::Table {
+                layout, component, ..
+            } => {
+                let (_, chrome_v) = layout.chrome_size();
+                // Total height of all rows plus header
+                component.total_height() + 1 + chrome_v // +1 for header row
             }
         }
     }

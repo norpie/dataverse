@@ -83,6 +83,16 @@ struct AppContextInner {
     tree_expanded_id: Option<String>,
     /// Node that was just collapsed (for tree on_collapse handlers)
     tree_collapsed_id: Option<String>,
+
+    // Table event data
+    /// Activated table row ID (for table on_activate handlers)
+    table_activated_id: Option<String>,
+    /// Selected table row IDs (for table on_selection_change handlers)
+    table_selected_ids: Option<Vec<String>>,
+    /// Table cursor row ID (for table on_cursor_move handlers)
+    table_cursor_id: Option<String>,
+    /// Column that was just sorted (column index, ascending) (for table on_sort handlers)
+    table_sorted_column: Option<(usize, bool)>,
 }
 
 /// Context passed to app handlers, providing access to framework functionality.
@@ -129,6 +139,10 @@ impl AppContext {
                 tree_cursor_id: None,
                 tree_expanded_id: None,
                 tree_collapsed_id: None,
+                table_activated_id: None,
+                table_selected_ids: None,
+                table_cursor_id: None,
+                table_sorted_column: None,
             })),
             keybinds,
         }
@@ -362,6 +376,98 @@ impl AppContext {
     pub fn clear_tree_collapsed_id(&self) {
         if let Ok(mut inner) = self.inner.write() {
             inner.tree_collapsed_id = None;
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // Table event data (set by table component for table handlers)
+    // -------------------------------------------------------------------------
+
+    /// Set the activated table row ID (called by table component)
+    pub fn set_table_activated_id(&self, id: String) {
+        if let Ok(mut inner) = self.inner.write() {
+            inner.table_activated_id = Some(id);
+        }
+    }
+
+    /// Get the activated table row ID
+    pub fn table_activated_id(&self) -> Option<String> {
+        self.inner
+            .read()
+            .ok()
+            .and_then(|inner| inner.table_activated_id.clone())
+    }
+
+    /// Clear the activated table row ID
+    pub fn clear_table_activated_id(&self) {
+        if let Ok(mut inner) = self.inner.write() {
+            inner.table_activated_id = None;
+        }
+    }
+
+    /// Set the selected table row IDs (called by table component)
+    pub fn set_table_selected_ids(&self, ids: Vec<String>) {
+        if let Ok(mut inner) = self.inner.write() {
+            inner.table_selected_ids = Some(ids);
+        }
+    }
+
+    /// Get the selected table row IDs
+    pub fn table_selected_ids(&self) -> Option<Vec<String>> {
+        self.inner
+            .read()
+            .ok()
+            .and_then(|inner| inner.table_selected_ids.clone())
+    }
+
+    /// Clear the selected table row IDs
+    pub fn clear_table_selected_ids(&self) {
+        if let Ok(mut inner) = self.inner.write() {
+            inner.table_selected_ids = None;
+        }
+    }
+
+    /// Set the table cursor row ID (called by table component)
+    pub fn set_table_cursor_id(&self, id: String) {
+        if let Ok(mut inner) = self.inner.write() {
+            inner.table_cursor_id = Some(id);
+        }
+    }
+
+    /// Get the table cursor row ID
+    pub fn table_cursor_id(&self) -> Option<String> {
+        self.inner
+            .read()
+            .ok()
+            .and_then(|inner| inner.table_cursor_id.clone())
+    }
+
+    /// Clear the table cursor row ID
+    pub fn clear_table_cursor_id(&self) {
+        if let Ok(mut inner) = self.inner.write() {
+            inner.table_cursor_id = None;
+        }
+    }
+
+    /// Set the sorted table column (called by table component)
+    pub fn set_table_sorted_column(&self, column: usize, ascending: bool) {
+        if let Ok(mut inner) = self.inner.write() {
+            inner.table_sorted_column = Some((column, ascending));
+        }
+    }
+
+    /// Get the sorted table column (column index, ascending)
+    pub fn table_sorted_column(&self) -> Option<(usize, bool)> {
+        self.inner
+            .read()
+            .ok()
+            .and_then(|inner| inner.table_sorted_column)
+    }
+
+    /// Clear the sorted table column
+    pub fn clear_table_sorted_column(&self) {
+        if let Ok(mut inner) = self.inner.write() {
+            inner.table_sorted_column = None;
         }
     }
 

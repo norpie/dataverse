@@ -251,6 +251,23 @@ pub fn intrinsic_size(node: &Node, horizontal: bool) -> u16 {
                 component.total_height() + padding + border_size
             }
         }
+        Node::Table {
+            layout, component, ..
+        } => {
+            let border_size = if matches!(layout.border, Border::None) {
+                0
+            } else {
+                2
+            };
+            let padding = layout.padding * 2;
+            if horizontal {
+                // Width is sum of all column widths
+                component.total_width() + padding + border_size
+            } else {
+                // Height is total rows height + header row
+                component.total_height() + 1 + padding + border_size
+            }
+        }
     }
 }
 
@@ -310,7 +327,10 @@ pub fn child_constraint(node: &Node, horizontal: bool) -> Constraint {
                 Constraint::Length(1)
             }
         }
-        Node::ScrollArea { layout, .. } | Node::List { layout, .. } | Node::Tree { layout, .. } => {
+        Node::ScrollArea { layout, .. }
+        | Node::List { layout, .. }
+        | Node::Tree { layout, .. }
+        | Node::Table { layout, .. } => {
             let size = if horizontal {
                 &layout.width
             } else {

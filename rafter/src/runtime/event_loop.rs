@@ -534,6 +534,75 @@ pub async fn run_event_loop<A: App>(
                                 continue;
                             }
 
+                            // Check if this is a Table component
+                            if let Some(table_component) = view.get_table_component(&hit_box.id) {
+                                debug!("Clicked on table element: {}", hit_box.id);
+
+                                // First check if click is on scrollbar (dispatch_click_event handles this)
+                                if let Some(result) = view.dispatch_click_event(
+                                    &hit_box.id,
+                                    click.position.x,
+                                    click.position.y,
+                                    &cx,
+                                ) {
+                                    match result {
+                                        EventResult::StartDrag => {
+                                            drag_component_id = Some(hit_box.id.clone());
+                                            continue;
+                                        }
+                                        EventResult::Consumed => {
+                                            dispatch_component_handlers(
+                                                &view,
+                                                &hit_box.id,
+                                                &app,
+                                                &modal_stack,
+                                                &cx,
+                                            );
+                                            continue;
+                                        }
+                                        EventResult::Ignored => {}
+                                    }
+                                }
+
+                                // Calculate viewport-relative coordinates
+                                let x_in_viewport = click.position.x.saturating_sub(hit_box.rect.x);
+                                let y_in_viewport = click.position.y.saturating_sub(hit_box.rect.y);
+
+                                debug!(
+                                    "Table click: screen({}, {}), rect({}, {}), viewport({}, {})",
+                                    click.position.x, click.position.y,
+                                    hit_box.rect.x, hit_box.rect.y,
+                                    x_in_viewport, y_in_viewport
+                                );
+
+                                // Check if header click (y == 0) or data row click
+                                if y_in_viewport == 0 {
+                                    debug!("Header click at x={}", x_in_viewport);
+                                    table_component.on_header_click(x_in_viewport, &cx);
+                                } else {
+                                    // Data row click - y_in_viewport includes header,
+                                    // on_row_click/index_from_viewport_y handles the offset
+                                    let ctrl = click.modifiers.ctrl;
+                                    let shift = click.modifiers.shift;
+                                    table_component.on_row_click(
+                                        y_in_viewport,
+                                        ctrl,
+                                        shift,
+                                        &cx,
+                                    );
+                                }
+
+                                // Dispatch handlers based on context data
+                                dispatch_component_handlers(
+                                    &view,
+                                    &hit_box.id,
+                                    &app,
+                                    &modal_stack,
+                                    &cx,
+                                );
+                                continue;
+                            }
+
                             // First try to dispatch to component (handles scrollbars etc)
                             if let Some(result) = view.dispatch_click_event(
                                 &hit_box.id,
@@ -754,5 +823,41 @@ fn dispatch_component_handlers<A: App>(
             dispatch_to_layer(app, modal_stack, &handler_id, cx);
         }
         cx.clear_tree_collapsed_id();
+    }
+
+    // Handle table activation (Enter on table row)
+    if cx.table_activated_id().is_some() {
+        if let Some(handler_id) = view.get_submit_handler(focus_id) {
+            dispatch_to_layer(app, modal_stack, &handler_id, cx);
+        }
+        cx.clear_table_activated_id();
+    }
+
+    // Handle table cursor movement
+    if cx.table_cursor_id().is_some() {
+        if let Some(handler_id) = view.get_table_cursor_handler(focus_id) {
+            dispatch_to_layer(app, modal_stack, &handler_id, cx);
+        }
+        cx.clear_table_cursor_id();
+    }
+
+    // Handle table selection changes
+    if cx.table_selected_ids().is_some() {
+        if let Some(handler_id) = view.get_table_selection_handler(focus_id) {
+            dispatch_to_layer(app, modal_stack, &handler_id, cx);
+        }
+        cx.clear_table_selected_ids();
+    }
+
+    // Handle table sorting
+    if let Some((col, asc)) = cx.table_sorted_column() {
+        debug!("Table sorted column set: col={}, asc={}", col, asc);
+        if let Some(handler_id) = view.get_table_sort_handler(focus_id) {
+            debug!("Found on_sort handler: {:?}", handler_id);
+            dispatch_to_layer(app, modal_stack, &handler_id, cx);
+        } else {
+            debug!("No on_sort handler found for focus_id={}", focus_id);
+        }
+        cx.clear_table_sorted_column();
     }
 }

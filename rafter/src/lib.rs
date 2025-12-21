@@ -20,6 +20,7 @@ pub use runtime::Runtime;
 pub mod prelude {
     pub use crate::app::App;
     pub use crate::color::{Color, StyleColor};
+    pub use crate::components::{Alignment, Column, Table, TableId, TableRow};
     pub use crate::components::{
         Input, ScrollArea, ScrollDirection, ScrollbarConfig, ScrollbarVisibility,
     };

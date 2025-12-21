@@ -193,11 +193,7 @@ pub trait TreeItem: Send + Sync + Clone + 'static {
     /// let line = format!("{}{}", checkbox, self.name);
     /// ```
     fn selection_indicator(selected: bool) -> &'static str {
-        if selected {
-            "■ "
-        } else {
-            "□ "
-        }
+        if selected { "■ " } else { "□ " }
     }
 
     /// Helper: Render tree node with default styling.
