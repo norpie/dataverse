@@ -1,6 +1,8 @@
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, RwLock};
 
+use crate::validation::ErrorDisplay;
+
 /// Unique identifier for an Input widget instance
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct InputId(usize);
@@ -27,6 +29,10 @@ struct InputInner {
     placeholder: String,
     /// Cursor position (byte offset)
     cursor: usize,
+    /// Validation error message (if any)
+    error: Option<String>,
+    /// How to display validation errors
+    error_display: ErrorDisplay,
 }
 
 /// A text input widget with reactive state.
@@ -95,6 +101,8 @@ impl Input {
                 value,
                 cursor,
                 placeholder: String::new(),
+                error: None,
+                error_display: ErrorDisplay::default(),
             })),
             dirty: Arc::new(AtomicBool::new(false)),
             focus_requested: Arc::new(AtomicBool::new(false)),
@@ -174,6 +182,7 @@ impl Input {
         if let Ok(mut guard) = self.inner.write() {
             guard.value = value.into();
             guard.cursor = guard.value.len();
+            guard.error = None; // Auto-clear error on value change
             self.dirty.store(true, Ordering::SeqCst);
         }
     }
@@ -183,6 +192,7 @@ impl Input {
         if let Ok(mut guard) = self.inner.write() {
             guard.value.clear();
             guard.cursor = 0;
+            guard.error = None; // Auto-clear error on value change
             self.dirty.store(true, Ordering::SeqCst);
         }
     }
@@ -213,6 +223,7 @@ impl Input {
             let cursor = guard.cursor;
             guard.value.insert(cursor, c);
             guard.cursor += c.len_utf8();
+            guard.error = None; // Auto-clear error on value change
             self.dirty.store(true, Ordering::SeqCst);
         }
     }
@@ -230,6 +241,7 @@ impl Input {
                 .unwrap_or(0);
             guard.value.remove(prev_cursor);
             guard.cursor = prev_cursor;
+            guard.error = None; // Auto-clear error on value change
             self.dirty.store(true, Ordering::SeqCst);
         }
     }
@@ -240,6 +252,7 @@ impl Input {
             let cursor = guard.cursor;
             if cursor < guard.value.len() {
                 guard.value.remove(cursor);
+                guard.error = None; // Auto-clear error on value change
                 self.dirty.store(true, Ordering::SeqCst);
             }
         }
@@ -321,6 +334,60 @@ impl Input {
     pub fn clear_dirty(&self) {
         self.dirty.store(false, Ordering::SeqCst);
     }
+
+    // -------------------------------------------------------------------------
+    // Validation
+    // -------------------------------------------------------------------------
+
+    /// Set a validation error message on this input.
+    pub fn set_error(&self, msg: impl Into<String>) {
+        if let Ok(mut guard) = self.inner.write() {
+            guard.error = Some(msg.into());
+            self.dirty.store(true, Ordering::SeqCst);
+        }
+    }
+
+    /// Clear the validation error.
+    pub fn clear_error(&self) {
+        if let Ok(mut guard) = self.inner.write() {
+            if guard.error.is_some() {
+                guard.error = None;
+                self.dirty.store(true, Ordering::SeqCst);
+            }
+        }
+    }
+
+    /// Check if this input has a validation error.
+    pub fn has_error(&self) -> bool {
+        self.inner
+            .read()
+            .map(|guard| guard.error.is_some())
+            .unwrap_or(false)
+    }
+
+    /// Get the current validation error message (if any).
+    pub fn error(&self) -> Option<String> {
+        self.inner
+            .read()
+            .map(|guard| guard.error.clone())
+            .unwrap_or(None)
+    }
+
+    /// Get the error display mode.
+    pub fn error_display(&self) -> ErrorDisplay {
+        self.inner
+            .read()
+            .map(|guard| guard.error_display)
+            .unwrap_or_default()
+    }
+
+    /// Set the error display mode.
+    pub fn set_error_display(&self, display: ErrorDisplay) {
+        if let Ok(mut guard) = self.inner.write() {
+            guard.error_display = display;
+            self.dirty.store(true, Ordering::SeqCst);
+        }
+    }
 }
 
 impl Clone for Input {
@@ -337,5 +404,47 @@ impl Clone for Input {
 impl Default for Input {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+// -----------------------------------------------------------------------------
+// Validatable implementation
+// -----------------------------------------------------------------------------
+
+use crate::validation::Validatable;
+
+impl Validatable for Input {
+    type Value = String;
+
+    fn validation_value(&self) -> Self::Value {
+        self.value()
+    }
+
+    fn set_error(&self, msg: impl Into<String>) {
+        Input::set_error(self, msg)
+    }
+
+    fn clear_error(&self) {
+        Input::clear_error(self)
+    }
+
+    fn has_error(&self) -> bool {
+        Input::has_error(self)
+    }
+
+    fn error(&self) -> Option<String> {
+        Input::error(self)
+    }
+
+    fn widget_id(&self) -> String {
+        self.id_string()
+    }
+
+    fn error_display(&self) -> ErrorDisplay {
+        Input::error_display(self)
+    }
+
+    fn set_error_display(&self, display: ErrorDisplay) {
+        Input::set_error_display(self, display)
     }
 }

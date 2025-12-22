@@ -92,6 +92,10 @@ pub struct DefaultTheme {
     pub success: Color,
     pub warning: Color,
     pub info: Color,
+    /// Color for validation error text/messages
+    pub validation_error: Color,
+    /// Color for validation error widget border/highlight
+    pub validation_error_border: Color,
 }
 
 impl Default for DefaultTheme {
@@ -114,6 +118,8 @@ impl DefaultTheme {
             success: Color::GREEN,
             warning: Color::YELLOW,
             info: Color::CYAN,
+            validation_error: Color::RED,
+            validation_error_border: Color::RED,
         }
     }
 
@@ -130,6 +136,8 @@ impl DefaultTheme {
             success: Color::GREEN,
             warning: Color::YELLOW,
             info: Color::BLUE,
+            validation_error: Color::RED,
+            validation_error_border: Color::RED,
         }
     }
 }
@@ -147,6 +155,8 @@ impl Theme for DefaultTheme {
             "success" => Some(self.success),
             "warning" => Some(self.warning),
             "info" => Some(self.info),
+            "validation_error" => Some(self.validation_error),
+            "validation_error_border" => Some(self.validation_error_border),
             // Common aliases
             "fg" => Some(self.text),
             "bg" => Some(self.background),
@@ -178,6 +188,8 @@ impl Theme for DefaultTheme {
             "success",
             "warning",
             "info",
+            "validation_error",
+            "validation_error_border",
             "fg",
             "bg",
             "muted",

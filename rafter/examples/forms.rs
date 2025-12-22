@@ -4,8 +4,8 @@
 //! - Checkbox with label and custom indicators
 //! - RadioGroup for mutually exclusive options
 //! - Collapsible sections for organizing content
-//! - Input fields
-//! - Form state management
+//! - Input fields with validation
+//! - Form validation using the Validator API
 //!
 //! Use Tab to navigate between fields, Space/Enter to toggle checkboxes
 //! or expand/collapse sections, and Up/Down arrows to navigate radio options.
@@ -88,29 +88,36 @@ impl FormsApp {
 
     #[handler]
     async fn submit(&self, cx: &AppContext) {
-        // Validate
-        if self.name.is_empty() {
-            cx.toast_error("Name is required");
-            return;
-        }
+        // Validate using the Validator API
+        let result = Validator::new()
+            .field(&self.name, "name")
+                .required("Name is required")
+                .min_length(2, "Name must be at least 2 characters")
+            .field(&self.email, "email")
+                .required("Email is required")
+                .email("Please enter a valid email address")
+            .field(&self.accept_terms, "terms")
+                .checked("You must accept the terms and conditions")
+            .field(&self.priority, "priority")
+                .selected("Please select a priority level")
+            .validate();
 
-        if self.email.is_empty() {
-            cx.toast_error("Email is required");
-            return;
+        if result.is_valid() {
+            // Success
+            self.submitted.set(true);
+            cx.toast_success("Form submitted successfully!");
+        } else {
+            // Show first error and focus that field
+            result.focus_first(cx);
+            if let Some(err) = result.first_error() {
+                cx.toast_error(&err.message);
+            }
         }
-
-        if !self.accept_terms.is_checked() {
-            cx.toast_error("You must accept the terms");
-            return;
-        }
-
-        // Success
-        self.submitted.set(true);
-        cx.toast_success("Form submitted successfully!");
     }
 
     #[handler]
     async fn reset(&self, cx: &AppContext) {
+        // Clear all form fields (this also auto-clears any validation errors)
         self.name.clear();
         self.email.clear();
         self.accept_terms.set_checked(false);

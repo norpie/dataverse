@@ -37,6 +37,8 @@ impl ModalTheme {
                 success: Color::rgb(100, 220, 100),
                 warning: Color::rgb(255, 200, 50),
                 info: Color::rgb(100, 180, 255),
+                validation_error: Color::rgb(255, 100, 100),
+                validation_error_border: Color::rgb(255, 100, 100),
             },
         }
     }

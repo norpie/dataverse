@@ -3,6 +3,8 @@
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, RwLock};
 
+use crate::validation::ErrorDisplay;
+
 /// Unique identifier for a RadioGroup widget instance
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct RadioGroupId(usize);
@@ -31,6 +33,10 @@ struct RadioGroupInner {
     selected_char: char,
     /// Character to display when not selected
     unselected_char: char,
+    /// Validation error message (if any)
+    error: Option<String>,
+    /// How to display validation errors
+    error_display: ErrorDisplay,
 }
 
 impl Default for RadioGroupInner {
@@ -40,6 +46,8 @@ impl Default for RadioGroupInner {
             options: Vec::new(),
             selected_char: '◉',
             unselected_char: '◯',
+            error: None,
+            error_display: ErrorDisplay::default(),
         }
     }
 }
@@ -225,6 +233,7 @@ impl RadioGroup {
         if let Ok(mut guard) = self.inner.write() {
             if index < guard.options.len() && guard.selected != Some(index) {
                 guard.selected = Some(index);
+                guard.error = None; // Auto-clear error on value change
                 self.dirty.store(true, Ordering::SeqCst);
             }
         }
@@ -235,6 +244,7 @@ impl RadioGroup {
         if let Ok(mut guard) = self.inner.write() {
             if guard.selected.is_some() {
                 guard.selected = None;
+                guard.error = None; // Auto-clear error on value change
                 self.dirty.store(true, Ordering::SeqCst);
             }
         }
@@ -306,5 +316,104 @@ impl Clone for RadioGroup {
 impl Default for RadioGroup {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+impl RadioGroup {
+    // -------------------------------------------------------------------------
+    // Validation
+    // -------------------------------------------------------------------------
+
+    /// Set a validation error message on this radio group.
+    pub fn set_error(&self, msg: impl Into<String>) {
+        if let Ok(mut guard) = self.inner.write() {
+            guard.error = Some(msg.into());
+            self.dirty.store(true, Ordering::SeqCst);
+        }
+    }
+
+    /// Clear the validation error.
+    pub fn clear_error(&self) {
+        if let Ok(mut guard) = self.inner.write() {
+            if guard.error.is_some() {
+                guard.error = None;
+                self.dirty.store(true, Ordering::SeqCst);
+            }
+        }
+    }
+
+    /// Check if this radio group has a validation error.
+    pub fn has_error(&self) -> bool {
+        self.inner
+            .read()
+            .map(|guard| guard.error.is_some())
+            .unwrap_or(false)
+    }
+
+    /// Get the current validation error message (if any).
+    pub fn error(&self) -> Option<String> {
+        self.inner
+            .read()
+            .map(|guard| guard.error.clone())
+            .unwrap_or(None)
+    }
+
+    /// Get the error display mode.
+    pub fn error_display(&self) -> ErrorDisplay {
+        self.inner
+            .read()
+            .map(|guard| guard.error_display)
+            .unwrap_or_default()
+    }
+
+    /// Set the error display mode.
+    pub fn set_error_display(&self, display: ErrorDisplay) {
+        if let Ok(mut guard) = self.inner.write() {
+            guard.error_display = display;
+            self.dirty.store(true, Ordering::SeqCst);
+        }
+    }
+}
+
+// -----------------------------------------------------------------------------
+// Validatable implementation
+// -----------------------------------------------------------------------------
+
+use crate::validation::Validatable;
+
+impl Validatable for RadioGroup {
+    /// Value type is `Option<usize>` - the selected index
+    type Value = Option<usize>;
+
+    fn validation_value(&self) -> Self::Value {
+        self.selected()
+    }
+
+    fn set_error(&self, msg: impl Into<String>) {
+        RadioGroup::set_error(self, msg)
+    }
+
+    fn clear_error(&self) {
+        RadioGroup::clear_error(self)
+    }
+
+    fn has_error(&self) -> bool {
+        RadioGroup::has_error(self)
+    }
+
+    fn error(&self) -> Option<String> {
+        RadioGroup::error(self)
+    }
+
+    fn widget_id(&self) -> String {
+        self.id_string()
+    }
+
+    fn error_display(&self) -> ErrorDisplay {
+        RadioGroup::error_display(self)
+    }
+
+    fn set_error_display(&self, display: ErrorDisplay) {
+        RadioGroup::set_error_display(self, display)
     }
 }

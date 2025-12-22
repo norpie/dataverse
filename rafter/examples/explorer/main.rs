@@ -250,6 +250,8 @@ impl ExplorerTheme {
                 success: Color::rgb(90, 210, 90),      // Green
                 warning: Color::rgb(255, 190, 50),     // Yellow/Orange
                 info: Color::rgb(100, 160, 255),       // Blue
+                validation_error: Color::rgb(255, 90, 90),
+                validation_error_border: Color::rgb(255, 90, 90),
             },
         }
     }

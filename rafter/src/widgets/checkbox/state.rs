@@ -3,6 +3,8 @@
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, RwLock};
 
+use crate::validation::ErrorDisplay;
+
 /// Unique identifier for a Checkbox widget instance
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct CheckboxId(usize);
@@ -31,6 +33,10 @@ struct CheckboxInner {
     checked_char: char,
     /// Character to display when unchecked
     unchecked_char: char,
+    /// Validation error message (if any)
+    error: Option<String>,
+    /// How to display validation errors
+    error_display: ErrorDisplay,
 }
 
 impl Default for CheckboxInner {
@@ -40,6 +46,8 @@ impl Default for CheckboxInner {
             label: String::new(),
             checked_char: '■',
             unchecked_char: '□',
+            error: None,
+            error_display: ErrorDisplay::default(),
         }
     }
 }
@@ -190,6 +198,7 @@ impl Checkbox {
             && guard.checked != checked
         {
             guard.checked = checked;
+            guard.error = None; // Auto-clear error on value change
             self.dirty.store(true, Ordering::SeqCst);
         }
     }
@@ -198,6 +207,7 @@ impl Checkbox {
     pub fn toggle(&self) {
         if let Ok(mut guard) = self.inner.write() {
             guard.checked = !guard.checked;
+            guard.error = None; // Auto-clear error on value change
             self.dirty.store(true, Ordering::SeqCst);
         }
     }
@@ -262,5 +272,103 @@ impl Clone for Checkbox {
 impl Default for Checkbox {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+impl Checkbox {
+    // -------------------------------------------------------------------------
+    // Validation
+    // -------------------------------------------------------------------------
+
+    /// Set a validation error message on this checkbox.
+    pub fn set_error(&self, msg: impl Into<String>) {
+        if let Ok(mut guard) = self.inner.write() {
+            guard.error = Some(msg.into());
+            self.dirty.store(true, Ordering::SeqCst);
+        }
+    }
+
+    /// Clear the validation error.
+    pub fn clear_error(&self) {
+        if let Ok(mut guard) = self.inner.write() {
+            if guard.error.is_some() {
+                guard.error = None;
+                self.dirty.store(true, Ordering::SeqCst);
+            }
+        }
+    }
+
+    /// Check if this checkbox has a validation error.
+    pub fn has_error(&self) -> bool {
+        self.inner
+            .read()
+            .map(|guard| guard.error.is_some())
+            .unwrap_or(false)
+    }
+
+    /// Get the current validation error message (if any).
+    pub fn error(&self) -> Option<String> {
+        self.inner
+            .read()
+            .map(|guard| guard.error.clone())
+            .unwrap_or(None)
+    }
+
+    /// Get the error display mode.
+    pub fn error_display(&self) -> ErrorDisplay {
+        self.inner
+            .read()
+            .map(|guard| guard.error_display)
+            .unwrap_or_default()
+    }
+
+    /// Set the error display mode.
+    pub fn set_error_display(&self, display: ErrorDisplay) {
+        if let Ok(mut guard) = self.inner.write() {
+            guard.error_display = display;
+            self.dirty.store(true, Ordering::SeqCst);
+        }
+    }
+}
+
+// -----------------------------------------------------------------------------
+// Validatable implementation
+// -----------------------------------------------------------------------------
+
+use crate::validation::Validatable;
+
+impl Validatable for Checkbox {
+    type Value = bool;
+
+    fn validation_value(&self) -> Self::Value {
+        self.is_checked()
+    }
+
+    fn set_error(&self, msg: impl Into<String>) {
+        Checkbox::set_error(self, msg)
+    }
+
+    fn clear_error(&self) {
+        Checkbox::clear_error(self)
+    }
+
+    fn has_error(&self) -> bool {
+        Checkbox::has_error(self)
+    }
+
+    fn error(&self) -> Option<String> {
+        Checkbox::error(self)
+    }
+
+    fn widget_id(&self) -> String {
+        self.id_string()
+    }
+
+    fn error_display(&self) -> ErrorDisplay {
+        Checkbox::error_display(self)
+    }
+
+    fn set_error_display(&self, display: ErrorDisplay) {
+        Checkbox::set_error_display(self, display)
     }
 }

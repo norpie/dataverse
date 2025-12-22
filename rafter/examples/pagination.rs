@@ -94,6 +94,8 @@ impl PaginationTheme {
                 success: Color::rgb(46, 204, 113),     // Green
                 warning: Color::rgb(241, 196, 15),     // Yellow
                 info: Color::rgb(52, 152, 219),        // Blue
+                validation_error: Color::rgb(231, 76, 60),
+                validation_error_border: Color::rgb(231, 76, 60),
             },
         }
     }

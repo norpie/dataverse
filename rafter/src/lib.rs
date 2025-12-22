@@ -13,6 +13,7 @@ pub mod state;
 pub mod style;
 pub mod theme;
 pub mod utils;
+pub mod validation;
 
 pub use rafter_derive::*;
 pub use runtime::Runtime;
@@ -40,6 +41,7 @@ pub mod prelude {
     pub use crate::state::State;
     pub use crate::style::Style;
     pub use crate::theme::{DefaultTheme, Theme};
+    pub use crate::validation::{ErrorDisplay, FieldError, Validatable, ValidationResult, Validator};
 
     pub use rafter_derive::*;
 }

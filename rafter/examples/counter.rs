@@ -43,6 +43,8 @@ impl CounterTheme {
                 success: Color::rgb(100, 220, 100),    // Green
                 warning: Color::rgb(255, 200, 50),     // Yellow
                 info: Color::rgb(100, 180, 255),       // Light blue
+                validation_error: Color::rgb(255, 100, 100),
+                validation_error_border: Color::rgb(255, 100, 100),
             },
         }
     }
