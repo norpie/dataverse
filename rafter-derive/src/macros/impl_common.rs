@@ -233,3 +233,13 @@ pub fn generate_name_impl(type_name: &Ident) -> TokenStream {
         }
     }
 }
+
+/// Generate config trait method implementation using metadata module
+pub fn generate_config_impl(type_name: &Ident) -> TokenStream {
+    let metadata_mod = app_metadata_mod(type_name);
+    quote! {
+        fn config() -> rafter::app::AppConfig {
+            #metadata_mod::config()
+        }
+    }
+}

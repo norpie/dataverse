@@ -1,34 +1,81 @@
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
-use syn::{
-    Attribute, DeriveInput, Expr, ExprPath, Field, Fields, FieldsNamed, Ident, Meta, parse2,
-};
+use syn::{Attribute, DeriveInput, Field, Fields, FieldsNamed, Ident, Meta, Token, parse2};
 
 use super::field_utils::{is_resource_type, is_widget_type};
 
 /// Attributes that can be applied to the #[app] macro
+///
+/// Supported attributes:
+/// - `#[app]` - basic app with default config
+/// - `#[app(name = "My App")]` - custom display name
+/// - `#[app(singleton)]` - max 1 instance
+/// - `#[app(on_blur = Sleep)]` - blur policy (Continue, Sleep, Close)
+/// - `#[app(persistent)]` - cannot be force-closed
+/// - `#[app(on_panic = RestartApp)]` - panic behavior
+///
+/// Can be combined:
+/// - `#[app(name = "Queue", singleton, persistent, on_blur = Continue)]`
 struct AppAttrs {
+    /// Custom display name (defaults to type name)
+    name: Option<String>,
+    /// Singleton app (max 1 instance)
+    singleton: bool,
+    /// Persistent app (cannot be force-closed)
+    persistent: bool,
+    /// Blur policy
+    on_blur: Option<Ident>,
     /// Panic behavior for this app
     on_panic: Option<Ident>,
 }
 
 impl AppAttrs {
     fn parse(attr: TokenStream) -> syn::Result<Self> {
+        let mut name = None;
+        let mut singleton = false;
+        let mut persistent = false;
+        let mut on_blur = None;
         let mut on_panic = None;
 
         if !attr.is_empty() {
-            // Parse: on_panic = ShowError
-            let meta: Meta = parse2(attr)?;
-            if let Meta::NameValue(nv) = meta
-                && nv.path.is_ident("on_panic")
-                && let Expr::Path(ExprPath { path, .. }) = &nv.value
-                && let Some(ident) = path.get_ident()
-            {
-                on_panic = Some(ident.clone());
-            }
+            // Parse comma-separated attributes
+            let parser = syn::meta::parser(|meta| {
+                if meta.path.is_ident("name") {
+                    // name = "Display Name"
+                    let value: syn::LitStr = meta.value()?.parse()?;
+                    name = Some(value.value());
+                } else if meta.path.is_ident("singleton") {
+                    singleton = true;
+                } else if meta.path.is_ident("persistent") {
+                    persistent = true;
+                } else if meta.path.is_ident("on_blur") {
+                    // on_blur = Continue | Sleep | Close
+                    meta.input.parse::<Token![=]>()?;
+                    let ident: Ident = meta.input.parse()?;
+                    on_blur = Some(ident);
+                } else if meta.path.is_ident("on_panic") {
+                    // on_panic = ShowError | RestartApp | CrashRuntime
+                    meta.input.parse::<Token![=]>()?;
+                    let ident: Ident = meta.input.parse()?;
+                    on_panic = Some(ident);
+                } else {
+                    return Err(meta.error(format!(
+                        "unknown app attribute: `{}`",
+                        meta.path.get_ident().map(|i| i.to_string()).unwrap_or_default()
+                    )));
+                }
+                Ok(())
+            });
+            syn::parse::Parser::parse2(parser, attr)?;
         }
 
-        Ok(Self { on_panic })
+        Ok(Self {
+            name,
+            singleton,
+            persistent,
+            on_blur,
+            on_panic,
+        })
     }
 }
 
@@ -181,6 +228,28 @@ fn generate_metadata(name: &Ident, attrs: &AppAttrs, fields: &FieldsNamed) -> To
         None => quote! { rafter::app::PanicBehavior::ShowError },
     };
 
+    // Generate AppConfig
+    let config_name = match &attrs.name {
+        Some(n) => quote! { #n },
+        None => {
+            let name_str = name.to_string();
+            quote! { #name_str }
+        }
+    };
+
+    let on_blur = match &attrs.on_blur {
+        Some(ident) => quote! { rafter::app::BlurPolicy::#ident },
+        None => quote! { rafter::app::BlurPolicy::Continue },
+    };
+
+    let persistent = attrs.persistent;
+
+    let max_instances = if attrs.singleton {
+        quote! { Some(1) }
+    } else {
+        quote! { None }
+    };
+
     // Collect field names for dirty checking (excluding skipped fields)
     // State<T> and Resource<T> both have is_dirty/clear_dirty
     let dirty_fields: Vec<_> = fields
@@ -210,12 +279,52 @@ fn generate_metadata(name: &Ident, attrs: &AppAttrs, fields: &FieldsNamed) -> To
 
             pub const PANIC_BEHAVIOR: rafter::app::PanicBehavior = #panic_behavior;
 
+            pub fn config() -> rafter::app::AppConfig {
+                rafter::app::AppConfig {
+                    name: #config_name,
+                    on_blur: #on_blur,
+                    persistent: #persistent,
+                    max_instances: #max_instances,
+                }
+            }
+
             pub fn is_dirty(app: &#name) -> bool {
                 false #(|| #is_dirty_checks)*
             }
 
             pub fn clear_dirty(app: &#name) {
                 #(#clear_dirty_calls)*
+            }
+        }
+    }
+}
+
+/// Generate singleton helper methods for apps with `singleton` attribute
+fn generate_singleton_methods(name: &Ident, attrs: &AppAttrs) -> TokenStream {
+    if !attrs.singleton {
+        return quote! {};
+    }
+
+    quote! {
+        impl #name {
+            /// Get the existing singleton instance, or spawn a new one.
+            ///
+            /// This method ensures only one instance of this app exists.
+            pub fn get_or_spawn(cx: &rafter::context::AppContext) -> Result<rafter::app::InstanceId, rafter::app::SpawnError> {
+                if let Some(id) = cx.instance_of::<Self>() {
+                    Ok(id)
+                } else {
+                    cx.spawn::<Self>(Self::default())
+                }
+            }
+
+            /// Get the existing singleton instance, or spawn and focus a new one.
+            ///
+            /// This method ensures only one instance of this app exists and is focused.
+            pub fn get_or_spawn_and_focus(cx: &rafter::context::AppContext) -> Result<rafter::app::InstanceId, rafter::app::SpawnError> {
+                let id = Self::get_or_spawn(cx)?;
+                cx.focus(id);
+                Ok(id)
             }
         }
     }
@@ -268,6 +377,7 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
     let clone_impl = generate_clone_impl(name, fields);
     let registration = generate_registration(name);
     let metadata = generate_metadata(name, &attrs, fields);
+    let singleton_methods = generate_singleton_methods(name, &attrs);
 
     quote! {
         #(#other_attrs)*
@@ -279,5 +389,6 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
         #clone_impl
         #registration
         #metadata
+        #singleton_methods
     }
 }

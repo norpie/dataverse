@@ -6,8 +6,8 @@ use syn::{Attribute, ImplItem, ImplItemFn, ItemImpl, parse2};
 
 use super::handler::HandlerParams;
 use super::impl_common::{
-    HandlerMethod, KeybindScope, KeybindsMethod, app_metadata_mod, generate_keybinds_impl,
-    generate_name_impl, generate_view_impl, get_type_name, is_keybinds_method, is_view_method,
+    HandlerMethod, KeybindScope, KeybindsMethod, app_metadata_mod, generate_config_impl,
+    generate_keybinds_impl, generate_view_impl, get_type_name, is_keybinds_method, is_view_method,
     parse_handler_metadata, strip_custom_attrs,
 };
 
@@ -120,7 +120,7 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
     // Generate trait method implementations
     let keybinds_impl = generate_keybinds_impl(&keybinds_methods, &type_name);
     let view_impl = generate_view_impl(has_view, &self_ty);
-    let name_impl = generate_name_impl(&type_name);
+    let config_impl = generate_config_impl(&type_name);
 
     // Generate on_start method
     let on_start_impl = if has_on_start {
@@ -206,7 +206,7 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
         #impl_block
 
         impl #impl_generics rafter::app::App for #self_ty {
-            #name_impl
+            #config_impl
             #keybinds_final
             #view_impl
             #current_page_impl
