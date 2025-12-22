@@ -7,6 +7,7 @@ use syn::{Attribute, Type};
 const BUILTIN_WIDGET_TYPES: &[&str] = &[
     "Button",
     "Checkbox",
+    "Collapsible",
     "Input",
     "List",
     "RadioGroup",

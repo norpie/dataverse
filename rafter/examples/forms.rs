@@ -3,11 +3,12 @@
 //! A demo showcasing rafter's form widgets:
 //! - Checkbox with label and custom indicators
 //! - RadioGroup for mutually exclusive options
+//! - Collapsible sections for organizing content
 //! - Input fields
 //! - Form state management
 //!
-//! Use Tab to navigate between fields, Space/Enter to toggle checkboxes,
-//! and Up/Down arrows to navigate radio options.
+//! Use Tab to navigate between fields, Space/Enter to toggle checkboxes
+//! or expand/collapse sections, and Up/Down arrows to navigate radio options.
 
 use std::fs::File;
 
@@ -34,6 +35,11 @@ struct FormsApp {
     theme: RadioGroup,
     priority: RadioGroup,
 
+    // Collapsible sections
+    basic_info: Collapsible,
+    preferences: Collapsible,
+    advanced: Collapsible,
+
     // Form state
     submitted: bool,
 }
@@ -59,6 +65,16 @@ impl FormsApp {
 
         self.priority.set_options(vec!["Low", "Medium", "High"]);
         self.priority.select(1); // Default to "Medium"
+
+        // Set up collapsible sections
+        self.basic_info.set_title("Basic Information");
+        self.basic_info.expand(); // Start expanded
+
+        self.preferences.set_title("Preferences");
+        self.preferences.expand(); // Start expanded
+
+        self.advanced.set_title("Advanced Options");
+        // Starts collapsed by default
     }
 
     #[keybinds]
@@ -128,68 +144,64 @@ impl FormsApp {
     }
 
     #[handler]
+    async fn on_advanced_expand(&self, cx: &AppContext) {
+        cx.toast("Advanced options revealed!");
+    }
+
+    #[handler]
     async fn quit(&self, cx: &AppContext) {
         cx.exit();
     }
 
     fn page(&self) -> Node {
         let submitted = self.submitted.get();
-        let divider = "─".repeat(50);
 
         page! {
             column (padding: 2, gap: 1) {
                 // Header
                 text (bold, fg: primary) { "Form Components Demo" }
-                text (fg: muted) { "Tab to navigate, Space/Enter to toggle, Up/Down for radios" }
+                text (fg: muted) { "Tab to navigate, Space/Enter to toggle sections/checkboxes" }
 
-                // Divider
-                text (fg: muted) { divider.clone() }
+                // Basic Information (collapsible)
+                collapsible(bind: self.basic_info) {
+                    column (gap: 1, padding: 1) {
+                        row (gap: 2) {
+                            text (fg: muted) { "Name:     " }
+                            input(bind: self.name)
+                        }
 
-                // Text inputs
-                column (gap: 1) {
-                    text (bold) { "Text Inputs" }
+                        row (gap: 2) {
+                            text (fg: muted) { "Email:    " }
+                            input(bind: self.email)
+                        }
 
-                    row (gap: 2) {
-                        text (fg: muted) { "Name:     " }
-                        input(bind: self.name)
-                    }
-
-                    row (gap: 2) {
-                        text (fg: muted) { "Email:    " }
-                        input(bind: self.email)
-                    }
-                }
-
-                // Divider
-                text (fg: muted) { divider.clone() }
-
-                // Checkboxes
-                column (gap: 1) {
-                    text (bold) { "Checkboxes" }
-
-                    checkbox(bind: self.accept_terms, on_change: on_terms_change)
-                    checkbox(bind: self.newsletter)
-                    checkbox(bind: self.custom_checkbox)
-                }
-
-                // Divider
-                text (fg: muted) { divider.clone() }
-
-                // Radio Groups
-                row (gap: 4) {
-                    column (gap: 1) {
-                        text (bold) { "Theme" }
-                        radio_group(bind: self.theme, on_change: on_theme_change)
-                    }
-
-                    column (gap: 1) {
-                        text (bold) { "Priority" }
-                        radio_group(bind: self.priority, on_change: on_priority_change)
+                        checkbox(bind: self.accept_terms, on_change: on_terms_change)
+                        checkbox(bind: self.newsletter)
                     }
                 }
 
-                // Divider
-                text (fg: muted) { divider.clone() }
+                // Preferences (collapsible)
+                collapsible(bind: self.preferences) {
+                    row (gap: 4, padding: 1) {
+                        column (gap: 1) {
+                            text (bold) { "Theme" }
+                            radio_group(bind: self.theme, on_change: on_theme_change)
+                        }
+
+                        column (gap: 1) {
+                            text (bold) { "Priority" }
+                            radio_group(bind: self.priority, on_change: on_priority_change)
+                        }
+                    }
+                }
+
+                // Advanced Options (collapsible, starts collapsed)
+                collapsible(bind: self.advanced, on_expand: on_advanced_expand) {
+                    column (gap: 1, padding: 1) {
+                        text (fg: warning) { "These options are for power users only!" }
+                        checkbox(bind: self.custom_checkbox)
+                    }
+                }
 
                 // Status
                 row (gap: 2) {

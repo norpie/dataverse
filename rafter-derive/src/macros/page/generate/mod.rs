@@ -2,6 +2,7 @@
 
 pub mod button;
 pub mod checkbox;
+pub mod collapsible;
 pub mod container;
 pub mod input;
 pub mod layout;
@@ -20,6 +21,7 @@ use crate::macros::page::ast::{AttrValue, ControlFlowNode, ElementNode, ViewNode
 
 pub use button::generate_button_element;
 pub use checkbox::generate_checkbox_element;
+pub use collapsible::generate_collapsible_element;
 pub use container::generate_container;
 pub use input::generate_input_element;
 pub use list::generate_list_element;
@@ -54,6 +56,7 @@ fn generate_element(elem: &ElementNode) -> TokenStream {
         "input" => generate_input_element(elem),
         "button" => generate_button_element(elem),
         "checkbox" => generate_checkbox_element(elem),
+        "collapsible" => generate_collapsible_element(elem),
         "radio_group" => generate_radio_group_element(elem),
         "scroll_area" => generate_scroll_area_element(elem),
         "list" => generate_list_element(elem),

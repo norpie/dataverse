@@ -142,7 +142,10 @@ pub fn render_node(
                 children,
             };
             widget.render(frame, area, is_focused, &mut ctx);
-            ctx.hit_map.register(widget.id(), area, widget.captures_input());
+            // Only register full area if widget doesn't handle its own hit registration
+            if !widget.registers_own_hit_area() {
+                ctx.hit_map.register(widget.id(), area, widget.captures_input());
+            }
         }
     }
 }

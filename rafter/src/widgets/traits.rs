@@ -549,6 +549,33 @@ pub trait AnyWidget: Send + Sync + Debug {
         1
     }
 
+    /// Whether this widget stacks children vertically (adding heights).
+    ///
+    /// When true, the layout system calculates intrinsic height as
+    /// `widget_height + children_height` (stacking). When false, it uses
+    /// `max(widget_height, children_height)` (overlay/scroll).
+    ///
+    /// Default is false (overlay behavior, like ScrollArea).
+    /// Collapsible returns true because header + content are stacked.
+    fn stacks_children(&self) -> bool {
+        false
+    }
+
+    /// Whether this widget handles its own hit area registration.
+    ///
+    /// When true, the render system will NOT register the full widget area
+    /// as a hit box after rendering. The widget is responsible for calling
+    /// `ctx.hit_map.register()` for its clickable regions.
+    ///
+    /// This is useful for container widgets like Collapsible where only
+    /// the header should be clickable (for the widget itself), and children
+    /// should receive their own click events.
+    ///
+    /// Default is false (full area is registered automatically).
+    fn registers_own_hit_area(&self) -> bool {
+        false
+    }
+
     // =========================================================================
     // Event Dispatch
     // =========================================================================

@@ -210,6 +210,10 @@ pub fn handle_click_event<A: App>(
     // Focus the clicked element
     state.focus_state_mut().set_focus(hit_box.id.clone());
 
+    // Calculate viewport-relative coordinates once at the start
+    let x_rel = click.position.x.saturating_sub(hit_box.rect.x);
+    let y_rel = click.position.y.saturating_sub(hit_box.rect.y);
+
     // Check if this is a selectable widget (List/Tree/Table) via capability query
     if let Some(widget) = page.get_widget(&hit_box.id)
         && let Some(selectable) = widget.as_selectable()
@@ -217,9 +221,7 @@ pub fn handle_click_event<A: App>(
         debug!("Clicked on selectable element: {}", hit_box.id);
 
         // First check if click is on scrollbar (dispatch_click_event handles this)
-        if let Some(result) =
-            page.dispatch_click_event(&hit_box.id, click.position.x, click.position.y, cx)
-        {
+        if let Some(result) = page.dispatch_click_event(&hit_box.id, x_rel, y_rel, cx) {
             match result {
                 EventResult::StartDrag => {
                     state.drag_widget_id = Some(hit_box.id.clone());
@@ -233,19 +235,15 @@ pub fn handle_click_event<A: App>(
             }
         }
 
-        // Calculate viewport-relative coordinates
-        let x_in_viewport = click.position.x.saturating_sub(hit_box.rect.x);
-        let y_in_viewport = click.position.y.saturating_sub(hit_box.rect.y);
-
         // Check for header click (Table only has headers)
-        if selectable.has_header() && y_in_viewport == 0 {
-            debug!("Header click at x={}", x_in_viewport);
-            selectable.on_header_click(x_in_viewport, cx);
+        if selectable.has_header() && y_rel == 0 {
+            debug!("Header click at x={}", x_rel);
+            selectable.on_header_click(x_rel, cx);
         } else {
             // Data row click - handle with modifiers
             let ctrl = click.modifiers.ctrl;
             let shift = click.modifiers.shift;
-            selectable.on_click_with_modifiers(y_in_viewport, ctrl, shift, cx);
+            selectable.on_click_with_modifiers(y_rel, ctrl, shift, cx);
         }
 
         // Dispatch handlers based on context data
@@ -253,10 +251,8 @@ pub fn handle_click_event<A: App>(
         return true;
     }
 
-    // Not a selectable widget - dispatch click to widget
-    if let Some(result) =
-        page.dispatch_click_event(&hit_box.id, click.position.x, click.position.y, cx)
-    {
+    // Not a selectable widget - dispatch click to widget (coordinates already relative)
+    if let Some(result) = page.dispatch_click_event(&hit_box.id, x_rel, y_rel, cx) {
         match result {
             EventResult::StartDrag => {
                 state.drag_widget_id = Some(hit_box.id.clone());

@@ -22,8 +22,8 @@ pub mod prelude {
     pub use crate::color::{Color, StyleColor};
     pub use crate::widgets::{Alignment, Column, Table, TableId, TableRow};
     pub use crate::widgets::{
-        Button, Checkbox, Input, RadioGroup, ScrollArea, ScrollDirection, ScrollbarConfig,
-        ScrollbarVisibility,
+        Button, Checkbox, Collapsible, Input, RadioGroup, ScrollArea, ScrollDirection,
+        ScrollbarConfig, ScrollbarVisibility,
     };
     pub use crate::widgets::{List, ListId, ListItem, Selection, SelectionMode};
     pub use crate::widgets::{Tree, TreeId, TreeItem};

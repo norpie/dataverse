@@ -223,8 +223,13 @@ pub fn intrinsic_size(node: &Node, horizontal: bool) -> u16 {
                 0
             };
 
-            // Use the larger of widget's own intrinsic size or children's intrinsic size
-            let intrinsic = widget_intrinsic.max(child_intrinsic);
+            // Use the larger of widget's own intrinsic size or children's intrinsic size,
+            // OR add them together if the widget stacks children (like Collapsible)
+            let intrinsic = if widget.stacks_children() {
+                widget_intrinsic + child_intrinsic
+            } else {
+                widget_intrinsic.max(child_intrinsic)
+            };
 
             if horizontal {
                 if intrinsic > 0 {

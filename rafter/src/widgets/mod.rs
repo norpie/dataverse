@@ -8,6 +8,7 @@
 
 pub mod button;
 pub mod checkbox;
+pub mod collapsible;
 pub mod events;
 pub mod input;
 pub mod list;
@@ -21,6 +22,7 @@ pub mod tree;
 
 pub use button::Button;
 pub use checkbox::{Checkbox, CheckboxId};
+pub use collapsible::{Collapsible, CollapsibleId};
 pub use radio::{RadioGroup, RadioGroupId};
 pub use events::{WidgetEvents, EventResult};
 pub use input::{Input, InputId};
