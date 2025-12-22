@@ -36,6 +36,24 @@ pub fn calculate_modal_area(
             let h = page.intrinsic_height().min(screen.height.saturating_sub(4));
             (w.max(10), h.max(3))
         }
+        ModalSize::Sm => {
+            // Small: 30% of screen
+            let w = (screen.width as f32 * 0.30) as u16;
+            let h = (screen.height as f32 * 0.30) as u16;
+            (w.max(10), h.max(3))
+        }
+        ModalSize::Md => {
+            // Medium: 50% of screen
+            let w = (screen.width as f32 * 0.50) as u16;
+            let h = (screen.height as f32 * 0.50) as u16;
+            (w.max(10), h.max(3))
+        }
+        ModalSize::Lg => {
+            // Large: 80% of screen
+            let w = (screen.width as f32 * 0.80) as u16;
+            let h = (screen.height as f32 * 0.80) as u16;
+            (w.max(10), h.max(3))
+        }
         ModalSize::Fixed { width, height } => (width.min(screen.width), height.min(screen.height)),
         ModalSize::Proportional { width, height } => {
             let w = (screen.width as f32 * width) as u16;

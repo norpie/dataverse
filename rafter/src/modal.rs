@@ -28,6 +28,12 @@ pub enum ModalSize {
     /// Automatically fit content.
     #[default]
     Auto,
+    /// Small preset (30% of screen).
+    Sm,
+    /// Medium preset (50% of screen).
+    Md,
+    /// Large preset (80% of screen).
+    Lg,
     /// Fixed size in cells.
     Fixed { width: u16, height: u16 },
     /// Proportional to screen size (0.0 - 1.0).
