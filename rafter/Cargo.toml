@@ -13,6 +13,8 @@ thiserror = "2"
 color = "0.3"
 log = "0.4"
 simplelog = "0.12"
+regex = "1"
+email_address = "0.2"
 
 [lints]
 workspace = true
