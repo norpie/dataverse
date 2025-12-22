@@ -6,6 +6,7 @@ use ratatui::style::Style as RatatuiStyle;
 use ratatui::widgets::Block;
 
 use crate::node::{Justify, Layout as NodeLayout, Node};
+use crate::overlay::OverlayRequest;
 use crate::runtime::hit_test::HitTestMap;
 use crate::runtime::render::layout::{apply_border, apply_padding, calculate_constraints};
 use crate::runtime::render::render_node;
@@ -34,6 +35,7 @@ pub fn render_container(
     hit_map: &mut HitTestMap,
     theme: &dyn Theme,
     focused_id: Option<&str>,
+    overlay_requests: &mut Vec<OverlayRequest>,
 ) {
     // Fill background if specified
     if style.bg.is_some() {
@@ -78,7 +80,15 @@ pub fn render_container(
     let mut chunk_idx = 0;
     for child in children {
         if chunk_idx < chunks.len() {
-            render_node(frame, child, chunks[chunk_idx], hit_map, theme, focused_id);
+            render_node(
+                frame,
+                child,
+                chunks[chunk_idx],
+                hit_map,
+                theme,
+                focused_id,
+                overlay_requests,
+            );
             chunk_idx += 1;
             // Skip gap chunks (only when using manual gap, not when using flex spacing)
             if layout.gap > 0 && chunk_idx < chunks.len() {
@@ -99,6 +109,7 @@ pub fn render_stack(
     hit_map: &mut HitTestMap,
     theme: &dyn Theme,
     focused_id: Option<&str>,
+    overlay_requests: &mut Vec<OverlayRequest>,
 ) {
     // Fill background if specified
     if style.bg.is_some() {
@@ -118,6 +129,6 @@ pub fn render_stack(
 
     // Render all children in the same area (stacked)
     for child in children {
-        render_node(frame, child, padded_area, hit_map, theme, focused_id);
+        render_node(frame, child, padded_area, hit_map, theme, focused_id, overlay_requests);
     }
 }

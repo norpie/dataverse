@@ -13,6 +13,7 @@ use ratatui::style::Style as RatatuiStyle;
 
 use super::hit_test::HitTestMap;
 use crate::node::Node;
+use crate::overlay::OverlayRequest;
 use crate::style::Style;
 use crate::theme::{Theme, resolve_color};
 
@@ -63,6 +64,7 @@ pub fn render_node(
     hit_map: &mut HitTestMap,
     theme: &dyn Theme,
     focused_id: Option<&str>,
+    overlay_requests: &mut Vec<OverlayRequest>,
 ) {
     // Constrain area for auto-sized containers
     let area = layout::constrain_area(node, area);
@@ -87,6 +89,7 @@ pub fn render_node(
                 hit_map,
                 theme,
                 focused_id,
+                overlay_requests,
             );
         }
         Node::Row {
@@ -104,6 +107,7 @@ pub fn render_node(
                 hit_map,
                 theme,
                 focused_id,
+                overlay_requests,
             );
         }
         Node::Stack {
@@ -120,6 +124,7 @@ pub fn render_node(
                 hit_map,
                 theme,
                 focused_id,
+                overlay_requests,
             );
         }
         Node::Widget {
@@ -140,6 +145,7 @@ pub fn render_node(
                 style: ratatui_style,
                 layout,
                 children,
+                overlay_requests,
             };
             widget.render(frame, area, is_focused, &mut ctx);
             // Only register full area if widget doesn't handle its own hit registration

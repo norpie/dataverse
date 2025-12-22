@@ -6,6 +6,7 @@ use std::time::Instant;
 use crate::app::App;
 use crate::context::Toast;
 use crate::focus::FocusState;
+use crate::overlay::ActiveOverlay;
 use crate::theme::Theme;
 
 use super::input::InputState;
@@ -33,6 +34,9 @@ pub struct EventLoopState {
 
     /// Widget currently being dragged (for scrollbar drag).
     pub drag_widget_id: Option<String>,
+
+    /// Active overlays from the last render (for click-outside detection).
+    pub active_overlays: Vec<ActiveOverlay>,
 }
 
 impl EventLoopState {
@@ -45,6 +49,7 @@ impl EventLoopState {
             active_toasts: Vec::new(),
             current_theme: theme,
             drag_widget_id: None,
+            active_overlays: Vec::new(),
         }
     }
 

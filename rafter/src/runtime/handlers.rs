@@ -23,6 +23,59 @@ use super::modal::ModalStackEntry;
 use super::state::EventLoopState;
 
 // =============================================================================
+// Focus Change Helpers (with blur dispatch)
+// =============================================================================
+
+/// Set focus to a new element, dispatching blur to the old focused widget.
+fn set_focus_with_blur(
+    state: &mut EventLoopState,
+    page: &Node,
+    cx: &AppContext,
+    new_id: String,
+) {
+    let old_id = state.focused_id();
+    if old_id.as_deref() != Some(&new_id) {
+        // Dispatch blur to old widget
+        if let Some(ref old) = old_id {
+            page.dispatch_blur(old, cx);
+        }
+    }
+    state.focus_state_mut().set_focus(new_id);
+}
+
+/// Focus next element, dispatching blur to the old focused widget.
+fn focus_next_with_blur(state: &mut EventLoopState, page: &Node, cx: &AppContext) {
+    let old_id = state.focused_id();
+    state.focus_state_mut().focus_next();
+    let new_id = state.focused_id();
+    if old_id != new_id {
+        if let Some(ref old) = old_id {
+            page.dispatch_blur(old, cx);
+        }
+    }
+}
+
+/// Focus previous element, dispatching blur to the old focused widget.
+fn focus_prev_with_blur(state: &mut EventLoopState, page: &Node, cx: &AppContext) {
+    let old_id = state.focused_id();
+    state.focus_state_mut().focus_prev();
+    let new_id = state.focused_id();
+    if old_id != new_id {
+        if let Some(ref old) = old_id {
+            page.dispatch_blur(old, cx);
+        }
+    }
+}
+
+/// Clear focus, dispatching blur to the old focused widget.
+fn clear_focus_with_blur(state: &mut EventLoopState, page: &Node, cx: &AppContext) {
+    if let Some(ref old_id) = state.focused_id() {
+        page.dispatch_blur(old_id, cx);
+    }
+    state.focus_state_mut().clear_focus();
+}
+
+// =============================================================================
 // Handler Dispatch Helpers
 // =============================================================================
 
@@ -98,13 +151,12 @@ pub fn handle_key_event<A: App>(
 ) -> ControlFlow<(), bool> {
     // Handle Tab/Shift+Tab for focus navigation
     if key_combo.key == Key::Tab {
-        let focus_state = state.focus_state_mut();
         if key_combo.modifiers.shift {
             debug!("Focus prev");
-            focus_state.focus_prev();
+            focus_prev_with_blur(state, page, cx);
         } else {
             debug!("Focus next");
-            focus_state.focus_next();
+            focus_next_with_blur(state, page, cx);
         }
         return ControlFlow::Continue(true);
     }
@@ -147,7 +199,7 @@ pub fn handle_key_event<A: App>(
     // Handle Escape to clear focus (if not handled by widget)
     if key_combo.key == Key::Escape {
         debug!("Escape pressed, clearing focus");
-        state.focus_state_mut().clear_focus();
+        clear_focus_with_blur(state, page, cx);
         return ControlFlow::Continue(true);
     }
 
@@ -207,8 +259,8 @@ pub fn handle_click_event<A: App>(
         return false;
     };
 
-    // Focus the clicked element
-    state.focus_state_mut().set_focus(hit_box.id.clone());
+    // Focus the clicked element (with blur dispatch to old element)
+    set_focus_with_blur(state, page, cx, hit_box.id.clone());
 
     // Calculate viewport-relative coordinates once at the start
     let x_rel = click.position.x.saturating_sub(hit_box.rect.x);
@@ -298,11 +350,11 @@ pub fn handle_hover_event<A: App>(
         return false;
     };
 
-    // Focus if not already focused
+    // Focus if not already focused (with blur dispatch to old element)
     let current_focus = state.focused_id();
     if current_focus.as_deref() != Some(&hit_box.id) {
         debug!("Hover focus: {}", hit_box.id);
-        state.focus_state_mut().set_focus(hit_box.id.clone());
+        set_focus_with_blur(state, page, cx, hit_box.id.clone());
     }
 
     // Dispatch hover event to widget (lists use this to move cursor)

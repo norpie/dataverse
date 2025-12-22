@@ -9,6 +9,7 @@ use log::{debug, info, trace, warn};
 use crate::app::App;
 use crate::context::AppContext;
 use crate::focus::FocusId;
+use crate::overlay::{ActiveOverlay, OverlayRequest, calculate_overlay_position};
 use crate::theme::Theme;
 
 use super::RuntimeError;
@@ -171,6 +172,9 @@ pub async fn run_event_loop<A: App>(
         // Cache modal views (computed once per frame)
         let modal_views: Vec<_> = state.modal_stack.iter().map(|e| e.modal.page()).collect();
 
+        // Collect overlay requests during rendering
+        let mut overlay_requests: Vec<OverlayRequest> = Vec::new();
+
         let modal_stack_ref = &state.modal_stack;
         let draw_start = Instant::now();
         term_guard.terminal().draw(|frame| {
@@ -194,6 +198,7 @@ pub async fn run_event_loop<A: App>(
                 &mut hit_map,
                 theme.as_ref(),
                 app_focused,
+                &mut overlay_requests,
             );
 
             // Render modals on top with backdrop dimming
@@ -230,8 +235,46 @@ pub async fn run_event_loop<A: App>(
                     &mut hit_map,
                     theme.as_ref(),
                     modal_focused,
+                    &mut overlay_requests,
                 );
             }
+
+            // Render overlay layer (above modals, below toasts)
+            let mut active_overlays: Vec<ActiveOverlay> = Vec::new();
+            for request in overlay_requests.drain(..) {
+                let content_size = (
+                    request.content.intrinsic_width().max(1),
+                    request.content.intrinsic_height().max(1),
+                );
+                let overlay_area = calculate_overlay_position(
+                    area,
+                    request.anchor,
+                    content_size,
+                    request.position,
+                );
+
+                // Clear the overlay area
+                frame.render_widget(ratatui::widgets::Clear, overlay_area);
+
+                // Render overlay content (no focus - overlays don't trap focus)
+                // Note: We pass an empty overlay_requests here since overlays shouldn't nest
+                let mut nested_overlays: Vec<OverlayRequest> = Vec::new();
+                render_node(
+                    frame,
+                    &request.content,
+                    overlay_area,
+                    &mut hit_map,
+                    theme.as_ref(),
+                    None, // Overlays don't show focus indicators
+                    &mut nested_overlays,
+                );
+
+                // Track active overlay for click-outside detection
+                active_overlays.push(ActiveOverlay::new(request.owner_id, overlay_area));
+            }
+
+            // Store active overlays in state for event handling
+            state.active_overlays = active_overlays;
 
             // Render toasts on top of everything
             render_toasts(frame, &state.active_toasts, theme.as_ref());

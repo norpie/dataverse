@@ -4,6 +4,7 @@ use ratatui::Frame;
 use ratatui::layout::Rect;
 
 use crate::node::Node;
+use crate::overlay::OverlayRequest;
 use crate::runtime::hit_test::HitTestMap;
 use crate::theme::Theme;
 
@@ -11,4 +12,12 @@ use crate::theme::Theme;
 ///
 /// Components use this to render their child nodes (e.g., list items, table cells)
 /// without depending on the full render module.
-pub type RenderNodeFn = fn(&mut Frame, &Node, Rect, &mut HitTestMap, &dyn Theme, Option<&str>);
+pub type RenderNodeFn = fn(
+    &mut Frame,
+    &Node,
+    Rect,
+    &mut HitTestMap,
+    &dyn Theme,
+    Option<&str>,
+    &mut Vec<OverlayRequest>,
+);

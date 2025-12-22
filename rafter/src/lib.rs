@@ -7,6 +7,7 @@ pub mod focus;
 pub mod keybinds;
 pub mod modal;
 pub mod node;
+pub mod overlay;
 pub mod resource;
 pub mod runtime;
 pub mod state;

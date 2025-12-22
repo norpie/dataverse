@@ -183,6 +183,7 @@ impl AnyWidget for Collapsible {
                     ctx.hit_map,
                     ctx.theme,
                     ctx.focused_id,
+                    ctx.overlay_requests,
                 );
 
                 current_y += actual_height;

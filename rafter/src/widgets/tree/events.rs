@@ -311,6 +311,7 @@ impl<T: TreeItem + std::fmt::Debug> AnyWidget for Tree<T> {
                     ctx.hit_map,
                     ctx.theme,
                     ctx.focused_id,
+                    ctx.overlay_requests,
                 );
             }
         }

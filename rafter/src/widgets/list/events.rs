@@ -253,6 +253,7 @@ impl<T: ListItem + std::fmt::Debug> AnyWidget for List<T> {
                     ctx.hit_map,
                     ctx.theme,
                     ctx.focused_id,
+                    ctx.overlay_requests,
                 );
             }
         }

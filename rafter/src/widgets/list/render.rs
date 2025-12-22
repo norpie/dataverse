@@ -7,6 +7,7 @@ use ratatui::style::Style as RatatuiStyle;
 use crate::widgets::list::AnyList;
 use crate::widgets::scrollbar::render_vertical_scrollbar;
 use crate::node::Layout;
+use crate::overlay::OverlayRequest;
 use crate::runtime::hit_test::HitTestMap;
 use crate::runtime::render::RenderNodeFn;
 use crate::runtime::render::layout::{apply_border, apply_padding};
@@ -91,7 +92,9 @@ pub fn render(
 
         // Render the item
         if let Some(item_node) = widget.render_item(index) {
-            render_node(frame, &item_node, item_area, hit_map, theme, focused_id);
+            // Items don't register overlays - use a temporary vec that's discarded
+            let mut item_overlays: Vec<OverlayRequest> = Vec::new();
+            render_node(frame, &item_node, item_area, hit_map, theme, focused_id, &mut item_overlays);
         }
     }
 

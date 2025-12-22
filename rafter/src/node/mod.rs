@@ -647,6 +647,32 @@ impl Node {
         })
     }
 
+    /// Dispatch a blur event to a widget (called when focus moves away).
+    ///
+    /// This allows widgets to clean up state when they lose focus, such as
+    /// closing open overlays (dropdowns, menus, etc.).
+    pub fn dispatch_blur(&self, target_id: &str, cx: &AppContext) {
+        // Use a simpler visitor pattern since blur doesn't need a return value
+        fn visit_blur(node: &Node, target_id: &str, cx: &AppContext) -> bool {
+            match node {
+                Node::Widget { widget, .. } => {
+                    if widget.id() == target_id {
+                        widget.dispatch_blur(cx);
+                        return true;
+                    }
+                    false
+                }
+                Node::Column { children, .. }
+                | Node::Row { children, .. }
+                | Node::Stack { children, .. } => {
+                    children.iter().any(|c| visit_blur(c, target_id, cx))
+                }
+                _ => false,
+            }
+        }
+        visit_blur(self, target_id, cx);
+    }
+
     // =========================================================================
     // Intrinsic Size Calculations
     // =========================================================================

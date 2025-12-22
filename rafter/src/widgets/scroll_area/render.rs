@@ -10,6 +10,7 @@ use super::ScrollbarVisibility;
 use super::state::ScrollDirection;
 use crate::widgets::scrollbar::ScrollbarState;
 use crate::node::Node;
+use crate::overlay::OverlayRequest;
 use crate::runtime::hit_test::HitTestMap;
 use crate::runtime::render::RenderNodeFn;
 use crate::style::Style;
@@ -211,7 +212,7 @@ pub fn render_node_clipped(
     theme: &dyn Theme,
     focused_id: Option<&str>,
     style_to_ratatui: fn(&crate::style::Style, &dyn Theme) -> RatatuiStyle,
-    render_node: fn(&mut Frame, &Node, Rect, &mut HitTestMap, &dyn Theme, Option<&str>),
+    render_node: RenderNodeFn,
 ) {
     use crate::runtime::render::layout;
 
@@ -292,7 +293,8 @@ pub fn render_node_clipped(
         }
         // For other node types, fall back to regular rendering
         _ => {
-            render_node(frame, node, area, hit_map, theme, focused_id);
+            let mut fallback_overlays: Vec<OverlayRequest> = Vec::new();
+            render_node(frame, node, area, hit_map, theme, focused_id, &mut fallback_overlays);
         }
     }
 }
@@ -335,7 +337,7 @@ fn render_container_clipped(
     theme: &dyn Theme,
     focused_id: Option<&str>,
     style_to_ratatui: fn(&crate::style::Style, &dyn Theme) -> RatatuiStyle,
-    render_node: fn(&mut Frame, &Node, Rect, &mut HitTestMap, &dyn Theme, Option<&str>),
+    render_node: RenderNodeFn,
 ) {
     use crate::runtime::render::layout;
     use ratatui::layout::{Constraint, Direction, Layout};

@@ -394,6 +394,7 @@ use std::fmt::Debug;
 use crate::events::Modifiers;
 use crate::keybinds::HandlerId;
 use crate::node::Node;
+use crate::overlay::OverlayRequest;
 use crate::runtime::hit_test::HitTestMap;
 use crate::theme::Theme;
 
@@ -407,7 +408,7 @@ pub struct RenderContext<'a> {
     /// Hit test map for registering clickable areas
     pub hit_map: &'a mut HitTestMap,
     /// Function for rendering child nodes (used by container widgets)
-    pub render_node: fn(&mut Frame, &Node, Rect, &mut HitTestMap, &dyn Theme, Option<&str>),
+    pub render_node: fn(&mut Frame, &Node, Rect, &mut HitTestMap, &dyn Theme, Option<&str>, &mut Vec<OverlayRequest>),
     /// ID of the currently focused widget
     pub focused_id: Option<&'a str>,
     /// Pre-resolved ratatui style for this widget
@@ -416,6 +417,31 @@ pub struct RenderContext<'a> {
     pub layout: &'a crate::node::Layout,
     /// Child nodes (for container widgets like ScrollArea)
     pub children: &'a [Node],
+    /// Overlay requests (widgets register overlays here during render)
+    pub overlay_requests: &'a mut Vec<OverlayRequest>,
+}
+
+impl<'a> RenderContext<'a> {
+    /// Register an overlay to be rendered in the overlay layer.
+    ///
+    /// Widgets call this during their render phase when they need to display
+    /// floating content (dropdowns, menus, tooltips, etc.).
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// if self.is_open() {
+    ///     ctx.register_overlay(OverlayRequest {
+    ///         owner_id: self.id_string(),
+    ///         content: build_dropdown_content(),
+    ///         anchor: area,
+    ///         position: OverlayPosition::Below,
+    ///     });
+    /// }
+    /// ```
+    pub fn register_overlay(&mut self, request: OverlayRequest) {
+        self.overlay_requests.push(request);
+    }
 }
 
 /// Handler composition for widgets.
@@ -616,6 +642,23 @@ pub trait AnyWidget: Send + Sync + Debug {
     /// Handle drag release.
     fn dispatch_release(&self, _cx: &AppContext) -> EventResult {
         EventResult::Ignored
+    }
+
+    /// Handle focus loss (blur).
+    ///
+    /// Called when this widget loses focus. Useful for widgets that need
+    /// to perform cleanup when focus moves away, such as closing overlays.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// fn dispatch_blur(&self, _cx: &AppContext) {
+    ///     // Close any open overlay when focus leaves
+    ///     self.close();
+    /// }
+    /// ```
+    fn dispatch_blur(&self, _cx: &AppContext) {
+        // Default: do nothing
     }
 
     // =========================================================================
