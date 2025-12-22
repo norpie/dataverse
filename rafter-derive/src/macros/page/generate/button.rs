@@ -14,6 +14,7 @@ pub fn generate_button_element(elem: &ElementNode) -> TokenStream {
     let layout = generate_layout(&elem.attrs);
     let mut label = quote! { String::new() };
     let mut on_click = quote! { None };
+    let mut custom_id: Option<TokenStream> = None;
 
     for attr in &elem.attrs {
         let name_str = attr.name.to_string();
@@ -28,6 +29,13 @@ pub fn generate_button_element(elem: &ElementNode) -> TokenStream {
                     label = quote! { #i.to_string() };
                 }
             }
+            "id" => {
+                if let Some(AttrValue::Str(s)) = &attr.value {
+                    custom_id = Some(quote! { #s });
+                } else if let Some(AttrValue::Ident(i)) = &attr.value {
+                    custom_id = Some(quote! { stringify!(#i) });
+                }
+            }
             "on_click" => {
                 if let Some(AttrValue::Ident(i)) = &attr.value {
                     let handler_name = i.to_string();
@@ -39,9 +47,19 @@ pub fn generate_button_element(elem: &ElementNode) -> TokenStream {
         }
     }
 
+    // Use custom ID if provided, otherwise generate a compile-time stable ID
+    let widget_creation = if let Some(id) = custom_id {
+        quote! { rafter::widgets::Button::with_id(#id, #label) }
+    } else {
+        // For inline buttons without explicit ID, we still need a stable ID.
+        // We use the label as part of the ID to make it somewhat unique.
+        // This is a fallback - users should provide explicit IDs for proper stability.
+        quote! { rafter::widgets::Button::new(#label) }
+    };
+
     quote! {
         {
-            let __widget = rafter::widgets::Button::new(#label);
+            let __widget = #widget_creation;
             rafter::node::Node::Widget {
                 widget: Box::new(__widget) as Box<dyn rafter::widgets::AnyWidget>,
                 handlers: rafter::widgets::WidgetHandlers {

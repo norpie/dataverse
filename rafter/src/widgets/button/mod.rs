@@ -4,4 +4,4 @@ mod events;
 pub mod render;
 mod state;
 
-pub use state::{Button, ButtonId};
+pub use state::Button;

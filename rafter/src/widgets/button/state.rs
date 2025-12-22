@@ -3,21 +3,11 @@
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, RwLock};
 
-/// Unique identifier for a Button widget instance
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct ButtonId(usize);
-
-impl ButtonId {
-    fn new() -> Self {
-        static COUNTER: AtomicUsize = AtomicUsize::new(0);
-        Self(COUNTER.fetch_add(1, Ordering::SeqCst))
-    }
-}
-
-impl std::fmt::Display for ButtonId {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "__button_{}", self.0)
-    }
+/// Generate a unique auto-incremented button ID
+fn generate_auto_id() -> String {
+    static COUNTER: AtomicUsize = AtomicUsize::new(0);
+    let id = COUNTER.fetch_add(1, Ordering::SeqCst);
+    format!("__button_{}", id)
 }
 
 /// Internal state for a Button widget
@@ -63,7 +53,7 @@ struct ButtonInner {
 #[derive(Debug)]
 pub struct Button {
     /// Unique identifier for this button instance
-    id: ButtonId,
+    id: String,
     /// Internal state
     inner: Arc<RwLock<ButtonInner>>,
     /// Dirty flag for re-render
@@ -71,10 +61,10 @@ pub struct Button {
 }
 
 impl Button {
-    /// Create a new button with the given label
+    /// Create a new button with the given label (auto-generated ID)
     pub fn new(label: impl Into<String>) -> Self {
         Self {
-            id: ButtonId::new(),
+            id: generate_auto_id(),
             inner: Arc::new(RwLock::new(ButtonInner {
                 label: label.into(),
             })),
@@ -82,14 +72,20 @@ impl Button {
         }
     }
 
-    /// Get the unique ID for this button
-    pub fn id(&self) -> ButtonId {
-        self.id
+    /// Create a new button with a custom ID and label
+    pub fn with_id(id: impl Into<String>, label: impl Into<String>) -> Self {
+        Self {
+            id: id.into(),
+            inner: Arc::new(RwLock::new(ButtonInner {
+                label: label.into(),
+            })),
+            dirty: Arc::new(AtomicBool::new(false)),
+        }
     }
 
     /// Get the ID as a string (for node binding)
     pub fn id_string(&self) -> String {
-        self.id.to_string()
+        self.id.clone()
     }
 
     // -------------------------------------------------------------------------
@@ -134,7 +130,7 @@ impl Button {
 impl Clone for Button {
     fn clone(&self) -> Self {
         Self {
-            id: self.id,
+            id: self.id.clone(),
             inner: Arc::clone(&self.inner),
             dirty: Arc::clone(&self.dirty),
         }

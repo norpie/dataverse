@@ -5,7 +5,7 @@ use ratatui::Frame;
 
 use crate::context::AppContext;
 use crate::keybinds::{Key, KeyCombo};
-use crate::widgets::events::EventResult;
+use crate::widgets::events::{EventResult, WidgetEvent, WidgetEventKind};
 use crate::widgets::traits::{AnyWidget, RenderContext};
 
 use super::Button;
@@ -40,13 +40,13 @@ impl AnyWidget for Button {
         (self.label().len() + 2) as u16
     }
 
-    fn dispatch_click(&self, _x: u16, _y: u16, _cx: &AppContext) -> EventResult {
-        // Button click is handled by runtime dispatching on_click handler
-        // We just signal that we consumed the click
+    fn dispatch_click(&self, _x: u16, _y: u16, cx: &AppContext) -> EventResult {
+        // Push an Activate event so the runtime dispatches the on_click handler
+        cx.push_event(WidgetEvent::new(WidgetEventKind::Activate, self.id_string()));
         EventResult::Consumed
     }
 
-    fn dispatch_key(&self, key: &KeyCombo, _cx: &AppContext) -> EventResult {
+    fn dispatch_key(&self, key: &KeyCombo, cx: &AppContext) -> EventResult {
         // Only handle keys without modifiers
         if key.modifiers.ctrl || key.modifiers.alt || key.modifiers.shift {
             return EventResult::Ignored;
@@ -54,7 +54,8 @@ impl AnyWidget for Button {
 
         match key.key {
             Key::Enter | Key::Char(' ') => {
-                // Enter/Space activates the button - runtime will dispatch on_activate handler
+                // Push an Activate event so the runtime dispatches the on_click handler
+                cx.push_event(WidgetEvent::new(WidgetEventKind::Activate, self.id_string()));
                 EventResult::Consumed
             }
             _ => EventResult::Ignored,

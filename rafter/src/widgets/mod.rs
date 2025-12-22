@@ -19,7 +19,7 @@ pub mod table;
 mod traits;
 pub mod tree;
 
-pub use button::{Button, ButtonId};
+pub use button::Button;
 pub use checkbox::{Checkbox, CheckboxId};
 pub use radio::{RadioGroup, RadioGroupId};
 pub use events::{WidgetEvents, EventResult};
