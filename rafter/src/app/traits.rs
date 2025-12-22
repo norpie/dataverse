@@ -2,9 +2,13 @@
 
 use std::future::Future;
 
+use serde::{Serialize, de::DeserializeOwned};
+
 use crate::context::AppContext;
 use crate::input::keybinds::{HandlerId, Keybinds};
 use crate::node::Node;
+
+use super::config::AppConfig;
 
 /// Panic behavior for an app
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -47,8 +51,31 @@ pub enum PanicBehavior {
 /// }
 /// ```
 pub trait App: Clone + Send + Sync + 'static {
-    /// Get the app's display name
-    fn name(&self) -> &'static str;
+    /// Get the app-level configuration.
+    ///
+    /// This defines the display name, blur policy, persistence, and instance limits.
+    /// Override this to customize app behavior.
+    fn config() -> AppConfig
+    where
+        Self: Sized,
+    {
+        AppConfig::default()
+    }
+
+    /// Get the app's display name.
+    ///
+    /// This is a convenience method that returns the name from config.
+    fn name(&self) -> &'static str {
+        Self::config().name
+    }
+
+    /// Get the instance-specific title.
+    ///
+    /// Override this to provide a dynamic title (e.g., "Record #123").
+    /// By default, returns the app's config name.
+    fn title(&self) -> String {
+        Self::config().name.to_string()
+    }
 
     /// Get the app's keybinds
     fn keybinds(&self) -> Keybinds {
@@ -91,25 +118,42 @@ pub trait App: Clone + Send + Sync + 'static {
         None
     }
 
-    /// Called when the app starts
+    /// Called when the app starts.
     fn on_start(&self, cx: &AppContext) -> impl Future<Output = ()> + Send {
         let _ = cx;
         async {}
     }
 
-    /// Called when the app is brought to foreground
+    /// Called when the instance gains focus.
     fn on_foreground(&self, cx: &AppContext) -> impl Future<Output = ()> + Send {
         let _ = cx;
         async {}
     }
 
-    /// Called when the app is sent to background
+    /// Called when the instance loses focus.
     fn on_background(&self, cx: &AppContext) -> impl Future<Output = ()> + Send {
         let _ = cx;
         async {}
     }
 
-    /// Called when the app is about to stop
+    /// Called before close. Return false to cancel (e.g., unsaved changes).
+    ///
+    /// This is called when `cx.close(id)` is used. If it returns false,
+    /// the close is cancelled. `cx.force_close(id)` skips this check.
+    fn on_close_request(&self, cx: &AppContext) -> bool {
+        let _ = cx;
+        true
+    }
+
+    /// Called during cleanup after close is confirmed.
+    ///
+    /// Use this for final cleanup like saving state or releasing resources.
+    fn on_close(&self, cx: &AppContext) -> impl Future<Output = ()> + Send {
+        let _ = cx;
+        async {}
+    }
+
+    /// Called when the app is about to stop (legacy alias for on_close).
     fn on_stop(&self, cx: &AppContext) -> impl Future<Output = ()> + Send {
         let _ = cx;
         async {}
@@ -141,4 +185,56 @@ pub trait App: Clone + Send + Sync + 'static {
         );
         let _ = cx; // Suppress unused warning
     }
+}
+
+/// Trait for apps that support session persistence and recovery.
+///
+/// Implement this trait to allow your app's state to be saved when the
+/// application closes and restored when it starts again.
+///
+/// # Example
+///
+/// ```ignore
+/// #[derive(Serialize, Deserialize)]
+/// struct ViewerState {
+///     record_id: RecordId,
+///     scroll_position: usize,
+/// }
+///
+/// impl PersistentApp for RecordViewerApp {
+///     type SaveState = ViewerState;
+///
+///     fn save_state(&self) -> ViewerState {
+///         ViewerState {
+///             record_id: self.record_id.get(),
+///             scroll_position: self.scroll_position.get(),
+///         }
+///     }
+///
+///     fn restore(state: ViewerState) -> Self {
+///         Self {
+///             record_id: State::new(state.record_id),
+///             scroll_position: State::new(state.scroll_position),
+///         }
+///     }
+/// }
+/// ```
+pub trait PersistentApp: App {
+    /// The state type to serialize for session recovery.
+    ///
+    /// This should contain all the information needed to reconstruct
+    /// the app instance, including any arguments that were passed to create it.
+    type SaveState: Serialize + DeserializeOwned + Send + 'static;
+
+    /// Extract current state for saving.
+    ///
+    /// Called when creating a session snapshot.
+    fn save_state(&self) -> Self::SaveState;
+
+    /// Create an instance from saved state.
+    ///
+    /// Called when restoring a session.
+    fn restore(state: Self::SaveState) -> Self
+    where
+        Self: Sized;
 }
