@@ -255,6 +255,28 @@ pub fn handle_click_event<A: App>(
     state: &mut EventLoopState,
     cx: &AppContext,
 ) -> bool {
+    // First check if click is on an active overlay - route to overlay owner
+    for overlay in &state.active_overlays {
+        if overlay.contains(click.position.x, click.position.y) {
+            debug!("Click on overlay owned by: {}", overlay.owner_id);
+            
+            // Calculate position relative to overlay area
+            let x_rel = click.position.x.saturating_sub(overlay.area.x);
+            let y_rel = click.position.y.saturating_sub(overlay.area.y);
+            
+            // Dispatch overlay click to owner widget
+            if let Some(result) = page.dispatch_overlay_click(&overlay.owner_id, x_rel, y_rel, cx) {
+                if result.is_handled() {
+                    dispatch_component_handlers(page, &overlay.owner_id, app, &state.modal_stack, cx);
+                    return true;
+                }
+            }
+            
+            // If overlay didn't handle it, don't propagate to widgets below
+            return true;
+        }
+    }
+    
     let Some(hit_box) = hit_map.hit_test(click.position.x, click.position.y) else {
         return false;
     };
@@ -346,6 +368,25 @@ pub fn handle_hover_event<A: App>(
     state: &mut EventLoopState,
     cx: &AppContext,
 ) -> bool {
+    // First check if hover is on an active overlay - route to overlay owner
+    for overlay in &state.active_overlays {
+        if overlay.contains(position.x, position.y) {
+            // Calculate position relative to overlay area
+            let x_rel = position.x.saturating_sub(overlay.area.x);
+            let y_rel = position.y.saturating_sub(overlay.area.y);
+            
+            // Dispatch overlay hover to owner widget
+            if let Some(result) = page.dispatch_overlay_hover(&overlay.owner_id, x_rel, y_rel, cx) {
+                if result.is_handled() {
+                    dispatch_component_handlers(page, &overlay.owner_id, app, &state.modal_stack, cx);
+                }
+            }
+            
+            // Don't propagate to widgets below overlay
+            return false;
+        }
+    }
+
     let Some(hit_box) = hit_map.hit_test(position.x, position.y) else {
         return false;
     };
@@ -384,6 +425,31 @@ pub fn handle_scroll_event<A: App>(
     state: &EventLoopState,
     cx: &AppContext,
 ) {
+    // First check if scroll is on an active overlay - route to overlay owner
+    for overlay in &state.active_overlays {
+        if overlay.contains(scroll.position.x, scroll.position.y) {
+            debug!("Scroll on overlay owned by: {}", overlay.owner_id);
+            
+            // Dispatch overlay scroll to owner widget
+            if let Some(result) = page.dispatch_overlay_scroll(
+                &overlay.owner_id,
+                scroll.direction,
+                scroll.amount,
+                cx,
+            ) {
+                if result.is_handled() {
+                    // Dispatch on_scroll handler if present
+                    if let Some(handler_id) = page.get_list_scroll_handler(&overlay.owner_id) {
+                        dispatch_to_layer(app, &state.modal_stack, &handler_id, cx);
+                    }
+                }
+            }
+            
+            // Don't propagate to widgets below overlay
+            return;
+        }
+    }
+    
     let Some(hit_box) = hit_map.hit_test(scroll.position.x, scroll.position.y) else {
         return;
     };

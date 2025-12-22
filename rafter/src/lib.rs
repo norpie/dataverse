@@ -28,6 +28,7 @@ pub mod prelude {
         ScrollbarConfig, ScrollbarVisibility,
     };
     pub use crate::widgets::{List, ListId, ListItem, Selection, SelectionMode};
+    pub use crate::widgets::{Select, SelectId, SelectItem};
     pub use crate::widgets::{Tree, TreeId, TreeItem};
     // Widget trait system for custom widgets
     pub use crate::widgets::{AnyWidget, Scrollable, Selectable, WidgetHandlers};

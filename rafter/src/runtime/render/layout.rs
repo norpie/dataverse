@@ -208,7 +208,8 @@ pub fn intrinsic_size(node: &Node, horizontal: bool) -> u16 {
                 widget.intrinsic_height()
             };
 
-            let child_intrinsic = if !children.is_empty() {
+            // Check if widget hides children from layout (e.g., Select uses children for overlay only)
+            let child_intrinsic = if !children.is_empty() && !widget.hides_children_from_layout() {
                 // Container widget - calculate based on children
                 if horizontal {
                     children

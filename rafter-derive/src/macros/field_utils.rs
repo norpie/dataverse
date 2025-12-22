@@ -12,6 +12,7 @@ const BUILTIN_WIDGET_TYPES: &[&str] = &[
     "List",
     "RadioGroup",
     "ScrollArea",
+    "Select",
     "Table",
     "Tree",
 ];

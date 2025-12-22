@@ -602,6 +602,17 @@ pub trait AnyWidget: Send + Sync + Debug {
         false
     }
 
+    /// Whether this widget's children should be excluded from layout calculations.
+    ///
+    /// When true, the layout system ignores children when calculating the widget's
+    /// intrinsic size. This is useful for widgets like Select where children
+    /// are stored for overlay content but shouldn't affect the trigger's size.
+    ///
+    /// Default is false (children contribute to intrinsic size).
+    fn hides_children_from_layout(&self) -> bool {
+        false
+    }
+
     // =========================================================================
     // Event Dispatch
     // =========================================================================
@@ -659,6 +670,64 @@ pub trait AnyWidget: Send + Sync + Debug {
     /// ```
     fn dispatch_blur(&self, _cx: &AppContext) {
         // Default: do nothing
+    }
+
+    /// Handle a click event inside an overlay owned by this widget.
+    ///
+    /// This is called when the user clicks inside the overlay area.
+    /// The coordinates are relative to the overlay's top-left corner.
+    ///
+    /// # Arguments
+    ///
+    /// * `x` - X coordinate relative to overlay's left edge
+    /// * `y` - Y coordinate relative to overlay's top edge
+    /// * `cx` - Application context
+    ///
+    /// # Returns
+    ///
+    /// `EventResult::Consumed` if the click was handled, `EventResult::Ignored` otherwise.
+    fn dispatch_overlay_click(&self, _x: u16, _y: u16, _cx: &AppContext) -> EventResult {
+        EventResult::Ignored
+    }
+
+    /// Handle a scroll event inside an overlay owned by this widget.
+    ///
+    /// This is called when the user scrolls inside the overlay area.
+    ///
+    /// # Arguments
+    ///
+    /// * `direction` - Scroll direction
+    /// * `amount` - Scroll amount
+    /// * `cx` - Application context
+    ///
+    /// # Returns
+    ///
+    /// `EventResult::Consumed` if the scroll was handled, `EventResult::Ignored` otherwise.
+    fn dispatch_overlay_scroll(
+        &self,
+        _direction: crate::events::ScrollDirection,
+        _amount: u16,
+        _cx: &AppContext,
+    ) -> EventResult {
+        EventResult::Ignored
+    }
+
+    /// Handle a hover event inside an overlay owned by this widget.
+    ///
+    /// This is called when the mouse moves inside the overlay area.
+    /// The coordinates are relative to the overlay's top-left corner.
+    ///
+    /// # Arguments
+    ///
+    /// * `x` - X coordinate relative to overlay's left edge
+    /// * `y` - Y coordinate relative to overlay's top edge
+    /// * `cx` - Application context
+    ///
+    /// # Returns
+    ///
+    /// `EventResult::Consumed` if the hover was handled, `EventResult::Ignored` otherwise.
+    fn dispatch_overlay_hover(&self, _x: u16, _y: u16, _cx: &AppContext) -> EventResult {
+        EventResult::Ignored
     }
 
     // =========================================================================

@@ -673,6 +673,56 @@ impl Node {
         visit_blur(self, target_id, cx);
     }
 
+    /// Dispatch an overlay click event to the widget that owns the overlay.
+    ///
+    /// This is called when a click occurs inside an overlay's area.
+    /// The coordinates are relative to the overlay's top-left corner.
+    pub fn dispatch_overlay_click(
+        &self,
+        owner_id: &str,
+        x: u16,
+        y: u16,
+        cx: &AppContext,
+    ) -> Option<EventResult> {
+        self.dispatch_event(owner_id, |node| match node {
+            Self::Widget { widget, .. } => Some(widget.dispatch_overlay_click(x, y, cx)),
+            _ => None,
+        })
+    }
+
+    /// Dispatch an overlay scroll event to the widget that owns the overlay.
+    ///
+    /// This is called when a scroll occurs inside an overlay's area.
+    pub fn dispatch_overlay_scroll(
+        &self,
+        owner_id: &str,
+        direction: ScrollDirection,
+        amount: u16,
+        cx: &AppContext,
+    ) -> Option<EventResult> {
+        self.dispatch_event(owner_id, |node| match node {
+            Self::Widget { widget, .. } => Some(widget.dispatch_overlay_scroll(direction, amount, cx)),
+            _ => None,
+        })
+    }
+
+    /// Dispatch an overlay hover event to the widget that owns the overlay.
+    ///
+    /// This is called when the mouse hovers inside an overlay's area.
+    /// The coordinates are relative to the overlay's top-left corner.
+    pub fn dispatch_overlay_hover(
+        &self,
+        owner_id: &str,
+        x: u16,
+        y: u16,
+        cx: &AppContext,
+    ) -> Option<EventResult> {
+        self.dispatch_event(owner_id, |node| match node {
+            Self::Widget { widget, .. } => Some(widget.dispatch_overlay_hover(x, y, cx)),
+            _ => None,
+        })
+    }
+
     // =========================================================================
     // Intrinsic Size Calculations
     // =========================================================================

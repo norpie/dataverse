@@ -9,6 +9,7 @@ pub mod layout;
 pub mod list;
 pub mod radio_group;
 pub mod scroll_area;
+pub mod select;
 pub mod style;
 pub mod table;
 pub mod text;
@@ -27,6 +28,7 @@ pub use input::generate_input_element;
 pub use list::generate_list_element;
 pub use radio_group::generate_radio_group_element;
 pub use scroll_area::generate_scroll_area_element;
+pub use select::generate_select_element;
 pub use table::generate_table_element;
 pub use text::{generate_text, generate_text_element};
 pub use tree::generate_tree_element;
@@ -59,6 +61,7 @@ fn generate_element(elem: &ElementNode) -> TokenStream {
         "collapsible" => generate_collapsible_element(elem),
         "radio_group" => generate_radio_group_element(elem),
         "scroll_area" => generate_scroll_area_element(elem),
+        "select" => generate_select_element(elem),
         "list" => generate_list_element(elem),
         "tree" => generate_tree_element(elem),
         "table" => generate_table_element(elem),

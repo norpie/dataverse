@@ -15,6 +15,7 @@ pub mod list;
 pub mod radio;
 pub mod scroll_area;
 pub mod scrollbar;
+pub mod select;
 pub mod selection;
 pub mod table;
 mod traits;
@@ -31,6 +32,7 @@ pub use scroll_area::{ScrollArea, ScrollAreaId, ScrollDirection};
 pub use scrollbar::{
     ScrollbarConfig, ScrollbarDrag, ScrollbarGeometry, ScrollbarState, ScrollbarVisibility,
 };
+pub use select::{Select, SelectId, SelectItem};
 pub use table::{Alignment, AnyTable, Column, Table, TableId, TableRow};
 pub use traits::{
     // Legacy traits (still used by existing widgets, will be migrated in Phase 5)
