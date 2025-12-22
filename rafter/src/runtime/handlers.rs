@@ -10,8 +10,8 @@ use log::debug;
 
 use crate::app::App;
 use crate::context::AppContext;
-use crate::events::{ClickEvent, Position, ScrollEvent};
-use crate::keybinds::{HandlerId, Key, KeyCombo, Keybinds};
+use crate::input::events::{ClickEvent, Position, ScrollEvent};
+use crate::input::keybinds::{HandlerId, Key, KeyCombo, Keybinds};
 use crate::node::Node;
 use crate::widgets::events::WidgetEventKind;
 use crate::widgets::EventResult;

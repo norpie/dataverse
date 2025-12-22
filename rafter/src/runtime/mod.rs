@@ -16,7 +16,7 @@ use std::sync::Arc;
 use log::info;
 
 use crate::app::{App, PanicBehavior};
-use crate::theme::{DefaultTheme, Theme};
+use crate::styling::theme::{DefaultTheme, Theme};
 
 use terminal::TerminalGuard;
 

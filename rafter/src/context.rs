@@ -6,10 +6,10 @@ use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
 
 use crate::widgets::events::WidgetEvent;
-use crate::focus::FocusId;
-use crate::keybinds::{KeybindError, KeybindInfo, Keybinds};
-use crate::modal::{Modal, ModalContext, ModalDyn, ModalEntry};
-use crate::theme::Theme;
+use crate::input::focus::FocusId;
+use crate::input::keybinds::{KeybindError, KeybindInfo, Keybinds};
+use crate::layers::modal::{Modal, ModalContext, ModalDyn, ModalEntry};
+use crate::styling::theme::Theme;
 
 /// Toast notification level
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]

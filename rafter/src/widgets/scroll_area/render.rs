@@ -10,11 +10,11 @@ use super::ScrollbarVisibility;
 use super::state::ScrollDirection;
 use crate::widgets::scrollbar::ScrollbarState;
 use crate::node::Node;
-use crate::overlay::OverlayRequest;
+use crate::layers::overlay::OverlayRequest;
 use crate::runtime::hit_test::HitTestMap;
 use crate::runtime::render::RenderNodeFn;
-use crate::style::Style;
-use crate::theme::Theme;
+use crate::styling::style::Style;
+use crate::styling::theme::Theme;
 use crate::utils::geometry::{intersect_rects, rects_overlap};
 use crate::utils::text::wrap_text;
 
@@ -211,7 +211,7 @@ pub fn render_node_clipped(
     hit_map: &mut HitTestMap,
     theme: &dyn Theme,
     focused_id: Option<&str>,
-    style_to_ratatui: fn(&crate::style::Style, &dyn Theme) -> RatatuiStyle,
+    style_to_ratatui: fn(&crate::styling::style::Style, &dyn Theme) -> RatatuiStyle,
     render_node: RenderNodeFn,
 ) {
     use crate::runtime::render::layout;
@@ -336,7 +336,7 @@ fn render_container_clipped(
     hit_map: &mut HitTestMap,
     theme: &dyn Theme,
     focused_id: Option<&str>,
-    style_to_ratatui: fn(&crate::style::Style, &dyn Theme) -> RatatuiStyle,
+    style_to_ratatui: fn(&crate::styling::style::Style, &dyn Theme) -> RatatuiStyle,
     render_node: RenderNodeFn,
 ) {
     use crate::runtime::render::layout;

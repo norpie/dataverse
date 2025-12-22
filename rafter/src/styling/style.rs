@@ -1,6 +1,6 @@
 use ratatui::style::{Modifier, Style as RatatuiStyle};
 
-use crate::color::StyleColor;
+use crate::styling::color::StyleColor;
 
 /// Text and element styling
 #[derive(Debug, Clone, Default)]

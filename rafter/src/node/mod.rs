@@ -5,9 +5,9 @@ mod layout;
 pub use layout::{Align, Border, Direction, Justify, Layout, Size};
 
 use crate::context::AppContext;
-use crate::events::{Modifiers, ScrollDirection};
-use crate::keybinds::{HandlerId, KeyCombo};
-use crate::style::Style;
+use crate::input::events::{Modifiers, ScrollDirection};
+use crate::input::keybinds::{HandlerId, KeyCombo};
+use crate::styling::style::Style;
 use crate::widgets::events::EventResult;
 use crate::widgets::{AnyWidget, WidgetHandlers};
 

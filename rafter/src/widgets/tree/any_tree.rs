@@ -9,8 +9,8 @@ use crate::widgets::scrollbar::{
 };
 use crate::widgets::traits::AnySelectable;
 use crate::context::AppContext;
-use crate::events::{Modifiers, ScrollDirection};
-use crate::keybinds::KeyCombo;
+use crate::input::events::{Modifiers, ScrollDirection};
+use crate::input::keybinds::KeyCombo;
 use crate::node::Node;
 
 use super::item::TreeItem;

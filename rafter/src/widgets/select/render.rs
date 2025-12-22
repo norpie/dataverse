@@ -6,10 +6,10 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 use ratatui::Frame;
 
-use crate::color::{Color, StyleColor};
+use crate::styling::color::{Color, StyleColor};
 use crate::node::{Border, Layout, Node, Size};
-use crate::style::Style;
-use crate::theme::Theme;
+use crate::styling::style::Style;
+use crate::styling::theme::Theme;
 use crate::widgets::traits::RenderContext;
 
 use super::Select;

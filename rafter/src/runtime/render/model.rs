@@ -4,9 +4,9 @@ use ratatui::Frame;
 use ratatui::layout::Rect;
 
 use crate::node::Node;
-use crate::overlay::OverlayRequest;
+use crate::layers::overlay::OverlayRequest;
 use crate::runtime::hit_test::HitTestMap;
-use crate::theme::Theme;
+use crate::styling::theme::Theme;
 
 /// Function pointer for recursive node rendering.
 ///

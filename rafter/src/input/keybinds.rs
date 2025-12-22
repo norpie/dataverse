@@ -1,4 +1,4 @@
-use crate::events::Modifiers;
+use crate::input::events::Modifiers;
 
 /// Error when parsing a key string
 #[derive(Debug, Clone, PartialEq, Eq)]

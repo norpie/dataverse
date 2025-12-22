@@ -5,9 +5,9 @@ use std::time::Instant;
 
 use crate::app::App;
 use crate::context::Toast;
-use crate::focus::FocusState;
-use crate::overlay::ActiveOverlay;
-use crate::theme::Theme;
+use crate::input::focus::FocusState;
+use crate::layers::overlay::ActiveOverlay;
+use crate::styling::theme::Theme;
 
 use super::input::InputState;
 use super::modal::ModalStackEntry;

@@ -5,7 +5,7 @@ use ratatui::layout::Rect;
 use ratatui::style::Style as RatatuiStyle;
 
 use super::types::{ScrollbarConfig, ScrollbarGeometry};
-use crate::theme::Theme;
+use crate::styling::theme::Theme;
 
 /// Render the vertical scrollbar and return its geometry.
 ///
@@ -31,14 +31,14 @@ pub fn render_vertical_scrollbar(
     let track_color = config
         .track_color
         .as_ref()
-        .and_then(|c| crate::theme::resolve_style_color(c, theme))
-        .unwrap_or_else(|| crate::color::Color::rgb(60, 60, 70));
+        .and_then(|c| crate::styling::theme::resolve_style_color(c, theme))
+        .unwrap_or_else(|| crate::styling::color::Color::rgb(60, 60, 70));
 
     let handle_color = config
         .handle_color
         .as_ref()
-        .and_then(|c| crate::theme::resolve_style_color(c, theme))
-        .unwrap_or_else(|| crate::color::Color::rgb(120, 120, 140));
+        .and_then(|c| crate::styling::theme::resolve_style_color(c, theme))
+        .unwrap_or_else(|| crate::styling::color::Color::rgb(120, 120, 140));
 
     let track_style = RatatuiStyle::default().bg(track_color.to_ratatui());
     let handle_style = RatatuiStyle::default().bg(handle_color.to_ratatui());
@@ -103,14 +103,14 @@ pub fn render_horizontal_scrollbar(
     let track_color = config
         .track_color
         .as_ref()
-        .and_then(|c| crate::theme::resolve_style_color(c, theme))
-        .unwrap_or_else(|| crate::color::Color::rgb(60, 60, 70));
+        .and_then(|c| crate::styling::theme::resolve_style_color(c, theme))
+        .unwrap_or_else(|| crate::styling::color::Color::rgb(60, 60, 70));
 
     let handle_color = config
         .handle_color
         .as_ref()
-        .and_then(|c| crate::theme::resolve_style_color(c, theme))
-        .unwrap_or_else(|| crate::color::Color::rgb(120, 120, 140));
+        .and_then(|c| crate::styling::theme::resolve_style_color(c, theme))
+        .unwrap_or_else(|| crate::styling::color::Color::rgb(120, 120, 140));
 
     let track_style = RatatuiStyle::default().bg(track_color.to_ratatui());
     let handle_style = RatatuiStyle::default().bg(handle_color.to_ratatui());

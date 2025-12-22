@@ -6,8 +6,8 @@ use crossterm::event::{
 };
 use log::trace;
 
-use crate::events::{ClickEvent, ClickKind, Modifiers, Position, ScrollDirection, ScrollEvent};
-use crate::keybinds::{Key, KeyCombo};
+use crate::input::events::{ClickEvent, ClickKind, Modifiers, Position, ScrollDirection, ScrollEvent};
+use crate::input::keybinds::{Key, KeyCombo};
 
 /// Drag event for mouse drag operations
 #[derive(Debug, Clone)]

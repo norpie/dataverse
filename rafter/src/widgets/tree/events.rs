@@ -5,8 +5,8 @@ use ratatui::widgets::Block;
 use ratatui::Frame;
 
 use crate::context::AppContext;
-use crate::events::{Modifiers, ScrollDirection};
-use crate::keybinds::{Key, KeyCombo};
+use crate::input::events::{Modifiers, ScrollDirection};
+use crate::input::keybinds::{Key, KeyCombo};
 use crate::runtime::render::layout::{apply_border, apply_padding};
 use crate::widgets::events::{EventResult, WidgetEvent, WidgetEventKind, WidgetEvents};
 use crate::widgets::scrollbar::{
@@ -218,7 +218,7 @@ impl<T: TreeItem + std::fmt::Debug> AnyWidget for Tree<T> {
 
     fn dispatch_scroll(
         &self,
-        direction: crate::events::ScrollDirection,
+        direction: crate::input::events::ScrollDirection,
         amount: u16,
         cx: &AppContext,
     ) -> EventResult {

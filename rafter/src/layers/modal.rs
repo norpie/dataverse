@@ -9,7 +9,7 @@ use std::sync::{Arc, Mutex};
 use tokio::sync::oneshot;
 
 use crate::context::AppContext;
-use crate::keybinds::{HandlerId, Keybinds};
+use crate::input::keybinds::{HandlerId, Keybinds};
 use crate::node::Node;
 
 /// Modal position configuration.

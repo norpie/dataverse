@@ -1,6 +1,6 @@
 //! Scrollbar types used by scrollable widgets.
 
-use crate::color::StyleColor;
+use crate::styling::color::StyleColor;
 
 /// Scrollbar visibility configuration.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]

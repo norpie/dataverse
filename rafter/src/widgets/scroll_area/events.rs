@@ -5,8 +5,8 @@ use ratatui::widgets::Block;
 use ratatui::Frame;
 
 use crate::context::AppContext;
-use crate::events::{Modifiers, ScrollDirection};
-use crate::keybinds::{Key, KeyCombo};
+use crate::input::events::{Modifiers, ScrollDirection};
+use crate::input::keybinds::{Key, KeyCombo};
 use crate::widgets::events::{EventResult, WidgetEvents};
 use crate::widgets::scrollbar::{
     handle_scroll, handle_scrollbar_click, handle_scrollbar_drag, handle_scrollbar_release,
@@ -130,7 +130,7 @@ impl AnyWidget for ScrollArea {
 
     fn dispatch_scroll(
         &self,
-        direction: crate::events::ScrollDirection,
+        direction: crate::input::events::ScrollDirection,
         amount: u16,
         cx: &AppContext,
     ) -> EventResult {

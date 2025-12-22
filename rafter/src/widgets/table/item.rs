@@ -181,7 +181,7 @@ pub trait TableRow: Send + Sync + Clone + 'static {
     /// * `selected` - Whether this row is selected
     fn render_row(&self, cells: Vec<Node>, focused: bool, selected: bool) -> Node {
         use crate::node::Layout;
-        use crate::style::Style;
+        use crate::styling::style::Style;
 
         let row_content = Node::Row {
             children: cells,
@@ -201,9 +201,9 @@ pub trait TableRow: Send + Sync + Clone + 'static {
     /// - Selected: bg=#6E5494 (dim purple), fg=background (inverted)
     /// - Neither: no styling applied
     fn apply_default_row_style(child: Node, focused: bool, selected: bool) -> Node {
-        use crate::color::{Color, StyleColor};
+        use crate::styling::color::{Color, StyleColor};
         use crate::node::{Layout, Size};
-        use crate::style::Style;
+        use crate::styling::style::Style;
 
         let style = if focused || selected {
             // Focused gets brighter purple, selected gets dimmer purple

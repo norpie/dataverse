@@ -2,9 +2,9 @@
 
 use ratatui::layout::Rect;
 
-use crate::focus::FocusState;
-use crate::keybinds::Keybinds;
-use crate::modal::{ModalDyn, ModalPosition, ModalSize};
+use crate::input::focus::FocusState;
+use crate::input::keybinds::Keybinds;
+use crate::layers::modal::{ModalDyn, ModalPosition, ModalSize};
 use crate::node::Node;
 
 use super::input::InputState;

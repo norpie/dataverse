@@ -7,7 +7,7 @@ use ratatui::widgets::Paragraph;
 use ratatui::Frame;
 
 use crate::context::AppContext;
-use crate::keybinds::{Key, KeyCombo};
+use crate::input::keybinds::{Key, KeyCombo};
 use crate::widgets::events::{EventResult, WidgetEvent, WidgetEventKind, WidgetEvents};
 use crate::widgets::traits::{AnyWidget, RenderContext};
 

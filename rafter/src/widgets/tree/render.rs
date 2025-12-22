@@ -7,11 +7,11 @@ use ratatui::style::Style as RatatuiStyle;
 use crate::widgets::scrollbar::render_vertical_scrollbar;
 use crate::widgets::tree::AnyTree;
 use crate::node::Layout;
-use crate::overlay::OverlayRequest;
+use crate::layers::overlay::OverlayRequest;
 use crate::runtime::hit_test::HitTestMap;
 use crate::runtime::render::RenderNodeFn;
 use crate::runtime::render::layout::{apply_border, apply_padding};
-use crate::theme::Theme;
+use crate::styling::theme::Theme;
 
 /// Render a tree widget.
 #[allow(clippy::too_many_arguments)]

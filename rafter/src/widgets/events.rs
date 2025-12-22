@@ -8,8 +8,8 @@
 //! The event loop then drains the queue and dispatches appropriate handlers.
 
 use crate::context::AppContext;
-use crate::events::{Modifiers, ScrollDirection};
-use crate::keybinds::KeyCombo;
+use crate::input::events::{Modifiers, ScrollDirection};
+use crate::input::keybinds::KeyCombo;
 
 // =============================================================================
 // Widget Event Types

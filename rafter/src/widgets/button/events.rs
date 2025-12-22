@@ -4,7 +4,7 @@ use ratatui::layout::Rect;
 use ratatui::Frame;
 
 use crate::context::AppContext;
-use crate::keybinds::{Key, KeyCombo};
+use crate::input::keybinds::{Key, KeyCombo};
 use crate::widgets::events::{EventResult, WidgetEvent, WidgetEventKind};
 use crate::widgets::traits::{AnyWidget, RenderContext};
 

@@ -4,10 +4,10 @@ use ratatui::layout::Rect;
 use ratatui::Frame;
 
 use crate::context::AppContext;
-use crate::events::ScrollDirection;
-use crate::keybinds::{Key, KeyCombo};
+use crate::input::events::ScrollDirection;
+use crate::input::keybinds::{Key, KeyCombo};
 use crate::node::Node;
-use crate::overlay::{OverlayPosition, OverlayRequest};
+use crate::layers::overlay::{OverlayPosition, OverlayRequest};
 use crate::widgets::events::{EventResult, WidgetEvent, WidgetEventKind, WidgetEvents};
 use crate::widgets::traits::{AnyWidget, RenderContext};
 

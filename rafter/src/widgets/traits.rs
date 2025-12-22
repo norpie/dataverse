@@ -4,7 +4,7 @@
 //! scrolling and share the same state management patterns.
 
 use crate::context::AppContext;
-use crate::keybinds::{Key, KeyCombo};
+use crate::input::keybinds::{Key, KeyCombo};
 
 use super::events::{WidgetEvent, WidgetEventKind, EventResult};
 use super::scrollbar::ScrollbarState;
@@ -391,12 +391,12 @@ use ratatui::layout::Rect;
 use ratatui::Frame;
 use std::fmt::Debug;
 
-use crate::events::Modifiers;
-use crate::keybinds::HandlerId;
+use crate::input::events::Modifiers;
+use crate::input::keybinds::HandlerId;
 use crate::node::Node;
-use crate::overlay::OverlayRequest;
+use crate::layers::overlay::OverlayRequest;
 use crate::runtime::hit_test::HitTestMap;
-use crate::theme::Theme;
+use crate::styling::theme::Theme;
 
 /// Context passed to widgets during rendering.
 ///
@@ -638,7 +638,7 @@ pub trait AnyWidget: Send + Sync + Debug {
     /// Handle a scroll event.
     fn dispatch_scroll(
         &self,
-        _direction: crate::events::ScrollDirection,
+        _direction: crate::input::events::ScrollDirection,
         _amount: u16,
         _cx: &AppContext,
     ) -> EventResult {
@@ -705,7 +705,7 @@ pub trait AnyWidget: Send + Sync + Debug {
     /// `EventResult::Consumed` if the scroll was handled, `EventResult::Ignored` otherwise.
     fn dispatch_overlay_scroll(
         &self,
-        _direction: crate::events::ScrollDirection,
+        _direction: crate::input::events::ScrollDirection,
         _amount: u16,
         _cx: &AppContext,
     ) -> EventResult {

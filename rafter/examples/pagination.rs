@@ -14,9 +14,9 @@
 use std::fs::File;
 
 use log::LevelFilter;
-use rafter::color::Color;
+use rafter::styling::color::Color;
 use rafter::prelude::*;
-use rafter::theme::{DefaultTheme, Theme};
+use rafter::styling::theme::{DefaultTheme, Theme};
 use simplelog::{Config, WriteLogger};
 
 // =============================================================================

@@ -6,11 +6,11 @@ use ratatui::style::Style as RatatuiStyle;
 use ratatui::widgets::Block;
 
 use crate::node::{Justify, Layout as NodeLayout, Node};
-use crate::overlay::OverlayRequest;
+use crate::layers::overlay::OverlayRequest;
 use crate::runtime::hit_test::HitTestMap;
 use crate::runtime::render::layout::{apply_border, apply_padding, calculate_constraints};
 use crate::runtime::render::render_node;
-use crate::theme::Theme;
+use crate::styling::theme::Theme;
 
 /// Convert our Justify enum to ratatui's Flex enum
 fn justify_to_flex(justify: Justify) -> Flex {

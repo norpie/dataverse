@@ -6,13 +6,13 @@ use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::Style as RatatuiStyle;
 
-use crate::color::Color;
+use crate::styling::color::Color;
 use crate::widgets::scrollbar::{render_horizontal_scrollbar, render_vertical_scrollbar};
 use crate::widgets::table::{Alignment, AnyTable, Column};
 use crate::node::{Layout, Node};
 use crate::runtime::hit_test::HitTestMap;
 use crate::runtime::render::layout::{apply_border, apply_padding};
-use crate::theme::Theme;
+use crate::styling::theme::Theme;
 
 /// Render a table widget.
 #[allow(clippy::too_many_arguments)]

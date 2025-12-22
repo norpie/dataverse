@@ -13,9 +13,9 @@ use ratatui::style::Style as RatatuiStyle;
 
 use super::hit_test::HitTestMap;
 use crate::node::Node;
-use crate::overlay::OverlayRequest;
-use crate::style::Style;
-use crate::theme::{Theme, resolve_color};
+use crate::layers::overlay::OverlayRequest;
+use crate::styling::style::Style;
+use crate::styling::theme::{Theme, resolve_color};
 
 pub use backdrop::{dim_backdrop, fill_background};
 pub use toasts::render_toasts;

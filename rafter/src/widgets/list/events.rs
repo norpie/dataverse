@@ -5,8 +5,8 @@ use ratatui::widgets::Block;
 use ratatui::Frame;
 
 use crate::context::AppContext;
-use crate::events::{Modifiers, ScrollDirection};
-use crate::keybinds::KeyCombo;
+use crate::input::events::{Modifiers, ScrollDirection};
+use crate::input::keybinds::KeyCombo;
 use crate::runtime::render::layout::{apply_border, apply_padding};
 use crate::widgets::events::{EventResult, WidgetEvents};
 use crate::widgets::scrollbar::{
@@ -162,7 +162,7 @@ impl<T: ListItem + std::fmt::Debug> AnyWidget for List<T> {
 
     fn dispatch_scroll(
         &self,
-        direction: crate::events::ScrollDirection,
+        direction: crate::input::events::ScrollDirection,
         amount: u16,
         cx: &AppContext,
     ) -> EventResult {

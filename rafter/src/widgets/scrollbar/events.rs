@@ -6,7 +6,7 @@
 use super::{ScrollbarDrag, ScrollbarState};
 use crate::widgets::events::EventResult;
 use crate::context::AppContext;
-use crate::events::{Modifiers, ScrollDirection};
+use crate::input::events::{Modifiers, ScrollDirection};
 
 /// Handle a click event on scrollbars.
 ///

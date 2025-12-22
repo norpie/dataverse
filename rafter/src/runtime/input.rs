@@ -4,7 +4,7 @@ use std::time::{Duration, Instant};
 
 use log::{debug, trace};
 
-use crate::keybinds::{HandlerId, KeyCombo, Keybinds};
+use crate::input::keybinds::{HandlerId, KeyCombo, Keybinds};
 
 /// Timeout for key sequences (e.g., "gg")
 const SEQUENCE_TIMEOUT: Duration = Duration::from_millis(500);
@@ -82,7 +82,7 @@ impl InputState {
                     "Exact match found: {:?} (scope: {:?})",
                     bind.handler, bind.scope
                 );
-                if bind.scope != crate::keybinds::KeybindScope::Global {
+                if bind.scope != crate::input::keybinds::KeybindScope::Global {
                     view_exact_match = Some(bind.handler.clone());
                 } else if global_exact_match.is_none() {
                     global_exact_match = Some(bind.handler.clone());

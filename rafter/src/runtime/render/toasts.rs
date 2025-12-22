@@ -9,7 +9,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Clear, Paragraph};
 
 use crate::context::{Toast, ToastLevel};
-use crate::theme::Theme;
+use crate::styling::theme::Theme;
 
 /// Render active toasts in the bottom-right corner
 pub fn render_toasts(frame: &mut Frame, toasts: &[(Toast, Instant)], theme: &dyn Theme) {

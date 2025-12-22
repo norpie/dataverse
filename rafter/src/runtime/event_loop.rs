@@ -8,9 +8,9 @@ use log::{debug, info, trace, warn};
 
 use crate::app::App;
 use crate::context::AppContext;
-use crate::focus::FocusId;
-use crate::overlay::{ActiveOverlay, OverlayRequest, calculate_overlay_position};
-use crate::theme::Theme;
+use crate::input::focus::FocusId;
+use crate::layers::overlay::{ActiveOverlay, OverlayRequest, calculate_overlay_position};
+use crate::styling::theme::Theme;
 
 use super::RuntimeError;
 use super::events::{Event, convert_event};
@@ -22,8 +22,8 @@ use super::render::{dim_backdrop, fill_background, render_node, render_toasts};
 use super::state::EventLoopState;
 use super::terminal::TerminalGuard;
 
-use crate::events::Position;
-use crate::focus::FocusState;
+use crate::input::events::Position;
+use crate::input::focus::FocusState;
 
 /// Coalesce pending hover events, returning the latest hover position.
 /// This drains all pending events and returns:

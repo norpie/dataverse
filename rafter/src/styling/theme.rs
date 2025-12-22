@@ -49,7 +49,7 @@
 
 use std::sync::Arc;
 
-use crate::color::{Color, StyleColor};
+use crate::styling::color::{Color, StyleColor};
 
 /// Trait for theme types that can resolve named colors.
 ///
