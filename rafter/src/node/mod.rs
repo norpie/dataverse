@@ -686,9 +686,27 @@ impl Node {
                     .unwrap_or(0);
                 max_child + chrome_h
             }
-            Self::Widget { layout, .. } => {
+            Self::Widget {
+                layout,
+                widget,
+                children,
+                ..
+            } => {
                 let (chrome_h, _) = layout.chrome_size();
-                40 + chrome_h // Default width for widgets
+                // Get widget's intrinsic width
+                let widget_width = widget.intrinsic_width();
+                // For container widgets, also consider children
+                let child_width = children
+                    .iter()
+                    .map(|c| c.intrinsic_width())
+                    .max()
+                    .unwrap_or(0);
+                let intrinsic = widget_width.max(child_width);
+                if intrinsic > 0 {
+                    intrinsic + chrome_h
+                } else {
+                    40 + chrome_h // Default width for widgets with no intrinsic size
+                }
             }
         }
     }
@@ -726,9 +744,19 @@ impl Node {
                     .unwrap_or(0);
                 max_child + chrome_v
             }
-            Self::Widget { layout, .. } => {
+            Self::Widget {
+                layout,
+                widget,
+                children,
+                ..
+            } => {
                 let (_, chrome_v) = layout.chrome_size();
-                1 + chrome_v // Default height for widgets
+                // Get widget's intrinsic height
+                let widget_height = widget.intrinsic_height();
+                // For container widgets, also consider children (sum for vertical stacking)
+                let child_height: u16 = children.iter().map(|c| c.intrinsic_height()).sum();
+                let intrinsic = widget_height.max(child_height);
+                intrinsic + chrome_v
             }
         }
     }
