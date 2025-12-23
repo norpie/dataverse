@@ -537,7 +537,8 @@ async fn main() {
 
     if let Err(e) = rafter::Runtime::new()
         .theme(ExplorerTheme::new())
-        .start_with::<Explorer>()
+        .initial::<Explorer>()
+        .run()
         .await
     {
         eprintln!("Error: {}", e);

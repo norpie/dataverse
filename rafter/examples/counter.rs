@@ -323,7 +323,8 @@ async fn main() {
 
     if let Err(e) = rafter::Runtime::new()
         .theme(CounterTheme::new())
-        .start_with::<Counter>()
+        .initial::<Counter>()
+        .run()
         .await
     {
         eprintln!("Error: {}", e);

@@ -302,7 +302,8 @@ async fn main() {
 
     if let Err(e) = rafter::Runtime::new()
         .theme(TableTheme::new())
-        .start_with::<TableApp>()
+        .initial::<TableApp>()
+        .run()
         .await
     {
         eprintln!("Error: {}", e);

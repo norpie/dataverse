@@ -29,6 +29,8 @@ pub struct Runtime {
     error_handler: Option<Box<dyn Fn(RuntimeError) + Send + Sync>>,
     /// Current theme
     theme: Arc<dyn Theme>,
+    /// Initial app instance to spawn on startup
+    initial_app: Option<Box<dyn AnyAppInstance>>,
 }
 
 /// Runtime error
@@ -62,28 +64,29 @@ impl From<io::Error> for RuntimeError {
 }
 
 impl Runtime {
-    /// Create a new runtime builder
+    /// Create a new runtime builder.
     pub fn new() -> Self {
         Self {
             panic_behavior: PanicBehavior::default(),
             error_handler: None,
             theme: Arc::new(DefaultTheme::default()),
+            initial_app: None,
         }
     }
 
-    /// Set the theme
+    /// Set the theme.
     pub fn theme<T: Theme>(mut self, theme: T) -> Self {
         self.theme = Arc::new(theme);
         self
     }
 
-    /// Set the default panic behavior
+    /// Set the default panic behavior.
     pub fn on_panic(mut self, behavior: PanicBehavior) -> Self {
         self.panic_behavior = behavior;
         self
     }
 
-    /// Set the error handler
+    /// Set the error handler.
     pub fn on_error<F>(mut self, handler: F) -> Self
     where
         F: Fn(RuntimeError) + Send + Sync + 'static,
@@ -92,14 +95,54 @@ impl Runtime {
         self
     }
 
-    /// Start the runtime with a specific app
-    pub async fn start_with<A: App + Default>(self) -> Result<(), RuntimeError> {
+    /// Set the initial app to spawn on startup (using Default).
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// Runtime::new()
+    ///     .initial::<MyApp>()
+    ///     .run()
+    ///     .await?;
+    /// ```
+    pub fn initial<A: App + Default>(mut self) -> Self {
         let app = A::default();
-        self.run(app).await
+        let instance = AppInstance::new(app);
+        self.initial_app = Some(Box::new(instance));
+        self
     }
 
-    /// Start the runtime with an app instance
-    pub async fn run<A: App>(self, app: A) -> Result<(), RuntimeError> {
+    /// Set the initial app to spawn on startup (with a pre-constructed instance).
+    ///
+    /// Use this when your app requires custom initialization.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// let app = MyApp::new(some_config);
+    /// Runtime::new()
+    ///     .initial_with(app)
+    ///     .run()
+    ///     .await?;
+    /// ```
+    pub fn initial_with<A: App>(mut self, app: A) -> Self {
+        let instance = AppInstance::new(app);
+        self.initial_app = Some(Box::new(instance));
+        self
+    }
+
+    /// Start the runtime.
+    ///
+    /// Requires an initial app to be set via `initial()` or `initial_with()`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if no initial app was set.
+    pub async fn run(self) -> Result<(), RuntimeError> {
+        let initial_instance = self
+            .initial_app
+            .expect("No initial app set. Use .initial::<App>() or .initial_with(app) before .run()");
+
         info!("Runtime starting");
 
         // Initialize terminal
@@ -109,14 +152,13 @@ impl Runtime {
         // Create the instance registry
         let registry = Arc::new(RwLock::new(InstanceRegistry::new()));
 
-        // Create the initial app instance and add to registry
-        let instance = AppInstance::new(app);
-        let instance_id = instance.id();
-        let keybinds = instance.keybinds();
+        // Add the initial app instance to registry
+        let instance_id = initial_instance.id();
+        let keybinds = initial_instance.keybinds();
 
         {
             let mut reg = registry.write().unwrap();
-            reg.insert(instance_id, Box::new(instance));
+            reg.insert(instance_id, initial_instance);
             reg.focus(instance_id);
         }
 

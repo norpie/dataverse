@@ -320,7 +320,8 @@ async fn main() {
 
     if let Err(e) = rafter::Runtime::new()
         .theme(ModalTheme::new())
-        .start_with::<ModalApp>()
+        .initial::<ModalApp>()
+        .run()
         .await
     {
         eprintln!("Error: {}", e);

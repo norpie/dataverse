@@ -285,7 +285,8 @@ async fn main() {
 
     if let Err(e) = rafter::Runtime::new()
         .theme(PaginationTheme::new())
-        .start_with::<PaginationApp>()
+        .initial::<PaginationApp>()
+        .run()
         .await
     {
         eprintln!("Error: {}", e);

@@ -110,7 +110,7 @@ async fn main() {
         let _ = WriteLogger::init(LevelFilter::Debug, Config::default(), log_file);
     }
 
-    if let Err(e) = rafter::Runtime::new().start_with::<Reader>().await {
+    if let Err(e) = rafter::Runtime::new().initial::<Reader>().run().await {
         eprintln!("Error: {}", e);
     }
 }

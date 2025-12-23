@@ -68,9 +68,7 @@ fn apply_blur_policy(
     instance_id: InstanceId,
     cx: &AppContext,
 ) -> Option<InstanceId> {
-    let Some(instance) = registry.get(instance_id) else {
-        return None;
-    };
+    let instance = registry.get(instance_id)?;
 
     let policy = instance.config().on_blur;
 
@@ -101,11 +99,11 @@ fn apply_blur_policy(
 
 /// Wake a sleeping instance when it gains focus.
 fn wake_instance(registry: &mut InstanceRegistry, instance_id: InstanceId) {
-    if let Some(instance) = registry.get_mut(instance_id) {
-        if instance.is_sleeping() {
-            debug!("Waking instance {:?}", instance_id);
-            instance.set_sleeping(false);
-        }
+    if let Some(instance) = registry.get_mut(instance_id)
+        && instance.is_sleeping()
+    {
+        debug!("Waking instance {:?}", instance_id);
+        instance.set_sleeping(false);
     }
 }
 
@@ -135,10 +133,9 @@ fn process_instance_commands(
                     // Apply blur policy to old focused instance
                     if let Some(old_id) = reg.focused()
                         && old_id != id
+                        && let Some(close_id) = apply_blur_policy(&mut reg, old_id, cx)
                     {
-                        if let Some(close_id) = apply_blur_policy(&mut reg, old_id, cx) {
-                            to_close.push(close_id);
-                        }
+                        to_close.push(close_id);
                     }
 
                     reg.focus(id);
@@ -190,10 +187,9 @@ fn process_instance_commands(
                 // Apply blur policy to old focused instance
                 if let Some(old_id) = reg.focused()
                     && old_id != id
+                    && let Some(close_id) = apply_blur_policy(&mut reg, old_id, cx)
                 {
-                    if let Some(close_id) = apply_blur_policy(&mut reg, old_id, cx) {
-                        to_close.push(close_id);
-                    }
+                    to_close.push(close_id);
                 }
 
                 if reg.focus(id) {

@@ -526,7 +526,7 @@ async fn main() {
         let _ = WriteLogger::init(LevelFilter::Debug, Config::default(), log_file);
     }
 
-    if let Err(e) = rafter::Runtime::new().start_with::<TreeDemo>().await {
+    if let Err(e) = rafter::Runtime::new().initial::<TreeDemo>().run().await {
         eprintln!("Error: {}", e);
     }
 }
