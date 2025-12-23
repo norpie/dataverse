@@ -49,6 +49,8 @@ pub struct InstanceInfo {
     pub last_focused_at: Instant,
     /// Whether this instance is currently focused.
     pub is_focused: bool,
+    /// Whether this instance is sleeping (BlurPolicy::Sleep when unfocused).
+    pub is_sleeping: bool,
 }
 
 impl InstanceInfo {
@@ -62,6 +64,7 @@ impl InstanceInfo {
             created_at: now,
             last_focused_at: now,
             is_focused: false,
+            is_sleeping: false,
         }
     }
 }

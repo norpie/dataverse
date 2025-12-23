@@ -6,7 +6,7 @@ use std::time::{Duration, Instant};
 use crossterm::event;
 use log::{debug, info, trace, warn};
 
-use crate::app::{InstanceId, InstanceRegistry};
+use crate::app::{BlurPolicy, InstanceId, InstanceRegistry};
 use crate::context::{AppContext, InstanceCommand};
 use crate::input::focus::FocusId;
 use crate::input::keybinds::Keybinds;
@@ -60,6 +60,55 @@ fn coalesce_hover_events(
     Ok((latest_position, other_events, skipped_count))
 }
 
+/// Apply blur policy to an instance that is losing focus.
+///
+/// Returns the ID of an instance that should be closed due to BlurPolicy::Close.
+fn apply_blur_policy(
+    registry: &mut InstanceRegistry,
+    instance_id: InstanceId,
+    cx: &AppContext,
+) -> Option<InstanceId> {
+    let Some(instance) = registry.get(instance_id) else {
+        return None;
+    };
+
+    let policy = instance.config().on_blur;
+
+    // Call on_background lifecycle hook
+    instance.on_background(cx);
+
+    match policy {
+        BlurPolicy::Continue => {
+            // Nothing special - instance keeps running
+            debug!("Instance {:?} continues in background", instance_id);
+            None
+        }
+        BlurPolicy::Sleep => {
+            // Mark as sleeping - no events will be delivered
+            debug!("Instance {:?} entering sleep", instance_id);
+            if let Some(instance) = registry.get_mut(instance_id) {
+                instance.set_sleeping(true);
+            }
+            None
+        }
+        BlurPolicy::Close => {
+            // Schedule for closure
+            debug!("Instance {:?} scheduled for close (BlurPolicy::Close)", instance_id);
+            Some(instance_id)
+        }
+    }
+}
+
+/// Wake a sleeping instance when it gains focus.
+fn wake_instance(registry: &mut InstanceRegistry, instance_id: InstanceId) {
+    if let Some(instance) = registry.get_mut(instance_id) {
+        if instance.is_sleeping() {
+            debug!("Waking instance {:?}", instance_id);
+            instance.set_sleeping(false);
+        }
+    }
+}
+
 /// Process instance commands from the context.
 ///
 /// Returns true if the runtime should exit (all instances closed).
@@ -69,6 +118,9 @@ fn process_instance_commands(
     cx: &AppContext,
 ) -> bool {
     let commands = cx.take_instance_commands();
+
+    // Collect instances to close due to BlurPolicy::Close
+    let mut to_close: Vec<InstanceId> = Vec::new();
 
     for cmd in commands {
         match cmd {
@@ -80,11 +132,14 @@ fn process_instance_commands(
                 reg.insert(id, instance);
 
                 if focus {
-                    // Call on_background for old focused instance
+                    // Apply blur policy to old focused instance
                     if let Some(old_id) = reg.focused()
-                        && let Some(old_instance) = reg.get(old_id) {
-                            old_instance.on_background(cx);
+                        && old_id != id
+                    {
+                        if let Some(close_id) = apply_blur_policy(&mut reg, old_id, cx) {
+                            to_close.push(close_id);
                         }
+                    }
 
                     reg.focus(id);
 
@@ -132,14 +187,19 @@ fn process_instance_commands(
 
                 let mut reg = registry.write().unwrap();
 
-                // Call on_background for old focused instance
+                // Apply blur policy to old focused instance
                 if let Some(old_id) = reg.focused()
                     && old_id != id
-                        && let Some(old_instance) = reg.get(old_id) {
-                            old_instance.on_background(cx);
-                        }
+                {
+                    if let Some(close_id) = apply_blur_policy(&mut reg, old_id, cx) {
+                        to_close.push(close_id);
+                    }
+                }
 
                 if reg.focus(id) {
+                    // Wake the instance if it was sleeping
+                    wake_instance(&mut reg, id);
+
                     // Update keybinds to new instance's keybinds
                     if let Some(new_instance) = reg.get(id) {
                         let new_keybinds = new_instance.keybinds();
@@ -149,6 +209,26 @@ fn process_instance_commands(
                         new_instance.on_foreground(cx);
                     }
                 }
+            }
+        }
+    }
+
+    // Process deferred closes from BlurPolicy::Close
+    if !to_close.is_empty() {
+        let mut reg = registry.write().unwrap();
+        for id in to_close {
+            info!("Closing instance {:?} due to BlurPolicy::Close", id);
+            if let Some(instance) = reg.get(id) {
+                instance.on_close(cx);
+            }
+            reg.close(id, true); // Force close - policy already decided
+        }
+
+        // Update keybinds if needed
+        if let Some(new_focused) = reg.focused_instance() {
+            let new_keybinds = new_focused.keybinds();
+            if let Ok(mut kb) = app_keybinds.write() {
+                *kb = new_keybinds;
             }
         }
     }

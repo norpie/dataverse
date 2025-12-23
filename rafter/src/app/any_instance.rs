@@ -79,6 +79,12 @@ pub trait AnyAppInstance: Send + Sync {
 
     /// Update focused state.
     fn set_focused(&mut self, focused: bool);
+
+    /// Check if the instance is sleeping.
+    fn is_sleeping(&self) -> bool;
+
+    /// Set the sleeping state.
+    fn set_sleeping(&mut self, sleeping: bool);
 }
 
 /// Wrapper that implements AnyAppInstance for any App.
@@ -218,6 +224,14 @@ impl<A: App> AnyAppInstance for AppInstance<A> {
 
     fn set_focused(&mut self, focused: bool) {
         self.info.is_focused = focused;
+    }
+
+    fn is_sleeping(&self) -> bool {
+        self.info.is_sleeping
+    }
+
+    fn set_sleeping(&mut self, sleeping: bool) {
+        self.info.is_sleeping = sleeping;
     }
 }
 
