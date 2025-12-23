@@ -1,13 +1,13 @@
 //! Rendering for the Select widget.
 
+use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::{Color as RatatuiColor, Modifier, Style as RatatuiStyle};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
-use ratatui::Frame;
 
-use crate::styling::color::{Color, StyleColor};
 use crate::node::{Border, Layout, Node, Size};
+use crate::styling::color::{Color, StyleColor};
 use crate::styling::style::Style;
 use crate::styling::theme::Theme;
 use crate::widgets::traits::RenderContext;
@@ -150,8 +150,7 @@ pub fn build_dropdown_content(select: &Select, ctx: &RenderContext<'_>) -> Node 
                         .bg(StyleColor::Concrete(bg_color))
                         .fg(StyleColor::Named("background".into()))
                 } else {
-                    Style::new()
-                        .fg(StyleColor::Named("text".to_string()))
+                    Style::new().fg(StyleColor::Named("text".to_string()))
                 };
 
                 // Create a row with flex width to fill the dropdown
@@ -187,8 +186,7 @@ pub fn build_dropdown_content(select: &Select, ctx: &RenderContext<'_>) -> Node 
     // Wrap in a column without border (padding is handled inline)
     Node::Column {
         children,
-        style: Style::default()
-            .bg(StyleColor::Named("surface".to_string())),
+        style: Style::default().bg(StyleColor::Named("surface".to_string())),
         layout: Layout {
             border: Border::None,
             padding: 0,

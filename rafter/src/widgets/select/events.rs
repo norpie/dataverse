@@ -1,18 +1,18 @@
 //! Event handling for the Select widget.
 
-use ratatui::layout::Rect;
 use ratatui::Frame;
+use ratatui::layout::Rect;
 
 use crate::context::AppContext;
 use crate::input::events::ScrollDirection;
 use crate::input::keybinds::{Key, KeyCombo};
-use crate::node::Node;
 use crate::layers::overlay::{OverlayPosition, OverlayRequest};
+use crate::node::Node;
 use crate::widgets::events::{EventResult, WidgetEvent, WidgetEventKind, WidgetEvents};
 use crate::widgets::traits::{AnyWidget, RenderContext};
 
-use super::render;
 use super::Select;
+use super::render;
 
 impl WidgetEvents for Select {
     fn on_key(&self, key: &KeyCombo, cx: &AppContext) -> EventResult {

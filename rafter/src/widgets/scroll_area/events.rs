@@ -1,23 +1,23 @@
 //! Event handling for the ScrollArea widget.
 
+use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::widgets::Block;
-use ratatui::Frame;
 
 use crate::context::AppContext;
 use crate::input::events::{Modifiers, ScrollDirection};
 use crate::input::keybinds::{Key, KeyCombo};
 use crate::widgets::events::{EventResult, WidgetEvents};
 use crate::widgets::scrollbar::{
-    handle_scroll, handle_scrollbar_click, handle_scrollbar_drag, handle_scrollbar_release,
-    render_horizontal_scrollbar, render_vertical_scrollbar, ScrollbarState,
+    ScrollbarState, handle_scroll, handle_scrollbar_click, handle_scrollbar_drag,
+    handle_scrollbar_release, render_horizontal_scrollbar, render_vertical_scrollbar,
 };
 use crate::widgets::traits::{AnyWidget, RenderContext};
 
-use super::render::{
-    calculate_scroll_area_layout, calculate_wrapped_content_size, render_node_clipped, ClipRect,
-};
 use super::ScrollArea;
+use super::render::{
+    ClipRect, calculate_scroll_area_layout, calculate_wrapped_content_size, render_node_clipped,
+};
 
 /// Lines to scroll per arrow key press.
 const SCROLL_LINES: i16 = 1;

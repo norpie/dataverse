@@ -1,10 +1,10 @@
 //! Event handling for the Collapsible widget.
 
+use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::Color;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
-use ratatui::Frame;
 
 use crate::context::AppContext;
 use crate::input::keybinds::{Key, KeyCombo};
@@ -162,7 +162,8 @@ impl AnyWidget for Collapsible {
                 }
 
                 let child_height = child.intrinsic_height().max(1);
-                let remaining_height = (content_area.y + content_area.height).saturating_sub(current_y);
+                let remaining_height =
+                    (content_area.y + content_area.height).saturating_sub(current_y);
                 let actual_height = child_height.min(remaining_height);
 
                 if actual_height == 0 {

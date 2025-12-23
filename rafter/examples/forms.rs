@@ -91,15 +91,15 @@ impl FormsApp {
         // Validate using the Validator API
         let result = Validator::new()
             .field(&self.name, "name")
-                .required("Name is required")
-                .min_length(2, "Name must be at least 2 characters")
+            .required("Name is required")
+            .min_length(2, "Name must be at least 2 characters")
             .field(&self.email, "email")
-                .required("Email is required")
-                .email("Please enter a valid email address")
+            .required("Email is required")
+            .email("Please enter a valid email address")
             .field(&self.accept_terms, "terms")
-                .checked("You must accept the terms and conditions")
+            .checked("You must accept the terms and conditions")
             .field(&self.priority, "priority")
-                .selected("Please select a priority level")
+            .selected("Please select a priority level")
             .validate();
 
         if result.is_valid() {

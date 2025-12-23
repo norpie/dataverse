@@ -3,15 +3,15 @@
 use std::any::Any;
 use std::ops::Range;
 
-use crate::widgets::events::{WidgetEvents, EventResult};
-use crate::widgets::scrollbar::{
-    ScrollbarConfig, ScrollbarDrag, ScrollbarGeometry, ScrollbarState,
-};
-use crate::widgets::traits::AnySelectable;
 use crate::context::AppContext;
 use crate::input::events::{Modifiers, ScrollDirection};
 use crate::input::keybinds::KeyCombo;
 use crate::node::Node;
+use crate::widgets::events::{EventResult, WidgetEvents};
+use crate::widgets::scrollbar::{
+    ScrollbarConfig, ScrollbarDrag, ScrollbarGeometry, ScrollbarState,
+};
+use crate::widgets::traits::AnySelectable;
 
 use super::item::{Column, TableRow};
 use super::state::Table;

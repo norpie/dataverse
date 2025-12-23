@@ -5,11 +5,12 @@ use std::time::Duration;
 use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
 
-use crate::widgets::events::WidgetEvent;
+use crate::app::{AnyAppInstance, App, InstanceId, InstanceInfo, InstanceRegistry, SpawnError};
 use crate::input::focus::FocusId;
 use crate::input::keybinds::{KeybindError, KeybindInfo, Keybinds};
 use crate::layers::modal::{Modal, ModalContext, ModalDyn, ModalEntry};
 use crate::styling::theme::Theme;
+use crate::widgets::events::WidgetEvent;
 
 /// Toast notification level
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -70,6 +71,31 @@ impl Toast {
     }
 }
 
+/// Command to manage app instances.
+///
+/// These commands are queued and processed by the runtime event loop.
+pub enum InstanceCommand {
+    /// Spawn a new app instance.
+    Spawn {
+        /// The boxed app instance to spawn.
+        instance: Box<dyn AnyAppInstance>,
+        /// Whether to focus the new instance.
+        focus: bool,
+    },
+    /// Close an instance.
+    Close {
+        /// The instance to close.
+        id: InstanceId,
+        /// Whether to force close (skip on_close_request).
+        force: bool,
+    },
+    /// Focus an instance.
+    Focus {
+        /// The instance to focus.
+        id: InstanceId,
+    },
+}
+
 /// Inner state for AppContext
 struct AppContextInner {
     /// Request to exit the app
@@ -84,6 +110,14 @@ struct AppContextInner {
     theme_request: Option<Arc<dyn Theme>>,
     /// Pending modal to open
     modal_request: Option<Box<dyn ModalDyn>>,
+
+    // -------------------------------------------------------------------------
+    // Instance management
+    // -------------------------------------------------------------------------
+    /// Pending instance commands to process
+    instance_commands: Vec<InstanceCommand>,
+    /// Current instance ID (set by runtime)
+    current_instance_id: Option<InstanceId>,
 
     // -------------------------------------------------------------------------
     // Unified widget event queue and data
@@ -132,6 +166,8 @@ pub struct AppContext {
     inner: Arc<RwLock<AppContextInner>>,
     /// Shared keybinds (can be modified at runtime)
     keybinds: Arc<RwLock<Keybinds>>,
+    /// Shared instance registry for querying instances
+    registry: Option<Arc<RwLock<InstanceRegistry>>>,
 }
 
 impl AppContext {
@@ -145,6 +181,8 @@ impl AppContext {
                 input_text: None,
                 theme_request: None,
                 modal_request: None,
+                instance_commands: Vec::new(),
+                current_instance_id: None,
                 pending_events: Vec::new(),
                 activated_id: None,
                 activated_index: None,
@@ -156,6 +194,7 @@ impl AppContext {
                 sorted_column: None,
             })),
             keybinds,
+            registry: None,
         }
     }
 
@@ -477,12 +516,180 @@ impl AppContext {
     ///     });
     /// }
     /// ```
-    pub fn spawn<F>(&self, future: F) -> JoinHandle<F::Output>
+    pub fn spawn_task<F>(&self, future: F) -> JoinHandle<F::Output>
     where
         F: Future + Send + 'static,
         F::Output: Send + 'static,
     {
         tokio::spawn(future)
+    }
+
+    // -------------------------------------------------------------------------
+    // Instance management
+    // -------------------------------------------------------------------------
+
+    /// Spawn a new app instance.
+    ///
+    /// The instance is added to the registry but not focused.
+    /// Use `spawn_and_focus` to spawn and immediately focus.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// let id = cx.spawn::<MyApp>(MyApp::new())?;
+    /// ```
+    pub fn spawn<A: App>(&self, app: A) -> Result<InstanceId, SpawnError> {
+        use crate::app::AppInstance;
+
+        let config = A::config();
+
+        // Check max instances using the registry
+        if let Some(max) = config.max_instances {
+            let current = self.instance_count::<A>();
+            if current >= max {
+                return Err(SpawnError::MaxInstancesReached {
+                    app_name: config.name,
+                    max,
+                });
+            }
+        }
+
+        let instance = AppInstance::new(app);
+        let id = instance.id();
+
+        // Queue the spawn command
+        if let Ok(mut inner) = self.inner.write() {
+            inner.instance_commands.push(InstanceCommand::Spawn {
+                instance: Box::new(instance),
+                focus: false,
+            });
+        }
+
+        Ok(id)
+    }
+
+    /// Spawn a new app instance and immediately focus it.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// let id = cx.spawn_and_focus::<MyApp>(MyApp::new())?;
+    /// ```
+    pub fn spawn_and_focus<A: App>(&self, app: A) -> Result<InstanceId, SpawnError> {
+        use crate::app::AppInstance;
+
+        let config = A::config();
+
+        // Check max instances using the registry
+        if let Some(max) = config.max_instances {
+            let current = self.instance_count::<A>();
+            if current >= max {
+                return Err(SpawnError::MaxInstancesReached {
+                    app_name: config.name,
+                    max,
+                });
+            }
+        }
+
+        let instance = AppInstance::new(app);
+        let id = instance.id();
+
+        // Queue the spawn command with focus
+        if let Ok(mut inner) = self.inner.write() {
+            inner.instance_commands.push(InstanceCommand::Spawn {
+                instance: Box::new(instance),
+                focus: true,
+            });
+        }
+
+        Ok(id)
+    }
+
+    /// Close an instance.
+    ///
+    /// Respects `on_close_request` - if it returns false, the close is cancelled.
+    /// Use `force_close` to skip this check.
+    ///
+    /// Returns immediately; the actual close happens in the event loop.
+    pub fn close(&self, id: InstanceId) {
+        if let Ok(mut inner) = self.inner.write() {
+            inner
+                .instance_commands
+                .push(InstanceCommand::Close { id, force: false });
+        }
+    }
+
+    /// Force close an instance.
+    ///
+    /// Skips `on_close_request` but respects the `persistent` flag.
+    /// Persistent apps cannot be force-closed.
+    pub fn force_close(&self, id: InstanceId) {
+        if let Ok(mut inner) = self.inner.write() {
+            inner
+                .instance_commands
+                .push(InstanceCommand::Close { id, force: true });
+        }
+    }
+
+    /// Focus an instance.
+    ///
+    /// Makes the instance the foreground app, receiving input and rendering.
+    /// The previously focused instance receives `on_background`.
+    pub fn focus_instance(&self, id: InstanceId) {
+        if let Ok(mut inner) = self.inner.write() {
+            inner.instance_commands.push(InstanceCommand::Focus { id });
+        }
+    }
+
+    /// Get the current instance ID.
+    ///
+    /// Returns the ID of the instance that owns this context.
+    pub fn instance_id(&self) -> Option<InstanceId> {
+        self.inner
+            .read()
+            .ok()
+            .and_then(|inner| inner.current_instance_id)
+    }
+
+    // -------------------------------------------------------------------------
+    // Instance discovery
+    // -------------------------------------------------------------------------
+
+    /// List all running instances.
+    pub fn instances(&self) -> Vec<InstanceInfo> {
+        self.registry
+            .as_ref()
+            .and_then(|r| r.read().ok())
+            .map(|reg| reg.instances())
+            .unwrap_or_default()
+    }
+
+    /// List instances of a specific app type.
+    pub fn instances_of<A: App>(&self) -> Vec<InstanceInfo> {
+        self.registry
+            .as_ref()
+            .and_then(|r| r.read().ok())
+            .map(|reg| reg.instances_of::<A>())
+            .unwrap_or_default()
+    }
+
+    /// Find the first instance of a specific app type.
+    ///
+    /// Useful for singleton apps to check if an instance already exists.
+    pub fn instance_of<A: App>(&self) -> Option<InstanceId> {
+        self.registry
+            .as_ref()
+            .and_then(|r| r.read().ok())
+            .and_then(|reg| reg.instance_of::<A>())
+    }
+
+    /// Get the number of instances of a specific app type.
+    pub fn instance_count<A: App>(&self) -> usize {
+        self.registry
+            .as_ref()
+            .and_then(|r| r.read().ok())
+            .map(|reg| reg.instance_count::<A>())
+            .unwrap_or(0)
     }
 
     // -------------------------------------------------------------------------
@@ -588,6 +795,27 @@ impl AppContext {
             .write()
             .ok()
             .and_then(|mut inner| inner.modal_request.take())
+    }
+
+    /// Take pending instance commands (runtime use)
+    pub(crate) fn take_instance_commands(&self) -> Vec<InstanceCommand> {
+        self.inner
+            .write()
+            .ok()
+            .map(|mut inner| std::mem::take(&mut inner.instance_commands))
+            .unwrap_or_default()
+    }
+
+    /// Set the instance registry (runtime use)
+    pub(crate) fn set_registry(&mut self, registry: Arc<RwLock<InstanceRegistry>>) {
+        self.registry = Some(registry);
+    }
+
+    /// Set the current instance ID (runtime use)
+    pub(crate) fn set_instance_id(&self, id: InstanceId) {
+        if let Ok(mut inner) = self.inner.write() {
+            inner.current_instance_id = Some(id);
+        }
     }
 }
 

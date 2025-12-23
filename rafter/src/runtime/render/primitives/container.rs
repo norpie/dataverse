@@ -5,8 +5,8 @@ use ratatui::layout::{Direction, Flex, Layout, Rect};
 use ratatui::style::Style as RatatuiStyle;
 use ratatui::widgets::Block;
 
-use crate::node::{Justify, Layout as NodeLayout, Node};
 use crate::layers::overlay::OverlayRequest;
+use crate::node::{Justify, Layout as NodeLayout, Node};
 use crate::runtime::hit_test::HitTestMap;
 use crate::runtime::render::layout::{apply_border, apply_padding, calculate_constraints};
 use crate::runtime::render::render_node;
@@ -129,6 +129,14 @@ pub fn render_stack(
 
     // Render all children in the same area (stacked)
     for child in children {
-        render_node(frame, child, padded_area, hit_map, theme, focused_id, overlay_requests);
+        render_node(
+            frame,
+            child,
+            padded_area,
+            hit_map,
+            theme,
+            focused_id,
+            overlay_requests,
+        );
     }
 }

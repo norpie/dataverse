@@ -349,12 +349,11 @@ impl Input {
 
     /// Clear the validation error.
     pub fn clear_error(&self) {
-        if let Ok(mut guard) = self.inner.write() {
-            if guard.error.is_some() {
+        if let Ok(mut guard) = self.inner.write()
+            && guard.error.is_some() {
                 guard.error = None;
                 self.dirty.store(true, Ordering::SeqCst);
             }
-        }
     }
 
     /// Check if this input has a validation error.

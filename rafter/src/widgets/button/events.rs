@@ -1,7 +1,7 @@
 //! Event handling for the Button widget.
 
-use ratatui::layout::Rect;
 use ratatui::Frame;
+use ratatui::layout::Rect;
 
 use crate::context::AppContext;
 use crate::input::keybinds::{Key, KeyCombo};
@@ -42,7 +42,10 @@ impl AnyWidget for Button {
 
     fn dispatch_click(&self, _x: u16, _y: u16, cx: &AppContext) -> EventResult {
         // Push an Activate event so the runtime dispatches the on_click handler
-        cx.push_event(WidgetEvent::new(WidgetEventKind::Activate, self.id_string()));
+        cx.push_event(WidgetEvent::new(
+            WidgetEventKind::Activate,
+            self.id_string(),
+        ));
         EventResult::Consumed
     }
 
@@ -55,7 +58,10 @@ impl AnyWidget for Button {
         match key.key {
             Key::Enter | Key::Char(' ') => {
                 // Push an Activate event so the runtime dispatches the on_click handler
-                cx.push_event(WidgetEvent::new(WidgetEventKind::Activate, self.id_string()));
+                cx.push_event(WidgetEvent::new(
+                    WidgetEventKind::Activate,
+                    self.id_string(),
+                ));
                 EventResult::Consumed
             }
             _ => EventResult::Ignored,

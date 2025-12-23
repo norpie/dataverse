@@ -90,7 +90,7 @@ pub fn generate_select_element(elem: &ElementNode) -> TokenStream {
     quote! {
         {
             let __widget = (#select_component).clone();
-            
+
             // Build option children for the overlay
             let __options: Vec<_> = (#options).into_iter().collect();
             let __children: Vec<rafter::node::Node> = __options.iter().map(|opt| {
@@ -100,7 +100,7 @@ pub fn generate_select_element(elem: &ElementNode) -> TokenStream {
                     style: rafter::style::Style::default(),
                 }
             }).collect();
-            
+
             // Update the widget with options count
             __widget.set_options_count(__children.len());
             __widget.set_option_labels(__children.iter().filter_map(|n| {
@@ -110,7 +110,7 @@ pub fn generate_select_element(elem: &ElementNode) -> TokenStream {
                     None
                 }
             }).collect());
-            
+
             rafter::node::Node::Widget {
                 widget: Box::new(__widget) as Box<dyn rafter::widgets::AnyWidget>,
                 handlers: rafter::widgets::WidgetHandlers {

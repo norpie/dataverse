@@ -8,13 +8,13 @@ use std::sync::{Arc, RwLock};
 
 use log::debug;
 
-use crate::app::App;
+use crate::app::AnyAppInstance;
 use crate::context::AppContext;
 use crate::input::events::{ClickEvent, Position, ScrollEvent};
 use crate::input::keybinds::{HandlerId, Key, KeyCombo, Keybinds};
 use crate::node::Node;
-use crate::widgets::events::WidgetEventKind;
 use crate::widgets::EventResult;
+use crate::widgets::events::WidgetEventKind;
 
 use super::events::{DragEvent, Event};
 use super::hit_test::HitTestMap;
@@ -27,12 +27,7 @@ use super::state::EventLoopState;
 // =============================================================================
 
 /// Set focus to a new element, dispatching blur to the old focused widget.
-fn set_focus_with_blur(
-    state: &mut EventLoopState,
-    page: &Node,
-    cx: &AppContext,
-    new_id: String,
-) {
+fn set_focus_with_blur(state: &mut EventLoopState, page: &Node, cx: &AppContext, new_id: String) {
     let old_id = state.focused_id();
     if old_id.as_deref() != Some(&new_id) {
         // Dispatch blur to old widget
@@ -48,11 +43,10 @@ fn focus_next_with_blur(state: &mut EventLoopState, page: &Node, cx: &AppContext
     let old_id = state.focused_id();
     state.focus_state_mut().focus_next();
     let new_id = state.focused_id();
-    if old_id != new_id {
-        if let Some(ref old) = old_id {
+    if old_id != new_id
+        && let Some(ref old) = old_id {
             page.dispatch_blur(old, cx);
         }
-    }
 }
 
 /// Focus previous element, dispatching blur to the old focused widget.
@@ -60,11 +54,10 @@ fn focus_prev_with_blur(state: &mut EventLoopState, page: &Node, cx: &AppContext
     let old_id = state.focused_id();
     state.focus_state_mut().focus_prev();
     let new_id = state.focused_id();
-    if old_id != new_id {
-        if let Some(ref old) = old_id {
+    if old_id != new_id
+        && let Some(ref old) = old_id {
             page.dispatch_blur(old, cx);
         }
-    }
 }
 
 /// Clear focus, dispatching blur to the old focused widget.
@@ -79,9 +72,9 @@ fn clear_focus_with_blur(state: &mut EventLoopState, page: &Node, cx: &AppContex
 // Handler Dispatch Helpers
 // =============================================================================
 
-/// Dispatch a handler to the appropriate layer (modal or app).
-pub fn dispatch_to_layer<A: App>(
-    app: &A,
+/// Dispatch a handler to the appropriate layer (modal or app instance).
+pub fn dispatch_to_layer(
+    instance: &dyn AnyAppInstance,
     modal_stack: &[ModalStackEntry],
     handler_id: &HandlerId,
     cx: &AppContext,
@@ -89,7 +82,7 @@ pub fn dispatch_to_layer<A: App>(
     if let Some(entry) = modal_stack.last() {
         entry.modal.dispatch_dyn(handler_id, cx);
     } else {
-        app.dispatch(handler_id, cx);
+        instance.dispatch(handler_id, cx);
     }
 }
 
@@ -98,10 +91,10 @@ pub fn dispatch_to_layer<A: App>(
 /// Components push events to the event queue via `AppContext::push_event()`.
 /// This function drains the queue and dispatches appropriate handlers based
 /// on event kind and the widget ID that triggered it.
-pub fn dispatch_component_handlers<A: App>(
+pub fn dispatch_component_handlers(
     page: &Node,
     _focus_id: &str,
-    app: &A,
+    instance: &dyn AnyAppInstance,
     modal_stack: &[ModalStackEntry],
     cx: &AppContext,
 ) {
@@ -118,7 +111,7 @@ pub fn dispatch_component_handlers<A: App>(
         };
 
         if let Some(handler_id) = handler {
-            dispatch_to_layer(app, modal_stack, &handler_id, cx);
+            dispatch_to_layer(instance, modal_stack, &handler_id, cx);
         }
     }
 
@@ -141,10 +134,10 @@ pub fn dispatch_component_handlers<A: App>(
 /// if the event was handled and the loop should continue to the next iteration,
 /// or `ControlFlow::Continue(false)` if normal processing should continue.
 #[allow(clippy::too_many_arguments)]
-pub fn handle_key_event<A: App>(
+pub fn handle_key_event(
     key_combo: &KeyCombo,
     page: &Node,
-    app: &A,
+    instance: &dyn AnyAppInstance,
     state: &mut EventLoopState,
     app_keybinds: &Arc<RwLock<Keybinds>>,
     cx: &AppContext,
@@ -175,13 +168,13 @@ pub fn handle_key_event<A: App>(
                 && result.is_handled()
             {
                 // Dispatch handlers based on context data (includes Change events)
-                dispatch_component_handlers(page, focus_id, app, &state.modal_stack, cx);
+                dispatch_component_handlers(page, focus_id, instance, &state.modal_stack, cx);
                 return ControlFlow::Continue(true);
             }
 
             // Fallback for buttons etc - dispatch submit handler directly
             if let Some(handler_id) = page.get_submit_handler(focus_id) {
-                dispatch_to_layer(app, &state.modal_stack, &handler_id, cx);
+                dispatch_to_layer(instance, &state.modal_stack, &handler_id, cx);
             }
             return ControlFlow::Continue(true);
         }
@@ -191,7 +184,7 @@ pub fn handle_key_event<A: App>(
             && result.is_handled()
         {
             // Dispatch handlers based on context data (includes Change events)
-            dispatch_component_handlers(page, focus_id, app, &state.modal_stack, cx);
+            dispatch_component_handlers(page, focus_id, instance, &state.modal_stack, cx);
             return ControlFlow::Continue(true);
         }
     }
@@ -205,7 +198,7 @@ pub fn handle_key_event<A: App>(
 
     // Process keybind (only if not handled above)
     let current_page = if state.modal_stack.is_empty() {
-        app.current_page()
+        instance.current_page()
     } else {
         None
     };
@@ -225,7 +218,7 @@ pub fn handle_key_event<A: App>(
     match keybind_match {
         KeybindMatch::Match(handler_id) => {
             log::info!("Keybind matched: {:?}", handler_id);
-            dispatch_to_layer(app, &state.modal_stack, &handler_id, cx);
+            dispatch_to_layer(instance, &state.modal_stack, &handler_id, cx);
         }
         KeybindMatch::Pending => {
             debug!("Keybind pending (sequence in progress)");
@@ -247,11 +240,11 @@ pub fn handle_key_event<A: App>(
 /// This function uses the unified widget dispatch to handle clicks on all widgets.
 ///
 /// Returns `true` if the loop should continue to the next iteration.
-pub fn handle_click_event<A: App>(
+pub fn handle_click_event(
     click: &ClickEvent,
     page: &Node,
     hit_map: &HitTestMap,
-    app: &A,
+    instance: &dyn AnyAppInstance,
     state: &mut EventLoopState,
     cx: &AppContext,
 ) -> bool {
@@ -259,24 +252,29 @@ pub fn handle_click_event<A: App>(
     for overlay in &state.active_overlays {
         if overlay.contains(click.position.x, click.position.y) {
             debug!("Click on overlay owned by: {}", overlay.owner_id);
-            
+
             // Calculate position relative to overlay area
             let x_rel = click.position.x.saturating_sub(overlay.area.x);
             let y_rel = click.position.y.saturating_sub(overlay.area.y);
-            
+
             // Dispatch overlay click to owner widget
-            if let Some(result) = page.dispatch_overlay_click(&overlay.owner_id, x_rel, y_rel, cx) {
-                if result.is_handled() {
-                    dispatch_component_handlers(page, &overlay.owner_id, app, &state.modal_stack, cx);
+            if let Some(result) = page.dispatch_overlay_click(&overlay.owner_id, x_rel, y_rel, cx)
+                && result.is_handled() {
+                    dispatch_component_handlers(
+                        page,
+                        &overlay.owner_id,
+                        instance,
+                        &state.modal_stack,
+                        cx,
+                    );
                     return true;
                 }
-            }
-            
+
             // If overlay didn't handle it, don't propagate to widgets below
             return true;
         }
     }
-    
+
     let Some(hit_box) = hit_map.hit_test(click.position.x, click.position.y) else {
         return false;
     };
@@ -302,7 +300,13 @@ pub fn handle_click_event<A: App>(
                     return true;
                 }
                 EventResult::Consumed => {
-                    dispatch_component_handlers(page, &hit_box.id, app, &state.modal_stack, cx);
+                    dispatch_component_handlers(
+                        page,
+                        &hit_box.id,
+                        instance,
+                        &state.modal_stack,
+                        cx,
+                    );
                     return true;
                 }
                 EventResult::Ignored => {}
@@ -321,7 +325,7 @@ pub fn handle_click_event<A: App>(
         }
 
         // Dispatch handlers based on context data
-        dispatch_component_handlers(page, &hit_box.id, app, &state.modal_stack, cx);
+        dispatch_component_handlers(page, &hit_box.id, instance, &state.modal_stack, cx);
         return true;
     }
 
@@ -334,7 +338,7 @@ pub fn handle_click_event<A: App>(
             }
             EventResult::Consumed => {
                 // Widgets push Change events when their state changes
-                dispatch_component_handlers(page, &hit_box.id, app, &state.modal_stack, cx);
+                dispatch_component_handlers(page, &hit_box.id, instance, &state.modal_stack, cx);
                 return true;
             }
             EventResult::Ignored => {}
@@ -344,11 +348,10 @@ pub fn handle_click_event<A: App>(
     debug!("Clicked element: {}", hit_box.id);
 
     // If it's a button (non-capturing widget), dispatch submit handler
-    if !hit_box.captures_input {
-        if let Some(handler_id) = page.get_submit_handler(&hit_box.id) {
-            dispatch_to_layer(app, &state.modal_stack, &handler_id, cx);
+    if !hit_box.captures_input
+        && let Some(handler_id) = page.get_submit_handler(&hit_box.id) {
+            dispatch_to_layer(instance, &state.modal_stack, &handler_id, cx);
         }
-    }
 
     false
 }
@@ -360,11 +363,11 @@ pub fn handle_click_event<A: App>(
 /// Handle a hover event.
 ///
 /// Returns `true` if the loop should continue to the next iteration.
-pub fn handle_hover_event<A: App>(
+pub fn handle_hover_event(
     position: Position,
     page: &Node,
     hit_map: &HitTestMap,
-    app: &A,
+    instance: &dyn AnyAppInstance,
     state: &mut EventLoopState,
     cx: &AppContext,
 ) -> bool {
@@ -374,14 +377,19 @@ pub fn handle_hover_event<A: App>(
             // Calculate position relative to overlay area
             let x_rel = position.x.saturating_sub(overlay.area.x);
             let y_rel = position.y.saturating_sub(overlay.area.y);
-            
+
             // Dispatch overlay hover to owner widget
-            if let Some(result) = page.dispatch_overlay_hover(&overlay.owner_id, x_rel, y_rel, cx) {
-                if result.is_handled() {
-                    dispatch_component_handlers(page, &overlay.owner_id, app, &state.modal_stack, cx);
+            if let Some(result) = page.dispatch_overlay_hover(&overlay.owner_id, x_rel, y_rel, cx)
+                && result.is_handled() {
+                    dispatch_component_handlers(
+                        page,
+                        &overlay.owner_id,
+                        instance,
+                        &state.modal_stack,
+                        cx,
+                    );
                 }
-            }
-            
+
             // Don't propagate to widgets below overlay
             return false;
         }
@@ -406,7 +414,7 @@ pub fn handle_hover_event<A: App>(
         cx,
     ) && result.is_handled()
     {
-        dispatch_component_handlers(page, &hit_box.id, app, &state.modal_stack, cx);
+        dispatch_component_handlers(page, &hit_box.id, instance, &state.modal_stack, cx);
     }
 
     false
@@ -417,11 +425,11 @@ pub fn handle_hover_event<A: App>(
 // =============================================================================
 
 /// Handle a scroll event.
-pub fn handle_scroll_event<A: App>(
+pub fn handle_scroll_event(
     scroll: &ScrollEvent,
     page: &Node,
     hit_map: &HitTestMap,
-    app: &A,
+    instance: &dyn AnyAppInstance,
     state: &EventLoopState,
     cx: &AppContext,
 ) {
@@ -429,27 +437,22 @@ pub fn handle_scroll_event<A: App>(
     for overlay in &state.active_overlays {
         if overlay.contains(scroll.position.x, scroll.position.y) {
             debug!("Scroll on overlay owned by: {}", overlay.owner_id);
-            
+
             // Dispatch overlay scroll to owner widget
-            if let Some(result) = page.dispatch_overlay_scroll(
-                &overlay.owner_id,
-                scroll.direction,
-                scroll.amount,
-                cx,
-            ) {
-                if result.is_handled() {
+            if let Some(result) =
+                page.dispatch_overlay_scroll(&overlay.owner_id, scroll.direction, scroll.amount, cx)
+                && result.is_handled() {
                     // Dispatch on_scroll handler if present
                     if let Some(handler_id) = page.get_list_scroll_handler(&overlay.owner_id) {
-                        dispatch_to_layer(app, &state.modal_stack, &handler_id, cx);
+                        dispatch_to_layer(instance, &state.modal_stack, &handler_id, cx);
                     }
                 }
-            }
-            
+
             // Don't propagate to widgets below overlay
             return;
         }
     }
-    
+
     let Some(hit_box) = hit_map.hit_test(scroll.position.x, scroll.position.y) else {
         return;
     };
@@ -459,7 +462,7 @@ pub fn handle_scroll_event<A: App>(
 
     // Dispatch on_scroll handler if present
     if let Some(handler_id) = page.get_list_scroll_handler(&hit_box.id) {
-        dispatch_to_layer(app, &state.modal_stack, &handler_id, cx);
+        dispatch_to_layer(instance, &state.modal_stack, &handler_id, cx);
     }
 }
 
@@ -489,11 +492,11 @@ pub fn handle_release_event(page: &Node, state: &mut EventLoopState, cx: &AppCon
 ///
 /// Returns `ControlFlow::Break(())` if the app should exit.
 #[allow(clippy::too_many_arguments)]
-pub fn dispatch_event<A: App>(
+pub fn dispatch_event(
     event: &Event,
     page: &Node,
     hit_map: &HitTestMap,
-    app: &A,
+    instance: &dyn AnyAppInstance,
     state: &mut EventLoopState,
     app_keybinds: &Arc<RwLock<Keybinds>>,
     cx: &AppContext,
@@ -506,7 +509,7 @@ pub fn dispatch_event<A: App>(
         Event::Key(key_combo) => {
             debug!("Key event: {:?}", key_combo);
             if let ControlFlow::Break(()) =
-                handle_key_event(key_combo, page, app, state, app_keybinds, cx)
+                handle_key_event(key_combo, page, instance, state, app_keybinds, cx)
             {
                 return ControlFlow::Break(());
             }
@@ -516,15 +519,15 @@ pub fn dispatch_event<A: App>(
         }
         Event::Click(click) => {
             debug!("Click at ({}, {})", click.position.x, click.position.y);
-            handle_click_event(click, page, hit_map, app, state, cx);
+            handle_click_event(click, page, hit_map, instance, state, cx);
         }
         Event::Hover(position) => {
             // Note: Hover coalescing is still handled in event_loop.rs before calling this
-            handle_hover_event(*position, page, hit_map, app, state, cx);
+            handle_hover_event(*position, page, hit_map, instance, state, cx);
         }
         Event::Scroll(scroll) => {
             debug!("Scroll at ({}, {})", scroll.position.x, scroll.position.y);
-            handle_scroll_event(scroll, page, hit_map, app, state, cx);
+            handle_scroll_event(scroll, page, hit_map, instance, state, cx);
         }
         Event::Release(_) => {
             handle_release_event(page, state, cx);

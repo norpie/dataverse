@@ -86,7 +86,8 @@ impl SelectDemo {
         let priorities = get_priorities();
         if let Some(idx) = self.priority.selected_index() {
             if let Some(p) = priorities.get(idx) {
-                self.selected_priority.set(format!("{} (id: {})", p.name, p.id));
+                self.selected_priority
+                    .set(format!("{} (id: {})", p.name, p.id));
             }
         } else {
             self.selected_priority.set("(none)".to_string());
@@ -96,7 +97,7 @@ impl SelectDemo {
     fn page(&self) -> Node {
         let fruits = vec!["Apple", "Banana", "Cherry", "Date", "Elderberry"];
         let priorities = get_priorities();
-        
+
         let selected_fruit = self.selected_fruit.get();
         let selected_priority = self.selected_priority.get();
 
@@ -137,10 +138,22 @@ impl SelectDemo {
 
 fn get_priorities() -> Vec<Priority> {
     vec![
-        Priority { id: 1, name: "Low".to_string() },
-        Priority { id: 2, name: "Medium".to_string() },
-        Priority { id: 3, name: "High".to_string() },
-        Priority { id: 4, name: "Critical".to_string() },
+        Priority {
+            id: 1,
+            name: "Low".to_string(),
+        },
+        Priority {
+            id: 2,
+            name: "Medium".to_string(),
+        },
+        Priority {
+            id: 3,
+            name: "High".to_string(),
+        },
+        Priority {
+            id: 4,
+            name: "Critical".to_string(),
+        },
     ]
 }
 
@@ -151,10 +164,7 @@ async fn main() {
         let _ = WriteLogger::init(LevelFilter::Debug, Config::default(), log_file);
     }
 
-    if let Err(e) = rafter::Runtime::new()
-        .start_with::<SelectDemo>()
-        .await
-    {
+    if let Err(e) = rafter::Runtime::new().start_with::<SelectDemo>().await {
         eprintln!("Error: {}", e);
     }
 }

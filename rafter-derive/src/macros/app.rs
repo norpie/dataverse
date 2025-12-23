@@ -61,7 +61,10 @@ impl AppAttrs {
                 } else {
                     return Err(meta.error(format!(
                         "unknown app attribute: `{}`",
-                        meta.path.get_ident().map(|i| i.to_string()).unwrap_or_default()
+                        meta.path
+                            .get_ident()
+                            .map(|i| i.to_string())
+                            .unwrap_or_default()
                     )));
                 }
                 Ok(())

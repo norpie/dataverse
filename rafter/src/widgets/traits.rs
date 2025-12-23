@@ -6,7 +6,7 @@
 use crate::context::AppContext;
 use crate::input::keybinds::{Key, KeyCombo};
 
-use super::events::{WidgetEvent, WidgetEventKind, EventResult};
+use super::events::{EventResult, WidgetEvent, WidgetEventKind};
 use super::scrollbar::ScrollbarState;
 use super::selection::SelectionMode;
 
@@ -387,14 +387,14 @@ pub trait AnySelectable: Send + Sync {
 // New Unified Widget Trait Hierarchy
 // =============================================================================
 
-use ratatui::layout::Rect;
 use ratatui::Frame;
+use ratatui::layout::Rect;
 use std::fmt::Debug;
 
 use crate::input::events::Modifiers;
 use crate::input::keybinds::HandlerId;
-use crate::node::Node;
 use crate::layers::overlay::OverlayRequest;
+use crate::node::Node;
 use crate::runtime::hit_test::HitTestMap;
 use crate::styling::theme::Theme;
 
@@ -408,7 +408,15 @@ pub struct RenderContext<'a> {
     /// Hit test map for registering clickable areas
     pub hit_map: &'a mut HitTestMap,
     /// Function for rendering child nodes (used by container widgets)
-    pub render_node: fn(&mut Frame, &Node, Rect, &mut HitTestMap, &dyn Theme, Option<&str>, &mut Vec<OverlayRequest>),
+    pub render_node: fn(
+        &mut Frame,
+        &Node,
+        Rect,
+        &mut HitTestMap,
+        &dyn Theme,
+        Option<&str>,
+        &mut Vec<OverlayRequest>,
+    ),
     /// ID of the currently focused widget
     pub focused_id: Option<&'a str>,
     /// Pre-resolved ratatui style for this widget
@@ -646,7 +654,13 @@ pub trait AnyWidget: Send + Sync + Debug {
     }
 
     /// Handle ongoing drag movement.
-    fn dispatch_drag(&self, _x: u16, _y: u16, _modifiers: Modifiers, _cx: &AppContext) -> EventResult {
+    fn dispatch_drag(
+        &self,
+        _x: u16,
+        _y: u16,
+        _modifiers: Modifiers,
+        _cx: &AppContext,
+    ) -> EventResult {
         EventResult::Ignored
     }
 
@@ -860,8 +874,7 @@ pub trait Selectable: Scrollable {
     /// Whether this widget has a header row (Table only).
     fn has_header(&self) -> bool {
         false
-}
-
+    }
 
     /// Handle header click (Table only).
     ///

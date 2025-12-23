@@ -4,14 +4,14 @@ use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::Style as RatatuiStyle;
 
-use crate::widgets::list::AnyList;
-use crate::widgets::scrollbar::render_vertical_scrollbar;
-use crate::node::Layout;
 use crate::layers::overlay::OverlayRequest;
+use crate::node::Layout;
 use crate::runtime::hit_test::HitTestMap;
 use crate::runtime::render::RenderNodeFn;
 use crate::runtime::render::layout::{apply_border, apply_padding};
 use crate::styling::theme::Theme;
+use crate::widgets::list::AnyList;
+use crate::widgets::scrollbar::render_vertical_scrollbar;
 
 /// Render a list widget.
 #[allow(clippy::too_many_arguments)]
@@ -94,7 +94,15 @@ pub fn render(
         if let Some(item_node) = widget.render_item(index) {
             // Items don't register overlays - use a temporary vec that's discarded
             let mut item_overlays: Vec<OverlayRequest> = Vec::new();
-            render_node(frame, &item_node, item_area, hit_map, theme, focused_id, &mut item_overlays);
+            render_node(
+                frame,
+                &item_node,
+                item_area,
+                hit_map,
+                theme,
+                focused_id,
+                &mut item_overlays,
+            );
         }
     }
 

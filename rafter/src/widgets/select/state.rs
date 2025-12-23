@@ -134,13 +134,12 @@ impl Select {
 
     /// Set the selected index.
     pub fn set_selected_index(&self, index: Option<usize>) {
-        if let Ok(mut guard) = self.inner.write() {
-            if guard.selected_index != index {
+        if let Ok(mut guard) = self.inner.write()
+            && guard.selected_index != index {
                 guard.selected_index = index;
                 guard.error = None; // Clear error on selection change
                 self.dirty.store(true, Ordering::SeqCst);
             }
-        }
     }
 
     /// Clear the selection.
@@ -150,14 +149,11 @@ impl Select {
 
     /// Get the label of the currently selected option.
     pub fn selected_label(&self) -> Option<String> {
-        self.inner
-            .read()
-            .ok()
-            .and_then(|guard| {
-                guard.selected_index.and_then(|idx| {
-                    guard.option_labels.get(idx).cloned()
-                })
-            })
+        self.inner.read().ok().and_then(|guard| {
+            guard
+                .selected_index
+                .and_then(|idx| guard.option_labels.get(idx).cloned())
+        })
     }
 
     /// Get the placeholder text.
@@ -313,12 +309,11 @@ impl Select {
 
     /// Clear the validation error.
     pub fn clear_error(&self) {
-        if let Ok(mut guard) = self.inner.write() {
-            if guard.error.is_some() {
+        if let Ok(mut guard) = self.inner.write()
+            && guard.error.is_some() {
                 guard.error = None;
                 self.dirty.store(true, Ordering::SeqCst);
             }
-        }
     }
 
     /// Check if this select has a validation error.

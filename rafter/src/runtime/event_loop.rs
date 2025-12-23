@@ -6,9 +6,10 @@ use std::time::{Duration, Instant};
 use crossterm::event;
 use log::{debug, info, trace, warn};
 
-use crate::app::App;
-use crate::context::AppContext;
+use crate::app::{InstanceId, InstanceRegistry};
+use crate::context::{AppContext, InstanceCommand};
 use crate::input::focus::FocusId;
+use crate::input::keybinds::Keybinds;
 use crate::layers::overlay::{ActiveOverlay, OverlayRequest, calculate_overlay_position};
 use crate::styling::theme::Theme;
 
@@ -59,14 +60,113 @@ fn coalesce_hover_events(
     Ok((latest_position, other_events, skipped_count))
 }
 
-/// Run the main event loop for an app.
-pub async fn run_event_loop<A: App>(
-    app: A,
+/// Process instance commands from the context.
+///
+/// Returns true if the runtime should exit (all instances closed).
+fn process_instance_commands(
+    registry: &Arc<RwLock<InstanceRegistry>>,
+    app_keybinds: &Arc<RwLock<Keybinds>>,
+    cx: &AppContext,
+) -> bool {
+    let commands = cx.take_instance_commands();
+
+    for cmd in commands {
+        match cmd {
+            InstanceCommand::Spawn { instance, focus } => {
+                let id = instance.id();
+                info!("Spawning instance: {:?}", id);
+
+                let mut reg = registry.write().unwrap();
+                reg.insert(id, instance);
+
+                if focus {
+                    // Call on_background for old focused instance
+                    if let Some(old_id) = reg.focused()
+                        && let Some(old_instance) = reg.get(old_id) {
+                            old_instance.on_background(cx);
+                        }
+
+                    reg.focus(id);
+
+                    // Update keybinds to new instance's keybinds
+                    if let Some(new_instance) = reg.get(id) {
+                        let new_keybinds = new_instance.keybinds();
+                        if let Ok(mut kb) = app_keybinds.write() {
+                            *kb = new_keybinds;
+                        }
+                        new_instance.on_foreground(cx);
+                    }
+                }
+            }
+            InstanceCommand::Close { id, force } => {
+                info!("Closing instance: {:?} (force={})", id, force);
+
+                let mut reg = registry.write().unwrap();
+
+                // Check on_close_request if not forcing
+                if !force
+                    && let Some(instance) = reg.get(id)
+                        && !instance.on_close_request(cx) {
+                            debug!("Close cancelled by on_close_request");
+                            continue;
+                        }
+
+                // Call on_close lifecycle hook
+                if let Some(instance) = reg.get(id) {
+                    instance.on_close(cx);
+                }
+
+                // Actually close the instance
+                reg.close(id, force);
+
+                // If this was focused, update keybinds to new focused instance
+                if let Some(new_focused) = reg.focused_instance() {
+                    let new_keybinds = new_focused.keybinds();
+                    if let Ok(mut kb) = app_keybinds.write() {
+                        *kb = new_keybinds;
+                    }
+                }
+            }
+            InstanceCommand::Focus { id } => {
+                info!("Focusing instance: {:?}", id);
+
+                let mut reg = registry.write().unwrap();
+
+                // Call on_background for old focused instance
+                if let Some(old_id) = reg.focused()
+                    && old_id != id
+                        && let Some(old_instance) = reg.get(old_id) {
+                            old_instance.on_background(cx);
+                        }
+
+                if reg.focus(id) {
+                    // Update keybinds to new instance's keybinds
+                    if let Some(new_instance) = reg.get(id) {
+                        let new_keybinds = new_instance.keybinds();
+                        if let Ok(mut kb) = app_keybinds.write() {
+                            *kb = new_keybinds;
+                        }
+                        new_instance.on_foreground(cx);
+                    }
+                }
+            }
+        }
+    }
+
+    // Check if we should exit (no instances left)
+    let reg = registry.read().unwrap();
+    reg.is_empty()
+}
+
+/// Run the main event loop with an instance registry.
+pub async fn run_event_loop(
+    registry: Arc<RwLock<InstanceRegistry>>,
+    app_keybinds: Arc<RwLock<Keybinds>>,
+    cx: AppContext,
     theme: Arc<dyn Theme>,
     term_guard: &mut TerminalGuard,
 ) -> Result<(), RuntimeError> {
-    // Get initial keybinds and wrap in Arc<RwLock<>> for runtime mutation
-    let app_keybinds = Arc::new(RwLock::new(app.keybinds()));
+    // Log keybinds
     {
         let kb = app_keybinds.read().unwrap();
         info!("Registered {} keybinds", kb.all().len());
@@ -78,15 +178,17 @@ pub async fn run_event_loop<A: App>(
         }
     }
 
-    // Create app context with shared keybinds
-    let cx = AppContext::new(app_keybinds.clone());
-
     // Initialize event loop state
     let mut state = EventLoopState::new(theme);
 
-    // Call on_start (async)
-    app.on_start(&cx).await;
-    info!("App started: {}", app.name());
+    // Call on_start for the initial instance
+    {
+        let reg = registry.read().unwrap();
+        if let Some(instance) = reg.focused_instance() {
+            info!("App started: {}", instance.config().name);
+            instance.on_foreground(&cx);
+        }
+    }
 
     // Main event loop
     loop {
@@ -95,6 +197,28 @@ pub async fn run_event_loop<A: App>(
             info!("Exit requested by handler");
             break;
         }
+
+        // Process pending instance commands
+        if process_instance_commands(&registry, &app_keybinds, &cx) {
+            info!("All instances closed, exiting");
+            break;
+        }
+
+        // Get focused instance - if none, exit
+        let focused_id: InstanceId;
+        {
+            let reg = registry.read().unwrap();
+            match reg.focused() {
+                Some(id) => focused_id = id,
+                None => {
+                    info!("No focused instance, exiting");
+                    break;
+                }
+            }
+        }
+
+        // Update context with current instance ID
+        cx.set_instance_id(focused_id);
 
         // Process pending modal requests
         if let Some(modal) = cx.take_modal_request() {
@@ -138,11 +262,19 @@ pub async fn run_event_loop<A: App>(
         let now = Instant::now();
         state.active_toasts.retain(|(_, expiry)| *expiry > now);
 
-        // Get the page tree for app or top modal
+        // Get page and render using focused instance
+        let reg = registry.read().unwrap();
+        let Some(instance) = reg.focused_instance() else {
+            drop(reg);
+            info!("Focused instance disappeared, exiting");
+            break;
+        };
+
+        // Get the page tree for focused instance or top modal
         let page = if let Some(entry) = state.modal_stack.last() {
             entry.modal.page()
         } else {
-            app.page()
+            instance.page()
         };
 
         // Update focusable IDs from page tree
@@ -159,14 +291,14 @@ pub async fn run_event_loop<A: App>(
         // Render and build hit test map
         let mut hit_map = HitTestMap::new();
         let theme = &state.current_theme;
-        let focused_id = state.focused_id();
+        let focused_element_id = state.focused_id();
 
-        // Cache app page (computed once per frame)
+        // Cache instance page (computed once per frame)
         let view_start = Instant::now();
-        let app_view = app.page();
+        let app_view = instance.page();
         let view_elapsed = view_start.elapsed();
         if view_elapsed.as_millis() > 5 {
-            warn!("PROFILE: app.page() took {:?}", view_elapsed);
+            warn!("PROFILE: instance.page() took {:?}", view_elapsed);
         }
 
         // Cache modal views (computed once per frame)
@@ -187,7 +319,7 @@ pub async fn run_event_loop<A: App>(
 
             // Always render the app first
             let app_focused = if modal_stack_ref.is_empty() {
-                focused_id.as_deref()
+                focused_element_id.as_deref()
             } else {
                 None
             };
@@ -222,7 +354,7 @@ pub async fn run_event_loop<A: App>(
                 // Only show focus for the top modal
                 let is_top_modal = i == modal_stack_ref.len() - 1;
                 let modal_focused = if is_top_modal {
-                    focused_id.as_deref()
+                    focused_element_id.as_deref()
                 } else {
                     None
                 };
@@ -288,11 +420,18 @@ pub async fn run_event_loop<A: App>(
         if let Some(entry) = state.modal_stack.last() {
             entry.modal.clear_dirty();
         } else {
-            app.clear_dirty();
+            instance.clear_dirty();
         }
 
+        // Need to check dirty on instance, so we need to get instance info before dropping reg
+        let instance_dirty = instance.is_dirty();
+
+        // Drop the registry lock before waiting for events
+        drop(reg);
+
         // Determine poll timeout - skip waiting if state changed
-        let needs_immediate_update = state.needs_immediate_update(&app, modal_closed);
+        let needs_immediate_update =
+            state.needs_immediate_update_multi(instance_dirty, modal_closed);
         let poll_timeout = if needs_immediate_update {
             Duration::from_millis(0)
         } else {
@@ -336,26 +475,34 @@ pub async fn run_event_loop<A: App>(
                 };
 
                 // Dispatch the event using the unified handler
-                if dispatch_event(
-                    &event_to_dispatch,
-                    &page,
-                    &hit_map,
-                    &app,
-                    &mut state,
-                    &app_keybinds,
-                    &cx,
-                )
-                .is_break()
-                {
-                    break;
-                }
+                // Need to re-acquire registry lock for event dispatch
+                let reg = registry.read().unwrap();
+                if let Some(instance) = reg.focused_instance()
+                    && dispatch_event(
+                        &event_to_dispatch,
+                        &page,
+                        &hit_map,
+                        instance,
+                        &mut state,
+                        &app_keybinds,
+                        &cx,
+                    )
+                    .is_break()
+                    {
+                        break;
+                    }
             }
         }
     }
 
-    // Call on_stop (async)
-    app.on_stop(&cx).await;
-    info!("App stopped");
+    // Call on_stop for all instances
+    {
+        let reg = registry.read().unwrap();
+        for instance in reg.iter() {
+            instance.on_close(&cx);
+        }
+    }
+    info!("Runtime stopped");
 
     Ok(())
 }

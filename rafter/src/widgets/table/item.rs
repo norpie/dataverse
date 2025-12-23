@@ -201,8 +201,8 @@ pub trait TableRow: Send + Sync + Clone + 'static {
     /// - Selected: bg=#6E5494 (dim purple), fg=background (inverted)
     /// - Neither: no styling applied
     fn apply_default_row_style(child: Node, focused: bool, selected: bool) -> Node {
-        use crate::styling::color::{Color, StyleColor};
         use crate::node::{Layout, Size};
+        use crate::styling::color::{Color, StyleColor};
         use crate::styling::style::Style;
 
         let style = if focused || selected {

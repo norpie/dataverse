@@ -31,20 +31,21 @@ pub use styling::theme;
 pub mod prelude {
     // App
     pub use crate::app::App;
-    
+
     // Styling
     pub use crate::styling::{Color, Style, StyleColor};
     pub use crate::styling::{DefaultTheme, Theme};
-    
+
     // Input
     pub use crate::input::{ClickEvent, ClickKind, Modifiers};
     pub use crate::input::{FocusState, KeybindError, KeybindInfo, Keybinds};
-    
+
     // Layers
     pub use crate::layers::{Modal, ModalContext, ModalPosition, ModalSize};
-    
+
     // Widgets
     pub use crate::widgets::{Alignment, Column, Table, TableId, TableRow};
+    pub use crate::widgets::{AnyWidget, Scrollable, Selectable, WidgetHandlers};
     pub use crate::widgets::{
         Button, Checkbox, Collapsible, Input, RadioGroup, ScrollArea, ScrollDirection,
         ScrollbarConfig, ScrollbarVisibility,
@@ -52,17 +53,18 @@ pub mod prelude {
     pub use crate::widgets::{List, ListId, ListItem, Selection, SelectionMode};
     pub use crate::widgets::{Select, SelectId, SelectItem};
     pub use crate::widgets::{Tree, TreeId, TreeItem};
-    pub use crate::widgets::{AnyWidget, Scrollable, Selectable, WidgetHandlers};
-    
+
     // Core
     pub use crate::context::{AppContext, Toast, ToastLevel};
     pub use crate::node::Node;
     pub use crate::resource::{ProgressState, Resource, ResourceState};
     pub use crate::runtime::Runtime;
     pub use crate::state::State;
-    
+
     // Validation
-    pub use crate::validation::{ErrorDisplay, FieldError, Validatable, ValidationResult, Validator};
+    pub use crate::validation::{
+        ErrorDisplay, FieldError, Validatable, ValidationResult, Validator,
+    };
 
     pub use rafter_derive::*;
 }

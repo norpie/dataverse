@@ -3,7 +3,6 @@
 use std::sync::Arc;
 use std::time::Instant;
 
-use crate::app::App;
 use crate::context::Toast;
 use crate::input::focus::FocusState;
 use crate::layers::overlay::ActiveOverlay;
@@ -82,7 +81,9 @@ impl EventLoopState {
     }
 
     /// Check if any layer needs immediate update (dirty state or modal closed).
-    pub fn needs_immediate_update<A: App>(&self, app: &A, modal_closed: bool) -> bool {
-        modal_closed || app.is_dirty() || self.modal_stack.iter().any(|e| e.modal.is_dirty())
+    ///
+    /// This version is for multi-instance mode where we pass dirty state directly.
+    pub fn needs_immediate_update_multi(&self, instance_dirty: bool, modal_closed: bool) -> bool {
+        modal_closed || instance_dirty || self.modal_stack.iter().any(|e| e.modal.is_dirty())
     }
 }

@@ -8,15 +8,15 @@ use super::ScrollArea;
 use super::ScrollbarConfig;
 use super::ScrollbarVisibility;
 use super::state::ScrollDirection;
-use crate::widgets::scrollbar::ScrollbarState;
-use crate::node::Node;
 use crate::layers::overlay::OverlayRequest;
+use crate::node::Node;
 use crate::runtime::hit_test::HitTestMap;
 use crate::runtime::render::RenderNodeFn;
 use crate::styling::style::Style;
 use crate::styling::theme::Theme;
 use crate::utils::geometry::{intersect_rects, rects_overlap};
 use crate::utils::text::wrap_text;
+use crate::widgets::scrollbar::ScrollbarState;
 
 // Re-export from shared scrollbar module
 pub use crate::widgets::scrollbar::{render_horizontal_scrollbar, render_vertical_scrollbar};
@@ -294,7 +294,15 @@ pub fn render_node_clipped(
         // For other node types, fall back to regular rendering
         _ => {
             let mut fallback_overlays: Vec<OverlayRequest> = Vec::new();
-            render_node(frame, node, area, hit_map, theme, focused_id, &mut fallback_overlays);
+            render_node(
+                frame,
+                node,
+                area,
+                hit_map,
+                theme,
+                focused_id,
+                &mut fallback_overlays,
+            );
         }
     }
 }

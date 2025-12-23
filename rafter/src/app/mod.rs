@@ -10,6 +10,6 @@ mod traits;
 pub use any_instance::{AnyAppInstance, AppInstance};
 pub use config::{AppConfig, BlurPolicy, SpawnError};
 pub use instance::{InstanceId, InstanceInfo};
-pub use registration::{registered_apps, AppRegistration, CloneableApp};
+pub use registration::{AppRegistration, CloneableApp, registered_apps};
 pub use registry::InstanceRegistry;
 pub use traits::{App, PanicBehavior, PersistentApp};

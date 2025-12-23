@@ -12,8 +12,8 @@ use ratatui::Frame;
 use ratatui::style::Style as RatatuiStyle;
 
 use super::hit_test::HitTestMap;
-use crate::node::Node;
 use crate::layers::overlay::OverlayRequest;
+use crate::node::Node;
 use crate::styling::style::Style;
 use crate::styling::theme::{Theme, resolve_color};
 
@@ -150,7 +150,8 @@ pub fn render_node(
             widget.render(frame, area, is_focused, &mut ctx);
             // Only register full area if widget doesn't handle its own hit registration
             if !widget.registers_own_hit_area() {
-                ctx.hit_map.register(widget.id(), area, widget.captures_input());
+                ctx.hit_map
+                    .register(widget.id(), area, widget.captures_input());
             }
         }
     }

@@ -4,9 +4,9 @@
 //! `ScrollbarState` to handle scrollbar interactions consistently.
 
 use super::{ScrollbarDrag, ScrollbarState};
-use crate::widgets::events::EventResult;
 use crate::context::AppContext;
 use crate::input::events::{Modifiers, ScrollDirection};
+use crate::widgets::events::EventResult;
 
 /// Handle a click event on scrollbars.
 ///

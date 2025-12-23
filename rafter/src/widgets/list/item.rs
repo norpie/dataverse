@@ -98,8 +98,8 @@ pub trait ListItem: Send + Sync + Clone + 'static {
     /// Self::apply_default_style(content, focused, selected)
     /// ```
     fn apply_default_style(child: Node, focused: bool, selected: bool) -> Node {
-        use crate::styling::color::{Color, StyleColor};
         use crate::node::{Layout, Size};
+        use crate::styling::color::{Color, StyleColor};
         use crate::styling::style::Style;
 
         let style = if focused || selected {

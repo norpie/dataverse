@@ -1,8 +1,8 @@
 //! Event handling for the Table widget.
 
+use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::widgets::Block;
-use ratatui::Frame;
 
 use crate::context::AppContext;
 use crate::input::events::{Modifiers, ScrollDirection};
@@ -10,8 +10,8 @@ use crate::input::keybinds::{Key, KeyCombo};
 use crate::runtime::render::layout::{apply_border, apply_padding};
 use crate::widgets::events::{EventResult, WidgetEvent, WidgetEventKind, WidgetEvents};
 use crate::widgets::scrollbar::{
-    handle_scrollbar_click, handle_scrollbar_drag, handle_scrollbar_release,
-    render_horizontal_scrollbar, render_vertical_scrollbar, ScrollbarState,
+    ScrollbarState, handle_scrollbar_click, handle_scrollbar_drag, handle_scrollbar_release,
+    render_horizontal_scrollbar, render_vertical_scrollbar,
 };
 use crate::widgets::selection::SelectionMode;
 use crate::widgets::traits::{AnyWidget, RenderContext, Scrollable, Selectable, SelectableWidget};
@@ -66,10 +66,7 @@ impl<T: TableRow> Table<T> {
         // Toggle sort
         if let Some((col, asc)) = self.toggle_sort(col_idx) {
             cx.set_sorted(col, asc);
-            cx.push_event(WidgetEvent::new(
-                WidgetEventKind::Sort,
-                self.id_string(),
-            ));
+            cx.push_event(WidgetEvent::new(WidgetEventKind::Sort, self.id_string()));
             return EventResult::Consumed;
         }
 

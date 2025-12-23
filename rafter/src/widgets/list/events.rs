@@ -1,8 +1,8 @@
 //! Event handling for the List widget.
 
+use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::widgets::Block;
-use ratatui::Frame;
 
 use crate::context::AppContext;
 use crate::input::events::{Modifiers, ScrollDirection};
@@ -10,14 +10,14 @@ use crate::input::keybinds::KeyCombo;
 use crate::runtime::render::layout::{apply_border, apply_padding};
 use crate::widgets::events::{EventResult, WidgetEvents};
 use crate::widgets::scrollbar::{
-    handle_scrollbar_click, handle_scrollbar_drag, handle_scrollbar_release,
-    render_vertical_scrollbar, ScrollbarState,
+    ScrollbarState, handle_scrollbar_click, handle_scrollbar_drag, handle_scrollbar_release,
+    render_vertical_scrollbar,
 };
 use crate::widgets::traits::{AnyWidget, RenderContext, Scrollable, Selectable, SelectableWidget};
 
+use super::SelectionMode;
 use super::item::ListItem;
 use super::state::List;
-use super::SelectionMode;
 
 impl<T: ListItem> WidgetEvents for List<T> {
     fn on_key(&self, key: &KeyCombo, cx: &AppContext) -> EventResult {
@@ -283,8 +283,7 @@ impl<T: ListItem + std::fmt::Debug> AnyWidget for List<T> {
         }
 
         // Register hit box
-        ctx.hit_map
-            .register(self.id_string(), padded_area, true);
+        ctx.hit_map.register(self.id_string(), padded_area, true);
     }
 
     fn as_selectable(&self) -> Option<&dyn Selectable> {

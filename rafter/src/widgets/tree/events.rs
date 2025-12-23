@@ -1,8 +1,8 @@
 //! Event handling for the Tree widget.
 
+use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::widgets::Block;
-use ratatui::Frame;
 
 use crate::context::AppContext;
 use crate::input::events::{Modifiers, ScrollDirection};
@@ -10,8 +10,8 @@ use crate::input::keybinds::{Key, KeyCombo};
 use crate::runtime::render::layout::{apply_border, apply_padding};
 use crate::widgets::events::{EventResult, WidgetEvent, WidgetEventKind, WidgetEvents};
 use crate::widgets::scrollbar::{
-    handle_scrollbar_click, handle_scrollbar_drag, handle_scrollbar_release,
-    render_vertical_scrollbar, ScrollbarState,
+    ScrollbarState, handle_scrollbar_click, handle_scrollbar_drag, handle_scrollbar_release,
+    render_vertical_scrollbar,
 };
 use crate::widgets::selection::SelectionMode;
 use crate::widgets::traits::{AnyWidget, RenderContext, Scrollable, Selectable, SelectableWidget};
@@ -23,10 +23,7 @@ impl<T: TreeItem> Tree<T> {
     /// Handle expand event, pushing event.
     fn handle_expand(&self, node_id: &str, cx: &AppContext) {
         cx.set_expanded(node_id.to_string());
-        cx.push_event(WidgetEvent::new(
-            WidgetEventKind::Expand,
-            self.id_string(),
-        ));
+        cx.push_event(WidgetEvent::new(WidgetEventKind::Expand, self.id_string()));
     }
 
     /// Handle collapse event, pushing event.
@@ -341,8 +338,7 @@ impl<T: TreeItem + std::fmt::Debug> AnyWidget for Tree<T> {
         }
 
         // Register hit box
-        ctx.hit_map
-            .register(self.id_string(), padded_area, true);
+        ctx.hit_map.register(self.id_string(), padded_area, true);
     }
 
     fn as_selectable(&self) -> Option<&dyn Selectable> {

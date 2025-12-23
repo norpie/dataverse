@@ -15,8 +15,10 @@ pub struct FieldError {
 
 /// Result of validating one or more fields.
 #[derive(Debug, Clone)]
+#[derive(Default)]
 pub enum ValidationResult {
     /// All fields passed validation.
+    #[default]
     Valid,
     /// One or more fields failed validation.
     Invalid(Vec<FieldError>),
@@ -70,8 +72,3 @@ impl ValidationResult {
     }
 }
 
-impl Default for ValidationResult {
-    fn default() -> Self {
-        Self::Valid
-    }
-}

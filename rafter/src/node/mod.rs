@@ -20,16 +20,12 @@ pub enum Node {
     // =========================================================================
     // Primitives (stateless layout nodes)
     // =========================================================================
-
     /// Empty node (renders nothing)
     #[default]
     Empty,
 
     /// Text content
-    Text {
-        content: String,
-        style: Style,
-    },
+    Text { content: String, style: Style },
 
     /// Container with vertical layout
     Column {
@@ -55,7 +51,6 @@ pub enum Node {
     // =========================================================================
     // Unified Widget variant (for widgets implementing AnyWidget)
     // =========================================================================
-
     /// A widget node.
     ///
     /// This is the unified variant for all widgets implementing `AnyWidget`.
@@ -277,9 +272,7 @@ impl Node {
             }
             Self::Column { children, .. }
             | Self::Row { children, .. }
-            | Self::Stack { children, .. } => {
-                children.iter().find_map(|c| c.get_widget(target_id))
-            }
+            | Self::Stack { children, .. } => children.iter().find_map(|c| c.get_widget(target_id)),
             _ => None,
         }
     }
@@ -303,11 +296,9 @@ impl Node {
             }
             Self::Column { children, .. }
             | Self::Row { children, .. }
-            | Self::Stack { children, .. } => {
-                children
-                    .iter()
-                    .find_map(|c| c.get_widget_handlers(target_id))
-            }
+            | Self::Stack { children, .. } => children
+                .iter()
+                .find_map(|c| c.get_widget_handlers(target_id)),
             _ => None,
         }
     }
@@ -339,11 +330,9 @@ impl Node {
             }
             Self::Column { children, .. }
             | Self::Row { children, .. }
-            | Self::Stack { children, .. } => {
-                children
-                    .iter()
-                    .find_map(|c| c.get_submit_handler(target_id))
-            }
+            | Self::Stack { children, .. } => children
+                .iter()
+                .find_map(|c| c.get_submit_handler(target_id)),
             _ => None,
         }
     }
@@ -367,11 +356,9 @@ impl Node {
             }
             Self::Column { children, .. }
             | Self::Row { children, .. }
-            | Self::Stack { children, .. } => {
-                children
-                    .iter()
-                    .find_map(|c| c.get_change_handler(target_id))
-            }
+            | Self::Stack { children, .. } => children
+                .iter()
+                .find_map(|c| c.get_change_handler(target_id)),
             _ => None,
         }
     }
@@ -395,11 +382,9 @@ impl Node {
             }
             Self::Column { children, .. }
             | Self::Row { children, .. }
-            | Self::Stack { children, .. } => {
-                children
-                    .iter()
-                    .find_map(|c| c.get_cursor_handler(target_id))
-            }
+            | Self::Stack { children, .. } => children
+                .iter()
+                .find_map(|c| c.get_cursor_handler(target_id)),
             _ => None,
         }
     }
@@ -423,11 +408,9 @@ impl Node {
             }
             Self::Column { children, .. }
             | Self::Row { children, .. }
-            | Self::Stack { children, .. } => {
-                children
-                    .iter()
-                    .find_map(|c| c.get_selection_handler(target_id))
-            }
+            | Self::Stack { children, .. } => children
+                .iter()
+                .find_map(|c| c.get_selection_handler(target_id)),
             _ => None,
         }
     }
@@ -451,11 +434,9 @@ impl Node {
             }
             Self::Column { children, .. }
             | Self::Row { children, .. }
-            | Self::Stack { children, .. } => {
-                children
-                    .iter()
-                    .find_map(|c| c.get_expand_handler(target_id))
-            }
+            | Self::Stack { children, .. } => children
+                .iter()
+                .find_map(|c| c.get_expand_handler(target_id)),
             _ => None,
         }
     }
@@ -479,11 +460,9 @@ impl Node {
             }
             Self::Column { children, .. }
             | Self::Row { children, .. }
-            | Self::Stack { children, .. } => {
-                children
-                    .iter()
-                    .find_map(|c| c.get_collapse_handler(target_id))
-            }
+            | Self::Stack { children, .. } => children
+                .iter()
+                .find_map(|c| c.get_collapse_handler(target_id)),
             _ => None,
         }
     }
@@ -531,11 +510,9 @@ impl Node {
             }
             Self::Column { children, .. }
             | Self::Row { children, .. }
-            | Self::Stack { children, .. } => {
-                children
-                    .iter()
-                    .find_map(|c| c.get_list_scroll_handler(target_id))
-            }
+            | Self::Stack { children, .. } => children
+                .iter()
+                .find_map(|c| c.get_list_scroll_handler(target_id)),
             _ => None,
         }
     }
@@ -557,14 +534,14 @@ impl Node {
         }
 
         match self {
-            Self::Widget { children, .. } => {
-                children.iter().find_map(|c| c.dispatch_event(target_id, visitor))
-            }
+            Self::Widget { children, .. } => children
+                .iter()
+                .find_map(|c| c.dispatch_event(target_id, visitor)),
             Self::Column { children, .. }
             | Self::Row { children, .. }
-            | Self::Stack { children, .. } => {
-                children.iter().find_map(|c| c.dispatch_event(target_id, visitor))
-            }
+            | Self::Stack { children, .. } => children
+                .iter()
+                .find_map(|c| c.dispatch_event(target_id, visitor)),
             _ => None,
         }
     }
@@ -701,7 +678,9 @@ impl Node {
         cx: &AppContext,
     ) -> Option<EventResult> {
         self.dispatch_event(owner_id, |node| match node {
-            Self::Widget { widget, .. } => Some(widget.dispatch_overlay_scroll(direction, amount, cx)),
+            Self::Widget { widget, .. } => {
+                Some(widget.dispatch_overlay_scroll(direction, amount, cx))
+            }
             _ => None,
         })
     }
@@ -734,7 +713,9 @@ impl Node {
             Self::Text { content, .. } => {
                 content.lines().map(|l| l.len()).max().unwrap_or(0) as u16
             }
-            Self::Column { children, layout, .. } => {
+            Self::Column {
+                children, layout, ..
+            } => {
                 let (chrome_h, _) = layout.chrome_size();
                 let max_child = children
                     .iter()
@@ -743,7 +724,9 @@ impl Node {
                     .unwrap_or(0);
                 max_child + chrome_h
             }
-            Self::Row { children, layout, .. } => {
+            Self::Row {
+                children, layout, ..
+            } => {
                 let (chrome_h, _) = layout.chrome_size();
                 let child_sum: u16 = children.iter().map(|c| c.intrinsic_width()).sum();
                 let gaps = if children.len() > 1 {
@@ -753,7 +736,9 @@ impl Node {
                 };
                 child_sum + gaps + chrome_h
             }
-            Self::Stack { children, layout, .. } => {
+            Self::Stack {
+                children, layout, ..
+            } => {
                 let (chrome_h, _) = layout.chrome_size();
                 let max_child = children
                     .iter()
@@ -792,7 +777,9 @@ impl Node {
         match self {
             Self::Empty => 0,
             Self::Text { content, .. } => content.lines().count().max(1) as u16,
-            Self::Column { children, layout, .. } => {
+            Self::Column {
+                children, layout, ..
+            } => {
                 let (_, chrome_v) = layout.chrome_size();
                 let child_sum: u16 = children.iter().map(|c| c.intrinsic_height()).sum();
                 let gaps = if children.len() > 1 {
@@ -802,7 +789,9 @@ impl Node {
                 };
                 child_sum + gaps + chrome_v
             }
-            Self::Row { children, layout, .. } => {
+            Self::Row {
+                children, layout, ..
+            } => {
                 let (_, chrome_v) = layout.chrome_size();
                 let max_child = children
                     .iter()
@@ -811,7 +800,9 @@ impl Node {
                     .unwrap_or(0);
                 max_child + chrome_v
             }
-            Self::Stack { children, layout, .. } => {
+            Self::Stack {
+                children, layout, ..
+            } => {
                 let (_, chrome_v) = layout.chrome_size();
                 let max_child = children
                     .iter()

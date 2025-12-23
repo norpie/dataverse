@@ -24,10 +24,10 @@ pub mod tree;
 pub use button::Button;
 pub use checkbox::{Checkbox, CheckboxId};
 pub use collapsible::{Collapsible, CollapsibleId};
-pub use radio::{RadioGroup, RadioGroupId};
-pub use events::{WidgetEvents, EventResult};
+pub use events::{EventResult, WidgetEvents};
 pub use input::{Input, InputId};
 pub use list::{AnyList, List, ListId, ListItem, Selection, SelectionMode};
+pub use radio::{RadioGroup, RadioGroupId};
 pub use scroll_area::{ScrollArea, ScrollAreaId, ScrollDirection};
 pub use scrollbar::{
     ScrollbarConfig, ScrollbarDrag, ScrollbarGeometry, ScrollbarState, ScrollbarVisibility,
@@ -36,8 +36,14 @@ pub use select::{Select, SelectId, SelectItem};
 pub use table::{Alignment, AnyTable, Column, Table, TableId, TableRow};
 pub use traits::{
     // Legacy traits (still used by existing widgets, will be migrated in Phase 5)
-    AnySelectable, ScrollableWidget, SelectableWidget,
+    AnySelectable,
     // New unified widget system
-    AnyWidget, RenderContext, Scrollable, Selectable, WidgetHandlers,
+    AnyWidget,
+    RenderContext,
+    Scrollable,
+    ScrollableWidget,
+    Selectable,
+    SelectableWidget,
+    WidgetHandlers,
 };
 pub use tree::{AnyTree, FlatNode, Tree, TreeId, TreeItem};

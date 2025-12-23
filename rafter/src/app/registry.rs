@@ -41,6 +41,21 @@ impl InstanceRegistry {
         }
     }
 
+    /// Insert an already-created instance into the registry.
+    ///
+    /// This is used by the runtime to insert the initial app instance.
+    /// For normal spawning, use `spawn()` instead.
+    pub fn insert(&mut self, id: InstanceId, instance: Box<dyn AnyAppInstance>) {
+        let type_id = instance.type_id();
+
+        // Store the instance
+        self.instances.insert(id, instance);
+        *self.instance_counts.entry(type_id).or_insert(0) += 1;
+
+        // Add to MRU order
+        self.mru_order.insert(0, id);
+    }
+
     /// Spawn a new app instance.
     ///
     /// Returns the new instance ID, or an error if max instances reached.
@@ -127,13 +142,11 @@ impl InstanceRegistry {
         }
 
         // Update focused state on old focused instance
-        if let Some(old_id) = self.focused {
-            if old_id != id {
-                if let Some(old_instance) = self.instances.get_mut(&old_id) {
+        if let Some(old_id) = self.focused
+            && old_id != id
+                && let Some(old_instance) = self.instances.get_mut(&old_id) {
                     old_instance.set_focused(false);
                 }
-            }
-        }
 
         // Update focused state on new instance
         if let Some(instance) = self.instances.get_mut(&id) {

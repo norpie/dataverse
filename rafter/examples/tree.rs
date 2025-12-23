@@ -127,10 +127,7 @@ impl TreeDemo {
                                     FileNode::file("/src/widgets/list/render.rs", "render.rs"),
                                     FileNode::file("/src/widgets/list/events.rs", "events.rs"),
                                     FileNode::file("/src/widgets/list/item.rs", "item.rs"),
-                                    FileNode::file(
-                                        "/src/widgets/list/any_list.rs",
-                                        "any_list.rs",
-                                    ),
+                                    FileNode::file("/src/widgets/list/any_list.rs", "any_list.rs"),
                                 ],
                             ),
                             FileNode::dir(
@@ -142,10 +139,7 @@ impl TreeDemo {
                                     FileNode::file("/src/widgets/tree/render.rs", "render.rs"),
                                     FileNode::file("/src/widgets/tree/events.rs", "events.rs"),
                                     FileNode::file("/src/widgets/tree/item.rs", "item.rs"),
-                                    FileNode::file(
-                                        "/src/widgets/tree/any_tree.rs",
-                                        "any_tree.rs",
-                                    ),
+                                    FileNode::file("/src/widgets/tree/any_tree.rs", "any_tree.rs"),
                                 ],
                             ),
                             FileNode::dir(
@@ -153,10 +147,7 @@ impl TreeDemo {
                                 "scroll_area",
                                 vec![
                                     FileNode::file("/src/widgets/scroll_area/mod.rs", "mod.rs"),
-                                    FileNode::file(
-                                        "/src/widgets/scroll_area/state.rs",
-                                        "state.rs",
-                                    ),
+                                    FileNode::file("/src/widgets/scroll_area/state.rs", "state.rs"),
                                     FileNode::file(
                                         "/src/widgets/scroll_area/render.rs",
                                         "render.rs",
@@ -172,18 +163,9 @@ impl TreeDemo {
                                 "scrollbar",
                                 vec![
                                     FileNode::file("/src/widgets/scrollbar/mod.rs", "mod.rs"),
-                                    FileNode::file(
-                                        "/src/widgets/scrollbar/state.rs",
-                                        "state.rs",
-                                    ),
-                                    FileNode::file(
-                                        "/src/widgets/scrollbar/render.rs",
-                                        "render.rs",
-                                    ),
-                                    FileNode::file(
-                                        "/src/widgets/scrollbar/types.rs",
-                                        "types.rs",
-                                    ),
+                                    FileNode::file("/src/widgets/scrollbar/state.rs", "state.rs"),
+                                    FileNode::file("/src/widgets/scrollbar/render.rs", "render.rs"),
+                                    FileNode::file("/src/widgets/scrollbar/types.rs", "types.rs"),
                                 ],
                             ),
                         ],

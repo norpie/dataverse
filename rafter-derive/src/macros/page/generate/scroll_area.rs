@@ -44,9 +44,7 @@ pub fn generate_scroll_area_element(elem: &ElementNode) -> TokenStream {
                 Some(AttrValue::Ident(i)) => {
                     let dir_str = i.to_string();
                     match dir_str.as_str() {
-                        "vertical" => {
-                            Some(quote! { rafter::widgets::ScrollDirection::Vertical })
-                        }
+                        "vertical" => Some(quote! { rafter::widgets::ScrollDirection::Vertical }),
                         "horizontal" => {
                             Some(quote! { rafter::widgets::ScrollDirection::Horizontal })
                         }

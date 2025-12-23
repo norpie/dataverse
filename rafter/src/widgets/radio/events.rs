@@ -1,7 +1,7 @@
 //! Event handling for the RadioGroup widget.
 
-use ratatui::layout::Rect;
 use ratatui::Frame;
+use ratatui::layout::Rect;
 
 use crate::context::AppContext;
 use crate::input::keybinds::{Key, KeyCombo};

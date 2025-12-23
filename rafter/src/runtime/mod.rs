@@ -11,11 +11,12 @@ mod state;
 mod terminal;
 
 use std::io;
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 
 use log::info;
 
-use crate::app::{App, PanicBehavior};
+use crate::app::{AnyAppInstance, App, AppInstance, InstanceRegistry, PanicBehavior};
+use crate::context::AppContext;
 use crate::styling::theme::{DefaultTheme, Theme};
 
 use terminal::TerminalGuard;
@@ -105,8 +106,28 @@ impl Runtime {
         let mut term_guard = TerminalGuard::new()?;
         info!("Terminal initialized");
 
-        // Run the event loop
-        event_loop::run_event_loop(app, self.theme, &mut term_guard).await
+        // Create the instance registry
+        let registry = Arc::new(RwLock::new(InstanceRegistry::new()));
+
+        // Create the initial app instance and add to registry
+        let instance = AppInstance::new(app);
+        let instance_id = instance.id();
+        let keybinds = instance.keybinds();
+
+        {
+            let mut reg = registry.write().unwrap();
+            reg.insert(instance_id, Box::new(instance));
+            reg.focus(instance_id);
+        }
+
+        // Create app context with shared keybinds and registry
+        let app_keybinds = Arc::new(RwLock::new(keybinds));
+        let mut cx = AppContext::new(app_keybinds.clone());
+        cx.set_registry(registry.clone());
+        cx.set_instance_id(instance_id);
+
+        // Run the event loop with the registry
+        event_loop::run_event_loop(registry, app_keybinds, cx, self.theme, &mut term_guard).await
     }
 }
 
