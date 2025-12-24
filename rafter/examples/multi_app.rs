@@ -12,8 +12,7 @@ use std::fs::File;
 use log::{info, LevelFilter};
 use rafter::app::InstanceInfo;
 use rafter::prelude::*;
-use rafter::request::{Request, RequestError};
-use rafter::event::Event;
+use rafter::request::RequestError;
 use simplelog::{Config, WriteLogger};
 
 // ============================================================================
@@ -44,6 +43,8 @@ struct AppA {
     last_activated: String,
     /// Status of AppB (from request)
     app_b_paused: Option<bool>,
+    /// Counter value from App D (from request)
+    app_d_counter: Option<i32>,
 }
 
 #[app_impl]
@@ -53,8 +54,11 @@ impl AppA {
         keybinds! {
             "q" | "escape" => quit,
             "n" | "enter" => next_app,
+            "d" => go_to_app_d,
             "r" => refresh,
             "p" => check_app_b_status,
+            "c" => get_app_d_counter,
+            "i" => increment_app_d_counter,
         }
     }
 
@@ -88,16 +92,70 @@ impl AppA {
                 self.app_b_paused.set(Some(is_paused));
             }
             Err(RequestError::NoInstance) => {
-                info!("[App A] App B has no instances running");
+                // NoInstance means no *awake* instance exists
+                // App B could be sleeping (BlurPolicy::Sleep) or not spawned at all
+                info!("[App A] App B has no awake instances (may be sleeping or not started)");
                 self.app_b_paused.set(None);
             }
             Err(RequestError::InstanceSleeping(_)) => {
+                // This only happens when targeting by instance ID
                 info!("[App A] App B is sleeping - cannot respond to requests");
                 self.app_b_paused.set(Some(true)); // Sleeping means paused
             }
             Err(e) => {
                 info!("[App A] Request failed: {:?}", e);
                 self.app_b_paused.set(None);
+            }
+        }
+    }
+
+    /// Go to App D (or spawn it)
+    #[handler]
+    async fn go_to_app_d(&self, cx: &AppContext) {
+        if let Some(id) = cx.instance_of::<AppD>() {
+            info!("[App A] Focusing existing App D");
+            cx.focus_instance(id);
+        } else {
+            info!("[App A] Spawning new App D");
+            let _ = cx.spawn_and_focus(AppD::default());
+        }
+    }
+
+    /// Query App D's counter value
+    #[handler]
+    async fn get_app_d_counter(&self, cx: &AppContext) {
+        info!("[App A] Sending GetCounter request to App D");
+        match cx.request::<AppD, GetCounter>(GetCounter).await {
+            Ok(value) => {
+                info!("[App A] App D counter = {}", value);
+                self.app_d_counter.set(Some(value));
+            }
+            Err(RequestError::NoInstance) => {
+                info!("[App A] App D has no awake instances");
+                self.app_d_counter.set(None);
+            }
+            Err(e) => {
+                info!("[App A] GetCounter request failed: {:?}", e);
+                self.app_d_counter.set(None);
+            }
+        }
+    }
+
+    /// Increment App D's counter remotely
+    #[handler]
+    async fn increment_app_d_counter(&self, cx: &AppContext) {
+        info!("[App A] Sending IncrementCounter request to App D");
+        match cx.request::<AppD, IncrementCounter>(IncrementCounter).await {
+            Ok(new_value) => {
+                info!("[App A] App D counter incremented to {}", new_value);
+                self.app_d_counter.set(Some(new_value));
+            }
+            Err(RequestError::NoInstance) => {
+                info!("[App A] App D has no awake instances");
+                self.app_d_counter.set(None);
+            }
+            Err(e) => {
+                info!("[App A] IncrementCounter request failed: {:?}", e);
             }
         }
     }
@@ -132,6 +190,7 @@ impl AppA {
         let separator = "─".repeat(50);
         let last_activated = self.last_activated.get();
         let app_b_status = self.app_b_paused.get();
+        let app_d_counter = self.app_d_counter.get();
 
         // Build instance display strings with truncated IDs
         let instance_lines: Vec<String> = instances
@@ -152,8 +211,14 @@ impl AppA {
         // Format AppB status
         let app_b_status_str = match app_b_status {
             Some(true) => "paused/sleeping".to_string(),
-            Some(false) => "running".to_string(),
-            None => "unknown (no instance?)".to_string(),
+            Some(false) => "running (responded to request)".to_string(),
+            None => "no awake instance".to_string(),
+        };
+
+        // Format AppD counter
+        let app_d_counter_str = match app_d_counter {
+            Some(v) => v.to_string(),
+            None => "unknown".to_string(),
         };
 
         page! {
@@ -170,6 +235,7 @@ impl AppA {
                 // Request/Response status
                 text(bold) { "Request/Response:" }
                 text { format!("App B status: {}", app_b_status_str) }
+                text { format!("App D counter: {}", app_d_counter_str) }
                 text { "" }
 
                 // Instance list
@@ -181,12 +247,17 @@ impl AppA {
                 text { separator }
                 text { "" }
 
-                text(fg: muted) { "[n] App B  [r] Refresh  [p] Check App B  [q] Quit" }
+                text(fg: muted) { "[n] App B  [d] App D  [r] Refresh  [q] Quit" }
+                text(fg: muted) { "[c] Get D counter  [i] Increment D counter" }
                 text { "" }
                 row(gap: 2) {
                     button(id: "next", label: "→ App B", on_click: next_app)
+                    button(id: "appd", label: "→ App D", on_click: go_to_app_d)
                     button(id: "refresh", label: "↻ Refresh", on_click: refresh)
-                    button(id: "check", label: "? Check B", on_click: check_app_b_status)
+                }
+                row(gap: 2) {
+                    button(id: "getc", label: "Get D Counter", on_click: get_app_d_counter)
+                    button(id: "incc", label: "Inc D Counter", on_click: increment_app_d_counter)
                 }
             }
         }
@@ -339,6 +410,115 @@ impl AppC {
                 text(fg: muted) { "[n] Go to App A  [q] Quit" }
                 text { "" }
                 button(id: "next", label: "→ Go to App A", on_click: next_app)
+            }
+        }
+    }
+}
+
+// ============================================================================
+// App D - BlurPolicy::Continue + Request Handler
+// Stays running in background and can respond to requests
+// ============================================================================
+
+#[app(name = "App D", on_blur = Continue)]
+struct AppD {
+    /// Counter to demonstrate state
+    counter: i32,
+}
+
+/// Request to get the current counter value from App D
+#[derive(Request)]
+#[response(i32)]
+struct GetCounter;
+
+/// Request to increment the counter and return new value
+#[derive(Request)]
+#[response(i32)]
+struct IncrementCounter;
+
+#[app_impl]
+impl AppD {
+    #[keybinds]
+    fn keys() -> Keybinds {
+        keybinds! {
+            "q" | "escape" => quit,
+            "n" | "enter" => go_to_app_a,
+            "+" | "=" => increment,
+        }
+    }
+
+    async fn on_foreground(&self, cx: &AppContext) {
+        info!("[App D] Publishing AppActivated event");
+        cx.publish(AppActivated {
+            app_name: "App D".to_string(),
+        });
+    }
+
+    /// Handle GetCounter requests
+    #[request_handler]
+    async fn handle_get_counter(&self, _request: GetCounter, _cx: &AppContext) -> i32 {
+        let value = self.counter.get();
+        info!("[App D] GetCounter request received, returning {}", value);
+        value
+    }
+
+    /// Handle IncrementCounter requests
+    #[request_handler]
+    async fn handle_increment(&self, _request: IncrementCounter, _cx: &AppContext) -> i32 {
+        self.counter.update(|v| *v += 1);
+        let new_value = self.counter.get();
+        info!("[App D] IncrementCounter request received, new value: {}", new_value);
+        new_value
+    }
+
+    /// Listen for activation events
+    #[event_handler]
+    async fn on_app_activated(&self, event: AppActivated, _cx: &AppContext) {
+        info!("[App D] Received AppActivated event: {:?}", event);
+    }
+
+    #[handler]
+    async fn quit(&self, cx: &AppContext) {
+        info!("[App D] Quitting");
+        cx.exit();
+    }
+
+    #[handler]
+    async fn increment(&self) {
+        self.counter.update(|v| *v += 1);
+        let new_val = self.counter.get();
+        info!("[App D] Counter incremented to {}", new_val);
+    }
+
+    #[handler]
+    async fn go_to_app_a(&self, cx: &AppContext) {
+        if let Some(id) = cx.instance_of::<AppA>() {
+            info!("[App D] Focusing existing App A");
+            cx.focus_instance(id);
+        } else {
+            info!("[App D] Spawning new App A");
+            let _ = cx.spawn_and_focus(AppA::default());
+        }
+    }
+
+    fn page(&self) -> Node {
+        let counter = self.counter.get();
+        page! {
+            column(padding: 2, gap: 1) {
+                text(bold, fg: warning) { "═══ APP D ═══" }
+                text(fg: muted) { "BlurPolicy: Continue (stays running, can respond to requests)" }
+                text { "" }
+                text { "This app stays awake in the background!" }
+                text { "Other apps can query its counter via requests." }
+                text { "" }
+                text(bold) { format!("Counter: {}", counter) }
+                text { "" }
+                text(fg: muted) { "[+] Increment  [n] Go to App A  [q] Quit" }
+                text { "" }
+                row(gap: 2) {
+                    button(id: "inc", label: "+ Increment", on_click: increment)
+                    button(id: "next", label: "→ App A", on_click: go_to_app_a)
+                }
             }
         }
     }
