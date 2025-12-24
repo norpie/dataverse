@@ -72,65 +72,71 @@ pub fn parse_handler_metadata(method: &ImplItemFn) -> Option<HandlerMethod> {
     None
 }
 
-/// Check if method has #[event_handler] attribute and extract metadata
+/// Check if method has #[event_handler] attribute and extract metadata.
+/// Extracts the event type from the method signature (first non-self, non-context parameter).
 pub fn parse_event_handler_metadata(method: &ImplItemFn) -> Option<EventHandlerMethod> {
-    // First check for the attribute
+    // Check if method has #[event_handler] attribute
     let has_attr = method
         .attrs
         .iter()
         .any(|a| a.path().is_ident("event_handler"));
+
     if !has_attr {
         return None;
     }
 
-    // Extract event type from metadata doc attribute
-    for attr in &method.attrs {
-        if attr.path().is_ident("doc")
-            && let syn::Meta::NameValue(nv) = &attr.meta
-            && let syn::Expr::Lit(syn::ExprLit {
-                lit: syn::Lit::Str(s),
-                ..
-            }) = &nv.value
-        {
-            let value = s.value();
-            if let Some(event_type) = value.strip_prefix("__rafter_event_handler:") {
-                return Some(EventHandlerMethod {
-                    name: method.sig.ident.clone(),
-                    event_type: event_type.to_string(),
-                });
-            }
-        }
-    }
-    None
+    // Extract event type from method signature (same logic as request type)
+    let event_type = extract_request_type_from_impl_fn(method)?;
+
+    Some(EventHandlerMethod {
+        name: method.sig.ident.clone(),
+        event_type,
+    })
 }
 
-/// Check if method has #[request_handler] attribute and extract metadata
+/// Check if method has #[request_handler] attribute and extract metadata.
+/// Extracts the request type from the method signature (first non-self, non-context parameter).
 pub fn parse_request_handler_metadata(method: &ImplItemFn) -> Option<RequestHandlerMethod> {
-    // First check for the attribute
+    // Check if method has #[request_handler] attribute
     let has_attr = method
         .attrs
         .iter()
         .any(|a| a.path().is_ident("request_handler"));
+
     if !has_attr {
         return None;
     }
 
-    // Extract request type from metadata doc attribute
-    for attr in &method.attrs {
-        if attr.path().is_ident("doc")
-            && let syn::Meta::NameValue(nv) = &attr.meta
-            && let syn::Expr::Lit(syn::ExprLit {
-                lit: syn::Lit::Str(s),
-                ..
-            }) = &nv.value
-        {
-            let value = s.value();
-            if let Some(request_type) = value.strip_prefix("__rafter_request_handler:") {
-                return Some(RequestHandlerMethod {
-                    name: method.sig.ident.clone(),
-                    request_type: request_type.to_string(),
-                });
+    // Extract request type from method signature
+    let request_type = extract_request_type_from_impl_fn(method)?;
+
+    Some(RequestHandlerMethod {
+        name: method.sig.ident.clone(),
+        request_type,
+    })
+}
+
+/// Extract the request type from a method's parameters.
+/// Looks for the first non-self parameter that isn't an AppContext.
+fn extract_request_type_from_impl_fn(method: &ImplItemFn) -> Option<String> {
+    for arg in &method.sig.inputs {
+        if let syn::FnArg::Typed(pat_type) = arg {
+            let ty = &pat_type.ty;
+            let ty_str = quote!(#ty).to_string().replace(' ', "");
+
+            // Skip context parameters
+            if ty_str.contains("AppContext") {
+                continue;
             }
+
+            // Skip if it's self
+            if let syn::Pat::Ident(pat) = pat_type.pat.as_ref() {
+                if pat.ident == "self" {
+                    continue;
+                }
+            }
+
+            return Some(ty_str);
         }
     }
     None
