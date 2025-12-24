@@ -196,7 +196,30 @@ pub fn handle_key_event(
         return ControlFlow::Continue(true);
     }
 
-    // Process keybind (only if not handled above)
+    // Check system keybinds FIRST (highest priority)
+    // Systems are global and not affected by modals or page scope
+    let system_match = state
+        .system_input_state
+        .process_key(key_combo.clone(), &state.system_keybinds, None);
+
+    if let KeybindMatch::Match(handler_id) = system_match {
+        log::info!("System keybind matched: {:?}", handler_id);
+        // Find and dispatch to the appropriate system
+        for system in &state.systems {
+            // Check if this system's keybinds contain this handler
+            if system.keybinds().all().iter().any(|b| b.handler == handler_id) {
+                system.dispatch(&handler_id, cx);
+                return ControlFlow::Continue(true);
+            }
+        }
+        // Fallback: try dispatching to all systems
+        for system in &state.systems {
+            system.dispatch(&handler_id, cx);
+        }
+        return ControlFlow::Continue(true);
+    }
+
+    // Process app/modal keybind (only if not handled by system)
     let current_page = if state.modal_stack.is_empty() {
         instance.current_page()
     } else {

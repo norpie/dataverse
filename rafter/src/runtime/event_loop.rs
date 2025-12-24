@@ -13,6 +13,7 @@ use crate::input::keybinds::Keybinds;
 use crate::layers::overlay::{ActiveOverlay, OverlayRequest, calculate_overlay_position};
 use crate::request::RequestError;
 use crate::styling::theme::Theme;
+use crate::system::registered_systems;
 
 use super::RuntimeError;
 use super::events::{Event, convert_event};
@@ -114,6 +115,7 @@ fn wake_instance(registry: &mut InstanceRegistry, instance_id: InstanceId) {
 fn process_instance_commands(
     registry: &Arc<RwLock<InstanceRegistry>>,
     app_keybinds: &Arc<RwLock<Keybinds>>,
+    systems: &[Box<dyn crate::system::AnySystem>],
     cx: &AppContext,
 ) -> bool {
     let commands = cx.take_instance_commands();
@@ -214,6 +216,14 @@ fn process_instance_commands(
             InstanceCommand::PublishEvent { event } => {
                 let event_type = event.type_id();
                 debug!("Publishing event: {:?}", event_type);
+
+                // Dispatch to all systems that have a handler
+                for system in systems {
+                    if system.has_event_handler(event_type) {
+                        let event_clone = event.clone();
+                        system.dispatch_event(event_type, event_clone.into_inner(), cx);
+                    }
+                }
 
                 let reg = registry.read().unwrap();
 
@@ -317,10 +327,26 @@ pub async fn run_event_loop(
     theme: Arc<dyn Theme>,
     term_guard: &mut TerminalGuard,
 ) -> Result<(), RuntimeError> {
-    // Log keybinds
+    // Collect registered systems
+    let systems: Vec<_> = registered_systems()
+        .map(|reg| (reg.factory)())
+        .collect();
+
+    info!("Registered {} systems", systems.len());
+    for system in &systems {
+        info!("  System: {}", system.name());
+        for bind in system.keybinds().all() {
+            debug!(
+                "    Keybind: {} ({:?}) => {:?}",
+                bind.id, bind.default_keys, bind.handler
+            );
+        }
+    }
+
+    // Log app keybinds
     {
         let kb = app_keybinds.read().unwrap();
-        info!("Registered {} keybinds", kb.all().len());
+        info!("Registered {} app keybinds", kb.all().len());
         for bind in kb.all() {
             debug!(
                 "  Keybind: {} ({:?}) => {:?}",
@@ -329,8 +355,8 @@ pub async fn run_event_loop(
         }
     }
 
-    // Initialize event loop state
-    let mut state = EventLoopState::new(theme);
+    // Initialize event loop state with systems
+    let mut state = EventLoopState::new(theme, systems);
 
     // Call on_start and on_foreground for the initial instance
     {
@@ -351,7 +377,7 @@ pub async fn run_event_loop(
         }
 
         // Process pending instance commands
-        if process_instance_commands(&registry, &app_keybinds, &cx) {
+        if process_instance_commands(&registry, &app_keybinds, &state.systems, &cx) {
             info!("All instances closed, exiting");
             break;
         }

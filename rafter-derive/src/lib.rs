@@ -63,6 +63,16 @@ pub fn theme_group(attr: TokenStream, item: TokenStream) -> TokenStream {
 }
 
 #[proc_macro_attribute]
+pub fn system(attr: TokenStream, item: TokenStream) -> TokenStream {
+    macros::system::expand(attr.into(), item.into()).into()
+}
+
+#[proc_macro_attribute]
+pub fn system_impl(attr: TokenStream, item: TokenStream) -> TokenStream {
+    macros::system_impl::expand(attr.into(), item.into()).into()
+}
+
+#[proc_macro_attribute]
 pub fn system_overlay(attr: TokenStream, item: TokenStream) -> TokenStream {
     macros::system_overlay::expand(attr.into(), item.into()).into()
 }

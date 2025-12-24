@@ -6,6 +6,7 @@
 //! - Instance discovery with `cx.instances()`
 //! - Pub/Sub events with `cx.publish()` and `#[event_handler]`
 //! - Request/Response with `cx.request()` and `#[request_handler]`
+//! - System keybinds with `#[system]` and `#[system_impl]`
 
 use std::fs::File;
 
@@ -14,6 +15,118 @@ use rafter::app::InstanceInfo;
 use rafter::prelude::*;
 use rafter::request::RequestError;
 use simplelog::{Config, WriteLogger};
+
+// ============================================================================
+// System Keybinds (Global, highest priority)
+// ============================================================================
+
+/// Confirmation modal for quitting
+#[modal]
+struct QuitConfirmModal;
+
+#[modal_impl]
+impl QuitConfirmModal {
+    #[keybinds]
+    fn keys() -> Keybinds {
+        keybinds! {
+            "y" | "enter" => confirm,
+            "n" | "escape" => cancel,
+        }
+    }
+
+    #[handler]
+    async fn confirm(&self, mx: &ModalContext<bool>) {
+        mx.close(true);
+    }
+
+    #[handler]
+    async fn cancel(&self, mx: &ModalContext<bool>) {
+        mx.close(false);
+    }
+
+    fn page(&self) -> Node {
+        page! {
+            column(padding: 2, gap: 1, bg: surface) {
+                text(bold, fg: error) { "Quit Application?" }
+                text { "" }
+                text { "Are you sure you want to quit?" }
+                text { "All unsaved data will be lost." }
+                text { "" }
+                row(gap: 2) {
+                    button(id: "no", label: "[N]o", on_click: cancel)
+                    button(id: "yes", label: "[Y]es", on_click: confirm)
+                }
+            }
+        }
+    }
+}
+
+/// Global system keybinds that work across all apps.
+/// These have highest priority and are checked before any app keybinds.
+#[system]
+struct GlobalKeys;
+
+#[system_impl]
+impl GlobalKeys {
+    #[keybinds]
+    fn keys() -> Keybinds {
+        keybinds! {
+            "Ctrl+q" => force_quit,
+            "Ctrl+n" => next_instance,
+            "Ctrl+p" => prev_instance,
+        }
+    }
+
+    /// Force quit the entire application (with confirmation)
+    #[handler]
+    async fn force_quit(&self, cx: &AppContext) {
+        info!("[System] Force quit triggered - showing confirmation");
+        if cx.modal(QuitConfirmModal).await {
+            info!("[System] Quit confirmed");
+            cx.exit();
+        } else {
+            info!("[System] Quit cancelled");
+        }
+    }
+
+    /// Cycle to the next app instance
+    #[handler]
+    fn next_instance(&self, cx: &AppContext) {
+        let instances = cx.instances();
+        if instances.len() <= 1 {
+            info!("[System] Only one instance, can't cycle");
+            return;
+        }
+
+        // Find the current focused instance and get the next one
+        let current = instances.iter().position(|i| i.is_focused);
+        if let Some(idx) = current {
+            let next_idx = (idx + 1) % instances.len();
+            let next_id = instances[next_idx].id;
+            info!("[System] Cycling to next instance: {:?}", next_id);
+            cx.focus_instance(next_id);
+        }
+    }
+
+    /// Cycle to the previous app instance
+    #[handler]
+    fn prev_instance(&self, cx: &AppContext) {
+        let instances = cx.instances();
+        if instances.len() <= 1 {
+            info!("[System] Only one instance, can't cycle");
+            return;
+        }
+
+        // Find the current focused instance and get the previous one
+        let current = instances.iter().position(|i| i.is_focused);
+        if let Some(idx) = current {
+            let prev_idx = if idx == 0 { instances.len() - 1 } else { idx - 1 };
+            let prev_id = instances[prev_idx].id;
+            info!("[System] Cycling to previous instance: {:?}", prev_id);
+            cx.focus_instance(prev_id);
+        }
+    }
+}
 
 // ============================================================================
 // Events and Requests

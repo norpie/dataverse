@@ -7,6 +7,7 @@ pub mod request;
 pub mod resource;
 pub mod runtime;
 pub mod state;
+pub mod system;
 
 // Grouped modules
 pub mod input;
@@ -31,8 +32,9 @@ pub use styling::style;
 pub use styling::theme;
 
 pub mod prelude {
-    // App
+    // App & System
     pub use crate::app::App;
+    pub use crate::system::System;
 
     // Styling
     pub use crate::styling::{Color, Style, StyleColor};

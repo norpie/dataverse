@@ -5,8 +5,10 @@ use std::time::Instant;
 
 use crate::context::Toast;
 use crate::input::focus::FocusState;
+use crate::input::keybinds::Keybinds;
 use crate::layers::overlay::ActiveOverlay;
 use crate::styling::theme::Theme;
+use crate::system::AnySystem;
 
 use super::input::InputState;
 use super::modal::ModalStackEntry;
@@ -21,6 +23,15 @@ pub struct EventLoopState {
 
     /// App-level input state for keybind sequence tracking.
     pub app_input_state: InputState,
+
+    /// System-level input state for keybind sequence tracking.
+    pub system_input_state: InputState,
+
+    /// Merged keybinds from all registered systems.
+    pub system_keybinds: Keybinds,
+
+    /// Registered system instances.
+    pub systems: Vec<Box<dyn AnySystem>>,
 
     /// Stack of open modals (each with its own focus/input state).
     pub modal_stack: Vec<ModalStackEntry>,
@@ -39,11 +50,20 @@ pub struct EventLoopState {
 }
 
 impl EventLoopState {
-    /// Create a new event loop state with the given initial theme.
-    pub fn new(theme: Arc<dyn Theme>) -> Self {
+    /// Create a new event loop state with the given initial theme and systems.
+    pub fn new(theme: Arc<dyn Theme>, systems: Vec<Box<dyn AnySystem>>) -> Self {
+        // Merge keybinds from all systems
+        let mut system_keybinds = Keybinds::new();
+        for system in &systems {
+            system_keybinds.merge(system.keybinds());
+        }
+
         Self {
             app_focus_state: FocusState::new(),
             app_input_state: InputState::new(),
+            system_input_state: InputState::new(),
+            system_keybinds,
+            systems,
             modal_stack: Vec::new(),
             active_toasts: Vec::new(),
             current_theme: theme,
