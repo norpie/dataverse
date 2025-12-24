@@ -790,8 +790,14 @@ pub async fn run_event_loop(
         // Dispatch event if we received one
         if let Some(event_to_dispatch) = received_event {
             debug!("DISPATCH: {:?}", event_to_dispatch.name());
-            // Mark that we dispatched an event (triggers render on next iteration)
-            state.event_dispatched = true;
+            
+            // For hover events, only trigger a render if focus actually changes
+            // Track focus before dispatching
+            let focus_before_dispatch = if matches!(event_to_dispatch, Event::Hover(_)) {
+                Some(state.focused_id())
+            } else {
+                None
+            };
 
             // Re-acquire registry lock for event dispatch
             let reg = registry.read().unwrap();
@@ -816,6 +822,21 @@ pub async fn run_event_loop(
                 {
                     break;
                 }
+            }
+
+            // Mark that we dispatched an event (triggers render on next iteration)
+            // For hover events, only set this if focus changed (otherwise focus_changed flag will handle it)
+            if let Some(focus_before) = focus_before_dispatch {
+                let focus_after = state.focused_id();
+                if focus_before != focus_after {
+                    // Focus changed due to hover - this will be caught by focus_changed flag
+                    // Don't set event_dispatched
+                } else {
+                    // Hover didn't change focus - no need to render
+                }
+            } else {
+                // Not a hover event - always trigger render
+                state.event_dispatched = true;
             }
 
         }
