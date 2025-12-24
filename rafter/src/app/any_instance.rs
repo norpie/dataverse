@@ -38,6 +38,9 @@ pub trait AnyAppInstance: Send + Sync {
 
     // Lifecycle methods
 
+    /// Called when the app instance is first started.
+    fn on_start(&self, cx: &AppContext);
+
     /// Called when instance gains focus.
     fn on_foreground(&self, cx: &AppContext);
 
@@ -172,6 +175,14 @@ impl<A: App> AnyAppInstance for AppInstance<A> {
 
     fn current_page(&self) -> Option<String> {
         self.app.current_page()
+    }
+
+    fn on_start(&self, cx: &AppContext) {
+        let app = self.app.clone();
+        let cx = cx.clone();
+        tokio::spawn(async move {
+            app.on_start(&cx).await;
+        });
     }
 
     fn on_foreground(&self, cx: &AppContext) {

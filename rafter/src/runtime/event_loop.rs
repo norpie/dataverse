@@ -128,6 +128,10 @@ fn process_instance_commands(
                 info!("Spawning instance: {:?}", id);
 
                 let mut reg = registry.write().unwrap();
+
+                // Call on_start before inserting (the instance is about to start)
+                instance.on_start(cx);
+
                 reg.insert(id, instance);
 
                 if focus {
@@ -328,11 +332,12 @@ pub async fn run_event_loop(
     // Initialize event loop state
     let mut state = EventLoopState::new(theme);
 
-    // Call on_start for the initial instance
+    // Call on_start and on_foreground for the initial instance
     {
         let reg = registry.read().unwrap();
         if let Some(instance) = reg.focused_instance() {
             info!("App started: {}", instance.config().name);
+            instance.on_start(&cx);
             instance.on_foreground(&cx);
         }
     }
