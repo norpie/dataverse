@@ -282,10 +282,7 @@ impl AppContext {
     /// Send a wakeup signal to the event loop
     fn send_wakeup(&self) {
         if let Some(sender) = &self.wakeup_sender {
-            log::debug!("AppContext: sending wakeup");
             sender.send();
-        } else {
-            log::debug!("AppContext: no wakeup sender installed");
         }
     }
 
@@ -334,6 +331,7 @@ impl AppContext {
         log::debug!("cx.exit() called");
         if let Ok(mut inner) = self.inner.write() {
             inner.exit_requested = true;
+            log::debug!("AppContext: sending wakeup (exit)");
             self.send_wakeup();
         }
     }
@@ -342,6 +340,7 @@ impl AppContext {
     pub fn focus(&self, id: impl Into<FocusId>) {
         if let Ok(mut inner) = self.inner.write() {
             inner.focus_request = Some(id.into());
+            log::debug!("AppContext: sending wakeup (focus)");
             self.send_wakeup();
         }
     }
@@ -350,6 +349,7 @@ impl AppContext {
     pub fn toast(&self, message: impl Into<String>) {
         if let Ok(mut inner) = self.inner.write() {
             inner.pending_toasts.push(Toast::info(message));
+            log::debug!("AppContext: sending wakeup (toast)");
             self.send_wakeup();
         }
     }
@@ -358,6 +358,7 @@ impl AppContext {
     pub fn toast_error(&self, message: impl Into<String>) {
         if let Ok(mut inner) = self.inner.write() {
             inner.pending_toasts.push(Toast::error(message));
+            log::debug!("AppContext: sending wakeup (toast_error)");
             self.send_wakeup();
         }
     }
@@ -366,6 +367,7 @@ impl AppContext {
     pub fn toast_success(&self, message: impl Into<String>) {
         if let Ok(mut inner) = self.inner.write() {
             inner.pending_toasts.push(Toast::success(message));
+            log::debug!("AppContext: sending wakeup (toast_success)");
             self.send_wakeup();
         }
     }
@@ -374,6 +376,7 @@ impl AppContext {
     pub fn toast_warning(&self, message: impl Into<String>) {
         if let Ok(mut inner) = self.inner.write() {
             inner.pending_toasts.push(Toast::warning(message));
+            log::debug!("AppContext: sending wakeup (toast_warning)");
             self.send_wakeup();
         }
     }
@@ -382,6 +385,7 @@ impl AppContext {
     pub fn show_toast(&self, toast: Toast) {
         if let Ok(mut inner) = self.inner.write() {
             inner.pending_toasts.push(toast);
+            log::debug!("AppContext: sending wakeup (show_toast)");
             self.send_wakeup();
         }
     }
@@ -615,6 +619,7 @@ impl AppContext {
             inner.instance_commands.push(InstanceCommand::PublishEvent {
                 event: CloneableEvent::new(event),
             });
+            log::debug!("AppContext: sending wakeup (publish_event)");
             self.send_wakeup();
         }
     }
@@ -655,6 +660,7 @@ impl AppContext {
                 request_type: TypeId::of::<R>(),
                 response_tx: tx,
             });
+            log::debug!("AppContext: sending wakeup (request)");
             self.send_wakeup();
         }
 
@@ -693,6 +699,7 @@ impl AppContext {
                 request_type: TypeId::of::<R>(),
                 response_tx: tx,
             });
+            log::debug!("AppContext: sending wakeup (request_to)");
             self.send_wakeup();
         }
 
@@ -744,6 +751,7 @@ impl AppContext {
         // Request the runtime to push this modal
         if let Ok(mut inner) = self.inner.write() {
             inner.modal_request = Some(Box::new(entry));
+            log::debug!("AppContext: sending wakeup (modal)");
             self.send_wakeup();
         }
 
@@ -815,6 +823,7 @@ impl AppContext {
                 instance: Box::new(instance),
                 focus: false,
             });
+            log::debug!("AppContext: sending wakeup (spawn)");
             self.send_wakeup();
         }
 
@@ -853,6 +862,7 @@ impl AppContext {
                 instance: Box::new(instance),
                 focus: true,
             });
+            log::debug!("AppContext: sending wakeup (spawn_and_focus)");
             self.send_wakeup();
         }
 
@@ -870,6 +880,7 @@ impl AppContext {
             inner
                 .instance_commands
                 .push(InstanceCommand::Close { id, force: false });
+            log::debug!("AppContext: sending wakeup (close)");
             self.send_wakeup();
         }
     }
@@ -883,6 +894,7 @@ impl AppContext {
             inner
                 .instance_commands
                 .push(InstanceCommand::Close { id, force: true });
+            log::debug!("AppContext: sending wakeup (force_close)");
             self.send_wakeup();
         }
     }
@@ -895,6 +907,7 @@ impl AppContext {
         log::debug!("focus_instance called with id: {:?}", id);
         if let Ok(mut inner) = self.inner.write() {
             inner.instance_commands.push(InstanceCommand::Focus { id });
+            log::debug!("AppContext: sending wakeup (focus_instance)");
             self.send_wakeup();
         }
     }

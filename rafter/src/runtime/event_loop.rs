@@ -772,6 +772,9 @@ pub async fn run_event_loop(
             // Branch 2: Wakeup signal (state changed from async task, etc.)
             Some(()) = wakeup_rx.recv() => {
                 debug!("SELECT: wakeup signal received");
+                // Drain any additional wakeup signals that arrived while we were processing
+                // Multiple wakeups should collapse into a single render
+                wakeup_rx.drain();
                 // Force render - the wakeup means something changed
                 force_render = true;
                 None // No event to dispatch, just re-check state

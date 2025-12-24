@@ -37,6 +37,22 @@ impl WakeupReceiver {
     pub async fn recv(&mut self) -> Option<()> {
         self.rx.recv().await
     }
+
+    /// Drain all pending wakeup signals from the channel.
+    ///
+    /// This is called after receiving a wakeup to consume any additional
+    /// signals that arrived while we were processing. Since we only care
+    /// that "something changed", multiple buffered wakeups should be
+    /// collapsed into a single render.
+    pub fn drain(&mut self) {
+        let mut drained = 0;
+        while self.rx.try_recv().is_ok() {
+            drained += 1;
+        }
+        if drained > 0 {
+            log::debug!("Drained {} redundant wakeup signals", drained);
+        }
+    }
 }
 
 /// Create a new wakeup channel pair.

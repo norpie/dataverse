@@ -202,6 +202,7 @@ impl<T> Resource<T> {
     fn send_wakeup(&self) {
         if let Ok(guard) = self.wakeup.lock() {
             if let Some(sender) = guard.as_ref() {
+                log::debug!("Resource sending wakeup");
                 sender.send();
             }
         }

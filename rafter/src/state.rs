@@ -80,6 +80,7 @@ impl<T> State<T> {
         if let Ok(mut guard) = self.inner.write() {
             *guard = value;
             self.dirty.store(true, Ordering::SeqCst);
+            log::debug!("State::set() sending wakeup");
             self.send_wakeup();
         }
     }
@@ -92,6 +93,7 @@ impl<T> State<T> {
         if let Ok(mut guard) = self.inner.write() {
             f(&mut guard);
             self.dirty.store(true, Ordering::SeqCst);
+            log::debug!("State::update() sending wakeup");
             self.send_wakeup();
         }
     }

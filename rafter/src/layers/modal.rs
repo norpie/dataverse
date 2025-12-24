@@ -78,6 +78,7 @@ impl<R> ModalContext<R> {
             let _ = tx.send(result);
         }
         self.closed.store(true, Ordering::SeqCst);
+        log::debug!("ModalContext::close() sending wakeup");
         wakeup::send_wakeup();
     }
 
