@@ -1,7 +1,7 @@
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, Mutex, RwLock};
 
-use crate::runtime::wakeup;
+use crate::runtime::wakeup::WakeupSender;
 
 /// Reactive state wrapper with interior mutability.
 ///
@@ -32,6 +32,7 @@ use crate::runtime::wakeup;
 pub struct State<T> {
     inner: Arc<RwLock<T>>,
     dirty: Arc<AtomicBool>,
+    wakeup: Arc<Mutex<Option<WakeupSender>>>,
 }
 
 impl<T> State<T> {
@@ -40,6 +41,26 @@ impl<T> State<T> {
         Self {
             inner: Arc::new(RwLock::new(value)),
             dirty: Arc::new(AtomicBool::new(false)),
+            wakeup: Arc::new(Mutex::new(None)),
+        }
+    }
+
+    /// Install a wakeup sender for this state.
+    ///
+    /// Called by the runtime when the app is registered.
+    /// All clones of this State share the same wakeup sender.
+    pub fn install_wakeup(&self, sender: WakeupSender) {
+        if let Ok(mut guard) = self.wakeup.lock() {
+            *guard = Some(sender);
+        }
+    }
+
+    /// Send a wakeup signal if a sender is installed
+    fn send_wakeup(&self) {
+        if let Ok(guard) = self.wakeup.lock() {
+            if let Some(sender) = guard.as_ref() {
+                sender.send();
+            }
         }
     }
 
@@ -59,7 +80,7 @@ impl<T> State<T> {
         if let Ok(mut guard) = self.inner.write() {
             *guard = value;
             self.dirty.store(true, Ordering::SeqCst);
-            wakeup::send_wakeup();
+            self.send_wakeup();
         }
     }
 
@@ -71,7 +92,7 @@ impl<T> State<T> {
         if let Ok(mut guard) = self.inner.write() {
             f(&mut guard);
             self.dirty.store(true, Ordering::SeqCst);
-            wakeup::send_wakeup();
+            self.send_wakeup();
         }
     }
 
@@ -91,6 +112,7 @@ impl<T> Clone for State<T> {
         Self {
             inner: Arc::clone(&self.inner),
             dirty: Arc::clone(&self.dirty),
+            wakeup: Arc::clone(&self.wakeup),
         }
     }
 }

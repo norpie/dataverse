@@ -13,7 +13,7 @@ use tokio::sync::mpsc;
 /// Sender half of the wakeup channel.
 ///
 /// Clone-able, can be sent to async tasks.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct WakeupSender {
     tx: mpsc::Sender<()>,
 }
@@ -80,7 +80,10 @@ pub fn uninstall_sender() {
 pub fn send_wakeup() {
     WAKEUP_SENDER.with(|s| {
         if let Some(sender) = s.borrow().as_ref() {
+            log::debug!("Sending wakeup signal");
             sender.send();
+        } else {
+            log::debug!("send_wakeup called but no sender installed");
         }
     });
 }

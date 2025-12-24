@@ -76,6 +76,9 @@ pub trait AnyAppInstance: Send + Sync {
     /// Clear dirty flags after render.
     fn clear_dirty(&self);
 
+    /// Install wakeup sender on all State fields.
+    fn install_wakeup(&self, sender: crate::runtime::wakeup::WakeupSender);
+
     /// Clone the instance into a new box.
     fn clone_box(&self) -> Box<dyn AnyAppInstance>;
 
@@ -246,6 +249,10 @@ impl<A: App> AnyAppInstance for AppInstance<A> {
 
     fn clear_dirty(&self) {
         self.app.clear_dirty();
+    }
+
+    fn install_wakeup(&self, sender: crate::runtime::wakeup::WakeupSender) {
+        self.app.install_wakeup(sender);
     }
 
     fn clone_box(&self) -> Box<dyn AnyAppInstance> {

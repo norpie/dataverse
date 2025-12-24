@@ -174,7 +174,7 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
         quote! {}
     };
 
-    // Generate dirty methods
+    // Generate dirty methods and wakeup installation
     let dirty_impl = quote! {
         fn is_dirty(&self) -> bool {
             #metadata_mod::is_dirty(self)
@@ -182,6 +182,10 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
 
         fn clear_dirty(&self) {
             #metadata_mod::clear_dirty(self)
+        }
+
+        fn install_wakeup(&self, sender: rafter::runtime::wakeup::WakeupSender) {
+            #metadata_mod::install_wakeup(self, sender)
         }
     };
 

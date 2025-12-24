@@ -12,6 +12,7 @@ use crate::input::focus::FocusId;
 use crate::input::keybinds::{KeybindError, KeybindInfo, Keybinds};
 use crate::layers::modal::{Modal, ModalContext, ModalDyn, ModalEntry};
 use crate::request::RequestError;
+use crate::runtime::wakeup;
 use crate::runtime::DataStore;
 use crate::styling::theme::Theme;
 use crate::widgets::events::WidgetEvent;
@@ -239,6 +240,8 @@ pub struct AppContext {
     registry: Option<Arc<RwLock<InstanceRegistry>>>,
     /// Global data store (read-only, set at runtime startup)
     data: Arc<DataStore>,
+    /// Wakeup sender for notifying the event loop (works across threads)
+    wakeup_sender: Option<wakeup::WakeupSender>,
 }
 
 impl AppContext {
@@ -267,6 +270,22 @@ impl AppContext {
             keybinds,
             registry: None,
             data,
+            wakeup_sender: None,
+        }
+    }
+
+    /// Set the wakeup sender (called by runtime)
+    pub(crate) fn set_wakeup_sender(&mut self, sender: wakeup::WakeupSender) {
+        self.wakeup_sender = Some(sender);
+    }
+
+    /// Send a wakeup signal to the event loop
+    fn send_wakeup(&self) {
+        if let Some(sender) = &self.wakeup_sender {
+            log::debug!("AppContext: sending wakeup");
+            sender.send();
+        } else {
+            log::debug!("AppContext: no wakeup sender installed");
         }
     }
 
@@ -312,8 +331,10 @@ impl AppContext {
 
     /// Request to exit the current app
     pub fn exit(&self) {
+        log::debug!("cx.exit() called");
         if let Ok(mut inner) = self.inner.write() {
             inner.exit_requested = true;
+            self.send_wakeup();
         }
     }
 
@@ -321,6 +342,7 @@ impl AppContext {
     pub fn focus(&self, id: impl Into<FocusId>) {
         if let Ok(mut inner) = self.inner.write() {
             inner.focus_request = Some(id.into());
+            self.send_wakeup();
         }
     }
 
@@ -328,6 +350,7 @@ impl AppContext {
     pub fn toast(&self, message: impl Into<String>) {
         if let Ok(mut inner) = self.inner.write() {
             inner.pending_toasts.push(Toast::info(message));
+            self.send_wakeup();
         }
     }
 
@@ -335,6 +358,7 @@ impl AppContext {
     pub fn toast_error(&self, message: impl Into<String>) {
         if let Ok(mut inner) = self.inner.write() {
             inner.pending_toasts.push(Toast::error(message));
+            self.send_wakeup();
         }
     }
 
@@ -342,6 +366,7 @@ impl AppContext {
     pub fn toast_success(&self, message: impl Into<String>) {
         if let Ok(mut inner) = self.inner.write() {
             inner.pending_toasts.push(Toast::success(message));
+            self.send_wakeup();
         }
     }
 
@@ -349,6 +374,7 @@ impl AppContext {
     pub fn toast_warning(&self, message: impl Into<String>) {
         if let Ok(mut inner) = self.inner.write() {
             inner.pending_toasts.push(Toast::warning(message));
+            self.send_wakeup();
         }
     }
 
@@ -356,6 +382,7 @@ impl AppContext {
     pub fn show_toast(&self, toast: Toast) {
         if let Ok(mut inner) = self.inner.write() {
             inner.pending_toasts.push(toast);
+            self.send_wakeup();
         }
     }
 
@@ -588,6 +615,7 @@ impl AppContext {
             inner.instance_commands.push(InstanceCommand::PublishEvent {
                 event: CloneableEvent::new(event),
             });
+            self.send_wakeup();
         }
     }
 
@@ -627,6 +655,7 @@ impl AppContext {
                 request_type: TypeId::of::<R>(),
                 response_tx: tx,
             });
+            self.send_wakeup();
         }
 
         let response = rx.await.map_err(|_| RequestError::HandlerPanicked)??;
@@ -664,6 +693,7 @@ impl AppContext {
                 request_type: TypeId::of::<R>(),
                 response_tx: tx,
             });
+            self.send_wakeup();
         }
 
         let response = rx.await.map_err(|_| RequestError::HandlerPanicked)??;
@@ -714,6 +744,7 @@ impl AppContext {
         // Request the runtime to push this modal
         if let Ok(mut inner) = self.inner.write() {
             inner.modal_request = Some(Box::new(entry));
+            self.send_wakeup();
         }
 
         // Wait for the modal to close and return its result
@@ -784,6 +815,7 @@ impl AppContext {
                 instance: Box::new(instance),
                 focus: false,
             });
+            self.send_wakeup();
         }
 
         Ok(id)
@@ -821,6 +853,7 @@ impl AppContext {
                 instance: Box::new(instance),
                 focus: true,
             });
+            self.send_wakeup();
         }
 
         Ok(id)
@@ -837,6 +870,7 @@ impl AppContext {
             inner
                 .instance_commands
                 .push(InstanceCommand::Close { id, force: false });
+            self.send_wakeup();
         }
     }
 
@@ -849,6 +883,7 @@ impl AppContext {
             inner
                 .instance_commands
                 .push(InstanceCommand::Close { id, force: true });
+            self.send_wakeup();
         }
     }
 
@@ -857,8 +892,10 @@ impl AppContext {
     /// Makes the instance the foreground app, receiving input and rendering.
     /// The previously focused instance receives `on_background`.
     pub fn focus_instance(&self, id: InstanceId) {
+        log::debug!("focus_instance called with id: {:?}", id);
         if let Ok(mut inner) = self.inner.write() {
             inner.instance_commands.push(InstanceCommand::Focus { id });
+            self.send_wakeup();
         }
     }
 

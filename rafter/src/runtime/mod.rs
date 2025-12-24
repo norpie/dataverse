@@ -9,7 +9,7 @@ mod modal;
 pub(crate) mod render;
 mod state;
 mod terminal;
-pub(crate) mod wakeup;
+pub mod wakeup;
 
 use std::any::{Any, TypeId};
 use std::collections::HashMap;

@@ -124,13 +124,27 @@ fn wake_instance(registry: &mut InstanceRegistry, instance_id: InstanceId) {
 /// Process instance commands from the context.
 ///
 /// Returns true if the runtime should exit (all instances closed).
+/// Result of processing instance commands
+struct ProcessCommandsResult {
+    /// Whether to exit (all instances closed)
+    should_exit: bool,
+    /// Whether any commands were processed that need a render
+    needs_render: bool,
+}
+
 fn process_instance_commands(
     registry: &Arc<RwLock<InstanceRegistry>>,
     app_keybinds: &Arc<RwLock<Keybinds>>,
     systems: &[Box<dyn crate::system::AnySystem>],
     cx: &AppContext,
-) -> bool {
+    wakeup_sender: &wakeup::WakeupSender,
+) -> ProcessCommandsResult {
     let commands = cx.take_instance_commands();
+    let has_commands = !commands.is_empty();
+
+    if has_commands {
+        debug!("Processing {} instance commands", commands.len());
+    }
 
     // Collect instances to close due to BlurPolicy::Close
     let mut to_close: Vec<InstanceId> = Vec::new();
@@ -142,6 +156,9 @@ fn process_instance_commands(
                 info!("Spawning instance: {:?}", id);
 
                 let mut reg = registry.write().unwrap();
+
+                // Install wakeup sender so State updates trigger re-render
+                instance.install_wakeup(wakeup_sender.clone());
 
                 // Call on_start before inserting (the instance is about to start)
                 instance.on_start(cx);
@@ -328,7 +345,10 @@ fn process_instance_commands(
 
     // Check if we should exit (no instances left)
     let reg = registry.read().unwrap();
-    reg.is_empty()
+    ProcessCommandsResult {
+        should_exit: reg.is_empty(),
+        needs_render: has_commands,
+    }
 }
 
 /// Compute the next deadline for toast expiry.
@@ -350,7 +370,7 @@ async fn sleep_until_optional(deadline: Option<Instant>) {
 pub async fn run_event_loop(
     registry: Arc<RwLock<InstanceRegistry>>,
     app_keybinds: Arc<RwLock<Keybinds>>,
-    cx: AppContext,
+    mut cx: AppContext,
     theme: Arc<dyn Theme>,
     term_guard: &mut TerminalGuard,
 ) -> Result<(), RuntimeError> {
@@ -387,7 +407,9 @@ pub async fn run_event_loop(
 
     // Create wakeup channel for passive rendering
     let (wakeup_tx, mut wakeup_rx) = channel();
-    wakeup::install_sender(wakeup_tx);
+    wakeup::install_sender(wakeup_tx.clone());
+    let wakeup_sender = wakeup_tx.clone();
+    cx.set_wakeup_sender(wakeup_tx);
 
     // Create async event stream
     let mut events = EventStream::new();
@@ -399,6 +421,8 @@ pub async fn run_event_loop(
     {
         let reg = registry.read().unwrap();
         if let Some(instance) = reg.focused_instance() {
+            // Install wakeup sender so State updates trigger re-render
+            instance.install_wakeup(wakeup_sender.clone());
             info!("App started: {}", instance.config().name);
             instance.on_start(&cx);
             instance.on_foreground(&cx);
@@ -419,9 +443,14 @@ pub async fn run_event_loop(
 
         // Process pending instance commands
         let cmd_start = Instant::now();
-        if process_instance_commands(&registry, &app_keybinds, &state.systems, &cx) {
+        let cmd_result = process_instance_commands(&registry, &app_keybinds, &state.systems, &cx, &wakeup_sender);
+        if cmd_result.should_exit {
             info!("All instances closed, exiting");
             break;
+        }
+        // If commands were processed, force a render to show the new state
+        if cmd_result.needs_render {
+            force_render = true;
         }
         let cmd_elapsed = cmd_start.elapsed();
         if cmd_elapsed.as_millis() > 2 {
@@ -523,7 +552,14 @@ pub async fn run_event_loop(
         let focus_changed = current_focused_id != state.last_focused_id;
         state.last_focused_id = current_focused_id;
 
-        // Include event_dispatched flag (set when we dispatch an event)
+        // Determine if we need to render
+        // We render when:
+        // - force_render is set (initial render)
+        // - Instance state changed
+        // - Modal state changed (dirty or closed)
+        // - Toast count changed
+        // - Focus changed
+        // - We dispatched an event in the previous iteration
         let needs_render = force_render
             || instance_is_dirty
             || modal_dirty
@@ -532,8 +568,10 @@ pub async fn run_event_loop(
             || focus_changed
             || state.event_dispatched;
 
-        // Clear event_dispatched flag (will be set again if we dispatch an event this iteration)
-        state.event_dispatched = false;
+        debug!(
+            "Render check: needs={} (force={}, inst_dirty={}, modal_dirty={}, toast_dirty={}, modal_closed={}, focus_changed={}, event_dispatched={})",
+            needs_render, force_render, instance_is_dirty, modal_dirty, toast_dirty, modal_closed, focus_changed, state.event_dispatched
+        );
 
         // Get theme and focus info (needed for render and reference)
         let theme = &state.current_theme;
@@ -541,6 +579,7 @@ pub async fn run_event_loop(
 
         // RENDER - only if something changed
         if needs_render {
+            debug!("RENDERING frame");
             // Clear hit map for rebuild
             hit_map.clear();
 
@@ -674,8 +713,9 @@ pub async fn run_event_loop(
                 instance.clear_dirty();
             }
 
-            // Clear force render flag
+            // Clear render trigger flags
             force_render = false;
+            state.event_dispatched = false;
         }
 
         // Drop the registry lock before waiting for events
@@ -731,19 +771,22 @@ pub async fn run_event_loop(
 
             // Branch 2: Wakeup signal (state changed from async task, etc.)
             Some(()) = wakeup_rx.recv() => {
-                trace!("Wakeup signal received");
+                debug!("SELECT: wakeup signal received");
+                // Force render - the wakeup means something changed
+                force_render = true;
                 None // No event to dispatch, just re-check state
             }
 
             // Branch 3: Deadline reached (toast expiry)
             _ = sleep_until_optional(next_deadline) => {
-                trace!("Toast deadline reached");
+                debug!("SELECT: toast deadline reached");
                 None // No event to dispatch, toasts will be cleaned up next iteration
             }
         };
 
         // Dispatch event if we received one
         if let Some(event_to_dispatch) = received_event {
+            debug!("DISPATCH: {:?}", event_to_dispatch.name());
             // Mark that we dispatched an event (triggers render on next iteration)
             state.event_dispatched = true;
 
@@ -771,6 +814,7 @@ pub async fn run_event_loop(
                     break;
                 }
             }
+
         }
     }
 

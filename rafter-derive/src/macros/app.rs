@@ -254,7 +254,7 @@ fn generate_metadata(name: &Ident, attrs: &AppAttrs, fields: &FieldsNamed) -> To
     };
 
     // Collect field names for dirty checking (excluding skipped fields)
-    // State<T> and Resource<T> both have is_dirty/clear_dirty
+    // State<T>, Resource<T>, and widgets all have is_dirty/clear_dirty
     let dirty_fields: Vec<_> = fields
         .named
         .iter()
@@ -264,12 +264,31 @@ fn generate_metadata(name: &Ident, attrs: &AppAttrs, fields: &FieldsNamed) -> To
         })
         .collect();
 
+    // Collect field names that need wakeup (only State<T> and Resource<T>, NOT widgets)
+    let wakeup_fields: Vec<_> = fields
+        .named
+        .iter()
+        .filter_map(|f| {
+            let attrs = FieldAttrs::parse(&f.attrs);
+            // Skip if marked with #[state(skip)] or if it's a widget type
+            if attrs.skip || is_widget_type(&f.ty, &f.attrs) {
+                None
+            } else {
+                f.ident.as_ref()
+            }
+        })
+        .collect();
+
     let is_dirty_checks = dirty_fields.iter().map(|f| {
         quote! { app.#f.is_dirty() }
     });
 
     let clear_dirty_calls = dirty_fields.iter().map(|f| {
         quote! { app.#f.clear_dirty(); }
+    });
+
+    let install_wakeup_calls = wakeup_fields.iter().map(|f| {
+        quote! { app.#f.install_wakeup(sender.clone()); }
     });
 
     let metadata_name = format_ident!("__rafter_app_metadata_{}", name.to_string().to_lowercase());
@@ -297,6 +316,10 @@ fn generate_metadata(name: &Ident, attrs: &AppAttrs, fields: &FieldsNamed) -> To
 
             pub fn clear_dirty(app: &#name) {
                 #(#clear_dirty_calls)*
+            }
+
+            pub fn install_wakeup(app: &#name, sender: rafter::runtime::wakeup::WakeupSender) {
+                #(#install_wakeup_calls)*
             }
         }
     }

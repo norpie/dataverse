@@ -1,7 +1,9 @@
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, Mutex, RwLock};
 
 use thiserror::Error;
+
+use crate::runtime::wakeup::WakeupSender;
 
 /// Progress information for loading operations
 #[derive(Debug, Clone)]
@@ -173,6 +175,7 @@ impl<T> ResourceState<T> {
 pub struct Resource<T> {
     inner: Arc<RwLock<ResourceState<T>>>,
     dirty: Arc<AtomicBool>,
+    wakeup: Arc<Mutex<Option<WakeupSender>>>,
 }
 
 impl<T> Resource<T> {
@@ -181,6 +184,26 @@ impl<T> Resource<T> {
         Self {
             inner: Arc::new(RwLock::new(ResourceState::Idle)),
             dirty: Arc::new(AtomicBool::new(false)),
+            wakeup: Arc::new(Mutex::new(None)),
+        }
+    }
+
+    /// Install a wakeup sender for this resource.
+    ///
+    /// Called by the runtime when the app is registered.
+    /// All clones of this Resource share the same wakeup sender.
+    pub fn install_wakeup(&self, sender: WakeupSender) {
+        if let Ok(mut guard) = self.wakeup.lock() {
+            *guard = Some(sender);
+        }
+    }
+
+    /// Send a wakeup signal if a sender is installed
+    fn send_wakeup(&self) {
+        if let Ok(guard) = self.wakeup.lock() {
+            if let Some(sender) = guard.as_ref() {
+                sender.send();
+            }
         }
     }
 
@@ -200,6 +223,7 @@ impl<T> Resource<T> {
         if let Ok(mut guard) = self.inner.write() {
             *guard = ResourceState::Idle;
             self.dirty.store(true, Ordering::SeqCst);
+            self.send_wakeup();
         }
     }
 
@@ -208,6 +232,7 @@ impl<T> Resource<T> {
         if let Ok(mut guard) = self.inner.write() {
             *guard = ResourceState::Loading;
             self.dirty.store(true, Ordering::SeqCst);
+            self.send_wakeup();
         }
     }
 
@@ -216,6 +241,7 @@ impl<T> Resource<T> {
         if let Ok(mut guard) = self.inner.write() {
             *guard = ResourceState::Progress(progress);
             self.dirty.store(true, Ordering::SeqCst);
+            self.send_wakeup();
         }
     }
 
@@ -224,6 +250,7 @@ impl<T> Resource<T> {
         if let Ok(mut guard) = self.inner.write() {
             *guard = ResourceState::Ready(value);
             self.dirty.store(true, Ordering::SeqCst);
+            self.send_wakeup();
         }
     }
 
@@ -232,6 +259,7 @@ impl<T> Resource<T> {
         if let Ok(mut guard) = self.inner.write() {
             *guard = ResourceState::Error(err.into());
             self.dirty.store(true, Ordering::SeqCst);
+            self.send_wakeup();
         }
     }
 
@@ -289,6 +317,7 @@ impl<T> Clone for Resource<T> {
         Self {
             inner: Arc::clone(&self.inner),
             dirty: Arc::clone(&self.dirty),
+            wakeup: Arc::clone(&self.wakeup),
         }
     }
 }

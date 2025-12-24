@@ -9,6 +9,7 @@ use std::sync::{Arc, Mutex};
 use tokio::sync::oneshot;
 
 use crate::context::AppContext;
+use crate::runtime::wakeup;
 use crate::input::keybinds::{HandlerId, Keybinds};
 use crate::node::Node;
 
@@ -77,6 +78,7 @@ impl<R> ModalContext<R> {
             let _ = tx.send(result);
         }
         self.closed.store(true, Ordering::SeqCst);
+        wakeup::send_wakeup();
     }
 
     /// Check if the modal has been closed.
