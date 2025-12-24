@@ -370,6 +370,8 @@ pub async fn run_event_loop(
 
     // Main event loop
     loop {
+        let frame_start = Instant::now();
+
         // Check if exit was requested (by a handler from previous iteration)
         if cx.is_exit_requested() {
             info!("Exit requested by handler");
@@ -377,9 +379,14 @@ pub async fn run_event_loop(
         }
 
         // Process pending instance commands
+        let cmd_start = Instant::now();
         if process_instance_commands(&registry, &app_keybinds, &state.systems, &cx) {
             info!("All instances closed, exiting");
             break;
+        }
+        let cmd_elapsed = cmd_start.elapsed();
+        if cmd_elapsed.as_millis() > 2 {
+            warn!("PROFILE: process_instance_commands() took {:?}", cmd_elapsed);
         }
 
         // Get focused instance - if none, exit
@@ -670,6 +677,12 @@ pub async fn run_event_loop(
                         break;
                     }
             }
+        }
+
+        // Log total frame time
+        let frame_elapsed = frame_start.elapsed();
+        if frame_elapsed.as_millis() > 8 {
+            warn!("PROFILE: total frame took {:?}", frame_elapsed);
         }
     }
 

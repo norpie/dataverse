@@ -42,6 +42,22 @@ pub enum Event {
     Quit,
 }
 
+impl Event {
+    /// Get a short name for the event type (for profiling logs).
+    pub fn name(&self) -> &'static str {
+        match self {
+            Event::Key(_) => "Key",
+            Event::Click(_) => "Click",
+            Event::Release(_) => "Release",
+            Event::Hover(_) => "Hover",
+            Event::Drag(_) => "Drag",
+            Event::Scroll(_) => "Scroll",
+            Event::Resize { .. } => "Resize",
+            Event::Quit => "Quit",
+        }
+    }
+}
+
 /// Convert crossterm KeyModifiers to rafter Modifiers
 fn convert_modifiers(mods: KeyModifiers) -> Modifiers {
     Modifiers {

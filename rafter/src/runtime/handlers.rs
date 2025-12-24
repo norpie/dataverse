@@ -5,8 +5,9 @@
 
 use std::ops::ControlFlow;
 use std::sync::{Arc, RwLock};
+use std::time::Instant;
 
-use log::debug;
+use log::{debug, warn};
 
 use crate::app::AnyAppInstance;
 use crate::context::AppContext;
@@ -198,9 +199,14 @@ pub fn handle_key_event(
 
     // Check system keybinds FIRST (highest priority)
     // Systems are global and not affected by modals or page scope
+    let keybind_start = Instant::now();
     let system_match = state
         .system_input_state
         .process_key(key_combo.clone(), &state.system_keybinds, None);
+    let system_keybind_elapsed = keybind_start.elapsed();
+    if system_keybind_elapsed.as_micros() > 500 {
+        warn!("PROFILE: system keybind matching took {:?}", system_keybind_elapsed);
+    }
 
     if let KeybindMatch::Match(handler_id) = system_match {
         log::info!("System keybind matched: {:?}", handler_id);
@@ -227,6 +233,7 @@ pub fn handle_key_event(
     };
     let current_page_ref = current_page.as_deref();
 
+    let app_keybind_start = Instant::now();
     let keybind_match = if let Some(entry) = state.modal_stack.last_mut() {
         entry
             .input_state
@@ -237,6 +244,10 @@ pub fn handle_key_event(
             .app_input_state
             .process_key(key_combo.clone(), &kb, current_page_ref)
     };
+    let app_keybind_elapsed = app_keybind_start.elapsed();
+    if app_keybind_elapsed.as_micros() > 500 {
+        warn!("PROFILE: app keybind matching took {:?}", app_keybind_elapsed);
+    }
 
     match keybind_match {
         KeybindMatch::Match(handler_id) => {
@@ -516,6 +527,26 @@ pub fn handle_release_event(page: &Node, state: &mut EventLoopState, cx: &AppCon
 /// Returns `ControlFlow::Break(())` if the app should exit.
 #[allow(clippy::too_many_arguments)]
 pub fn dispatch_event(
+    event: &Event,
+    page: &Node,
+    hit_map: &HitTestMap,
+    instance: &dyn AnyAppInstance,
+    state: &mut EventLoopState,
+    app_keybinds: &Arc<RwLock<Keybinds>>,
+    cx: &AppContext,
+) -> ControlFlow<()> {
+    let dispatch_start = Instant::now();
+    let result = dispatch_event_inner(event, page, hit_map, instance, state, app_keybinds, cx);
+    let dispatch_elapsed = dispatch_start.elapsed();
+    if dispatch_elapsed.as_millis() > 2 {
+        warn!("PROFILE: dispatch_event({:?}) took {:?}", event.name(), dispatch_elapsed);
+    }
+    result
+}
+
+/// Inner dispatch function (separated for profiling).
+#[allow(clippy::too_many_arguments)]
+fn dispatch_event_inner(
     event: &Event,
     page: &Node,
     hit_map: &HitTestMap,
