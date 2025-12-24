@@ -1,6 +1,8 @@
 //! App trait definitions.
 
+use std::any::{Any, TypeId};
 use std::future::Future;
+use std::pin::Pin;
 
 use serde::{Serialize, de::DeserializeOwned};
 
@@ -184,6 +186,43 @@ pub trait App: Clone + Send + Sync + 'static {
             handler_id.0
         );
         let _ = cx; // Suppress unused warning
+    }
+
+    /// Dispatch an event to this app's event handlers.
+    ///
+    /// Returns true if the event was handled (a handler exists for this event type).
+    /// The handler runs in a spawned task and doesn't block.
+    fn dispatch_event(&self, event_type: TypeId, event: Box<dyn Any + Send + Sync>, cx: &AppContext) -> bool {
+        // Default: no event handlers
+        let _ = (event_type, event, cx);
+        false
+    }
+
+    /// Dispatch a request to this app's request handlers.
+    ///
+    /// Returns Some(future) if a handler exists for this request type.
+    /// The future resolves to the response wrapped in Box<dyn Any + Send + Sync>.
+    fn dispatch_request(
+        &self,
+        request_type: TypeId,
+        request: Box<dyn Any + Send + Sync>,
+        cx: &AppContext,
+    ) -> Option<Pin<Box<dyn Future<Output = Box<dyn Any + Send + Sync>> + Send>>> {
+        // Default: no request handlers
+        let _ = (request_type, request, cx);
+        None
+    }
+
+    /// Check if this app has a handler for the given event type.
+    fn has_event_handler(&self, event_type: TypeId) -> bool {
+        let _ = event_type;
+        false
+    }
+
+    /// Check if this app has a handler for the given request type.
+    fn has_request_handler(&self, request_type: TypeId) -> bool {
+        let _ = request_type;
+        false
     }
 }
 

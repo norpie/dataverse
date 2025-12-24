@@ -1,3 +1,4 @@
+use std::any::{Any, TypeId};
 use std::future::Future;
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
@@ -6,11 +7,53 @@ use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
 
 use crate::app::{AnyAppInstance, App, InstanceId, InstanceInfo, InstanceRegistry, SpawnError};
+use crate::event::Event;
 use crate::input::focus::FocusId;
 use crate::input::keybinds::{KeybindError, KeybindInfo, Keybinds};
 use crate::layers::modal::{Modal, ModalContext, ModalDyn, ModalEntry};
+use crate::request::RequestError;
 use crate::styling::theme::Theme;
 use crate::widgets::events::WidgetEvent;
+
+/// Wrapper that allows cloning boxed events.
+///
+/// Since Event requires Clone, we store a clone function alongside the event.
+pub struct CloneableEvent {
+    event: Box<dyn Any + Send + Sync>,
+    clone_fn: fn(&Box<dyn Any + Send + Sync>) -> Box<dyn Any + Send + Sync>,
+}
+
+impl CloneableEvent {
+    /// Create a new cloneable event.
+    pub fn new<E: Event>(event: E) -> Self {
+        Self {
+            event: Box::new(event),
+            clone_fn: |e| {
+                let e = e.downcast_ref::<E>().expect("type mismatch in CloneableEvent");
+                Box::new(e.clone())
+            },
+        }
+    }
+
+    /// Get the event type ID.
+    pub fn type_id(&self) -> TypeId {
+        (*self.event).type_id()
+    }
+
+    /// Take the inner boxed event (consumes self).
+    pub fn into_inner(self) -> Box<dyn Any + Send + Sync> {
+        self.event
+    }
+}
+
+impl Clone for CloneableEvent {
+    fn clone(&self) -> Self {
+        Self {
+            event: (self.clone_fn)(&self.event),
+            clone_fn: self.clone_fn,
+        }
+    }
+}
 
 /// Toast notification level
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -71,6 +114,15 @@ impl Toast {
     }
 }
 
+/// Target for a request.
+#[derive(Debug, Clone)]
+pub enum RequestTarget {
+    /// Target the first (non-sleeping) instance of an app type.
+    AppType(TypeId),
+    /// Target a specific instance by ID.
+    Instance(InstanceId),
+}
+
 /// Command to manage app instances.
 ///
 /// These commands are queued and processed by the runtime event loop.
@@ -93,6 +145,22 @@ pub enum InstanceCommand {
     Focus {
         /// The instance to focus.
         id: InstanceId,
+    },
+    /// Publish an event to all non-sleeping instances.
+    PublishEvent {
+        /// The cloneable event to publish.
+        event: CloneableEvent,
+    },
+    /// Send a request to an instance.
+    SendRequest {
+        /// The target of the request.
+        target: RequestTarget,
+        /// The request to send.
+        request: Box<dyn Any + Send + Sync>,
+        /// The TypeId of the request.
+        request_type: TypeId,
+        /// Channel to send the response back.
+        response_tx: oneshot::Sender<Result<Box<dyn Any + Send + Sync>, RequestError>>,
     },
 }
 
@@ -448,9 +516,118 @@ impl AppContext {
         }
     }
 
-    /// Publish an event to the event bus
-    pub fn publish<E: 'static + Send>(&self, _event: E) {
-        // TODO: implement pub/sub
+    /// Publish an event to all non-sleeping app instances.
+    ///
+    /// Events are delivered asynchronously to all instances that have
+    /// an `#[event_handler]` for the event type. This is fire-and-forget;
+    /// handlers run concurrently and this method returns immediately.
+    ///
+    /// Sleeping instances do not receive events.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// #[derive(Event, Clone)]
+    /// struct UserLoggedIn { user_id: u64 }
+    ///
+    /// // Publisher
+    /// cx.publish(UserLoggedIn { user_id: 123 });
+    ///
+    /// // Subscriber (in another app)
+    /// #[event_handler]
+    /// async fn on_login(&self, event: UserLoggedIn, cx: &AppContext) {
+    ///     cx.toast(format!("User {} logged in", event.user_id));
+    /// }
+    /// ```
+    pub fn publish<E: crate::event::Event>(&self, event: E) {
+        if let Ok(mut inner) = self.inner.write() {
+            inner.instance_commands.push(InstanceCommand::PublishEvent {
+                event: CloneableEvent::new(event),
+            });
+        }
+    }
+
+    /// Send a request to the first non-sleeping instance of an app type.
+    ///
+    /// Returns the response from the handler, or an error if:
+    /// - No instance of the app type is running (`NoInstance`)
+    /// - The target has no handler for this request type (`NoHandler`)
+    /// - The handler panicked (`HandlerPanicked`)
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// #[derive(Request)]
+    /// #[response(bool)]
+    /// struct IsPaused;
+    ///
+    /// // Requester
+    /// let paused = cx.request::<QueueApp>(IsPaused).await?;
+    ///
+    /// // Responder (in QueueApp)
+    /// #[request_handler]
+    /// async fn is_paused(&self, _req: IsPaused, _cx: &AppContext) -> bool {
+    ///     self.paused.get()
+    /// }
+    /// ```
+    pub async fn request<A: App, R: crate::request::Request>(
+        &self,
+        request: R,
+    ) -> Result<R::Response, RequestError> {
+        let (tx, rx) = oneshot::channel();
+
+        if let Ok(mut inner) = self.inner.write() {
+            inner.instance_commands.push(InstanceCommand::SendRequest {
+                target: RequestTarget::AppType(TypeId::of::<A>()),
+                request: Box::new(request),
+                request_type: TypeId::of::<R>(),
+                response_tx: tx,
+            });
+        }
+
+        let response = rx.await.map_err(|_| RequestError::HandlerPanicked)??;
+        // Downcast from Box<dyn Any + Send + Sync> to Box<R::Response>
+        let response: Box<R::Response> = response
+            .downcast()
+            .map_err(|_| RequestError::HandlerPanicked)?;
+        Ok(*response)
+    }
+
+    /// Send a request to a specific instance by ID.
+    ///
+    /// Returns the response from the handler, or an error if:
+    /// - The instance does not exist (`InstanceNotFound`)
+    /// - The instance is sleeping (`InstanceSleeping`)
+    /// - The target has no handler for this request type (`NoHandler`)
+    /// - The handler panicked (`HandlerPanicked`)
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// let paused = cx.request_to::<IsPaused>(queue_id, IsPaused).await?;
+    /// ```
+    pub async fn request_to<R: crate::request::Request>(
+        &self,
+        instance_id: InstanceId,
+        request: R,
+    ) -> Result<R::Response, RequestError> {
+        let (tx, rx) = oneshot::channel();
+
+        if let Ok(mut inner) = self.inner.write() {
+            inner.instance_commands.push(InstanceCommand::SendRequest {
+                target: RequestTarget::Instance(instance_id),
+                request: Box::new(request),
+                request_type: TypeId::of::<R>(),
+                response_tx: tx,
+            });
+        }
+
+        let response = rx.await.map_err(|_| RequestError::HandlerPanicked)??;
+        // Downcast from Box<dyn Any + Send + Sync> to Box<R::Response>
+        let response: Box<R::Response> = response
+            .downcast()
+            .map_err(|_| RequestError::HandlerPanicked)?;
+        Ok(*response)
     }
 
     /// Set the current theme

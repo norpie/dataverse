@@ -34,6 +34,22 @@ pub struct HandlerMethod {
     pub is_async: bool,
 }
 
+/// Information about an event handler method
+pub struct EventHandlerMethod {
+    /// Method name
+    pub name: Ident,
+    /// Event type as a string (for codegen)
+    pub event_type: String,
+}
+
+/// Information about a request handler method
+pub struct RequestHandlerMethod {
+    /// Method name
+    pub name: Ident,
+    /// Request type as a string (for codegen)
+    pub request_type: String,
+}
+
 /// Check if a method has the #[keybinds] attribute
 pub fn is_keybinds_method(method: &ImplItemFn) -> bool {
     method.attrs.iter().any(|a| a.path().is_ident("keybinds"))
@@ -51,6 +67,70 @@ pub fn parse_handler_metadata(method: &ImplItemFn) -> Option<HandlerMethod> {
                 params,
                 is_async,
             });
+        }
+    }
+    None
+}
+
+/// Check if method has #[event_handler] attribute and extract metadata
+pub fn parse_event_handler_metadata(method: &ImplItemFn) -> Option<EventHandlerMethod> {
+    // First check for the attribute
+    let has_attr = method
+        .attrs
+        .iter()
+        .any(|a| a.path().is_ident("event_handler"));
+    if !has_attr {
+        return None;
+    }
+
+    // Extract event type from metadata doc attribute
+    for attr in &method.attrs {
+        if attr.path().is_ident("doc")
+            && let syn::Meta::NameValue(nv) = &attr.meta
+            && let syn::Expr::Lit(syn::ExprLit {
+                lit: syn::Lit::Str(s),
+                ..
+            }) = &nv.value
+        {
+            let value = s.value();
+            if let Some(event_type) = value.strip_prefix("__rafter_event_handler:") {
+                return Some(EventHandlerMethod {
+                    name: method.sig.ident.clone(),
+                    event_type: event_type.to_string(),
+                });
+            }
+        }
+    }
+    None
+}
+
+/// Check if method has #[request_handler] attribute and extract metadata
+pub fn parse_request_handler_metadata(method: &ImplItemFn) -> Option<RequestHandlerMethod> {
+    // First check for the attribute
+    let has_attr = method
+        .attrs
+        .iter()
+        .any(|a| a.path().is_ident("request_handler"));
+    if !has_attr {
+        return None;
+    }
+
+    // Extract request type from metadata doc attribute
+    for attr in &method.attrs {
+        if attr.path().is_ident("doc")
+            && let syn::Meta::NameValue(nv) = &attr.meta
+            && let syn::Expr::Lit(syn::ExprLit {
+                lit: syn::Lit::Str(s),
+                ..
+            }) = &nv.value
+        {
+            let value = s.value();
+            if let Some(request_type) = value.strip_prefix("__rafter_request_handler:") {
+                return Some(RequestHandlerMethod {
+                    name: method.sig.ident.clone(),
+                    request_type: request_type.to_string(),
+                });
+            }
         }
     }
     None
@@ -117,9 +197,12 @@ pub fn modal_metadata_mod(type_name: &Ident) -> Ident {
 pub fn strip_custom_attrs(impl_block: &mut ItemImpl) {
     for item in &mut impl_block.items {
         if let ImplItem::Fn(method) = item {
-            method
-                .attrs
-                .retain(|a| !a.path().is_ident("keybinds") && !a.path().is_ident("handler"));
+            method.attrs.retain(|a| {
+                !a.path().is_ident("keybinds")
+                    && !a.path().is_ident("handler")
+                    && !a.path().is_ident("event_handler")
+                    && !a.path().is_ident("request_handler")
+            });
             // Remove metadata doc attributes
             method.attrs.retain(|a| {
                 if a.path().is_ident("doc")
@@ -129,7 +212,10 @@ pub fn strip_custom_attrs(impl_block: &mut ItemImpl) {
                         ..
                     }) = &nv.value
                 {
-                    return !s.value().starts_with("__rafter_handler:");
+                    let val = s.value();
+                    return !val.starts_with("__rafter_handler:")
+                        && !val.starts_with("__rafter_event_handler:")
+                        && !val.starts_with("__rafter_request_handler:");
                 }
                 true
             });

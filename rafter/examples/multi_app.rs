@@ -4,13 +4,32 @@
 //! - Spawning new app instances with `cx.spawn_and_focus()`
 //! - Different BlurPolicy behaviors (Continue, Sleep, Close)
 //! - Instance discovery with `cx.instances()`
+//! - Pub/Sub events with `cx.publish()` and `#[event_handler]`
+//! - Request/Response with `cx.request()` and `#[request_handler]`
 
 use std::fs::File;
 
 use log::{info, LevelFilter};
 use rafter::app::InstanceInfo;
 use rafter::prelude::*;
+use rafter::request::{Request, RequestError};
+use rafter::event::Event;
 use simplelog::{Config, WriteLogger};
+
+// ============================================================================
+// Events and Requests
+// ============================================================================
+
+/// Event broadcast when an app becomes active (gains focus)
+#[derive(Event, Clone, Debug)]
+struct AppActivated {
+    app_name: String,
+}
+
+/// Request to check if AppB is currently paused (sleeping)
+#[derive(Request)]
+#[response(bool)]
+struct IsPaused;
 
 // ============================================================================
 // App A - BlurPolicy::Continue (default)
@@ -21,6 +40,10 @@ use simplelog::{Config, WriteLogger};
 struct AppA {
     /// Cached list of all instances (refreshed via handler)
     instances: Vec<InstanceInfo>,
+    /// Last app that became active (received via event)
+    last_activated: String,
+    /// Status of AppB (from request)
+    app_b_paused: Option<bool>,
 }
 
 #[app_impl]
@@ -31,13 +54,52 @@ impl AppA {
             "q" | "escape" => quit,
             "n" | "enter" => next_app,
             "r" => refresh,
+            "p" => check_app_b_status,
         }
+    }
+
+    async fn on_start(&self, cx: &AppContext) {
+        // Publish that we're now active
+        cx.publish(AppActivated {
+            app_name: "App A".to_string(),
+        });
+    }
+
+    /// Handler for AppActivated events (pub/sub)
+    #[event_handler]
+    async fn on_app_activated(&self, event: AppActivated, _cx: &AppContext) {
+        info!("[App A] Received AppActivated event: {:?}", event);
+        self.last_activated.set(event.app_name);
     }
 
     #[handler]
     async fn quit(&self, cx: &AppContext) {
         info!("[App A] Quitting");
         cx.exit();
+    }
+
+    /// Query AppB's status using request/response pattern
+    #[handler]
+    async fn check_app_b_status(&self, cx: &AppContext) {
+        info!("[App A] Sending IsPaused request to App B");
+        match cx.request::<AppB, IsPaused>(IsPaused).await {
+            Ok(is_paused) => {
+                info!("[App A] App B responded: paused = {}", is_paused);
+                self.app_b_paused.set(Some(is_paused));
+            }
+            Err(RequestError::NoInstance) => {
+                info!("[App A] App B has no instances running");
+                self.app_b_paused.set(None);
+            }
+            Err(RequestError::InstanceSleeping(_)) => {
+                info!("[App A] App B is sleeping - cannot respond to requests");
+                self.app_b_paused.set(Some(true)); // Sleeping means paused
+            }
+            Err(e) => {
+                info!("[App A] Request failed: {:?}", e);
+                self.app_b_paused.set(None);
+            }
+        }
     }
 
     #[handler]
@@ -68,6 +130,8 @@ impl AppA {
         let instances = self.instances.get();
         let instance_count = instances.len();
         let separator = "─".repeat(50);
+        let last_activated = self.last_activated.get();
+        let app_b_status = self.app_b_paused.get();
 
         // Build instance display strings with truncated IDs
         let instance_lines: Vec<String> = instances
@@ -85,10 +149,27 @@ impl AppA {
             })
             .collect();
 
+        // Format AppB status
+        let app_b_status_str = match app_b_status {
+            Some(true) => "paused/sleeping".to_string(),
+            Some(false) => "running".to_string(),
+            None => "unknown (no instance?)".to_string(),
+        };
+
         page! {
             column(padding: 2, gap: 1) {
                 text(bold, fg: error) { "═══ APP A ═══" }
                 text(fg: muted) { "BlurPolicy: Continue (keeps running in background)" }
+                text { "" }
+
+                // Pub/Sub status
+                text(bold) { "Pub/Sub Events:" }
+                text { format!("Last activated app: {}", if last_activated.is_empty() { "(none)" } else { &last_activated }) }
+                text { "" }
+
+                // Request/Response status
+                text(bold) { "Request/Response:" }
+                text { format!("App B status: {}", app_b_status_str) }
                 text { "" }
 
                 // Instance list
@@ -100,11 +181,12 @@ impl AppA {
                 text { separator }
                 text { "" }
 
-                text(fg: muted) { "[n] Go to App B (singleton)  [r] Refresh  [q] Quit" }
+                text(fg: muted) { "[n] App B  [r] Refresh  [p] Check App B  [q] Quit" }
                 text { "" }
                 row(gap: 2) {
                     button(id: "next", label: "→ App B", on_click: next_app)
                     button(id: "refresh", label: "↻ Refresh", on_click: refresh)
+                    button(id: "check", label: "? Check B", on_click: check_app_b_status)
                 }
             }
         }
@@ -128,6 +210,28 @@ impl AppB {
             "q" | "escape" => quit,
             "n" | "enter" => next_app,
         }
+    }
+
+    async fn on_foreground(&self, cx: &AppContext) {
+        // Publish event when we become active
+        info!("[App B] Publishing AppActivated event");
+        cx.publish(AppActivated {
+            app_name: "App B".to_string(),
+        });
+    }
+
+    /// Handle IsPaused requests - App B is never paused when it can respond
+    /// (if it's sleeping, the request won't reach this handler)
+    #[request_handler]
+    async fn handle_is_paused(&self, _request: IsPaused, _cx: &AppContext) -> bool {
+        info!("[App B] Received IsPaused request, responding: false");
+        false // We're running if we can respond
+    }
+
+    /// Listen for activation events from other apps
+    #[event_handler]
+    async fn on_app_activated(&self, event: AppActivated, _cx: &AppContext) {
+        info!("[App B] Received AppActivated event: {:?}", event);
     }
 
     #[handler]
@@ -188,6 +292,14 @@ impl AppC {
             "q" | "escape" => quit,
             "n" | "enter" => next_app,
         }
+    }
+
+    async fn on_foreground(&self, cx: &AppContext) {
+        // Publish event when we become active
+        info!("[App C] Publishing AppActivated event");
+        cx.publish(AppActivated {
+            app_name: "App C".to_string(),
+        });
     }
 
     #[handler]

@@ -7,10 +7,11 @@ use crossterm::event;
 use log::{debug, info, trace, warn};
 
 use crate::app::{BlurPolicy, InstanceId, InstanceRegistry};
-use crate::context::{AppContext, InstanceCommand};
+use crate::context::{AppContext, InstanceCommand, RequestTarget};
 use crate::input::focus::FocusId;
 use crate::input::keybinds::Keybinds;
 use crate::layers::overlay::{ActiveOverlay, OverlayRequest, calculate_overlay_position};
+use crate::request::RequestError;
 use crate::styling::theme::Theme;
 
 use super::RuntimeError;
@@ -204,6 +205,76 @@ fn process_instance_commands(
                         }
                         new_instance.on_foreground(cx);
                     }
+                }
+            }
+            InstanceCommand::PublishEvent { event } => {
+                let event_type = event.type_id();
+                debug!("Publishing event: {:?}", event_type);
+
+                let reg = registry.read().unwrap();
+
+                // Dispatch to all non-sleeping instances that have a handler
+                for instance in reg.iter() {
+                    if instance.is_sleeping() {
+                        continue;
+                    }
+                    if instance.has_event_handler(event_type) {
+                        // Clone the event for each subscriber
+                        let event_clone = event.clone();
+                        instance.dispatch_event(event_type, event_clone.into_inner(), cx);
+                    }
+                }
+            }
+            InstanceCommand::SendRequest {
+                target,
+                request,
+                request_type,
+                response_tx,
+            } => {
+                debug!("Processing request: {:?} -> {:?}", request_type, target);
+
+                let reg = registry.read().unwrap();
+
+                // Find target instance
+                let target_instance = match &target {
+                    RequestTarget::AppType(type_id) => {
+                        // Find first non-sleeping instance of this type
+                        reg.iter()
+                            .find(|i| i.type_id() == *type_id && !i.is_sleeping())
+                    }
+                    RequestTarget::Instance(id) => reg.get(*id),
+                };
+
+                let Some(instance) = target_instance else {
+                    let err = match &target {
+                        RequestTarget::AppType(_) => RequestError::NoInstance,
+                        RequestTarget::Instance(id) => RequestError::InstanceNotFound(*id),
+                    };
+                    let _ = response_tx.send(Err(err));
+                    continue;
+                };
+
+                // Check if sleeping (only relevant for Instance target)
+                if matches!(&target, RequestTarget::Instance(_)) && instance.is_sleeping() {
+                    let _ = response_tx.send(Err(RequestError::InstanceSleeping(instance.id())));
+                    continue;
+                }
+
+                // Check if handler exists
+                if !instance.has_request_handler(request_type) {
+                    let _ = response_tx.send(Err(RequestError::NoHandler));
+                    continue;
+                }
+
+                // Dispatch the request
+                if let Some(future) = instance.dispatch_request(request_type, request, cx) {
+                    // Spawn task to await the response and send it back
+                    tokio::spawn(async move {
+                        let response = future.await;
+                        let _ = response_tx.send(Ok(response));
+                    });
+                } else {
+                    let _ = response_tx.send(Err(RequestError::NoHandler));
                 }
             }
         }

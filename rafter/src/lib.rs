@@ -1,7 +1,9 @@
 // Core modules
 pub mod app;
 pub mod context;
+pub mod event;
 pub mod node;
+pub mod request;
 pub mod resource;
 pub mod runtime;
 pub mod state;
@@ -56,7 +58,9 @@ pub mod prelude {
 
     // Core
     pub use crate::context::{AppContext, Toast, ToastLevel};
+    pub use crate::event::Event;
     pub use crate::node::Node;
+    pub use crate::request::{Request, RequestError};
     pub use crate::resource::{ProgressState, Resource, ResourceState};
     pub use crate::runtime::Runtime;
     pub use crate::state::State;

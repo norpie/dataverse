@@ -6,9 +6,10 @@ use syn::{Attribute, ImplItem, ImplItemFn, ItemImpl, parse2};
 
 use super::handler::HandlerParams;
 use super::impl_common::{
-    HandlerMethod, KeybindScope, KeybindsMethod, app_metadata_mod, generate_config_impl,
-    generate_keybinds_impl, generate_view_impl, get_type_name, is_keybinds_method, is_view_method,
-    parse_handler_metadata, strip_custom_attrs,
+    EventHandlerMethod, HandlerMethod, KeybindScope, KeybindsMethod, RequestHandlerMethod,
+    app_metadata_mod, generate_config_impl, generate_keybinds_impl, generate_view_impl,
+    get_type_name, is_keybinds_method, is_view_method, parse_event_handler_metadata,
+    parse_handler_metadata, parse_request_handler_metadata, strip_custom_attrs,
 };
 
 /// Parse keybinds scope from attributes
@@ -77,6 +78,8 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
     // Collect method information
     let mut keybinds_methods = Vec::new();
     let mut handlers = Vec::new();
+    let mut event_handlers = Vec::new();
+    let mut request_handlers = Vec::new();
     let mut has_view = false;
     let mut has_on_start = false;
     let mut has_on_stop = false;
@@ -94,6 +97,14 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
 
             if let Some(handler) = parse_handler_metadata(method) {
                 handlers.push(handler);
+            }
+
+            if let Some(event_handler) = parse_event_handler_metadata(method) {
+                event_handlers.push(event_handler);
+            }
+
+            if let Some(request_handler) = parse_request_handler_metadata(method) {
+                request_handlers.push(request_handler);
             }
 
             if is_view_method(method) {
@@ -181,8 +192,10 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
         }
     };
 
-    // Generate dispatch method
+    // Generate dispatch methods
     let dispatch_impl = generate_app_dispatch(&handlers);
+    let event_dispatch_impl = generate_event_dispatch(&event_handlers);
+    let request_dispatch_impl = generate_request_dispatch(&request_handlers);
 
     // Output the impl block plus App trait implementation
     let impl_generics = &impl_block.generics;
@@ -215,6 +228,128 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
             #dirty_impl
             #panic_impl
             #dispatch_impl
+            #event_dispatch_impl
+            #request_dispatch_impl
+        }
+    }
+}
+
+/// Generate event dispatch methods for app event handlers
+fn generate_event_dispatch(event_handlers: &[EventHandlerMethod]) -> TokenStream {
+    if event_handlers.is_empty() {
+        return quote! {};
+    }
+
+    let dispatch_arms: Vec<_> = event_handlers
+        .iter()
+        .map(|h| {
+            let name = &h.name;
+            let event_type: syn::Type = syn::parse_str(&h.event_type).unwrap();
+
+            quote! {
+                t if t == std::any::TypeId::of::<#event_type>() => {
+                    if let Ok(event) = event.downcast::<#event_type>() {
+                        let this = self.clone();
+                        let cx = cx.clone();
+                        tokio::spawn(async move {
+                            this.#name(*event, &cx).await;
+                        });
+                        return true;
+                    }
+                    false
+                }
+            }
+        })
+        .collect();
+
+    let has_handler_arms: Vec<_> = event_handlers
+        .iter()
+        .map(|h| {
+            let event_type: syn::Type = syn::parse_str(&h.event_type).unwrap();
+            quote! {
+                t if t == std::any::TypeId::of::<#event_type>() => true,
+            }
+        })
+        .collect();
+
+    quote! {
+        fn dispatch_event(
+            &self,
+            event_type: std::any::TypeId,
+            event: Box<dyn std::any::Any + Send + Sync>,
+            cx: &rafter::context::AppContext,
+        ) -> bool {
+            match event_type {
+                #(#dispatch_arms)*
+                _ => false,
+            }
+        }
+
+        fn has_event_handler(&self, event_type: std::any::TypeId) -> bool {
+            match event_type {
+                #(#has_handler_arms)*
+                _ => false,
+            }
+        }
+    }
+}
+
+/// Generate request dispatch methods for app request handlers
+fn generate_request_dispatch(request_handlers: &[RequestHandlerMethod]) -> TokenStream {
+    if request_handlers.is_empty() {
+        return quote! {};
+    }
+
+    let dispatch_arms: Vec<_> = request_handlers
+        .iter()
+        .map(|h| {
+            let name = &h.name;
+            let request_type: syn::Type = syn::parse_str(&h.request_type).unwrap();
+
+            quote! {
+                t if t == std::any::TypeId::of::<#request_type>() => {
+                    if let Ok(request) = request.downcast::<#request_type>() {
+                        let this = self.clone();
+                        let cx = cx.clone();
+                        return Some(Box::pin(async move {
+                            let response = this.#name(*request, &cx).await;
+                            Box::new(response) as Box<dyn std::any::Any + Send + Sync>
+                        }));
+                    }
+                    None
+                }
+            }
+        })
+        .collect();
+
+    let has_handler_arms: Vec<_> = request_handlers
+        .iter()
+        .map(|h| {
+            let request_type: syn::Type = syn::parse_str(&h.request_type).unwrap();
+            quote! {
+                t if t == std::any::TypeId::of::<#request_type>() => true,
+            }
+        })
+        .collect();
+
+    quote! {
+        fn dispatch_request(
+            &self,
+            request_type: std::any::TypeId,
+            request: Box<dyn std::any::Any + Send + Sync>,
+            cx: &rafter::context::AppContext,
+        ) -> Option<std::pin::Pin<Box<dyn std::future::Future<Output = Box<dyn std::any::Any + Send + Sync>> + Send>>> {
+            match request_type {
+                #(#dispatch_arms)*
+                _ => None,
+            }
+        }
+
+        fn has_request_handler(&self, request_type: std::any::TypeId) -> bool {
+            match request_type {
+                #(#has_handler_arms)*
+                _ => false,
+            }
         }
     }
 }

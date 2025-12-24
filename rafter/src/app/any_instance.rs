@@ -1,6 +1,8 @@
 //! Type-erased app instance wrapper for runtime storage.
 
-use std::any::TypeId;
+use std::any::{Any, TypeId};
+use std::future::Future;
+use std::pin::Pin;
 
 use crate::context::AppContext;
 use crate::input::keybinds::{HandlerId, KeyCombo, Keybinds};
@@ -85,6 +87,31 @@ pub trait AnyAppInstance: Send + Sync {
 
     /// Set the sleeping state.
     fn set_sleeping(&mut self, sleeping: bool);
+
+    // Event/Request dispatch
+
+    /// Check if this instance has a handler for the given event type.
+    fn has_event_handler(&self, event_type: TypeId) -> bool;
+
+    /// Check if this instance has a handler for the given request type.
+    fn has_request_handler(&self, request_type: TypeId) -> bool;
+
+    /// Dispatch an event to this instance's handlers.
+    ///
+    /// Returns true if a handler was found and invoked.
+    /// The handler runs in a spawned task (fire-and-forget).
+    fn dispatch_event(&self, event_type: TypeId, event: Box<dyn Any + Send + Sync>, cx: &AppContext) -> bool;
+
+    /// Dispatch a request to this instance's handlers.
+    ///
+    /// Returns Some(future) if a handler exists for the request type.
+    /// The future resolves to the response.
+    fn dispatch_request(
+        &self,
+        request_type: TypeId,
+        request: Box<dyn Any + Send + Sync>,
+        cx: &AppContext,
+    ) -> Option<Pin<Box<dyn Future<Output = Box<dyn Any + Send + Sync>> + Send>>>;
 }
 
 /// Wrapper that implements AnyAppInstance for any App.
@@ -232,6 +259,27 @@ impl<A: App> AnyAppInstance for AppInstance<A> {
 
     fn set_sleeping(&mut self, sleeping: bool) {
         self.info.is_sleeping = sleeping;
+    }
+
+    fn has_event_handler(&self, event_type: TypeId) -> bool {
+        self.app.has_event_handler(event_type)
+    }
+
+    fn has_request_handler(&self, request_type: TypeId) -> bool {
+        self.app.has_request_handler(request_type)
+    }
+
+    fn dispatch_event(&self, event_type: TypeId, event: Box<dyn Any + Send + Sync>, cx: &AppContext) -> bool {
+        self.app.dispatch_event(event_type, event, cx)
+    }
+
+    fn dispatch_request(
+        &self,
+        request_type: TypeId,
+        request: Box<dyn Any + Send + Sync>,
+        cx: &AppContext,
+    ) -> Option<Pin<Box<dyn Future<Output = Box<dyn Any + Send + Sync>> + Send>>> {
+        self.app.dispatch_request(request_type, request, cx)
     }
 }
 
