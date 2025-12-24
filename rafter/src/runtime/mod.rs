@@ -10,6 +10,8 @@ pub(crate) mod render;
 mod state;
 mod terminal;
 
+use std::any::{Any, TypeId};
+use std::collections::HashMap;
 use std::io;
 use std::sync::{Arc, RwLock};
 
@@ -21,6 +23,9 @@ use crate::styling::theme::{DefaultTheme, Theme};
 
 use terminal::TerminalGuard;
 
+/// Type alias for the global data store.
+pub type DataStore = HashMap<TypeId, Arc<dyn Any + Send + Sync>>;
+
 /// Rafter runtime - the main entry point for running apps.
 pub struct Runtime {
     /// Panic behavior for unhandled panics
@@ -31,6 +36,8 @@ pub struct Runtime {
     theme: Arc<dyn Theme>,
     /// Initial app instance to spawn on startup
     initial_app: Option<Box<dyn AnyAppInstance>>,
+    /// Global data store (type-erased, keyed by TypeId)
+    data: DataStore,
 }
 
 /// Runtime error
@@ -71,7 +78,37 @@ impl Runtime {
             error_handler: None,
             theme: Arc::new(DefaultTheme::default()),
             initial_app: None,
+            data: HashMap::new(),
         }
+    }
+
+    /// Add global data accessible via `cx.data::<T>()`.
+    ///
+    /// Data is stored by type and can be retrieved from any app or system handler.
+    /// Users are responsible for their own synchronization if the data needs to be
+    /// mutated (e.g., wrap in `Arc<Mutex<T>>`).
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// let client = ApiClient::new();
+    ///
+    /// Runtime::new()
+    ///     .data(client)
+    ///     .initial::<MyApp>()
+    ///     .run()
+    ///     .await?;
+    ///
+    /// // In a handler:
+    /// #[handler]
+    /// async fn fetch(&self, cx: &AppContext) {
+    ///     let client = cx.data::<ApiClient>();
+    ///     let result = client.get("/endpoint").await;
+    /// }
+    /// ```
+    pub fn data<T: Send + Sync + 'static>(mut self, value: T) -> Self {
+        self.data.insert(TypeId::of::<T>(), Arc::new(value));
+        self
     }
 
     /// Set the theme.
@@ -162,9 +199,10 @@ impl Runtime {
             reg.focus(instance_id);
         }
 
-        // Create app context with shared keybinds and registry
+        // Create app context with shared keybinds, registry, and data
         let app_keybinds = Arc::new(RwLock::new(keybinds));
-        let mut cx = AppContext::new(app_keybinds.clone());
+        let data = Arc::new(self.data);
+        let mut cx = AppContext::new(app_keybinds.clone(), data);
         cx.set_registry(registry.clone());
         cx.set_instance_id(instance_id);
 

@@ -7,14 +7,53 @@
 //! - Pub/Sub events with `cx.publish()` and `#[event_handler]`
 //! - Request/Response with `cx.request()` and `#[request_handler]`
 //! - System keybinds with `#[system]` and `#[system_impl]`
+//! - Global data with `Runtime::data()` and `cx.data::<T>()`
 
 use std::fs::File;
+use std::sync::atomic::{AtomicU32, Ordering};
 
 use log::{info, LevelFilter};
 use rafter::app::InstanceInfo;
 use rafter::prelude::*;
 use rafter::request::RequestError;
 use simplelog::{Config, WriteLogger};
+
+// ============================================================================
+// Global Data (shared across all apps)
+// ============================================================================
+
+/// Mock API client demonstrating global data pattern.
+///
+/// In a real app, this would be your HTTP client, database pool, etc.
+/// Users are responsible for their own synchronization if mutation is needed.
+pub struct MockApiClient {
+    /// Base URL for the API
+    pub base_url: String,
+    /// Track number of requests made (using atomic for thread-safe mutation)
+    request_count: AtomicU32,
+}
+
+impl MockApiClient {
+    pub fn new(base_url: impl Into<String>) -> Self {
+        Self {
+            base_url: base_url.into(),
+            request_count: AtomicU32::new(0),
+        }
+    }
+
+    /// Simulate an API request
+    pub async fn get(&self, endpoint: &str) -> String {
+        self.request_count.fetch_add(1, Ordering::SeqCst);
+        // Simulate network delay
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        format!("Response from {}{}", self.base_url, endpoint)
+    }
+
+    /// Get the total number of requests made
+    pub fn request_count(&self) -> u32 {
+        self.request_count.load(Ordering::SeqCst)
+    }
+}
 
 // ============================================================================
 // System Keybinds (Global, highest priority)
@@ -172,6 +211,7 @@ impl AppA {
             "p" => check_app_b_status,
             "c" => get_app_d_counter,
             "i" => increment_app_d_counter,
+            "a" => test_api,
         }
     }
 
@@ -273,6 +313,24 @@ impl AppA {
         }
     }
 
+    /// Test the global API client (demonstrates cx.data::<T>())
+    #[handler]
+    async fn test_api(&self, cx: &AppContext) {
+        info!("[App A] Testing global API client");
+
+        // Access the global MockApiClient
+        let client = cx.data::<MockApiClient>();
+
+        // Make a mock request
+        let response = client.get("/users").await;
+        let count = client.request_count();
+
+        info!("[App A] API response: {}", response);
+        info!("[App A] Total requests made: {}", count);
+
+        cx.toast_success(format!("API: {} (total: {})", response, count));
+    }
+
     #[handler]
     async fn refresh(&self, cx: &AppContext) {
         let instances = cx.instances();
@@ -360,13 +418,14 @@ impl AppA {
                 text { separator }
                 text { "" }
 
-                text(fg: muted) { "[n] App B  [d] App D  [r] Refresh  [q] Quit" }
+                text(fg: muted) { "[n] App B  [d] App D  [r] Refresh  [a] API Test  [q] Quit" }
                 text(fg: muted) { "[c] Get D counter  [i] Increment D counter" }
                 text { "" }
                 row(gap: 2) {
                     button(id: "next", label: "→ App B", on_click: next_app)
                     button(id: "appd", label: "→ App D", on_click: go_to_app_d)
                     button(id: "refresh", label: "↻ Refresh", on_click: refresh)
+                    button(id: "api", label: "API Test", on_click: test_api)
                 }
                 row(gap: 2) {
                     button(id: "getc", label: "Get D Counter", on_click: get_app_d_counter)
@@ -648,7 +707,15 @@ async fn main() {
         let _ = WriteLogger::init(LevelFilter::Debug, Config::default(), log_file);
     }
 
-    if let Err(e) = rafter::Runtime::new().initial::<AppA>().run().await {
+    // Create shared API client
+    let api_client = MockApiClient::new("https://api.example.com");
+
+    if let Err(e) = rafter::Runtime::new()
+        .data(api_client) // Register global data
+        .initial::<AppA>()
+        .run()
+        .await
+    {
         eprintln!("Error: {}", e);
     }
 }

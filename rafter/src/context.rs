@@ -12,6 +12,7 @@ use crate::input::focus::FocusId;
 use crate::input::keybinds::{KeybindError, KeybindInfo, Keybinds};
 use crate::layers::modal::{Modal, ModalContext, ModalDyn, ModalEntry};
 use crate::request::RequestError;
+use crate::runtime::DataStore;
 use crate::styling::theme::Theme;
 use crate::widgets::events::WidgetEvent;
 
@@ -236,11 +237,13 @@ pub struct AppContext {
     keybinds: Arc<RwLock<Keybinds>>,
     /// Shared instance registry for querying instances
     registry: Option<Arc<RwLock<InstanceRegistry>>>,
+    /// Global data store (read-only, set at runtime startup)
+    data: Arc<DataStore>,
 }
 
 impl AppContext {
-    /// Create a new app context with shared keybinds
-    pub fn new(keybinds: Arc<RwLock<Keybinds>>) -> Self {
+    /// Create a new app context with shared keybinds and data store
+    pub fn new(keybinds: Arc<RwLock<Keybinds>>, data: Arc<DataStore>) -> Self {
         Self {
             inner: Arc::new(RwLock::new(AppContextInner {
                 exit_requested: false,
@@ -263,7 +266,48 @@ impl AppContext {
             })),
             keybinds,
             registry: None,
+            data,
         }
+    }
+
+    // -------------------------------------------------------------------------
+    // Global data access
+    // -------------------------------------------------------------------------
+
+    /// Get a reference to global data of type `T`.
+    ///
+    /// Returns `None` if no data of this type was registered with `Runtime::data()`.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// if let Some(client) = cx.try_data::<ApiClient>() {
+    ///     client.fetch().await;
+    /// }
+    /// ```
+    pub fn try_data<T: Send + Sync + 'static>(&self) -> Option<&T> {
+        self.data
+            .get(&TypeId::of::<T>())
+            .and_then(|arc| arc.downcast_ref::<T>())
+    }
+
+    /// Get a reference to global data of type `T`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if no data of this type was registered with `Runtime::data()`.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// let client = cx.data::<ApiClient>();
+    /// let result = client.fetch().await;
+    /// ```
+    pub fn data<T: Send + Sync + 'static>(&self) -> &T {
+        self.try_data::<T>().expect(&format!(
+            "No data of type {} registered. Use Runtime::data() to register it.",
+            std::any::type_name::<T>()
+        ))
     }
 
     /// Request to exit the current app
@@ -998,7 +1042,11 @@ impl AppContext {
 
 impl Default for AppContext {
     fn default() -> Self {
-        Self::new(Arc::new(RwLock::new(Keybinds::new())))
+        use std::collections::HashMap;
+        Self::new(
+            Arc::new(RwLock::new(Keybinds::new())),
+            Arc::new(HashMap::new()),
+        )
     }
 }
 
