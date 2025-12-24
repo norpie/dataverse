@@ -326,7 +326,7 @@ fn generate_singleton_methods(name: &Ident, attrs: &AppAttrs) -> TokenStream {
             /// This method ensures only one instance of this app exists and is focused.
             pub fn get_or_spawn_and_focus(cx: &rafter::context::AppContext) -> Result<rafter::app::InstanceId, rafter::app::SpawnError> {
                 let id = Self::get_or_spawn(cx)?;
-                cx.focus(id);
+                cx.focus_instance(id);
                 Ok(id)
             }
         }
