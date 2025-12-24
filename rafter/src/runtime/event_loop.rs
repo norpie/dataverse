@@ -1,10 +1,14 @@
 //! Main event loop for the runtime.
 
 use std::sync::{Arc, RwLock};
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
-use crossterm::event;
+use crossterm::event::EventStream;
+use futures::StreamExt;
 use log::{debug, info, trace, warn};
+use tokio::time::{Duration, sleep_until};
+
+use super::wakeup::{self, channel};
 
 use crate::app::{BlurPolicy, InstanceId, InstanceRegistry};
 use crate::context::{AppContext, InstanceCommand, RequestTarget};
@@ -33,33 +37,41 @@ use crate::input::focus::FocusState;
 /// - The latest hover position (if any hover events were found)
 /// - Any non-hover events that were encountered (to be processed later)
 /// - The count of skipped hover events
-fn coalesce_hover_events(
+async fn coalesce_hover_events(
+    events: &mut EventStream,
     initial_position: Position,
-) -> Result<(Position, Vec<event::Event>, usize), std::io::Error> {
+) -> (Position, Vec<crossterm::event::Event>, usize) {
     let mut latest_position = initial_position;
     let mut other_events = Vec::new();
     let mut skipped_count = 0;
 
-    // Drain all pending events
-    while event::poll(Duration::from_millis(0))? {
-        if let Ok(crossterm_event) = event::read()
-            && let Some(rafter_event) = convert_event(crossterm_event.clone())
-        {
-            match rafter_event {
-                Event::Hover(pos) => {
-                    // Replace with newer hover position
-                    latest_position = pos;
-                    skipped_count += 1;
-                }
-                _ => {
-                    // Keep non-hover events for later processing
-                    other_events.push(crossterm_event);
+    // Drain all pending events using non-blocking try_next
+    loop {
+        // Use tokio's try_recv pattern - poll once without waiting
+        let next = tokio::time::timeout(Duration::from_millis(0), events.next()).await;
+
+        match next {
+            Ok(Some(Ok(crossterm_event))) => {
+                if let Some(rafter_event) = convert_event(crossterm_event.clone()) {
+                    match rafter_event {
+                        Event::Hover(pos) => {
+                            // Replace with newer hover position
+                            latest_position = pos;
+                            skipped_count += 1;
+                        }
+                        _ => {
+                            // Keep non-hover events for later processing
+                            other_events.push(crossterm_event);
+                        }
+                    }
                 }
             }
+            // No more pending events or error - stop draining
+            _ => break,
         }
     }
 
-    Ok((latest_position, other_events, skipped_count))
+    (latest_position, other_events, skipped_count)
 }
 
 /// Apply blur policy to an instance that is losing focus.
@@ -319,6 +331,21 @@ fn process_instance_commands(
     reg.is_empty()
 }
 
+/// Compute the next deadline for toast expiry.
+/// Returns None if there are no toasts with expiry times.
+fn compute_next_deadline(toasts: &[(crate::context::Toast, Instant)]) -> Option<Instant> {
+    toasts.iter().map(|(_, expiry)| *expiry).min()
+}
+
+/// Sleep until a deadline, or wait forever if None.
+/// This is used as a conditional branch in tokio::select!
+async fn sleep_until_optional(deadline: Option<Instant>) {
+    match deadline {
+        Some(d) => sleep_until(tokio::time::Instant::from_std(d)).await,
+        None => std::future::pending::<()>().await,
+    }
+}
+
 /// Run the main event loop with an instance registry.
 pub async fn run_event_loop(
     registry: Arc<RwLock<InstanceRegistry>>,
@@ -358,6 +385,16 @@ pub async fn run_event_loop(
     // Initialize event loop state with systems
     let mut state = EventLoopState::new(theme, systems);
 
+    // Create wakeup channel for passive rendering
+    let (wakeup_tx, mut wakeup_rx) = channel();
+    wakeup::install_sender(wakeup_tx);
+
+    // Create async event stream
+    let mut events = EventStream::new();
+
+    // Track last rendered hit map for event dispatch
+    let mut hit_map = HitTestMap::new();
+
     // Call on_start and on_foreground for the initial instance
     {
         let reg = registry.read().unwrap();
@@ -368,9 +405,11 @@ pub async fn run_event_loop(
         }
     }
 
+    // Flag to force initial render
+    let mut force_render = true;
+
     // Main event loop
     loop {
-        let frame_start = Instant::now();
 
         // Check if exit was requested (by a handler from previous iteration)
         if cx.is_exit_requested() {
@@ -473,218 +512,270 @@ pub async fn run_event_loop(
             state.app_focus_state.set_focusable_ids(focusable_ids);
         }
 
-        // Render and build hit test map
-        let mut hit_map = HitTestMap::new();
+        // Determine if we need to render
+        let modal_dirty = state.modal_stack.iter().any(|e| e.modal.is_dirty());
+        let toast_dirty = state.active_toasts.len() != state.last_toast_count;
+        state.last_toast_count = state.active_toasts.len();
+        let instance_is_dirty = instance.is_dirty();
+
+        // Check if focus changed
+        let current_focused_id = state.focused_id();
+        let focus_changed = current_focused_id != state.last_focused_id;
+        state.last_focused_id = current_focused_id;
+
+        // Include event_dispatched flag (set when we dispatch an event)
+        let needs_render = force_render
+            || instance_is_dirty
+            || modal_dirty
+            || toast_dirty
+            || modal_closed
+            || focus_changed
+            || state.event_dispatched;
+
+        // Clear event_dispatched flag (will be set again if we dispatch an event this iteration)
+        state.event_dispatched = false;
+
+        // Get theme and focus info (needed for render and reference)
         let theme = &state.current_theme;
         let focused_element_id = state.focused_id();
 
-        // Cache instance page (computed once per frame)
-        let view_start = Instant::now();
-        let app_view = instance.page();
-        let view_elapsed = view_start.elapsed();
-        if view_elapsed.as_millis() > 5 {
-            warn!("PROFILE: instance.page() took {:?}", view_elapsed);
-        }
+        // RENDER - only if something changed
+        if needs_render {
+            // Clear hit map for rebuild
+            hit_map.clear();
 
-        // Cache modal views (computed once per frame)
-        let modal_views: Vec<_> = state.modal_stack.iter().map(|e| e.modal.page()).collect();
-
-        // Collect overlay requests during rendering
-        let mut overlay_requests: Vec<OverlayRequest> = Vec::new();
-
-        let modal_stack_ref = &state.modal_stack;
-        let draw_start = Instant::now();
-        term_guard.terminal().draw(|frame| {
-            let area = frame.area();
-
-            // Fill entire terminal with theme background color
-            if let Some(bg_color) = theme.resolve("background") {
-                fill_background(frame, bg_color.to_ratatui());
+            // Cache instance page (computed once per frame)
+            let view_start = Instant::now();
+            let app_view = instance.page();
+            let view_elapsed = view_start.elapsed();
+            if view_elapsed.as_millis() > 5 {
+                warn!("PROFILE: instance.page() took {:?}", view_elapsed);
             }
 
-            // Always render the app first
-            let app_focused = if modal_stack_ref.is_empty() {
-                focused_element_id.as_deref()
-            } else {
-                None
-            };
-            render_node(
-                frame,
-                &app_view,
-                area,
-                &mut hit_map,
-                theme.as_ref(),
-                app_focused,
-                &mut overlay_requests,
-            );
+            // Cache modal views (computed once per frame)
+            let modal_views: Vec<_> = state.modal_stack.iter().map(|e| e.modal.page()).collect();
 
-            // Render modals on top with backdrop dimming
-            for (i, (entry, modal_view)) in
-                modal_stack_ref.iter().zip(modal_views.iter()).enumerate()
-            {
-                // Dim the backdrop
-                dim_backdrop(frame.buffer_mut(), 0.4);
+            // Collect overlay requests during rendering
+            let mut overlay_requests: Vec<OverlayRequest> = Vec::new();
 
-                // Calculate modal area based on position and size
-                let modal_area = calculate_modal_area(
-                    area,
-                    entry.modal.position(),
-                    entry.modal.size(),
-                    modal_view,
-                );
+            let modal_stack_ref = &state.modal_stack;
+            let draw_start = Instant::now();
+            term_guard.terminal().draw(|frame| {
+                let area = frame.area();
 
-                // Clear the modal area
-                frame.render_widget(ratatui::widgets::Clear, modal_area);
+                // Fill entire terminal with theme background color
+                if let Some(bg_color) = theme.resolve("background") {
+                    fill_background(frame, bg_color.to_ratatui());
+                }
 
-                // Only show focus for the top modal
-                let is_top_modal = i == modal_stack_ref.len() - 1;
-                let modal_focused = if is_top_modal {
+                // Always render the app first
+                let app_focused = if modal_stack_ref.is_empty() {
                     focused_element_id.as_deref()
                 } else {
                     None
                 };
-
-                // Render modal page
                 render_node(
                     frame,
-                    modal_view,
-                    modal_area,
+                    &app_view,
+                    area,
                     &mut hit_map,
                     theme.as_ref(),
-                    modal_focused,
+                    app_focused,
                     &mut overlay_requests,
                 );
+
+                // Render modals on top with backdrop dimming
+                for (i, (entry, modal_view)) in
+                    modal_stack_ref.iter().zip(modal_views.iter()).enumerate()
+                {
+                    // Dim the backdrop
+                    dim_backdrop(frame.buffer_mut(), 0.4);
+
+                    // Calculate modal area based on position and size
+                    let modal_area = calculate_modal_area(
+                        area,
+                        entry.modal.position(),
+                        entry.modal.size(),
+                        modal_view,
+                    );
+
+                    // Clear the modal area
+                    frame.render_widget(ratatui::widgets::Clear, modal_area);
+
+                    // Only show focus for the top modal
+                    let is_top_modal = i == modal_stack_ref.len() - 1;
+                    let modal_focused = if is_top_modal {
+                        focused_element_id.as_deref()
+                    } else {
+                        None
+                    };
+
+                    // Render modal page
+                    render_node(
+                        frame,
+                        modal_view,
+                        modal_area,
+                        &mut hit_map,
+                        theme.as_ref(),
+                        modal_focused,
+                        &mut overlay_requests,
+                    );
+                }
+
+                // Render overlay layer (above modals, below toasts)
+                let mut active_overlays: Vec<ActiveOverlay> = Vec::new();
+                for request in overlay_requests.drain(..) {
+                    let content_size = (
+                        request.content.intrinsic_width().max(1),
+                        request.content.intrinsic_height().max(1),
+                    );
+                    let overlay_area = calculate_overlay_position(
+                        area,
+                        request.anchor,
+                        content_size,
+                        request.position,
+                    );
+
+                    // Clear the overlay area
+                    frame.render_widget(ratatui::widgets::Clear, overlay_area);
+
+                    // Render overlay content (no focus - overlays don't trap focus)
+                    // Note: We pass an empty overlay_requests here since overlays shouldn't nest
+                    let mut nested_overlays: Vec<OverlayRequest> = Vec::new();
+                    render_node(
+                        frame,
+                        &request.content,
+                        overlay_area,
+                        &mut hit_map,
+                        theme.as_ref(),
+                        None, // Overlays don't show focus indicators
+                        &mut nested_overlays,
+                    );
+
+                    // Track active overlay for click-outside detection
+                    active_overlays.push(ActiveOverlay::new(request.owner_id, overlay_area));
+                }
+
+                // Store active overlays in state for event handling
+                state.active_overlays = active_overlays;
+
+                // Render toasts on top of everything
+                render_toasts(frame, &state.active_toasts, theme.as_ref());
+            })?;
+            let draw_elapsed = draw_start.elapsed();
+            if draw_elapsed.as_millis() > 5 {
+                warn!("PROFILE: terminal.draw() took {:?}", draw_elapsed);
             }
 
-            // Render overlay layer (above modals, below toasts)
-            let mut active_overlays: Vec<ActiveOverlay> = Vec::new();
-            for request in overlay_requests.drain(..) {
-                let content_size = (
-                    request.content.intrinsic_width().max(1),
-                    request.content.intrinsic_height().max(1),
-                );
-                let overlay_area = calculate_overlay_position(
-                    area,
-                    request.anchor,
-                    content_size,
-                    request.position,
-                );
-
-                // Clear the overlay area
-                frame.render_widget(ratatui::widgets::Clear, overlay_area);
-
-                // Render overlay content (no focus - overlays don't trap focus)
-                // Note: We pass an empty overlay_requests here since overlays shouldn't nest
-                let mut nested_overlays: Vec<OverlayRequest> = Vec::new();
-                render_node(
-                    frame,
-                    &request.content,
-                    overlay_area,
-                    &mut hit_map,
-                    theme.as_ref(),
-                    None, // Overlays don't show focus indicators
-                    &mut nested_overlays,
-                );
-
-                // Track active overlay for click-outside detection
-                active_overlays.push(ActiveOverlay::new(request.owner_id, overlay_area));
+            // Clear dirty flags after render
+            if let Some(entry) = state.modal_stack.last() {
+                entry.modal.clear_dirty();
+            } else {
+                instance.clear_dirty();
             }
 
-            // Store active overlays in state for event handling
-            state.active_overlays = active_overlays;
-
-            // Render toasts on top of everything
-            render_toasts(frame, &state.active_toasts, theme.as_ref());
-        })?;
-        let draw_elapsed = draw_start.elapsed();
-        if draw_elapsed.as_millis() > 5 {
-            warn!("PROFILE: terminal.draw() took {:?}", draw_elapsed);
+            // Clear force render flag
+            force_render = false;
         }
-
-        // Clear dirty flags after render
-        if let Some(entry) = state.modal_stack.last() {
-            entry.modal.clear_dirty();
-        } else {
-            instance.clear_dirty();
-        }
-
-        // Need to check dirty on instance, so we need to get instance info before dropping reg
-        let instance_dirty = instance.is_dirty();
 
         // Drop the registry lock before waiting for events
         drop(reg);
 
-        // Determine poll timeout - skip waiting if state changed
-        let needs_immediate_update =
-            state.needs_immediate_update_multi(instance_dirty, modal_closed);
-        let poll_timeout = if needs_immediate_update {
-            Duration::from_millis(0)
-        } else {
-            Duration::from_millis(100)
+        // Compute next deadline for toasts
+        let next_deadline = compute_next_deadline(&state.active_toasts);
+
+        // Wait for something to happen (passive rendering)
+        let received_event: Option<Event> = tokio::select! {
+            // Branch 1: Crossterm event from terminal
+            Some(event_result) = events.next() => {
+                match event_result {
+                    Ok(crossterm_event) => {
+                        trace!("Crossterm event: {:?}", crossterm_event);
+                        if let Some(rafter_event) = convert_event(crossterm_event) {
+                            debug!("Rafter event: {:?}", rafter_event);
+
+                            // Handle hover coalescing specially
+                            match rafter_event {
+                                Event::Hover(position) => {
+                                    let (final_position, other_events, skipped) =
+                                        coalesce_hover_events(&mut events, position).await;
+
+                                    if skipped > 0 {
+                                        debug!(
+                                            "Hover coalesced: skipped {} events, final pos ({}, {})",
+                                            skipped, final_position.x, final_position.y
+                                        );
+                                    }
+
+                                    if !other_events.is_empty() {
+                                        debug!(
+                                            "Hover coalescing dropped {} non-hover events",
+                                            other_events.len()
+                                        );
+                                    }
+
+                                    Some(Event::Hover(final_position))
+                                }
+                                other => Some(other),
+                            }
+                        } else {
+                            None
+                        }
+                    }
+                    Err(e) => {
+                        log::error!("Event stream error: {}", e);
+                        None
+                    }
+                }
+            }
+
+            // Branch 2: Wakeup signal (state changed from async task, etc.)
+            Some(()) = wakeup_rx.recv() => {
+                trace!("Wakeup signal received");
+                None // No event to dispatch, just re-check state
+            }
+
+            // Branch 3: Deadline reached (toast expiry)
+            _ = sleep_until_optional(next_deadline) => {
+                trace!("Toast deadline reached");
+                None // No event to dispatch, toasts will be cleaned up next iteration
+            }
         };
 
-        // Wait for events (with timeout for animations/toast expiry)
-        if event::poll(poll_timeout)?
-            && let Ok(crossterm_event) = event::read()
-        {
-            trace!("Crossterm event: {:?}", crossterm_event);
+        // Dispatch event if we received one
+        if let Some(event_to_dispatch) = received_event {
+            // Mark that we dispatched an event (triggers render on next iteration)
+            state.event_dispatched = true;
 
-            if let Some(rafter_event) = convert_event(crossterm_event) {
-                debug!("Rafter event: {:?}", rafter_event);
-
-                // Handle hover coalescing specially
-                let event_to_dispatch = match rafter_event {
-                    Event::Hover(position) => {
-                        let (final_position, other_events, skipped) =
-                            coalesce_hover_events(position)?;
-
-                        if skipped > 0 {
-                            debug!(
-                                "Hover coalesced: skipped {} events, final pos ({}, {})",
-                                skipped, final_position.x, final_position.y
-                            );
-                        }
-
-                        // TODO: Process other_events that were collected during coalescing
-                        // For now, we drop them - this is a trade-off for responsiveness
-                        if !other_events.is_empty() {
-                            debug!(
-                                "Hover coalescing dropped {} non-hover events",
-                                other_events.len()
-                            );
-                        }
-
-                        Event::Hover(final_position)
-                    }
-                    other => other,
+            // Re-acquire registry lock for event dispatch
+            let reg = registry.read().unwrap();
+            if let Some(instance) = reg.focused_instance() {
+                // Get current page for dispatch
+                let page = if let Some(entry) = state.modal_stack.last() {
+                    entry.modal.page()
+                } else {
+                    instance.page()
                 };
 
-                // Dispatch the event using the unified handler
-                // Need to re-acquire registry lock for event dispatch
-                let reg = registry.read().unwrap();
-                if let Some(instance) = reg.focused_instance()
-                    && dispatch_event(
-                        &event_to_dispatch,
-                        &page,
-                        &hit_map,
-                        instance,
-                        &mut state,
-                        &app_keybinds,
-                        &cx,
-                    )
-                    .is_break()
-                    {
-                        break;
-                    }
+                if dispatch_event(
+                    &event_to_dispatch,
+                    &page,
+                    &hit_map,
+                    instance,
+                    &mut state,
+                    &app_keybinds,
+                    &cx,
+                )
+                .is_break()
+                {
+                    break;
+                }
             }
         }
-
-        // Log total frame time
-        let frame_elapsed = frame_start.elapsed();
-        if frame_elapsed.as_millis() > 8 {
-            warn!("PROFILE: total frame took {:?}", frame_elapsed);
-        }
     }
+
+    // Cleanup wakeup sender
+    wakeup::uninstall_sender();
 
     // Call on_stop for all instances
     {

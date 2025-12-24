@@ -1,6 +1,8 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, RwLock};
 
+use crate::runtime::wakeup;
+
 /// Reactive state wrapper with interior mutability.
 ///
 /// `State<T>` provides thread-safe, async-compatible state management.
@@ -57,6 +59,7 @@ impl<T> State<T> {
         if let Ok(mut guard) = self.inner.write() {
             *guard = value;
             self.dirty.store(true, Ordering::SeqCst);
+            wakeup::send_wakeup();
         }
     }
 
@@ -68,6 +71,7 @@ impl<T> State<T> {
         if let Ok(mut guard) = self.inner.write() {
             f(&mut guard);
             self.dirty.store(true, Ordering::SeqCst);
+            wakeup::send_wakeup();
         }
     }
 

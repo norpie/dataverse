@@ -47,6 +47,15 @@ pub struct EventLoopState {
 
     /// Active overlays from the last render (for click-outside detection).
     pub active_overlays: Vec<ActiveOverlay>,
+
+    /// Last toast count (for dirty tracking).
+    pub last_toast_count: usize,
+
+    /// Last focused element ID (for dirty tracking).
+    pub last_focused_id: Option<String>,
+
+    /// Flag indicating an event was dispatched (for render triggering).
+    pub event_dispatched: bool,
 }
 
 impl EventLoopState {
@@ -69,6 +78,9 @@ impl EventLoopState {
             current_theme: theme,
             drag_widget_id: None,
             active_overlays: Vec::new(),
+            last_toast_count: 0,
+            last_focused_id: None,
+            event_dispatched: false,
         }
     }
 
@@ -98,12 +110,5 @@ impl EventLoopState {
     /// Get the current focused element ID.
     pub fn focused_id(&self) -> Option<String> {
         self.focus_state().current().map(|f| f.0.clone())
-    }
-
-    /// Check if any layer needs immediate update (dirty state or modal closed).
-    ///
-    /// This version is for multi-instance mode where we pass dirty state directly.
-    pub fn needs_immediate_update_multi(&self, instance_dirty: bool, modal_closed: bool) -> bool {
-        modal_closed || instance_dirty || self.modal_stack.iter().any(|e| e.modal.is_dirty())
     }
 }
