@@ -10,6 +10,7 @@ use crate::layers::overlay::ActiveOverlay;
 use crate::styling::theme::Theme;
 use crate::system::AnySystem;
 
+use super::animation::AnimationManager;
 use super::input::InputState;
 use super::modal::ModalStackEntry;
 
@@ -57,8 +58,8 @@ pub struct EventLoopState {
     /// Flag indicating an event was dispatched (for render triggering).
     pub event_dispatched: bool,
 
-    /// Whether reduce_motion is enabled (animations complete instantly).
-    pub reduce_motion: bool,
+    /// Animation manager for smooth property transitions.
+    pub animations: AnimationManager,
 }
 
 impl EventLoopState {
@@ -88,7 +89,7 @@ impl EventLoopState {
             last_toast_count: 0,
             last_focused_id: None,
             event_dispatched: false,
-            reduce_motion,
+            animations: AnimationManager::new(reduce_motion),
         }
     }
 

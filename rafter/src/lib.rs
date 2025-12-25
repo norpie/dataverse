@@ -67,6 +67,9 @@ pub mod prelude {
     pub use crate::runtime::Runtime;
     pub use crate::state::State;
 
+    // Animation
+    pub use crate::runtime::{AnimatedProperty, AnimatedValue, Animation, AnimationManager, Easing};
+
     // Validation
     pub use crate::validation::{
         ErrorDisplay, FieldError, Validatable, ValidationResult, Validator,

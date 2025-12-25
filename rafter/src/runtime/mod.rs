@@ -1,5 +1,6 @@
 //! Rafter runtime - manages the event loop, rendering, and app lifecycle.
 
+pub mod animation;
 mod event_loop;
 mod events;
 mod handlers;
@@ -10,6 +11,8 @@ pub(crate) mod render;
 mod state;
 mod terminal;
 pub mod wakeup;
+
+pub use animation::{AnimatedProperty, AnimatedValue, Animation, AnimationManager, Easing};
 
 use std::any::{Any, TypeId};
 use std::collections::HashMap;

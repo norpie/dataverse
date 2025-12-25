@@ -351,10 +351,24 @@ fn process_instance_commands(
     }
 }
 
-/// Compute the next deadline for toast expiry.
-/// Returns None if there are no toasts with expiry times.
-fn compute_next_deadline(toasts: &[(crate::context::Toast, Instant)]) -> Option<Instant> {
-    toasts.iter().map(|(_, expiry)| *expiry).min()
+use super::animation::AnimationManager;
+
+/// Compute the next deadline for toast expiry and animation completion.
+/// Returns None if there are no toasts with expiry times and no animations.
+fn compute_next_deadline(
+    toasts: &[(crate::context::Toast, Instant)],
+    animations: &AnimationManager,
+) -> Option<Instant> {
+    let toast_deadline = toasts.iter().map(|(_, expiry)| *expiry).min();
+    let animation_deadline = animations.next_completion_time();
+
+    // Return the earliest deadline
+    match (toast_deadline, animation_deadline) {
+        (Some(t), Some(a)) => Some(t.min(a)),
+        (Some(t), None) => Some(t),
+        (None, Some(a)) => Some(a),
+        (None, None) => None,
+    }
 }
 
 /// Sleep until a deadline, or wait forever if None.
@@ -728,12 +742,11 @@ pub async fn run_event_loop(
         // Drop the registry lock before waiting for events
         drop(reg);
 
-        // Compute next deadline for toasts (future: include animation deadlines)
-        let next_deadline = compute_next_deadline(&state.active_toasts);
+        // Compute next deadline for toasts and animations
+        let next_deadline = compute_next_deadline(&state.active_toasts, &state.animations);
 
-        // Check if animations are active (placeholder - Phase 2 will add AnimationManager)
-        // For now, always false since we have no animation state yet
-        let has_active_animations = false;
+        // Check if animations are active
+        let has_active_animations = state.animations.has_active();
 
         // Wait for something to happen (passive OR active rendering)
         let received_event: Option<Event> = tokio::select! {
