@@ -1,5 +1,6 @@
 //! Code generation for page nodes.
 
+pub mod autocomplete;
 pub mod button;
 pub mod checkbox;
 pub mod collapsible;
@@ -20,6 +21,7 @@ use quote::quote;
 
 use crate::macros::page::ast::{AttrValue, ControlFlowNode, ElementNode, ViewNode};
 
+pub use autocomplete::generate_autocomplete_element;
 pub use button::generate_button_element;
 pub use checkbox::generate_checkbox_element;
 pub use collapsible::generate_collapsible_element;
@@ -57,6 +59,7 @@ fn generate_element(elem: &ElementNode) -> TokenStream {
         "text" => generate_text_element(elem),
         "input" => generate_input_element(elem),
         "button" => generate_button_element(elem),
+        "autocomplete" => generate_autocomplete_element(elem),
         "checkbox" => generate_checkbox_element(elem),
         "collapsible" => generate_collapsible_element(elem),
         "radio_group" => generate_radio_group_element(elem),

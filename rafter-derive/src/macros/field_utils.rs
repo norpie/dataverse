@@ -5,6 +5,7 @@ use syn::{Attribute, Type};
 /// Built-in widget types that manage their own state and shouldn't be wrapped in State<T>.
 /// These are auto-detected by type name.
 const BUILTIN_WIDGET_TYPES: &[&str] = &[
+    "Autocomplete",
     "Button",
     "Checkbox",
     "Collapsible",
