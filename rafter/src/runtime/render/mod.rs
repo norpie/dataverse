@@ -21,7 +21,7 @@ use crate::styling::style::Style;
 use crate::styling::theme::{Theme, resolve_color};
 
 pub use backdrop::{dim_backdrop, fill_background};
-pub use toasts::render_toasts;
+pub use toasts::{has_animating_toasts, render_toasts, SLIDE_OUT_DURATION};
 
 use crate::widgets::RenderContext;
 use primitives::{render_container, render_stack, render_text};

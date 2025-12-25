@@ -25,7 +25,7 @@ use super::handlers::dispatch_event;
 use super::hit_test::HitTestMap;
 use super::input::InputState;
 use super::modal::{ModalStackEntry, calculate_modal_area};
-use super::render::{dim_backdrop, fill_background, render_node, render_toasts};
+use super::render::{dim_backdrop, fill_background, has_animating_toasts, render_node, render_toasts, SLIDE_OUT_DURATION};
 use super::state::EventLoopState;
 use super::terminal::TerminalGuard;
 
@@ -359,7 +359,11 @@ fn compute_next_deadline(
     toasts: &[(crate::context::Toast, Instant)],
     animations: &AnimationManager,
 ) -> Option<Instant> {
-    let toast_deadline = toasts.iter().map(|(_, expiry)| *expiry).min();
+    // Calculate expiry from created_at + duration
+    let toast_deadline = toasts
+        .iter()
+        .map(|(toast, created_at)| *created_at + toast.duration)
+        .min();
     let animation_deadline = animations.next_completion_time();
 
     // Return the earliest deadline
@@ -538,14 +542,18 @@ pub async fn run_event_loop(
 
         // Process any pending toasts
         for toast in cx.take_toasts() {
-            let expiry = Instant::now() + toast.duration;
+            let created_at = Instant::now();
             info!("Toast: {}", toast.message);
-            state.active_toasts.push((toast, expiry));
+            state.active_toasts.push((toast, created_at));
         }
 
-        // Remove expired toasts
+        // Remove expired toasts (expiry = created_at + duration + slide_out_animation)
         let now = Instant::now();
-        state.active_toasts.retain(|(_, expiry)| *expiry > now);
+        state.active_toasts.retain(|(toast, created_at)| {
+            // Keep toast until slide-out animation completes
+            let removal_time = *created_at + toast.duration + SLIDE_OUT_DURATION;
+            removal_time > now
+        });
 
         // Get page and render using focused instance
         let reg = registry.read().unwrap();
@@ -576,6 +584,7 @@ pub async fn run_event_loop(
         // Determine if we need to render
         let modal_dirty = state.modal_stack.iter().any(|e| e.modal.is_dirty());
         let toast_dirty = state.active_toasts.len() != state.last_toast_count;
+        let toast_animating = has_animating_toasts(&state.active_toasts, Instant::now());
         state.last_toast_count = state.active_toasts.len();
         let instance_is_dirty = instance.is_dirty();
 
@@ -589,13 +598,14 @@ pub async fn run_event_loop(
         // - force_render is set (initial render)
         // - Instance state changed
         // - Modal state changed (dirty or closed)
-        // - Toast count changed
+        // - Toast count changed or animating
         // - Focus changed
         // - We dispatched an event in the previous iteration
         let needs_render = force_render
             || instance_is_dirty
             || modal_dirty
             || toast_dirty
+            || toast_animating
             || modal_closed
             || focus_changed
             || state.event_dispatched;
@@ -744,8 +754,9 @@ pub async fn run_event_loop(
                 // Store active overlays for later assignment
                 active_overlays_result = active_overlays;
 
-                // Render toasts on top of everything
-                render_toasts(frame, active_toasts_ref, theme.as_ref());
+                // Render toasts on top of everything (with current time for animations)
+                let now = Instant::now();
+                render_toasts(frame, active_toasts_ref, theme.as_ref(), now);
             })?;
             
             // Update active overlays from render result
@@ -784,8 +795,9 @@ pub async fn run_event_loop(
         // Compute next deadline for toasts and animations
         let next_deadline = compute_next_deadline(&state.active_toasts, &state.animations);
 
-        // Check if animations are active
-        let has_active_animations = state.animations.has_active();
+        // Check if any animations are active (style animations OR toast slide-in)
+        let has_active_animations = state.animations.has_active()
+            || has_animating_toasts(&state.active_toasts, Instant::now());
 
         // Wait for something to happen (passive OR active rendering)
         let received_event: Option<Event> = tokio::select! {

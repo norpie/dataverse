@@ -39,7 +39,7 @@ pub struct EventLoopState {
     /// Stack of open modals (each with its own focus/input state).
     pub modal_stack: Vec<ModalStackEntry>,
 
-    /// Active toasts with their expiration times.
+    /// Active toasts with their creation times (expiry = created_at + duration).
     pub active_toasts: Vec<(Toast, Instant)>,
 
     /// Current theme.
