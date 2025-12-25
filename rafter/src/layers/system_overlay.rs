@@ -105,6 +105,13 @@ pub trait SystemOverlay: System {
     /// The returned node will be rendered within the overlay's allocated area.
     fn view(&self) -> Node;
 
+    /// Called once when the overlay is initialized, before the first render.
+    ///
+    /// Use this to fetch initial state that requires `AppContext`.
+    fn on_init(&self, _cx: &AppContext) {
+        // Default: no-op
+    }
+
     /// Check if the overlay needs re-rendering.
     fn is_dirty(&self) -> bool {
         true // Default: always re-render
@@ -131,6 +138,9 @@ pub trait AnySystemOverlay: Send + Sync {
 
     /// Render the overlay's content.
     fn view(&self) -> Node;
+
+    /// Called once when the overlay is initialized, before the first render.
+    fn on_init(&self, cx: &AppContext);
 
     /// Check if the overlay needs re-rendering.
     fn is_dirty(&self) -> bool;
@@ -201,6 +211,10 @@ impl<S: SystemOverlay + Clone + 'static> AnySystemOverlay for SystemOverlayInsta
 
     fn view(&self) -> Node {
         self.overlay.view()
+    }
+
+    fn on_init(&self, cx: &AppContext) {
+        SystemOverlay::on_init(&self.overlay, cx)
     }
 
     fn is_dirty(&self) -> bool {

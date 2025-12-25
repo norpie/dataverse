@@ -20,6 +20,11 @@ fn is_view_method(method: &ImplItemFn) -> bool {
     method.sig.ident == "view"
 }
 
+/// Check if method is named "on_init".
+fn is_on_init_method(method: &ImplItemFn) -> bool {
+    method.sig.ident == "on_init"
+}
+
 /// Convert PascalCase to snake_case.
 fn to_snake_case(s: &str) -> String {
     let mut result = String::new();
@@ -63,6 +68,7 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
     let mut event_handlers = Vec::new();
     let mut request_handlers = Vec::new();
     let mut has_view = false;
+    let mut has_on_init = false;
 
     for item in &impl_block.items {
         if let ImplItem::Fn(method) = item {
@@ -87,6 +93,10 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
 
             if is_view_method(method) {
                 has_view = true;
+            }
+
+            if is_on_init_method(method) {
+                has_on_init = true;
             }
         }
     }
@@ -129,6 +139,19 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
         }
     };
 
+    // Generate on_init impl - either call user's method or use default no-op
+    let on_init_impl = if has_on_init {
+        quote! {
+            fn on_init(&self, cx: &rafter::context::AppContext) {
+                #self_ty::on_init(self, cx)
+            }
+        }
+    } else {
+        quote! {
+            // Default no-op - user didn't define on_init
+        }
+    };
+
     let dirty_impl = quote! {
         fn is_dirty(&self) -> bool {
             #metadata_mod::is_dirty(self)
@@ -159,6 +182,7 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
         impl #impl_generics rafter::layers::SystemOverlay for #self_ty {
             #position_impl
             #view_impl
+            #on_init_impl
             #dirty_impl
         }
     }

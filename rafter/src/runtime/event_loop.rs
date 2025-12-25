@@ -519,9 +519,10 @@ pub async fn run_event_loop(
         }
     }
 
-    // Install wakeup senders for all system overlays
+    // Install wakeup senders and call on_init for all system overlays
     for overlay in &state.system_overlays {
         overlay.install_wakeup(wakeup_sender.clone());
+        overlay.on_init(&cx);
     }
 
     // Flag to force initial render

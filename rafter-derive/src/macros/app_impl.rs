@@ -49,6 +49,16 @@ fn is_on_stop_method(method: &ImplItemFn) -> bool {
     method.sig.ident == "on_stop"
 }
 
+/// Check if method is named "on_foreground"
+fn is_on_foreground_method(method: &ImplItemFn) -> bool {
+    method.sig.ident == "on_foreground"
+}
+
+/// Check if method is named "on_background"
+fn is_on_background_method(method: &ImplItemFn) -> bool {
+    method.sig.ident == "on_background"
+}
+
 /// Check if method is named "current_page"
 fn is_current_page_method(method: &ImplItemFn) -> bool {
     method.sig.ident == "current_page"
@@ -83,6 +93,8 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
     let mut has_view = false;
     let mut has_on_start = false;
     let mut has_on_stop = false;
+    let mut has_on_foreground = false;
+    let mut has_on_background = false;
     let mut has_current_page = false;
 
     for item in &impl_block.items {
@@ -117,6 +129,14 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
 
             if is_on_stop_method(method) {
                 has_on_stop = true;
+            }
+
+            if is_on_foreground_method(method) {
+                has_on_foreground = true;
+            }
+
+            if is_on_background_method(method) {
+                has_on_background = true;
             }
 
             if is_current_page_method(method) {
@@ -161,6 +181,28 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
                 async {}
             }
         }
+    };
+
+    // Generate on_foreground method
+    let on_foreground_impl = if has_on_foreground {
+        quote! {
+            fn on_foreground(&self, cx: &rafter::context::AppContext) -> impl std::future::Future<Output = ()> + Send {
+                #self_ty::on_foreground(self, cx)
+            }
+        }
+    } else {
+        quote! {}
+    };
+
+    // Generate on_background method
+    let on_background_impl = if has_on_background {
+        quote! {
+            fn on_background(&self, cx: &rafter::context::AppContext) -> impl std::future::Future<Output = ()> + Send {
+                #self_ty::on_background(self, cx)
+            }
+        }
+    } else {
+        quote! {}
     };
 
     // Generate current_page method
@@ -240,6 +282,8 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
             #current_page_impl
             #on_start_impl
             #on_stop_impl
+            #on_foreground_impl
+            #on_background_impl
             #dirty_impl
             #panic_impl
             #restart_impl
