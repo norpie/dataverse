@@ -162,6 +162,11 @@ impl Color {
         Self::oklch(l, c, (h + degrees) % 360.0)
     }
 
+    /// Get the lightness component (OKLCH L, 0.0 to 1.0).
+    pub fn lightness(&self) -> f32 {
+        self.to_oklch().0
+    }
+
     /// Create a new color with the given lightness.
     pub fn with_lightness(&self, l: f32) -> Self {
         let (_, c, h) = self.to_oklch();
