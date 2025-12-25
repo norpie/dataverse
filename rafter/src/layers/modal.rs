@@ -74,7 +74,10 @@ impl<R> ModalContext<R> {
     /// }
     /// ```
     pub fn close(&self, result: R) {
-        if let Some(tx) = self.result_tx.lock().unwrap().take() {
+        if let Some(tx) = self.result_tx.lock().unwrap_or_else(|e| {
+            log::warn!("Modal result lock poisoned, recovering");
+            e.into_inner()
+        }).take() {
             let _ = tx.send(result);
         }
         self.closed.store(true, Ordering::SeqCst);

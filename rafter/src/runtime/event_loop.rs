@@ -155,7 +155,10 @@ fn process_instance_commands(
                 let id = instance.id();
                 info!("Spawning instance: {:?}", id);
 
-                let mut reg = registry.write().unwrap();
+                let mut reg = registry.write().unwrap_or_else(|e| {
+                    warn!("Registry lock poisoned, recovering");
+                    e.into_inner()
+                });
 
                 // Install wakeup sender so State updates trigger re-render
                 instance.install_wakeup(wakeup_sender.clone());
@@ -189,7 +192,10 @@ fn process_instance_commands(
             InstanceCommand::Close { id, force } => {
                 info!("Closing instance: {:?} (force={})", id, force);
 
-                let mut reg = registry.write().unwrap();
+                let mut reg = registry.write().unwrap_or_else(|e| {
+                    warn!("Registry lock poisoned, recovering");
+                    e.into_inner()
+                });
 
                 // Check on_close_request if not forcing
                 if !force
@@ -218,7 +224,10 @@ fn process_instance_commands(
             InstanceCommand::Focus { id } => {
                 info!("Focusing instance: {:?}", id);
 
-                let mut reg = registry.write().unwrap();
+                let mut reg = registry.write().unwrap_or_else(|e| {
+                    warn!("Registry lock poisoned, recovering");
+                    e.into_inner()
+                });
 
                 // Apply blur policy to old focused instance
                 if let Some(old_id) = reg.focused()
@@ -254,7 +263,10 @@ fn process_instance_commands(
                     }
                 }
 
-                let reg = registry.read().unwrap();
+                let reg = registry.read().unwrap_or_else(|e| {
+                    warn!("Registry lock poisoned, recovering");
+                    e.into_inner()
+                });
 
                 // Dispatch to all non-sleeping instances that have a handler
                 for instance in reg.iter() {
@@ -276,7 +288,10 @@ fn process_instance_commands(
             } => {
                 debug!("Processing request: {:?} -> {:?}", request_type, target);
 
-                let reg = registry.read().unwrap();
+                let reg = registry.read().unwrap_or_else(|e| {
+                    warn!("Registry lock poisoned, recovering");
+                    e.into_inner()
+                });
 
                 // Find target instance
                 let target_instance = match &target {
@@ -325,7 +340,10 @@ fn process_instance_commands(
 
     // Process deferred closes from BlurPolicy::Close
     if !to_close.is_empty() {
-        let mut reg = registry.write().unwrap();
+        let mut reg = registry.write().unwrap_or_else(|e| {
+            warn!("Registry lock poisoned, recovering");
+            e.into_inner()
+        });
         for id in to_close {
             info!("Closing instance {:?} due to BlurPolicy::Close", id);
             if let Some(instance) = reg.get(id) {
@@ -344,7 +362,10 @@ fn process_instance_commands(
     }
 
     // Check if we should exit (no instances left)
-    let reg = registry.read().unwrap();
+    let reg = registry.read().unwrap_or_else(|e| {
+        warn!("Registry lock poisoned, recovering");
+        e.into_inner()
+    });
     ProcessCommandsResult {
         should_exit: reg.is_empty(),
         needs_render: has_commands,
@@ -419,7 +440,10 @@ pub async fn run_event_loop(
 
     // Log app keybinds
     {
-        let kb = app_keybinds.read().unwrap();
+        let kb = app_keybinds.read().unwrap_or_else(|e| {
+            warn!("Keybinds lock poisoned, recovering");
+            e.into_inner()
+        });
         info!("Registered {} app keybinds", kb.all().len());
         for bind in kb.all() {
             debug!(
@@ -455,7 +479,10 @@ pub async fn run_event_loop(
 
     // Call on_start and on_foreground for the initial instance
     {
-        let reg = registry.read().unwrap();
+        let reg = registry.read().unwrap_or_else(|e| {
+            warn!("Registry lock poisoned, recovering");
+            e.into_inner()
+        });
         if let Some(instance) = reg.focused_instance() {
             // Install wakeup sender so State updates trigger re-render
             instance.install_wakeup(wakeup_sender.clone());
@@ -496,7 +523,10 @@ pub async fn run_event_loop(
         // Get focused instance - if none, exit
         let focused_id: InstanceId;
         {
-            let reg = registry.read().unwrap();
+            let reg = registry.read().unwrap_or_else(|e| {
+                warn!("Registry lock poisoned, recovering");
+                e.into_inner()
+            });
             match reg.focused() {
                 Some(id) => focused_id = id,
                 None => {
@@ -572,7 +602,10 @@ pub async fn run_event_loop(
             .collect();
 
         // Get page and render using focused instance
-        let reg = registry.read().unwrap();
+        let reg = registry.read().unwrap_or_else(|e| {
+            warn!("Registry lock poisoned, recovering");
+            e.into_inner()
+        });
         let Some(instance) = reg.focused_instance() else {
             drop(reg);
             info!("Focused instance disappeared, exiting");
@@ -896,7 +929,10 @@ pub async fn run_event_loop(
 
                 // Apply panic behavior for the affected instance
                 let behavior = {
-                    let reg = registry.read().unwrap();
+                    let reg = registry.read().unwrap_or_else(|e| {
+                        warn!("Registry lock poisoned, recovering");
+                        e.into_inner()
+                    });
                     reg.get(error.instance_id)
                         .map(|i| i.config().on_panic)
                         .unwrap_or_default()
@@ -912,7 +948,10 @@ pub async fn run_event_loop(
 
                         // Get the old instance and try to restart it
                         let new_instance = {
-                            let reg = registry.read().unwrap();
+                            let reg = registry.read().unwrap_or_else(|e| {
+                                warn!("Registry lock poisoned, recovering");
+                                e.into_inner()
+                            });
                             reg.get(error.instance_id)
                                 .and_then(|instance| instance.restart())
                         };
@@ -923,12 +962,18 @@ pub async fn run_event_loop(
 
                             // Replace the old instance with the new one
                             {
-                                let mut reg = registry.write().unwrap();
+                let mut reg = registry.write().unwrap_or_else(|e| {
+                    warn!("Registry lock poisoned, recovering");
+                    e.into_inner()
+                });
                                 reg.insert(error.instance_id, new_instance);
                             }
 
                             // Call on_start on the new instance
-                            if let Some(instance) = registry.read().unwrap().get(error.instance_id) {
+                            if let Some(instance) = registry.read().unwrap_or_else(|e| {
+                                warn!("Registry lock poisoned, recovering");
+                                e.into_inner()
+                            }).get(error.instance_id) {
                                 instance.on_start(&cx);
                             }
 
@@ -978,7 +1023,10 @@ pub async fn run_event_loop(
             };
 
             // Re-acquire registry lock for event dispatch
-            let reg = registry.read().unwrap();
+            let reg = registry.read().unwrap_or_else(|e| {
+                warn!("Registry lock poisoned, recovering");
+                e.into_inner()
+            });
             if let Some(instance) = reg.focused_instance() {
                 // Get current page for dispatch
                 let page = if let Some(entry) = state.modal_stack.last() {
@@ -1025,7 +1073,10 @@ pub async fn run_event_loop(
 
     // Call on_stop for all instances
     {
-        let reg = registry.read().unwrap();
+        let reg = registry.read().unwrap_or_else(|e| {
+            warn!("Registry lock poisoned, recovering");
+            e.into_inner()
+        });
         for instance in reg.iter() {
             instance.on_close(&cx);
         }

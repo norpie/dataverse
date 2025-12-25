@@ -239,7 +239,10 @@ pub fn handle_key_event(
             .input_state
             .process_key(key_combo.clone(), &entry.keybinds, None)
     } else {
-        let kb = app_keybinds.read().unwrap();
+        let kb = app_keybinds.read().unwrap_or_else(|e| {
+            log::warn!("Keybinds lock poisoned, recovering");
+            e.into_inner()
+        });
         state
             .app_input_state
             .process_key(key_combo.clone(), &kb, current_page_ref)

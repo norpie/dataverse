@@ -23,6 +23,7 @@ use log::info;
 
 use crate::app::{AnyAppInstance, App, AppError, AppInstance, InstanceRegistry, PanicBehavior};
 use crate::context::AppContext;
+use crate::input::keybinds::Keybinds;
 use crate::styling::theme::{DefaultTheme, Theme};
 
 use terminal::TerminalGuard;
@@ -233,16 +234,12 @@ impl Runtime {
 
     /// Start the runtime.
     ///
-    /// Requires an initial app to be set via `initial()` or `initial_with()`.
+    /// Runs the runtime event loop.
     ///
-    /// # Panics
-    ///
-    /// Panics if no initial app was set.
+    /// If an initial app was set via `initial()` or `initial_with()`, it will be
+    /// started immediately. Otherwise, the runtime starts with no apps and waits
+    /// for apps to be spawned (e.g., by system overlays).
     pub async fn run(self) -> Result<(), RuntimeError> {
-        let initial_instance = self
-            .initial_app
-            .expect("No initial app set. Use .initial::<App>() or .initial_with(app) before .run()");
-
         info!("Runtime starting");
 
         // Initialize terminal
@@ -252,22 +249,34 @@ impl Runtime {
         // Create the instance registry
         let registry = Arc::new(RwLock::new(InstanceRegistry::new()));
 
-        // Add the initial app instance to registry
-        let instance_id = initial_instance.id();
-        let keybinds = initial_instance.keybinds();
+        // Add the initial app instance to registry if provided
+        let (initial_keybinds, initial_instance_id) = if let Some(initial_instance) = self.initial_app {
+            let instance_id = initial_instance.id();
+            let keybinds = initial_instance.keybinds();
 
-        {
-            let mut reg = registry.write().unwrap();
-            reg.insert(instance_id, initial_instance);
-            reg.focus(instance_id);
-        }
+            {
+                let mut reg = registry.write().unwrap_or_else(|e| {
+                    log::warn!("Registry lock poisoned, recovering");
+                    e.into_inner()
+                });
+                reg.insert(instance_id, initial_instance);
+                reg.focus(instance_id);
+            }
+
+            (keybinds, Some(instance_id))
+        } else {
+            info!("No initial app set, starting with empty registry");
+            (Keybinds::new(), None)
+        };
 
         // Create app context with shared keybinds, registry, and data
-        let app_keybinds = Arc::new(RwLock::new(keybinds));
+        let app_keybinds = Arc::new(RwLock::new(initial_keybinds));
         let data = Arc::new(self.data);
         let mut cx = AppContext::new(app_keybinds.clone(), data);
         cx.set_registry(registry.clone());
-        cx.set_instance_id(instance_id);
+        if let Some(id) = initial_instance_id {
+            cx.set_instance_id(id);
+        }
 
         // Run the event loop with the registry
         event_loop::run_event_loop(
