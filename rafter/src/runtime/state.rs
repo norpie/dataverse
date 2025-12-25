@@ -8,6 +8,7 @@ use crate::context::Toast;
 use crate::input::focus::FocusState;
 use crate::input::keybinds::Keybinds;
 use crate::layers::overlay::ActiveOverlay;
+use crate::layers::system_overlay::AnySystemOverlay;
 use crate::styling::style::Style;
 use crate::styling::theme::Theme;
 use crate::system::AnySystem;
@@ -35,6 +36,9 @@ pub struct EventLoopState {
 
     /// Registered system instances.
     pub systems: Vec<Box<dyn AnySystem>>,
+
+    /// Registered system overlay instances.
+    pub system_overlays: Vec<Box<dyn AnySystemOverlay>>,
 
     /// Stack of open modals (each with its own focus/input state).
     pub modal_stack: Vec<ModalStackEntry>,
@@ -71,16 +75,21 @@ pub struct EventLoopState {
 }
 
 impl EventLoopState {
-    /// Create a new event loop state with the given initial theme and systems.
+    /// Create a new event loop state with the given initial theme, systems, and overlays.
     pub fn new(
         theme: Arc<dyn Theme>,
         systems: Vec<Box<dyn AnySystem>>,
+        system_overlays: Vec<Box<dyn AnySystemOverlay>>,
         reduce_motion: bool,
     ) -> Self {
         // Merge keybinds from all systems
         let mut system_keybinds = Keybinds::new();
         for system in &systems {
             system_keybinds.merge(system.keybinds());
+        }
+        // Also merge keybinds from system overlays
+        for overlay in &system_overlays {
+            system_keybinds.merge(overlay.keybinds());
         }
 
         Self {
@@ -89,6 +98,7 @@ impl EventLoopState {
             system_input_state: InputState::new(),
             system_keybinds,
             systems,
+            system_overlays,
             modal_stack: Vec::new(),
             active_toasts: Vec::new(),
             current_theme: theme,

@@ -16,6 +16,7 @@ use crate::input::focus::FocusId;
 use crate::input::keybinds::Keybinds;
 use crate::layers::overlay::{ActiveOverlay, OverlayRequest, calculate_overlay_position};
 use crate::request::RequestError;
+use crate::layers::system_overlay::{AnySystemOverlay, registered_system_overlays};
 use crate::styling::theme::Theme;
 use crate::system::registered_systems;
 
@@ -26,6 +27,7 @@ use super::hit_test::HitTestMap;
 use super::input::InputState;
 use super::modal::{ModalStackEntry, calculate_modal_area};
 use super::render::{calculate_toast_removal_time, dim_backdrop, fill_background, has_animating_toasts, render_node, render_toasts};
+use super::render::system_overlay::calculate_system_overlay_layout;
 use super::state::EventLoopState;
 use super::terminal::TerminalGuard;
 
@@ -136,6 +138,7 @@ fn process_instance_commands(
     registry: &Arc<RwLock<InstanceRegistry>>,
     app_keybinds: &Arc<RwLock<Keybinds>>,
     systems: &[Box<dyn crate::system::AnySystem>],
+    system_overlays: &[Box<dyn AnySystemOverlay>],
     cx: &AppContext,
     wakeup_sender: &wakeup::WakeupSender,
 ) -> ProcessCommandsResult {
@@ -260,6 +263,14 @@ fn process_instance_commands(
                     if system.has_event_handler(event_type) {
                         let event_clone = event.clone();
                         system.dispatch_event(event_type, event_clone.into_inner(), cx);
+                    }
+                }
+                
+                // Dispatch to all system overlays that have a handler
+                for overlay in system_overlays {
+                    if overlay.has_event_handler(event_type) {
+                        let event_clone = event.clone();
+                        overlay.dispatch_event(event_type, event_clone.into_inner(), cx);
                     }
                 }
 
@@ -438,6 +449,22 @@ pub async fn run_event_loop(
         }
     }
 
+    // Collect registered system overlays
+    let system_overlays: Vec<Box<dyn AnySystemOverlay>> = registered_system_overlays()
+        .map(|reg| (reg.factory)())
+        .collect();
+
+    info!("Registered {} system overlays", system_overlays.len());
+    for overlay in &system_overlays {
+        info!("  Overlay: {} (position: {:?})", overlay.name(), overlay.position());
+        for bind in overlay.keybinds().all() {
+            debug!(
+                "    Keybind: {} ({:?}) => {:?}",
+                bind.id, bind.default_keys, bind.handler
+            );
+        }
+    }
+
     // Log app keybinds
     {
         let kb = app_keybinds.read().unwrap_or_else(|e| {
@@ -453,8 +480,8 @@ pub async fn run_event_loop(
         }
     }
 
-    // Initialize event loop state with systems
-    let mut state = EventLoopState::new(theme, systems, reduce_motion);
+    // Initialize event loop state with systems and overlays
+    let mut state = EventLoopState::new(theme, systems, system_overlays, reduce_motion);
 
     // Create wakeup channel for passive rendering
     let (wakeup_tx, mut wakeup_rx) = channel();
@@ -492,6 +519,11 @@ pub async fn run_event_loop(
         }
     }
 
+    // Install wakeup senders for all system overlays
+    for overlay in &state.system_overlays {
+        overlay.install_wakeup(wakeup_sender.clone());
+    }
+
     // Flag to force initial render
     let mut force_render = true;
 
@@ -506,7 +538,7 @@ pub async fn run_event_loop(
 
         // Process pending instance commands
         let cmd_start = Instant::now();
-        let cmd_result = process_instance_commands(&registry, &app_keybinds, &state.systems, &cx, &wakeup_sender);
+        let cmd_result = process_instance_commands(&registry, &app_keybinds, &state.systems, &state.system_overlays, &cx, &wakeup_sender);
         if cmd_result.should_exit {
             info!("All instances closed, exiting");
             break;
@@ -620,8 +652,45 @@ pub async fn run_event_loop(
         };
 
         // Update focusable IDs from page tree
-        let focusable_ids: Vec<FocusId> =
-            page.focusable_ids().into_iter().map(FocusId::new).collect();
+        // When not in modal mode, include system overlay focusable elements
+        let focusable_ids: Vec<FocusId> = if state.modal_stack.is_empty() {
+            // Collect focusable IDs from system overlays in focus order:
+            // [Top/Left overlays] → [App] → [Right/Bottom overlays] → [Absolute overlays]
+            let mut ids = Vec::new();
+            
+            // Prepend overlays (Top, Left)
+            for overlay in &state.system_overlays {
+                if overlay.position().prepend_focus() {
+                    let overlay_view = overlay.view();
+                    ids.extend(overlay_view.focusable_ids().into_iter().map(FocusId::new));
+                }
+            }
+            
+            // App focusables
+            ids.extend(page.focusable_ids().into_iter().map(FocusId::new));
+            
+            // Append edge overlays (Right, Bottom - non-prepend, non-absolute)
+            for overlay in &state.system_overlays {
+                let pos = overlay.position();
+                if !pos.prepend_focus() && pos.is_edge() {
+                    let overlay_view = overlay.view();
+                    ids.extend(overlay_view.focusable_ids().into_iter().map(FocusId::new));
+                }
+            }
+            
+            // Append absolute overlays last
+            for overlay in &state.system_overlays {
+                if !overlay.position().is_edge() {
+                    let overlay_view = overlay.view();
+                    ids.extend(overlay_view.focusable_ids().into_iter().map(FocusId::new));
+                }
+            }
+            
+            ids
+        } else {
+            // In modal mode, only modal focusables
+            page.focusable_ids().into_iter().map(FocusId::new).collect()
+        };
 
         // Update focus state for the active layer
         if let Some(entry) = state.modal_stack.last_mut() {
@@ -636,6 +705,7 @@ pub async fn run_event_loop(
         let toast_animating = has_animating_toasts(&state.active_toasts, Instant::now());
         state.last_toast_count = state.active_toasts.len();
         let instance_is_dirty = instance.is_dirty();
+        let system_overlay_dirty = state.system_overlays.iter().any(|o| o.is_dirty());
 
         // Check if focus changed
         let current_focused_id = state.focused_id();
@@ -647,12 +717,14 @@ pub async fn run_event_loop(
         // - force_render is set (initial render)
         // - Instance state changed
         // - Modal state changed (dirty or closed)
+        // - System overlay state changed
         // - Toast count changed or animating
         // - Focus changed
         // - We dispatched an event in the previous iteration
         let needs_render = force_render
             || instance_is_dirty
             || modal_dirty
+            || system_overlay_dirty
             || toast_dirty
             || toast_animating
             || modal_closed
@@ -660,8 +732,8 @@ pub async fn run_event_loop(
             || state.event_dispatched;
 
         debug!(
-            "Render check: needs={} (force={}, inst_dirty={}, modal_dirty={}, toast_dirty={}, modal_closed={}, focus_changed={}, event_dispatched={})",
-            needs_render, force_render, instance_is_dirty, modal_dirty, toast_dirty, modal_closed, focus_changed, state.event_dispatched
+            "Render check: needs={} (force={}, inst_dirty={}, modal_dirty={}, overlay_dirty={}, toast_dirty={}, modal_closed={}, focus_changed={}, event_dispatched={})",
+            needs_render, force_render, instance_is_dirty, modal_dirty, system_overlay_dirty, toast_dirty, modal_closed, focus_changed, state.event_dispatched
         );
 
         // Get theme and focus info (needed for render and reference)
@@ -693,6 +765,7 @@ pub async fn run_event_loop(
             let previous_styles = &mut state.previous_styles;
             let modal_stack_ref = &state.modal_stack;
             let active_toasts_ref = &state.active_toasts;
+            let system_overlays_ref = &state.system_overlays;
             
             // Will collect active overlays during render
             let mut active_overlays_result: Vec<ActiveOverlay> = Vec::new();
@@ -706,7 +779,11 @@ pub async fn run_event_loop(
                     fill_background(frame, bg_color.to_ratatui());
                 }
 
-                // Always render the app first
+                // Calculate system overlay layout and get remaining app area
+                let overlay_layout = calculate_system_overlay_layout(system_overlays_ref, area);
+                let app_area = overlay_layout.app_area;
+
+                // Render the app in the remaining area (after edge overlays)
                 let app_focused = if modal_stack_ref.is_empty() {
                     focused_element_id.as_deref()
                 } else {
@@ -715,7 +792,7 @@ pub async fn run_event_loop(
                 render_node(
                     frame,
                     &app_view,
-                    area,
+                    app_area,
                     &mut hit_map,
                     theme.as_ref(),
                     app_focused,
@@ -723,6 +800,28 @@ pub async fn run_event_loop(
                     animations,
                     previous_styles,
                 );
+
+                // Render edge system overlays (they don't dim backdrop)
+                for overlay_entry in &overlay_layout.edge_overlays {
+                    let overlay_view = overlay_entry.overlay.view();
+                    // System overlays don't participate in modal focus
+                    let overlay_focused = if modal_stack_ref.is_empty() {
+                        focused_element_id.as_deref()
+                    } else {
+                        None
+                    };
+                    render_node(
+                        frame,
+                        &overlay_view,
+                        overlay_entry.area,
+                        &mut hit_map,
+                        theme.as_ref(),
+                        overlay_focused,
+                        &mut overlay_requests,
+                        animations,
+                        previous_styles,
+                    );
+                }
 
                 // Render modals on top with backdrop dimming
                 for (i, (entry, modal_view)) in
@@ -764,7 +863,7 @@ pub async fn run_event_loop(
                     );
                 }
 
-                // Render overlay layer (above modals, below toasts)
+                // Render widget overlay layer (dropdowns, etc. - above modals, below toasts)
                 let mut active_overlays: Vec<ActiveOverlay> = Vec::new();
                 for request in overlay_requests.drain(..) {
                     let content_size = (
@@ -800,6 +899,32 @@ pub async fn run_event_loop(
                     active_overlays.push(ActiveOverlay::new(request.owner_id, overlay_area));
                 }
 
+                // Render absolute system overlays (on top of app and modals, below toasts)
+                for overlay_entry in &overlay_layout.absolute_overlays {
+                    // Clear the overlay area first
+                    frame.render_widget(ratatui::widgets::Clear, overlay_entry.area);
+                    
+                    let overlay_view = overlay_entry.overlay.view();
+                    // Absolute overlays can have focus when no modal is open
+                    let overlay_focused = if modal_stack_ref.is_empty() {
+                        focused_element_id.as_deref()
+                    } else {
+                        None
+                    };
+                    let mut nested_overlays: Vec<OverlayRequest> = Vec::new();
+                    render_node(
+                        frame,
+                        &overlay_view,
+                        overlay_entry.area,
+                        &mut hit_map,
+                        theme.as_ref(),
+                        overlay_focused,
+                        &mut nested_overlays,
+                        animations,
+                        previous_styles,
+                    );
+                }
+
                 // Store active overlays for later assignment
                 active_overlays_result = active_overlays;
 
@@ -820,6 +945,11 @@ pub async fn run_event_loop(
                 entry.modal.clear_dirty();
             } else {
                 instance.clear_dirty();
+            }
+            
+            // Clear dirty flags for system overlays
+            for overlay in &state.system_overlays {
+                overlay.clear_dirty();
             }
 
             // Animation cleanup after render
