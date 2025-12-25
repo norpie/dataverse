@@ -77,6 +77,11 @@ pub fn system_overlay(attr: TokenStream, item: TokenStream) -> TokenStream {
     macros::system_overlay::expand(attr.into(), item.into()).into()
 }
 
+#[proc_macro_attribute]
+pub fn system_overlay_impl(attr: TokenStream, item: TokenStream) -> TokenStream {
+    macros::system_overlay_impl::expand(attr.into(), item.into()).into()
+}
+
 #[proc_macro]
 pub fn page(input: TokenStream) -> TokenStream {
     macros::page::expand(input.into()).into()

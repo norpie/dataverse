@@ -14,6 +14,7 @@ pub mod request_handler;
 pub mod system;
 pub mod system_impl;
 pub mod system_overlay;
+pub mod system_overlay_impl;
 pub mod theme;
 pub mod theme_group;
 pub mod widget;

@@ -46,6 +46,7 @@ pub mod prelude {
 
     // Layers
     pub use crate::layers::{Modal, ModalContext, ModalPosition, ModalSize};
+    pub use crate::layers::{SystemOverlay, SystemOverlayPosition};
 
     // Widgets
     pub use crate::widgets::{Alignment, Column, Table, TableId, TableRow};
