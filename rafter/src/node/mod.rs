@@ -373,6 +373,32 @@ impl Node {
         }
     }
 
+    /// Get the on_select handler for an autocomplete or select element by ID
+    pub fn get_select_handler(&self, target_id: &str) -> Option<HandlerId> {
+        match self {
+            Self::Widget {
+                widget,
+                handlers,
+                children,
+                ..
+            } => {
+                if widget.id() == target_id {
+                    handlers.on_select.clone()
+                } else {
+                    children
+                        .iter()
+                        .find_map(|c| c.get_select_handler(target_id))
+                }
+            }
+            Self::Column { children, .. }
+            | Self::Row { children, .. }
+            | Self::Stack { children, .. } => children
+                .iter()
+                .find_map(|c| c.get_select_handler(target_id)),
+            _ => None,
+        }
+    }
+
     /// Get the on_cursor_move handler by ID.
     pub fn get_cursor_handler(&self, target_id: &str) -> Option<HandlerId> {
         match self {

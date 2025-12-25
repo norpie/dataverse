@@ -56,6 +56,7 @@ pub mod prelude {
         ScrollbarConfig, ScrollbarVisibility,
     };
     pub use crate::widgets::{List, ListId, ListItem, Selection, SelectionMode};
+    pub use crate::widgets::{Autocomplete, AutocompleteId, AutocompleteItem};
     pub use crate::widgets::{Select, SelectId, SelectItem};
     pub use crate::widgets::{Tree, TreeId, TreeItem};
 

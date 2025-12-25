@@ -476,6 +476,8 @@ pub struct WidgetHandlers {
     pub on_activate: Option<HandlerId>,
     /// Change handler (input value changed, checkbox toggled, etc.)
     pub on_change: Option<HandlerId>,
+    /// Select handler (item selected from dropdown - autocomplete, select)
+    pub on_select: Option<HandlerId>,
     /// Submit handler (Enter on input, form submission)
     pub on_submit: Option<HandlerId>,
     /// Cursor movement handler (list/tree/table cursor moved)
@@ -508,6 +510,7 @@ impl WidgetHandlers {
             WidgetEventKind::Collapse => self.on_collapse.as_ref(),
             WidgetEventKind::Sort => self.on_sort.as_ref(),
             WidgetEventKind::Change => self.on_change.as_ref(),
+            WidgetEventKind::Select => self.on_select.as_ref(),
         }
     }
 }

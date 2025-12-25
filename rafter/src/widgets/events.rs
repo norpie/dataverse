@@ -32,6 +32,8 @@ pub enum WidgetEventKind {
     Sort,
     /// Value changed (input text, checkbox state, radio selection)
     Change,
+    /// Item selected from dropdown (autocomplete, select)
+    Select,
 }
 
 /// A widget event to be dispatched.

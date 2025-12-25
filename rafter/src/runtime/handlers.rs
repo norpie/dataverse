@@ -109,6 +109,7 @@ pub fn dispatch_component_handlers(
             WidgetEventKind::Collapse => page.get_collapse_handler(&event.widget_id),
             WidgetEventKind::Sort => page.get_sort_handler(&event.widget_id),
             WidgetEventKind::Change => page.get_change_handler(&event.widget_id),
+            WidgetEventKind::Select => page.get_select_handler(&event.widget_id),
         };
 
         if let Some(handler_id) = handler {
@@ -149,6 +150,7 @@ pub fn dispatch_overlay_component_handlers(
             WidgetEventKind::Collapse => overlay_view.get_collapse_handler(&event.widget_id),
             WidgetEventKind::Sort => overlay_view.get_sort_handler(&event.widget_id),
             WidgetEventKind::Change => overlay_view.get_change_handler(&event.widget_id),
+            WidgetEventKind::Select => overlay_view.get_select_handler(&event.widget_id),
         };
 
         if let Some(handler_id) = handler {
