@@ -21,7 +21,7 @@ use std::sync::{Arc, RwLock};
 
 use log::info;
 
-use crate::app::{AnyAppInstance, App, AppInstance, InstanceRegistry, PanicBehavior};
+use crate::app::{AnyAppInstance, App, AppError, AppInstance, InstanceRegistry, PanicBehavior};
 use crate::context::AppContext;
 use crate::styling::theme::{DefaultTheme, Theme};
 
@@ -34,8 +34,8 @@ pub type DataStore = HashMap<TypeId, Arc<dyn Any + Send + Sync>>;
 pub struct Runtime {
     /// Panic behavior for unhandled panics
     panic_behavior: PanicBehavior,
-    /// Error handler callback
-    error_handler: Option<Box<dyn Fn(RuntimeError) + Send + Sync>>,
+    /// Error handler callback for app errors (panics, task failures)
+    error_handler: Option<Arc<dyn Fn(AppError) + Send + Sync>>,
     /// Current theme
     theme: Arc<dyn Theme>,
     /// Initial app instance to spawn on startup
@@ -133,12 +133,28 @@ impl Runtime {
         self
     }
 
-    /// Set the error handler.
+    /// Set the error handler for app errors.
+    ///
+    /// Called when a handler panics or an async task fails. This is informational
+    /// only - the actual error handling (close, restart, ignore) is determined by
+    /// the app's `on_panic` policy.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// Runtime::new()
+    ///     .on_error(|error| {
+    ///         log::error!("App error: {}", error);
+    ///     })
+    ///     .initial::<MyApp>()
+    ///     .run()
+    ///     .await?;
+    /// ```
     pub fn on_error<F>(mut self, handler: F) -> Self
     where
-        F: Fn(RuntimeError) + Send + Sync + 'static,
+        F: Fn(AppError) + Send + Sync + 'static,
     {
-        self.error_handler = Some(Box::new(handler));
+        self.error_handler = Some(Arc::new(handler));
         self
     }
 
@@ -261,6 +277,7 @@ impl Runtime {
             self.theme,
             self.animation_fps,
             self.reduce_motion,
+            self.error_handler,
             &mut term_guard,
         )
         .await

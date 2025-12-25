@@ -316,6 +316,7 @@ fn generate_metadata(name: &Ident, attrs: &AppAttrs, fields: &FieldsNamed) -> To
                 rafter::app::AppConfig {
                     name: #config_name,
                     on_blur: #on_blur,
+                    on_panic: #panic_behavior,
                     persistent: #persistent,
                     max_instances: #max_instances,
                 }

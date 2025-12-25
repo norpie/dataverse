@@ -386,6 +386,11 @@ async fn sleep_until_optional(deadline: Option<Instant>) {
 }
 
 /// Run the main event loop with an instance registry.
+use crate::app::AppError;
+
+/// Type alias for the error handler callback.
+pub type ErrorHandler = Arc<dyn Fn(AppError) + Send + Sync>;
+
 pub async fn run_event_loop(
     registry: Arc<RwLock<InstanceRegistry>>,
     app_keybinds: Arc<RwLock<Keybinds>>,
@@ -393,6 +398,7 @@ pub async fn run_event_loop(
     theme: Arc<dyn Theme>,
     animation_fps: u16,
     reduce_motion: bool,
+    error_handler: Option<ErrorHandler>,
     term_guard: &mut TerminalGuard,
 ) -> Result<(), RuntimeError> {
     // Collect registered systems
@@ -431,6 +437,10 @@ pub async fn run_event_loop(
     wakeup::install_sender(wakeup_tx.clone());
     let wakeup_sender = wakeup_tx.clone();
     cx.set_wakeup_sender(wakeup_tx);
+
+    // Create error channel for panic handling
+    let (error_tx, mut error_rx) = tokio::sync::mpsc::unbounded_channel();
+    cx.set_error_sender(error_tx);
 
     // Create async event stream
     let mut events = EventStream::new();
@@ -871,6 +881,44 @@ pub async fn run_event_loop(
             _ = animation_interval.tick(), if has_active_animations => {
                 debug!("SELECT: animation tick");
                 // Force render to show animation progress
+                force_render = true;
+                None
+            }
+
+            // Branch 5: App error (panic, task failure)
+            Some(error) = error_rx.recv() => {
+                debug!("SELECT: app error received: {}", error);
+
+                // Call user's error handler if set
+                if let Some(handler) = &error_handler {
+                    handler(error.clone());
+                }
+
+                // Apply panic behavior for the affected instance
+                let behavior = {
+                    let reg = registry.read().unwrap();
+                    reg.get(error.instance_id)
+                        .map(|i| i.config().on_panic)
+                        .unwrap_or_default()
+                };
+
+                match behavior {
+                    crate::app::PanicBehavior::Close => {
+                        info!("Closing instance {:?} due to panic (policy: Close)", error.instance_id);
+                        cx.force_close(error.instance_id);
+                    }
+                    crate::app::PanicBehavior::Restart => {
+                        info!("Restarting instance {:?} due to panic (policy: Restart)", error.instance_id);
+                        // TODO: Implement restart - requires restart() method on AnyAppInstance
+                        // For now, just close
+                        cx.force_close(error.instance_id);
+                    }
+                    crate::app::PanicBehavior::Ignore => {
+                        info!("Ignoring panic in instance {:?} (policy: Ignore)", error.instance_id);
+                        // Do nothing - continue running
+                    }
+                }
+
                 force_render = true;
                 None
             }

@@ -3,10 +3,10 @@ use std::future::Future;
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
 
-use tokio::sync::oneshot;
+use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
 
-use crate::app::{AnyAppInstance, App, InstanceId, InstanceInfo, InstanceRegistry, SpawnError};
+use crate::app::{AnyAppInstance, App, AppError, InstanceId, InstanceInfo, InstanceRegistry, SpawnError};
 use crate::event::Event;
 use crate::input::focus::FocusId;
 use crate::input::keybinds::{KeybindError, KeybindInfo, Keybinds};
@@ -276,6 +276,12 @@ struct AppContextInner {
 ///     cx.toast("Done!");
 /// }
 /// ```
+/// Sender for app errors (panics, task failures).
+pub type ErrorSender = mpsc::UnboundedSender<AppError>;
+
+/// Receiver for app errors (panics, task failures).
+pub type ErrorReceiver = mpsc::UnboundedReceiver<AppError>;
+
 #[derive(Clone)]
 pub struct AppContext {
     inner: Arc<RwLock<AppContextInner>>,
@@ -287,6 +293,8 @@ pub struct AppContext {
     data: Arc<DataStore>,
     /// Wakeup sender for notifying the event loop (works across threads)
     wakeup_sender: Option<wakeup::WakeupSender>,
+    /// Error sender for reporting app errors (panics, task failures)
+    error_sender: Option<ErrorSender>,
 }
 
 impl AppContext {
@@ -316,12 +324,31 @@ impl AppContext {
             registry: None,
             data,
             wakeup_sender: None,
+            error_sender: None,
         }
     }
 
     /// Set the wakeup sender (called by runtime)
     pub(crate) fn set_wakeup_sender(&mut self, sender: wakeup::WakeupSender) {
         self.wakeup_sender = Some(sender);
+    }
+
+    /// Set the error sender (called by runtime)
+    pub(crate) fn set_error_sender(&mut self, sender: ErrorSender) {
+        self.error_sender = Some(sender);
+    }
+
+    /// Report an app error (used internally by panic catching).
+    ///
+    /// This sends the error to the event loop for handling according to
+    /// the app's panic behavior policy.
+    pub fn report_error(&self, error: AppError) {
+        if let Some(sender) = &self.error_sender {
+            // Ignore send errors - the receiver might be gone during shutdown
+            let _ = sender.send(error);
+            // Wake up the event loop to process the error
+            self.send_wakeup();
+        }
     }
 
     /// Send a wakeup signal to the event loop
@@ -1154,10 +1181,32 @@ impl AppContext {
 impl Default for AppContext {
     fn default() -> Self {
         use std::collections::HashMap;
-        Self::new(
-            Arc::new(RwLock::new(Keybinds::new())),
-            Arc::new(HashMap::new()),
-        )
+        Self {
+            inner: Arc::new(RwLock::new(AppContextInner {
+                exit_requested: false,
+                focus_request: None,
+                pending_toasts: Vec::new(),
+                input_text: None,
+                theme_request: None,
+                modal_request: None,
+                instance_commands: Vec::new(),
+                current_instance_id: None,
+                pending_events: Vec::new(),
+                activated_id: None,
+                activated_index: None,
+                selected_ids: None,
+                cursor_id: None,
+                cursor_index: None,
+                expanded_id: None,
+                collapsed_id: None,
+                sorted_column: None,
+            })),
+            keybinds: Arc::new(RwLock::new(Keybinds::new())),
+            registry: None,
+            data: Arc::new(HashMap::new()),
+            wakeup_sender: None,
+            error_sender: None,
+        }
     }
 }
 

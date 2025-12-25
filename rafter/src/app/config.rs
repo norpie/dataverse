@@ -2,6 +2,8 @@
 
 use thiserror::Error;
 
+use super::PanicBehavior;
+
 /// Per-app-type configuration.
 ///
 /// This defines the behavior and constraints for all instances of an app type.
@@ -12,6 +14,9 @@ pub struct AppConfig {
 
     /// Behavior when an instance loses focus.
     pub on_blur: BlurPolicy,
+
+    /// Behavior when a handler or lifecycle hook panics.
+    pub on_panic: PanicBehavior,
 
     /// If true, the instance cannot be force-closed by the system.
     /// Useful for background processors that must complete their work.
@@ -27,6 +32,7 @@ impl Default for AppConfig {
         Self {
             name: "App",
             on_blur: BlurPolicy::Continue,
+            on_panic: PanicBehavior::default(),
             persistent: false,
             max_instances: None,
         }
