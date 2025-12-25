@@ -32,6 +32,8 @@ pub struct FocusState {
     focusable_ids: Vec<FocusId>,
     /// Whether focus needs to be updated
     focus_changed: bool,
+    /// Whether focus has been initialized (first element auto-focused on first render)
+    initialized: bool,
 }
 
 impl FocusState {
@@ -73,14 +75,16 @@ impl FocusState {
             self.current = None;
         }
 
-        // If no focus and there are focusable elements, focus the first one
-        if self.current.is_none() && !self.focusable_ids.is_empty() {
+        // Auto-focus first element on initial render
+        if !self.initialized && !self.focusable_ids.is_empty() {
             self.current = Some(self.focusable_ids[0].clone());
             self.focus_changed = true;
+            self.initialized = true;
         }
     }
 
-    /// Move focus to the next element
+    /// Move focus to the next element.
+    /// If nothing is focused, focuses the first element.
     pub fn focus_next(&mut self) {
         if self.focusable_ids.is_empty() {
             return;
@@ -93,14 +97,15 @@ impl FocusState {
 
         let next_idx = match current_idx {
             Some(idx) => (idx + 1) % self.focusable_ids.len(),
-            None => 0,
+            None => 0, // Nothing focused, start at first element
         };
 
         self.current = Some(self.focusable_ids[next_idx].clone());
         self.focus_changed = true;
     }
 
-    /// Move focus to the previous element
+    /// Move focus to the previous element.
+    /// If nothing is focused, focuses the first element.
     pub fn focus_prev(&mut self) {
         if self.focusable_ids.is_empty() {
             return;
@@ -119,7 +124,7 @@ impl FocusState {
                     idx - 1
                 }
             }
-            None => 0,
+            None => 0, // Nothing focused, start at first element
         };
 
         self.current = Some(self.focusable_ids[prev_idx].clone());
