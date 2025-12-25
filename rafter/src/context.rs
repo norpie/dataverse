@@ -1,12 +1,17 @@
 use std::any::{Any, TypeId};
 use std::future::Future;
+use std::panic::AssertUnwindSafe;
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
 
+use futures::FutureExt;
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
 
-use crate::app::{AnyAppInstance, App, AppError, InstanceId, InstanceInfo, InstanceRegistry, SpawnError};
+use crate::app::{
+    AnyAppInstance, App, AppError, AppErrorKind, InstanceId, InstanceInfo, InstanceRegistry,
+    SpawnError, extract_panic_message,
+};
 use crate::event::Event;
 use crate::input::focus::FocusId;
 use crate::input::keybinds::{KeybindError, KeybindInfo, Keybinds};
@@ -847,9 +852,11 @@ impl AppContext {
         rx.await.expect("modal closed without sending result")
     }
 
-    /// Spawn an async task.
+    /// Spawn an async task with panic catching.
     ///
     /// The spawned task runs independently and can use cloned state.
+    /// If the task panics, the panic is caught and reported to the error handler.
+    /// The returned `JoinHandle` yields `Some(value)` on success or `None` on panic.
     ///
     /// # Example
     ///
@@ -857,19 +864,40 @@ impl AppContext {
     /// #[handler]
     /// async fn load_data(&self, cx: &AppContext) {
     ///     let data = self.data.clone();
-    ///     cx.spawn(async move {
+    ///     cx.spawn_task(async move {
     ///         data.set_loading();
     ///         let result = fetch_data().await;
     ///         data.set_ready(result);
     ///     });
     /// }
     /// ```
-    pub fn spawn_task<F>(&self, future: F) -> JoinHandle<F::Output>
+    pub fn spawn_task<F>(&self, future: F) -> JoinHandle<Option<F::Output>>
     where
         F: Future + Send + 'static,
         F::Output: Send + 'static,
     {
-        tokio::spawn(future)
+        let cx = self.clone();
+        let app_name = self.current_app_name();
+        let instance_id = self.instance_id();
+
+        tokio::spawn(async move {
+            let result = AssertUnwindSafe(future).catch_unwind().await;
+
+            match result {
+                Ok(value) => Some(value),
+                Err(panic) => {
+                    if let Some(instance_id) = instance_id {
+                        let message = extract_panic_message(&panic);
+                        cx.report_error(AppError {
+                            app_name,
+                            instance_id,
+                            kind: AppErrorKind::TaskPanic { message },
+                        });
+                    }
+                    None
+                }
+            }
+        })
     }
 
     // -------------------------------------------------------------------------
@@ -1008,6 +1036,23 @@ impl AppContext {
             .read()
             .ok()
             .and_then(|inner| inner.current_instance_id)
+    }
+
+    /// Get the current app's name.
+    ///
+    /// Returns the name from the app's config, or "unknown" if not available.
+    /// Used internally for error reporting.
+    pub(crate) fn current_app_name(&self) -> &'static str {
+        let instance_id = match self.instance_id() {
+            Some(id) => id,
+            None => return "unknown",
+        };
+
+        self.registry
+            .as_ref()
+            .and_then(|r| r.read().ok())
+            .and_then(|reg| reg.get(instance_id).map(|i| i.config().name))
+            .unwrap_or("unknown")
     }
 
     // -------------------------------------------------------------------------
