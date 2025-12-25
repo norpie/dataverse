@@ -184,6 +184,17 @@ impl Color {
         let (l, c, _) = self.to_oklch();
         Self::oklch(l, c, h % 360.0)
     }
+
+    /// Blend this color with another using linear interpolation.
+    ///
+    /// `t` is the blend factor: 0.0 = self, 1.0 = other.
+    pub fn blend(&self, other: &Color, t: f32) -> Self {
+        let t = t.clamp(0.0, 1.0);
+        let r = (self.r as f32 * (1.0 - t) + other.r as f32 * t) as u8;
+        let g = (self.g as f32 * (1.0 - t) + other.g as f32 * t) as u8;
+        let b = (self.b as f32 * (1.0 - t) + other.b as f32 * t) as u8;
+        Self { r, g, b }
+    }
 }
 
 // Common color constants (pre-computed RGB values)

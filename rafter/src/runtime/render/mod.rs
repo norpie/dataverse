@@ -105,6 +105,21 @@ fn check_style_transitions(
         }
     }
 
+    // Check for opacity changes
+    let prev_opacity = prev_style.opacity.unwrap_or(1.0);
+    let new_opacity = new_style.opacity.unwrap_or(1.0);
+    if (prev_opacity - new_opacity).abs() > 0.001 {
+        animations.start(Animation::transition(
+            widget_id,
+            AnimatedProperty::Opacity {
+                from: prev_opacity,
+                to: new_opacity,
+            },
+            duration,
+            easing,
+        ));
+    }
+
     // Update stored style
     previous_styles.insert(widget_id.to_string(), new_style.clone());
 }
@@ -161,9 +176,10 @@ pub(crate) fn style_to_ratatui(
         Vec::new()
     };
 
-    // Start with base colors
+    // Start with base colors and opacity
     let mut fg = style.fg.clone();
     let mut bg = style.bg.clone();
+    let mut opacity = style.opacity;
 
     // Apply animated values (override base style)
     for value in &animated_values {
@@ -186,21 +202,33 @@ pub(crate) fn style_to_ratatui(
                     ));
                 }
             }
-            AnimatedValue::Opacity(_) => {
-                // TODO: Opacity requires a different approach (alpha blending)
-                // For now, we skip opacity animation
+            AnimatedValue::Opacity(o) => {
+                // Override static opacity with animated value
+                opacity = Some(*o);
             }
         }
     }
 
-    // Apply resolved colors
+    // Get the terminal background color for opacity blending
+    // We use black as the base since terminals don't have true transparency
+    let blend_base = crate::styling::color::Color::BLACK;
+
+    // Apply resolved colors with opacity blending
     if let Some(ref fg_color) = fg {
-        let resolved = resolve_color(fg_color, theme);
+        let mut resolved = resolve_color(fg_color, theme);
+        if let Some(o) = opacity {
+            // Blend toward base (simulate transparency by fading)
+            resolved = resolved.blend(&blend_base, 1.0 - o);
+        }
         ratatui_style = ratatui_style.fg(resolved.to_ratatui());
     }
 
     if let Some(ref bg_color) = bg {
-        let resolved = resolve_color(bg_color, theme);
+        let mut resolved = resolve_color(bg_color, theme);
+        if let Some(o) = opacity {
+            // Blend toward base (simulate transparency by fading)
+            resolved = resolved.blend(&blend_base, 1.0 - o);
+        }
         ratatui_style = ratatui_style.bg(resolved.to_ratatui());
     }
 

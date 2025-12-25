@@ -20,6 +20,8 @@ pub struct Style {
     pub underline: bool,
     /// Dim/faint text
     pub dim: bool,
+    /// Opacity (0.0 = fully transparent, 1.0 = fully opaque)
+    pub opacity: Option<f32>,
     /// Transition duration (if set, changes to this style will animate)
     pub transition_duration: Option<Duration>,
     /// Transition easing function
@@ -36,6 +38,7 @@ impl Style {
             italic: false,
             underline: false,
             dim: false,
+            opacity: None,
             transition_duration: None,
             transition_easing: Easing::Linear,
         }
@@ -74,6 +77,12 @@ impl Style {
     /// Set dim
     pub const fn dim(mut self) -> Self {
         self.dim = true;
+        self
+    }
+
+    /// Set opacity (0.0 = fully transparent, 1.0 = fully opaque).
+    pub fn opacity(mut self, value: f32) -> Self {
+        self.opacity = Some(value.clamp(0.0, 1.0));
         self
     }
 

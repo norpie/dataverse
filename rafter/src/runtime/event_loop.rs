@@ -494,6 +494,17 @@ pub async fn run_event_loop(
         // Update context with current instance ID
         cx.set_instance_id(focused_id);
 
+        // Check for view changes (instance change or modal stack change)
+        // Used to clear animation previous_styles to avoid stale transitions
+        let current_view = format!("{}:{}", focused_id, state.modal_stack.len());
+        if state.last_view.as_ref() != Some(&current_view) {
+            if state.last_view.is_some() {
+                debug!("View changed, clearing previous_styles for transition detection");
+                state.previous_styles.clear();
+            }
+            state.last_view = Some(current_view);
+        }
+
         // Process pending modal requests
         if let Some(modal) = cx.take_modal_request() {
             info!("Opening modal: {}", modal.name());
@@ -751,6 +762,15 @@ pub async fn run_event_loop(
                 instance.clear_dirty();
             }
 
+            // Animation cleanup after render
+            // 1. Remove animations for widgets that are no longer in the render tree
+            state.animations.cleanup_removed_widgets(hit_map.widget_ids());
+            // 2. Remove completed (finite) animations
+            let completed = state.animations.cleanup_completed();
+            if completed > 0 {
+                debug!("Cleaned up {} completed animations", completed);
+            }
+
             // Clear render trigger flags
             force_render = false;
             state.event_dispatched = false;
@@ -839,6 +859,21 @@ pub async fn run_event_loop(
         // Dispatch event if we received one
         if let Some(event_to_dispatch) = received_event {
             debug!("DISPATCH: {:?}", event_to_dispatch.name());
+
+            // Handle terminal focus events for animation lifecycle
+            match &event_to_dispatch {
+                Event::FocusLost => {
+                    debug!("Terminal lost focus - pausing/stopping animations");
+                    state.animations.on_blur();
+                    force_render = true;
+                }
+                Event::FocusGained => {
+                    debug!("Terminal gained focus - resuming animations");
+                    state.animations.on_foreground();
+                    force_render = true;
+                }
+                _ => {}
+            }
             
             // For hover events, only trigger a render if focus actually changes
             // Track focus before dispatching

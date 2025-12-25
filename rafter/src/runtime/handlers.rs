@@ -589,6 +589,10 @@ fn dispatch_event_inner(
         Event::Drag(drag) => {
             handle_drag_event(drag, page, state, cx);
         }
+        Event::FocusGained | Event::FocusLost => {
+            // Handled in event_loop.rs for animation lifecycle
+            // No widget-level handling needed
+        }
     }
 
     ControlFlow::Continue(())

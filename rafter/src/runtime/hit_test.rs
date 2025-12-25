@@ -50,4 +50,11 @@ impl HitTestMap {
                 && y < hit_box.rect.y + hit_box.rect.height
         })
     }
+
+    /// Get an iterator over all registered widget IDs.
+    ///
+    /// Used for animation cleanup to identify which widgets were rendered.
+    pub fn widget_ids(&self) -> impl Iterator<Item = &str> {
+        self.boxes.iter().map(|b| b.id.as_str())
+    }
 }

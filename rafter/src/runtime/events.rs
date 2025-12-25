@@ -38,6 +38,10 @@ pub enum Event {
     Scroll(ScrollEvent),
     /// Terminal resize event
     Resize { width: u16, height: u16 },
+    /// Terminal gained focus
+    FocusGained,
+    /// Terminal lost focus
+    FocusLost,
     /// Request to quit
     Quit,
 }
@@ -53,6 +57,8 @@ impl Event {
             Event::Drag(_) => "Drag",
             Event::Scroll(_) => "Scroll",
             Event::Resize { .. } => "Resize",
+            Event::FocusGained => "FocusGained",
+            Event::FocusLost => "FocusLost",
             Event::Quit => "Quit",
         }
     }
@@ -173,6 +179,8 @@ pub fn convert_event(event: CrosstermEvent) -> Option<Event> {
         }
         CrosstermEvent::Mouse(mouse_event) => convert_mouse_event(mouse_event),
         CrosstermEvent::Resize(width, height) => Some(Event::Resize { width, height }),
+        CrosstermEvent::FocusGained => Some(Event::FocusGained),
+        CrosstermEvent::FocusLost => Some(Event::FocusLost),
         _ => None,
     }
 }

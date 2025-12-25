@@ -353,6 +353,16 @@ impl AnimationManager {
         &self.animations
     }
 
+    /// Remove animations for widgets that are no longer rendered.
+    ///
+    /// Called after each render with the set of widget IDs that were rendered.
+    /// Animations for removed widgets are stopped immediately.
+    pub fn cleanup_removed_widgets<'a>(&mut self, rendered_ids: impl Iterator<Item = &'a str>) {
+        let rendered_set: std::collections::HashSet<&str> = rendered_ids.collect();
+        self.animations
+            .retain(|a| rendered_set.contains(a.widget_id.as_str()));
+    }
+
     /// Convenience: Fade in a widget (opacity 0 -> 1).
     pub fn fade_in(&mut self, widget_id: impl Into<String>, duration: Duration) {
         self.start(Animation::transition(
