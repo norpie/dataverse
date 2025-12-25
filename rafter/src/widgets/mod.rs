@@ -6,6 +6,7 @@
 //! - `events.rs` - event handling implementation
 //! - `mod.rs` - public exports
 
+pub mod autocomplete;
 pub mod button;
 pub mod checkbox;
 pub mod collapsible;
@@ -21,6 +22,7 @@ pub mod table;
 mod traits;
 pub mod tree;
 
+pub use autocomplete::{fuzzy_filter, AutocompleteItem, FilterMatch};
 pub use button::Button;
 pub use checkbox::{Checkbox, CheckboxId};
 pub use collapsible::{Collapsible, CollapsibleId};
