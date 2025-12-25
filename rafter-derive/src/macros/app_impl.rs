@@ -248,6 +248,7 @@ fn generate_event_dispatch(event_handlers: &[EventHandlerMethod]) -> TokenStream
         .iter()
         .map(|h| {
             let name = &h.name;
+            let name_str = name.to_string();
             let event_type: syn::Type = syn::parse_str(&h.event_type).unwrap();
 
             quote! {
@@ -255,8 +256,27 @@ fn generate_event_dispatch(event_handlers: &[EventHandlerMethod]) -> TokenStream
                     if let Ok(event) = event.downcast::<#event_type>() {
                         let this = self.clone();
                         let cx = cx.clone();
+                        let handler_name = #name_str.to_string();
                         tokio::spawn(async move {
-                            this.#name(*event, &cx).await;
+                            let result = std::panic::AssertUnwindSafe(async {
+                                this.#name(*event, &cx).await;
+                            })
+                            .catch_unwind()
+                            .await;
+
+                            if let Err(panic) = result {
+                                if let Some(instance_id) = cx.instance_id() {
+                                    let message = rafter::app::extract_panic_message(&panic);
+                                    cx.report_error(rafter::app::AppError {
+                                        app_name: <Self as rafter::app::App>::config().name,
+                                        instance_id,
+                                        kind: rafter::app::AppErrorKind::Panic {
+                                            handler_name,
+                                            message,
+                                        },
+                                    });
+                                }
+                            }
                         });
                         return true;
                     }
@@ -283,6 +303,9 @@ fn generate_event_dispatch(event_handlers: &[EventHandlerMethod]) -> TokenStream
             event: Box<dyn std::any::Any + Send + Sync>,
             cx: &rafter::context::AppContext,
         ) -> bool {
+            use std::panic::AssertUnwindSafe;
+            use futures::FutureExt;
+
             match event_type {
                 #(#dispatch_arms)*
                 _ => false,
@@ -308,6 +331,7 @@ fn generate_request_dispatch(request_handlers: &[RequestHandlerMethod]) -> Token
         .iter()
         .map(|h| {
             let name = &h.name;
+            let name_str = name.to_string();
             let request_type: syn::Type = syn::parse_str(&h.request_type).unwrap();
 
             quote! {
@@ -315,9 +339,32 @@ fn generate_request_dispatch(request_handlers: &[RequestHandlerMethod]) -> Token
                     if let Ok(request) = request.downcast::<#request_type>() {
                         let this = self.clone();
                         let cx = cx.clone();
+                        let handler_name = #name_str.to_string();
                         return Some(Box::pin(async move {
-                            let response = this.#name(*request, &cx).await;
-                            Box::new(response) as Box<dyn std::any::Any + Send + Sync>
+                            let result = std::panic::AssertUnwindSafe(async {
+                                this.#name(*request, &cx).await
+                            })
+                            .catch_unwind()
+                            .await;
+
+                            match result {
+                                Ok(response) => Box::new(response) as Box<dyn std::any::Any + Send + Sync>,
+                                Err(panic) => {
+                                    if let Some(instance_id) = cx.instance_id() {
+                                        let message = rafter::app::extract_panic_message(&panic);
+                                        cx.report_error(rafter::app::AppError {
+                                            app_name: <Self as rafter::app::App>::config().name,
+                                            instance_id,
+                                            kind: rafter::app::AppErrorKind::Panic {
+                                                handler_name,
+                                                message,
+                                            },
+                                        });
+                                    }
+                                    // Return a unit type as placeholder - the caller won't get a valid response
+                                    Box::new(()) as Box<dyn std::any::Any + Send + Sync>
+                                }
+                            }
                         }));
                     }
                     None
@@ -343,6 +390,9 @@ fn generate_request_dispatch(request_handlers: &[RequestHandlerMethod]) -> Token
             request: Box<dyn std::any::Any + Send + Sync>,
             cx: &rafter::context::AppContext,
         ) -> Option<std::pin::Pin<Box<dyn std::future::Future<Output = Box<dyn std::any::Any + Send + Sync>> + Send>>> {
+            use std::panic::AssertUnwindSafe;
+            use futures::FutureExt;
+
             match request_type {
                 #(#dispatch_arms)*
                 _ => None,
@@ -399,17 +449,57 @@ fn generate_app_dispatch(handlers: &[HandlerMethod]) -> TokenStream {
                     #name_str => {
                         let this = self.clone();
                         let cx = cx.clone();
+                        let handler_name = #name_str.to_string();
                         tokio::spawn(async move {
-                            #call
+                            let result = std::panic::AssertUnwindSafe(async {
+                                #call
+                            })
+                            .catch_unwind()
+                            .await;
+
+                            if let Err(panic) = result {
+                                if let Some(instance_id) = cx.instance_id() {
+                                    let message = rafter::app::extract_panic_message(&panic);
+                                    cx.report_error(rafter::app::AppError {
+                                        app_name: <Self as rafter::app::App>::config().name,
+                                        instance_id,
+                                        kind: rafter::app::AppErrorKind::Panic {
+                                            handler_name,
+                                            message,
+                                        },
+                                    });
+                                }
+                            }
                         });
                     }
                 }
             } else {
+                // Handler doesn't need cx, but we still need it for error reporting
                 quote! {
                     #name_str => {
                         let this = self.clone();
+                        let cx = cx.clone();
+                        let handler_name = #name_str.to_string();
                         tokio::spawn(async move {
-                            #call
+                            let result = std::panic::AssertUnwindSafe(async {
+                                #call
+                            })
+                            .catch_unwind()
+                            .await;
+
+                            if let Err(panic) = result {
+                                if let Some(instance_id) = cx.instance_id() {
+                                    let message = rafter::app::extract_panic_message(&panic);
+                                    cx.report_error(rafter::app::AppError {
+                                        app_name: <Self as rafter::app::App>::config().name,
+                                        instance_id,
+                                        kind: rafter::app::AppErrorKind::Panic {
+                                            handler_name,
+                                            message,
+                                        },
+                                    });
+                                }
+                            }
                         });
                     }
                 }
@@ -419,6 +509,9 @@ fn generate_app_dispatch(handlers: &[HandlerMethod]) -> TokenStream {
 
     quote! {
         fn dispatch(&self, handler_id: &rafter::keybinds::HandlerId, cx: &rafter::context::AppContext) {
+            use std::panic::AssertUnwindSafe;
+            use futures::FutureExt;
+
             log::debug!("Dispatching handler: {}", handler_id.0);
             match handler_id.0.as_str() {
                 #(#dispatch_arms)*
