@@ -18,6 +18,7 @@ regex = "1"
 email_address = "0.2"
 uuid = { version = "1", features = ["v4", "serde"] }
 serde = { version = "1", features = ["derive"] }
+nucleo-matcher = "0.3"
 
 [lints]
 workspace = true
