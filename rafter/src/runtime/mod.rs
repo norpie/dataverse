@@ -39,6 +39,10 @@ pub struct Runtime {
     initial_app: Option<Box<dyn AnyAppInstance>>,
     /// Global data store (type-erased, keyed by TypeId)
     data: DataStore,
+    /// Animation frame rate (frames per second)
+    animation_fps: u16,
+    /// Disable all animations (accessibility)
+    reduce_motion: bool,
 }
 
 /// Runtime error
@@ -80,6 +84,8 @@ impl Runtime {
             theme: Arc::new(DefaultTheme::default()),
             initial_app: None,
             data: HashMap::new(),
+            animation_fps: 60,
+            reduce_motion: false,
         }
     }
 
@@ -130,6 +136,43 @@ impl Runtime {
         F: Fn(RuntimeError) + Send + Sync + 'static,
     {
         self.error_handler = Some(Box::new(handler));
+        self
+    }
+
+    /// Set animation frame rate (requires restart to take effect).
+    ///
+    /// Default: 60fps (16.67ms frame time).
+    /// Clamped to range 1-120.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// Runtime::new()
+    ///     .animation_fps(30)  // Lower FPS for slower machines
+    ///     .initial::<MyApp>()
+    ///     .run()
+    ///     .await?;
+    /// ```
+    pub fn animation_fps(mut self, fps: u16) -> Self {
+        self.animation_fps = fps.clamp(1, 120);
+        self
+    }
+
+    /// Disable all animations for accessibility.
+    ///
+    /// When enabled, animations complete instantly (properties jump to final value).
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// Runtime::new()
+    ///     .reduce_motion(true)
+    ///     .initial::<MyApp>()
+    ///     .run()
+    ///     .await?;
+    /// ```
+    pub fn reduce_motion(mut self, enabled: bool) -> Self {
+        self.reduce_motion = enabled;
         self
     }
 
@@ -208,7 +251,16 @@ impl Runtime {
         cx.set_instance_id(instance_id);
 
         // Run the event loop with the registry
-        event_loop::run_event_loop(registry, app_keybinds, cx, self.theme, &mut term_guard).await
+        event_loop::run_event_loop(
+            registry,
+            app_keybinds,
+            cx,
+            self.theme,
+            self.animation_fps,
+            self.reduce_motion,
+            &mut term_guard,
+        )
+        .await
     }
 }
 

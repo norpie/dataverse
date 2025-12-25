@@ -56,11 +56,18 @@ pub struct EventLoopState {
 
     /// Flag indicating an event was dispatched (for render triggering).
     pub event_dispatched: bool,
+
+    /// Whether reduce_motion is enabled (animations complete instantly).
+    pub reduce_motion: bool,
 }
 
 impl EventLoopState {
     /// Create a new event loop state with the given initial theme and systems.
-    pub fn new(theme: Arc<dyn Theme>, systems: Vec<Box<dyn AnySystem>>) -> Self {
+    pub fn new(
+        theme: Arc<dyn Theme>,
+        systems: Vec<Box<dyn AnySystem>>,
+        reduce_motion: bool,
+    ) -> Self {
         // Merge keybinds from all systems
         let mut system_keybinds = Keybinds::new();
         for system in &systems {
@@ -81,6 +88,7 @@ impl EventLoopState {
             last_toast_count: 0,
             last_focused_id: None,
             event_dispatched: false,
+            reduce_motion,
         }
     }
 

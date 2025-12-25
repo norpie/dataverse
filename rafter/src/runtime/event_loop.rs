@@ -372,6 +372,8 @@ pub async fn run_event_loop(
     app_keybinds: Arc<RwLock<Keybinds>>,
     mut cx: AppContext,
     theme: Arc<dyn Theme>,
+    animation_fps: u16,
+    reduce_motion: bool,
     term_guard: &mut TerminalGuard,
 ) -> Result<(), RuntimeError> {
     // Collect registered systems
@@ -403,7 +405,7 @@ pub async fn run_event_loop(
     }
 
     // Initialize event loop state with systems
-    let mut state = EventLoopState::new(theme, systems);
+    let mut state = EventLoopState::new(theme, systems, reduce_motion);
 
     // Create wakeup channel for passive rendering
     let (wakeup_tx, mut wakeup_rx) = channel();
@@ -413,6 +415,11 @@ pub async fn run_event_loop(
 
     // Create async event stream
     let mut events = EventStream::new();
+
+    // Create animation interval for active rendering mode
+    let frame_duration = Duration::from_secs_f64(1.0 / animation_fps as f64);
+    let mut animation_interval = tokio::time::interval(frame_duration);
+    animation_interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
     // Track last rendered hit map for event dispatch
     let mut hit_map = HitTestMap::new();
@@ -721,10 +728,14 @@ pub async fn run_event_loop(
         // Drop the registry lock before waiting for events
         drop(reg);
 
-        // Compute next deadline for toasts
+        // Compute next deadline for toasts (future: include animation deadlines)
         let next_deadline = compute_next_deadline(&state.active_toasts);
 
-        // Wait for something to happen (passive rendering)
+        // Check if animations are active (placeholder - Phase 2 will add AnimationManager)
+        // For now, always false since we have no animation state yet
+        let has_active_animations = false;
+
+        // Wait for something to happen (passive OR active rendering)
         let received_event: Option<Event> = tokio::select! {
             // Branch 1: Crossterm event from terminal
             Some(event_result) = events.next() => {
@@ -780,10 +791,18 @@ pub async fn run_event_loop(
                 None // No event to dispatch, just re-check state
             }
 
-            // Branch 3: Deadline reached (toast expiry)
+            // Branch 3: Deadline reached (toast expiry, future: animation completion)
             _ = sleep_until_optional(next_deadline) => {
-                debug!("SELECT: toast deadline reached");
+                debug!("SELECT: deadline reached");
                 None // No event to dispatch, toasts will be cleaned up next iteration
+            }
+
+            // Branch 4: Animation tick (only enabled when animations are active)
+            _ = animation_interval.tick(), if has_active_animations => {
+                debug!("SELECT: animation tick");
+                // Force render to show animation progress
+                force_render = true;
+                None
             }
         };
 
