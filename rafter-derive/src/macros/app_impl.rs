@@ -196,6 +196,17 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
         }
     };
 
+    // Generate restart method
+    let restart_impl = quote! {
+        fn restart(&self, instance_id: rafter::app::InstanceId) -> Option<Box<dyn rafter::app::AnyAppInstance>> {
+            if #metadata_mod::PANIC_BEHAVIOR == rafter::app::PanicBehavior::Restart {
+                Some(Box::new(rafter::app::AppInstance::new_with_id(Self::default(), instance_id)))
+            } else {
+                None
+            }
+        }
+    };
+
     // Generate dispatch methods
     let dispatch_impl = generate_app_dispatch(&handlers);
     let event_dispatch_impl = generate_event_dispatch(&event_handlers);
@@ -231,6 +242,7 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
             #on_stop_impl
             #dirty_impl
             #panic_impl
+            #restart_impl
             #dispatch_impl
             #event_dispatch_impl
             #request_dispatch_impl

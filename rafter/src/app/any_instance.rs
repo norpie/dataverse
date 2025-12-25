@@ -2,7 +2,10 @@
 
 use std::any::{Any, TypeId};
 use std::future::Future;
+use std::panic::AssertUnwindSafe;
 use std::pin::Pin;
+
+use futures::FutureExt;
 
 use crate::context::AppContext;
 use crate::input::keybinds::{HandlerId, KeyCombo, Keybinds};
@@ -10,6 +13,7 @@ use crate::node::Node;
 use crate::widgets::events::EventResult;
 
 use super::config::AppConfig;
+use super::error::{extract_panic_message, AppError, AppErrorKind};
 use super::instance::{InstanceId, InstanceInfo};
 use super::traits::App;
 
@@ -118,6 +122,14 @@ pub trait AnyAppInstance: Send + Sync {
         request: Box<dyn Any + Send + Sync>,
         cx: &AppContext,
     ) -> Option<Pin<Box<dyn Future<Output = Box<dyn Any + Send + Sync>> + Send>>>;
+
+    /// Create a fresh instance of this app for restart.
+    ///
+    /// Returns `Some(new_instance)` if the app supports restart (implements `Default`),
+    /// or `None` if restart is not supported.
+    ///
+    /// The new instance will have the same instance ID as the original.
+    fn restart(&self) -> Option<Box<dyn AnyAppInstance>>;
 }
 
 /// Wrapper that implements AnyAppInstance for any App.
@@ -134,6 +146,17 @@ impl<A: App> AppInstance<A> {
     /// Create a new app instance.
     pub fn new(app: A) -> Self {
         let id = InstanceId::new();
+        let config = A::config();
+        let title = app.title();
+        let info = InstanceInfo::new(id, config.name, title);
+
+        Self { app, id, info }
+    }
+
+    /// Create a new app instance with a specific ID.
+    ///
+    /// Used for restarting apps - the new instance keeps the same ID.
+    pub fn new_with_id(app: A, id: InstanceId) -> Self {
         let config = A::config();
         let title = app.title();
         let info = InstanceInfo::new(id, config.name, title);
@@ -183,25 +206,78 @@ impl<A: App> AnyAppInstance for AppInstance<A> {
     fn on_start(&self, cx: &AppContext) {
         let app = self.app.clone();
         let cx = cx.clone();
+        let app_name = A::config().name;
+        let instance_id = self.id;
         tokio::spawn(async move {
-            app.on_start(&cx).await;
+            let result = AssertUnwindSafe(async {
+                app.on_start(&cx).await;
+            })
+            .catch_unwind()
+            .await;
+
+            if let Err(panic) = result {
+                let message = extract_panic_message(&panic);
+                cx.report_error(AppError {
+                    app_name,
+                    instance_id,
+                    kind: AppErrorKind::LifecyclePanic {
+                        hook_name: "on_start",
+                        message,
+                    },
+                });
+            }
         });
     }
 
     fn on_foreground(&self, cx: &AppContext) {
-        // We need to spawn the future since the trait method returns impl Future
         let app = self.app.clone();
         let cx = cx.clone();
+        let app_name = A::config().name;
+        let instance_id = self.id;
         tokio::spawn(async move {
-            app.on_foreground(&cx).await;
+            let result = AssertUnwindSafe(async {
+                app.on_foreground(&cx).await;
+            })
+            .catch_unwind()
+            .await;
+
+            if let Err(panic) = result {
+                let message = extract_panic_message(&panic);
+                cx.report_error(AppError {
+                    app_name,
+                    instance_id,
+                    kind: AppErrorKind::LifecyclePanic {
+                        hook_name: "on_foreground",
+                        message,
+                    },
+                });
+            }
         });
     }
 
     fn on_background(&self, cx: &AppContext) {
         let app = self.app.clone();
         let cx = cx.clone();
+        let app_name = A::config().name;
+        let instance_id = self.id;
         tokio::spawn(async move {
-            app.on_background(&cx).await;
+            let result = AssertUnwindSafe(async {
+                app.on_background(&cx).await;
+            })
+            .catch_unwind()
+            .await;
+
+            if let Err(panic) = result {
+                let message = extract_panic_message(&panic);
+                cx.report_error(AppError {
+                    app_name,
+                    instance_id,
+                    kind: AppErrorKind::LifecyclePanic {
+                        hook_name: "on_background",
+                        message,
+                    },
+                });
+            }
         });
     }
 
@@ -212,8 +288,26 @@ impl<A: App> AnyAppInstance for AppInstance<A> {
     fn on_close(&self, cx: &AppContext) {
         let app = self.app.clone();
         let cx = cx.clone();
+        let app_name = A::config().name;
+        let instance_id = self.id;
         tokio::spawn(async move {
-            app.on_close(&cx).await;
+            let result = AssertUnwindSafe(async {
+                app.on_close(&cx).await;
+            })
+            .catch_unwind()
+            .await;
+
+            if let Err(panic) = result {
+                let message = extract_panic_message(&panic);
+                cx.report_error(AppError {
+                    app_name,
+                    instance_id,
+                    kind: AppErrorKind::LifecyclePanic {
+                        hook_name: "on_close",
+                        message,
+                    },
+                });
+            }
         });
     }
 
@@ -298,6 +392,13 @@ impl<A: App> AnyAppInstance for AppInstance<A> {
         cx: &AppContext,
     ) -> Option<Pin<Box<dyn Future<Output = Box<dyn Any + Send + Sync>> + Send>>> {
         self.app.dispatch_request(request_type, request, cx)
+    }
+
+    fn restart(&self) -> Option<Box<dyn AnyAppInstance>> {
+        // Default: restart not supported
+        // Apps with on_panic = Restart will have this method overridden
+        // via the App trait to call A::default()
+        self.app.restart(self.id)
     }
 }
 

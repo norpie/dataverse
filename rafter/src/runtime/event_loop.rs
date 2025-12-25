@@ -909,9 +909,35 @@ pub async fn run_event_loop(
                     }
                     crate::app::PanicBehavior::Restart => {
                         info!("Restarting instance {:?} due to panic (policy: Restart)", error.instance_id);
-                        // TODO: Implement restart - requires restart() method on AnyAppInstance
-                        // For now, just close
-                        cx.force_close(error.instance_id);
+
+                        // Get the old instance and try to restart it
+                        let new_instance = {
+                            let reg = registry.read().unwrap();
+                            reg.get(error.instance_id)
+                                .and_then(|instance| instance.restart())
+                        };
+
+                        if let Some(new_instance) = new_instance {
+                            // Install wakeup sender on the new instance
+                            new_instance.install_wakeup(wakeup_sender.clone());
+
+                            // Replace the old instance with the new one
+                            {
+                                let mut reg = registry.write().unwrap();
+                                reg.insert(error.instance_id, new_instance);
+                            }
+
+                            // Call on_start on the new instance
+                            if let Some(instance) = registry.read().unwrap().get(error.instance_id) {
+                                instance.on_start(&cx);
+                            }
+
+                            info!("Instance {:?} restarted successfully", error.instance_id);
+                        } else {
+                            // Restart not supported, fall back to close
+                            warn!("Instance {:?} does not support restart, closing instead", error.instance_id);
+                            cx.force_close(error.instance_id);
+                        }
                     }
                     crate::app::PanicBehavior::Ignore => {
                         info!("Ignoring panic in instance {:?} (policy: Ignore)", error.instance_id);
