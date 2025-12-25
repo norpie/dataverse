@@ -12,7 +12,7 @@ use super::field_utils::{is_resource_type, is_widget_type};
 /// - `#[app(singleton)]` - max 1 instance
 /// - `#[app(on_blur = Sleep)]` - blur policy (Continue, Sleep, Close)
 /// - `#[app(persistent)]` - cannot be force-closed
-/// - `#[app(on_panic = RestartApp)]` - panic behavior
+/// - `#[app(on_panic = Restart)]` - panic behavior (Close, Restart, Ignore)
 ///
 /// Can be combined:
 /// - `#[app(name = "Queue", singleton, persistent, on_blur = Continue)]`
@@ -54,9 +54,20 @@ impl AppAttrs {
                     let ident: Ident = meta.input.parse()?;
                     on_blur = Some(ident);
                 } else if meta.path.is_ident("on_panic") {
-                    // on_panic = ShowError | RestartApp | CrashRuntime
+                    // on_panic = Close | Restart | Ignore
                     meta.input.parse::<Token![=]>()?;
                     let ident: Ident = meta.input.parse()?;
+                    // Validate the variant
+                    let ident_str = ident.to_string();
+                    if !["Close", "Restart", "Ignore"].contains(&ident_str.as_str()) {
+                        return Err(syn::Error::new(
+                            ident.span(),
+                            format!(
+                                "invalid on_panic value: `{}`. Expected one of: Close, Restart, Ignore",
+                                ident_str
+                            ),
+                        ));
+                    }
                     on_panic = Some(ident);
                 } else {
                     return Err(meta.error(format!(
@@ -228,7 +239,7 @@ fn generate_registration(name: &Ident) -> TokenStream {
 fn generate_metadata(name: &Ident, attrs: &AppAttrs, fields: &FieldsNamed) -> TokenStream {
     let panic_behavior = match &attrs.on_panic {
         Some(ident) => quote! { rafter::app::PanicBehavior::#ident },
-        None => quote! { rafter::app::PanicBehavior::ShowError },
+        None => quote! { rafter::app::PanicBehavior::Close },
     };
 
     // Generate AppConfig

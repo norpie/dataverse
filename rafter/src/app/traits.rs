@@ -12,16 +12,28 @@ use crate::node::Node;
 
 use super::config::AppConfig;
 
-/// Panic behavior for an app
+/// Panic behavior for an app.
+///
+/// Determines what happens when a handler or lifecycle hook panics.
+/// The runtime never crashes - panics are always caught and handled.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum PanicBehavior {
-    /// Show error to user, app continues in degraded state
+    /// Close the app instance (default).
+    ///
+    /// The instance is removed from the registry and focus moves to the next app.
+    /// This is the safest option as it prevents further errors from a broken app.
     #[default]
-    ShowError,
-    /// Kill app and restart fresh
-    RestartApp,
-    /// Propagate panic, crash the runtime
-    CrashRuntime,
+    Close,
+    /// Restart with fresh state.
+    ///
+    /// Creates a new instance using `Default::default()` with the same instance ID.
+    /// Requires the app type to implement `Default` (enforced at compile time).
+    Restart,
+    /// Ignore the panic and continue running.
+    ///
+    /// The failed event is skipped but the app continues to receive future events.
+    /// Use this for apps that can tolerate partial failures.
+    Ignore,
 }
 
 /// Trait that all apps must implement.

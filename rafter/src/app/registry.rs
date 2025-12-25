@@ -269,11 +269,4 @@ impl Default for InstanceRegistry {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
 
-    // Note: Full tests would require a mock App implementation
-    // which is complex due to the trait requirements.
-    // Integration tests should be done at a higher level.
-}
