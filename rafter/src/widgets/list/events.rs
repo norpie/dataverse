@@ -254,6 +254,8 @@ impl<T: ListItem + std::fmt::Debug> AnyWidget for List<T> {
                     ctx.theme,
                     ctx.focused_id,
                     ctx.overlay_requests,
+                    ctx.animations,
+                    ctx.previous_styles,
                 );
             }
         }

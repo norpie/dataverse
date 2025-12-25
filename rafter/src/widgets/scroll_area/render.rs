@@ -1,5 +1,7 @@
 //! ScrollArea widget rendering.
 
+use std::collections::HashMap;
+
 use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::Style as RatatuiStyle;
@@ -10,6 +12,7 @@ use super::ScrollbarVisibility;
 use super::state::ScrollDirection;
 use crate::layers::overlay::OverlayRequest;
 use crate::node::Node;
+use crate::runtime::animation::AnimationManager;
 use crate::runtime::hit_test::HitTestMap;
 use crate::runtime::render::RenderNodeFn;
 use crate::styling::style::Style;
@@ -41,6 +44,8 @@ pub fn render(
     focused_id: Option<&str>,
     style_to_ratatui: StyleToRatatuiFn,
     render_node: RenderNodeFn,
+    animations: &mut AnimationManager,
+    previous_styles: &mut HashMap<String, Style>,
 ) {
     use ratatui::widgets::Block;
 
@@ -125,6 +130,8 @@ pub fn render(
             focused_id,
             style_to_ratatui,
             render_node,
+            animations,
+            previous_styles,
         );
     }
 
@@ -213,6 +220,8 @@ pub fn render_node_clipped(
     focused_id: Option<&str>,
     style_to_ratatui: fn(&crate::styling::style::Style, &dyn Theme) -> RatatuiStyle,
     render_node: RenderNodeFn,
+    animations: &mut AnimationManager,
+    previous_styles: &mut HashMap<String, Style>,
 ) {
     use crate::runtime::render::layout;
 
@@ -239,6 +248,8 @@ pub fn render_node_clipped(
                 focused_id,
                 style_to_ratatui,
                 render_node,
+                animations,
+                previous_styles,
             );
         }
         Node::Row {
@@ -259,6 +270,8 @@ pub fn render_node_clipped(
                 focused_id,
                 style_to_ratatui,
                 render_node,
+                animations,
+                previous_styles,
             );
         }
         Node::Stack {
@@ -288,6 +301,8 @@ pub fn render_node_clipped(
                     focused_id,
                     style_to_ratatui,
                     render_node,
+                    animations,
+                    previous_styles,
                 );
             }
         }
@@ -302,6 +317,8 @@ pub fn render_node_clipped(
                 theme,
                 focused_id,
                 &mut fallback_overlays,
+                animations,
+                previous_styles,
             );
         }
     }
@@ -346,6 +363,8 @@ fn render_container_clipped(
     focused_id: Option<&str>,
     style_to_ratatui: fn(&crate::styling::style::Style, &dyn Theme) -> RatatuiStyle,
     render_node: RenderNodeFn,
+    animations: &mut AnimationManager,
+    previous_styles: &mut HashMap<String, Style>,
 ) {
     use crate::runtime::render::layout;
     use ratatui::layout::{Constraint, Direction, Layout};
@@ -418,6 +437,8 @@ fn render_container_clipped(
                 focused_id,
                 style_to_ratatui,
                 render_node,
+                animations,
+                previous_styles,
             );
         }
 

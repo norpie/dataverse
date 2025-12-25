@@ -1,11 +1,15 @@
 //! Shared types for widget rendering.
 
+use std::collections::HashMap;
+
 use ratatui::Frame;
 use ratatui::layout::Rect;
 
 use crate::layers::overlay::OverlayRequest;
 use crate::node::Node;
+use crate::runtime::animation::AnimationManager;
 use crate::runtime::hit_test::HitTestMap;
+use crate::styling::style::Style;
 use crate::styling::theme::Theme;
 
 /// Function pointer for recursive node rendering.
@@ -20,4 +24,6 @@ pub type RenderNodeFn = fn(
     &dyn Theme,
     Option<&str>,
     &mut Vec<OverlayRequest>,
+    &mut AnimationManager,
+    &mut HashMap<String, Style>,
 );

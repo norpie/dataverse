@@ -309,6 +309,8 @@ impl<T: TreeItem + std::fmt::Debug> AnyWidget for Tree<T> {
                     ctx.theme,
                     ctx.focused_id,
                     ctx.overlay_requests,
+                    ctx.animations,
+                    ctx.previous_styles,
                 );
             }
         }

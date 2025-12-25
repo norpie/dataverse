@@ -185,6 +185,8 @@ impl AnyWidget for Collapsible {
                     ctx.theme,
                     ctx.focused_id,
                     ctx.overlay_requests,
+                    ctx.animations,
+                    ctx.previous_styles,
                 );
 
                 current_y += actual_height;

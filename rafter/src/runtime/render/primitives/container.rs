@@ -1,5 +1,7 @@
 //! Container (column/row) widget rendering.
 
+use std::collections::HashMap;
+
 use ratatui::Frame;
 use ratatui::layout::{Direction, Flex, Layout, Rect};
 use ratatui::style::Style as RatatuiStyle;
@@ -7,9 +9,11 @@ use ratatui::widgets::Block;
 
 use crate::layers::overlay::OverlayRequest;
 use crate::node::{Justify, Layout as NodeLayout, Node};
+use crate::runtime::animation::AnimationManager;
 use crate::runtime::hit_test::HitTestMap;
 use crate::runtime::render::layout::{apply_border, apply_padding, calculate_constraints};
 use crate::runtime::render::render_node;
+use crate::styling::style::Style;
 use crate::styling::theme::Theme;
 
 /// Convert our Justify enum to ratatui's Flex enum
@@ -36,6 +40,8 @@ pub fn render_container(
     theme: &dyn Theme,
     focused_id: Option<&str>,
     overlay_requests: &mut Vec<OverlayRequest>,
+    animations: &mut AnimationManager,
+    previous_styles: &mut HashMap<String, Style>,
 ) {
     // Fill background if specified
     if style.bg.is_some() {
@@ -88,6 +94,8 @@ pub fn render_container(
                 theme,
                 focused_id,
                 overlay_requests,
+                animations,
+                previous_styles,
             );
             chunk_idx += 1;
             // Skip gap chunks (only when using manual gap, not when using flex spacing)
@@ -110,6 +118,8 @@ pub fn render_stack(
     theme: &dyn Theme,
     focused_id: Option<&str>,
     overlay_requests: &mut Vec<OverlayRequest>,
+    animations: &mut AnimationManager,
+    previous_styles: &mut HashMap<String, Style>,
 ) {
     // Fill background if specified
     if style.bg.is_some() {
@@ -137,6 +147,8 @@ pub fn render_stack(
             theme,
             focused_id,
             overlay_requests,
+            animations,
+            previous_styles,
         );
     }
 }

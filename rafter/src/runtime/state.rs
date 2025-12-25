@@ -1,5 +1,6 @@
 //! Event loop state management.
 
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -7,6 +8,7 @@ use crate::context::Toast;
 use crate::input::focus::FocusState;
 use crate::input::keybinds::Keybinds;
 use crate::layers::overlay::ActiveOverlay;
+use crate::styling::style::Style;
 use crate::styling::theme::Theme;
 use crate::system::AnySystem;
 
@@ -60,6 +62,12 @@ pub struct EventLoopState {
 
     /// Animation manager for smooth property transitions.
     pub animations: AnimationManager,
+
+    /// Previous rendered styles (for transition detection).
+    pub previous_styles: HashMap<String, Style>,
+
+    /// Last view identifier (for clearing previous_styles on view change).
+    pub last_view: Option<String>,
 }
 
 impl EventLoopState {
@@ -90,6 +98,8 @@ impl EventLoopState {
             last_focused_id: None,
             event_dispatched: false,
             animations: AnimationManager::new(reduce_motion),
+            previous_styles: HashMap::new(),
+            last_view: None,
         }
     }
 

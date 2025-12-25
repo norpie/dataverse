@@ -63,6 +63,8 @@ pub fn generate_style(attrs: &[Attr]) -> TokenStream {
             italic: #italic,
             underline: #underline,
             dim: #dim,
+            transition_duration: None,
+            transition_easing: rafter::runtime::Easing::Linear,
         }
     }
 }

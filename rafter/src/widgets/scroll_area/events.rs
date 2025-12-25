@@ -231,8 +231,10 @@ impl AnyWidget for ScrollArea {
                 ctx.hit_map,
                 ctx.theme,
                 ctx.focused_id,
-                crate::runtime::render::style_to_ratatui,
+                crate::runtime::render::style_to_ratatui_simple,
                 ctx.render_node,
+                ctx.animations,
+                ctx.previous_styles,
             );
         }
 

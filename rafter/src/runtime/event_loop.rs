@@ -618,7 +618,15 @@ pub async fn run_event_loop(
             // Collect overlay requests during rendering
             let mut overlay_requests: Vec<OverlayRequest> = Vec::new();
 
+            // Split borrows for animation state (needed inside render closure)
+            let animations = &mut state.animations;
+            let previous_styles = &mut state.previous_styles;
             let modal_stack_ref = &state.modal_stack;
+            let active_toasts_ref = &state.active_toasts;
+            
+            // Will collect active overlays during render
+            let mut active_overlays_result: Vec<ActiveOverlay> = Vec::new();
+            
             let draw_start = Instant::now();
             term_guard.terminal().draw(|frame| {
                 let area = frame.area();
@@ -642,6 +650,8 @@ pub async fn run_event_loop(
                     theme.as_ref(),
                     app_focused,
                     &mut overlay_requests,
+                    animations,
+                    previous_styles,
                 );
 
                 // Render modals on top with backdrop dimming
@@ -679,6 +689,8 @@ pub async fn run_event_loop(
                         theme.as_ref(),
                         modal_focused,
                         &mut overlay_requests,
+                        animations,
+                        previous_styles,
                     );
                 }
 
@@ -710,18 +722,23 @@ pub async fn run_event_loop(
                         theme.as_ref(),
                         None, // Overlays don't show focus indicators
                         &mut nested_overlays,
+                        animations,
+                        previous_styles,
                     );
 
                     // Track active overlay for click-outside detection
                     active_overlays.push(ActiveOverlay::new(request.owner_id, overlay_area));
                 }
 
-                // Store active overlays in state for event handling
-                state.active_overlays = active_overlays;
+                // Store active overlays for later assignment
+                active_overlays_result = active_overlays;
 
                 // Render toasts on top of everything
-                render_toasts(frame, &state.active_toasts, theme.as_ref());
+                render_toasts(frame, active_toasts_ref, theme.as_ref());
             })?;
+            
+            // Update active overlays from render result
+            state.active_overlays = active_overlays_result;
             let draw_elapsed = draw_start.elapsed();
             if draw_elapsed.as_millis() > 5 {
                 warn!("PROFILE: terminal.draw() took {:?}", draw_elapsed);

@@ -1,5 +1,8 @@
+use std::time::Duration;
+
 use ratatui::style::{Modifier, Style as RatatuiStyle};
 
+use crate::runtime::animation::Easing;
 use crate::styling::color::StyleColor;
 
 /// Text and element styling
@@ -17,6 +20,10 @@ pub struct Style {
     pub underline: bool,
     /// Dim/faint text
     pub dim: bool,
+    /// Transition duration (if set, changes to this style will animate)
+    pub transition_duration: Option<Duration>,
+    /// Transition easing function
+    pub transition_easing: Easing,
 }
 
 impl Style {
@@ -29,6 +36,8 @@ impl Style {
             italic: false,
             underline: false,
             dim: false,
+            transition_duration: None,
+            transition_easing: Easing::Linear,
         }
     }
 
@@ -65,6 +74,20 @@ impl Style {
     /// Set dim
     pub const fn dim(mut self) -> Self {
         self.dim = true;
+        self
+    }
+
+    /// Set transition duration.
+    ///
+    /// When set, property changes will animate over the given duration.
+    pub const fn transition(mut self, duration: Duration) -> Self {
+        self.transition_duration = Some(duration);
+        self
+    }
+
+    /// Set transition easing function.
+    pub const fn easing(mut self, easing: Easing) -> Self {
+        self.transition_easing = easing;
         self
     }
 

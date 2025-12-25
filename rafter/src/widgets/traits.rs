@@ -398,6 +398,11 @@ use crate::node::Node;
 use crate::runtime::hit_test::HitTestMap;
 use crate::styling::theme::Theme;
 
+use std::collections::HashMap;
+
+use crate::runtime::animation::AnimationManager;
+use crate::styling::style::Style;
+
 /// Context passed to widgets during rendering.
 ///
 /// This provides widgets with access to runtime resources needed for rendering,
@@ -416,6 +421,8 @@ pub struct RenderContext<'a> {
         &dyn Theme,
         Option<&str>,
         &mut Vec<OverlayRequest>,
+        &mut AnimationManager,
+        &mut HashMap<String, Style>,
     ),
     /// ID of the currently focused widget
     pub focused_id: Option<&'a str>,
@@ -427,6 +434,10 @@ pub struct RenderContext<'a> {
     pub children: &'a [Node],
     /// Overlay requests (widgets register overlays here during render)
     pub overlay_requests: &'a mut Vec<OverlayRequest>,
+    /// Animation manager for property transitions
+    pub animations: &'a mut AnimationManager,
+    /// Previous rendered styles (for transition detection)
+    pub previous_styles: &'a mut HashMap<String, Style>,
 }
 
 impl<'a> RenderContext<'a> {

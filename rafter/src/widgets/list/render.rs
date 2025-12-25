@@ -1,14 +1,18 @@
 //! List widget rendering.
 
+use std::collections::HashMap;
+
 use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::Style as RatatuiStyle;
 
 use crate::layers::overlay::OverlayRequest;
 use crate::node::Layout;
+use crate::runtime::animation::AnimationManager;
 use crate::runtime::hit_test::HitTestMap;
 use crate::runtime::render::RenderNodeFn;
 use crate::runtime::render::layout::{apply_border, apply_padding};
+use crate::styling::style::Style;
 use crate::styling::theme::Theme;
 use crate::widgets::list::AnyList;
 use crate::widgets::scrollbar::render_vertical_scrollbar;
@@ -26,6 +30,8 @@ pub fn render(
     theme: &dyn Theme,
     focused_id: Option<&str>,
     render_node: RenderNodeFn,
+    animations: &mut AnimationManager,
+    previous_styles: &mut HashMap<String, Style>,
 ) {
     use ratatui::widgets::Block;
 
@@ -102,6 +108,8 @@ pub fn render(
                 theme,
                 focused_id,
                 &mut item_overlays,
+                animations,
+                previous_styles,
             );
         }
     }
