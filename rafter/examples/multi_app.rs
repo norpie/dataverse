@@ -7,15 +7,18 @@
 //! - Pub/Sub events with `cx.publish()` and `#[event_handler]`
 //! - Request/Response with `cx.request()` and `#[request_handler]`
 //! - System keybinds with `#[system]` and `#[system_impl]`
+//! - System overlays with `#[system_overlay]` and `#[system_overlay_impl]`
 //! - Global data with `Runtime::data()` and `cx.data::<T>()`
 
 use std::fs::File;
 use std::sync::atomic::{AtomicU32, Ordering};
 
-use log::{info, LevelFilter};
+use log::{debug, info, LevelFilter};
 use rafter::app::InstanceInfo;
+use rafter::node::{Layout, Node};
 use rafter::prelude::*;
 use rafter::request::RequestError;
+use rafter::styling::{Style, StyleColor};
 use simplelog::{Config, WriteLogger};
 
 // ============================================================================
@@ -99,6 +102,102 @@ impl QuitConfirmModal {
         }
     }
 }
+
+// ============================================================================
+// Taskbar Overlay (Bottom bar showing running apps)
+// ============================================================================
+
+/// A taskbar overlay that shows all running app instances.
+/// Demonstrates the system overlay feature with clickable buttons.
+#[system_overlay(position = Bottom, height = 1)]
+struct Taskbar {
+    /// Cached list of instances (updated via event handler)
+    instances: Vec<InstanceInfo>,
+}
+
+#[system_overlay_impl]
+impl Taskbar {
+    /// Called once when the overlay is initialized, before the first render.
+    fn on_init(&self, cx: &AppContext) {
+        let instances = cx.instances();
+        info!("[Taskbar] on_init: {} instances", instances.len());
+        self.instances.set(instances);
+    }
+
+    /// Listen for app activation events to refresh the instance list
+    #[event_handler]
+    async fn on_app_activated(&self, event: AppActivated, cx: &AppContext) {
+        let instances = cx.instances();
+        info!("[Taskbar] on_app_activated({}): {} instances", event.app_name, instances.len());
+        for inst in &instances {
+            info!("[Taskbar]   - {} (focused={})", inst.app_name, inst.is_focused);
+        }
+        self.instances.set(instances);
+    }
+
+    /// Handler for clicking any taskbar button
+    #[handler]
+    async fn on_click(&self, cx: &AppContext) {
+        // Get the widget ID that triggered this handler
+        if let Some(widget_id) = cx.trigger_widget_id() {
+            // Parse the index from the button ID (e.g., "taskbar-btn-2" -> 2)
+            if let Some(index_str) = widget_id.strip_prefix("taskbar-btn-") {
+                if let Ok(index) = index_str.parse::<usize>() {
+                    let instances = self.instances.get();
+                    if let Some(info) = instances.get(index) {
+                        if !info.is_focused {
+                            info!("[Taskbar] Focusing app: {} (from button {})", info.app_name, widget_id);
+                            cx.focus_instance(info.id);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    fn view(&self) -> Node {
+        let instances = self.instances.get();
+        debug!("[Taskbar] view() called with {} instances", instances.len());
+
+        if instances.is_empty() {
+            return page! {
+                row(bg: surface) {
+                    text(fg: muted) { " Taskbar | No apps running " }
+                }
+            };
+        }
+
+        // Build buttons for each instance
+        let buttons: Vec<Node> = instances
+            .iter()
+            .enumerate()
+            .map(|(i, info)| {
+                let marker = if info.is_focused { ">" } else { " " };
+                let label = format!("{}[{}]", marker, info.app_name);
+                let id = format!("taskbar-btn-{}", i);
+                
+                page! { button(id: id, label: label, on_click: on_click) }
+            })
+            .collect();
+
+        // Build the row manually to avoid the `for` loop wrapping in a Column
+        let mut children = vec![
+            page! { text(fg: muted) { " Taskbar |" } }
+        ];
+        children.extend(buttons);
+        
+        Node::Row {
+            children,
+            style: Style::new().bg(StyleColor::Named("surface".to_string())),
+            layout: Layout { gap: 1, ..Default::default() },
+            id: None,
+        }
+    }
+}
+
+// ============================================================================
+// System Keybinds (Global, highest priority)
+// ============================================================================
 
 /// Global system keybinds that work across all apps.
 /// These have highest priority and are checked before any app keybinds.
