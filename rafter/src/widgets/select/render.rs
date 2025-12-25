@@ -167,6 +167,7 @@ pub fn build_dropdown_content(select: &Select, ctx: &RenderContext<'_>) -> Node 
                         width: Size::Flex(1),
                         ..Default::default()
                     },
+                    id: None,
                 };
 
                 Some(row)
@@ -193,5 +194,6 @@ pub fn build_dropdown_content(select: &Select, ctx: &RenderContext<'_>) -> Node 
             gap: 0,
             ..Default::default()
         },
+        id: None,
     }
 }

@@ -9,6 +9,7 @@
 //! - Toast notifications
 //! - Theme-aware styling
 //! - Modal dialogs
+//! - Smooth animations with transitions
 
 use std::fs::File;
 use std::time::Duration;
@@ -262,14 +263,28 @@ impl Counter {
         // Build data status display
         let data_state = self.data.get();
 
+        // Compute background color based on value sign for transition demo
+        // Note: Animation system currently only animates lightness changes,
+        // so we use different lightness values to show the transition effect
+        let value = self.value.get();
+        let value_bg = if value > 0 {
+            Color::oklch(0.45, 0.12, 150.0) // Brighter greenish for positive
+        } else if value < 0 {
+            Color::oklch(0.30, 0.12, 25.0) // Darker reddish for negative
+        } else {
+            Color::oklch(0.20, 0.0, 0.0) // Dark gray for zero
+        };
+
         page! {
             column (padding: 1, gap: 1, bg: background) {
                 column {
                     text (bold, fg: primary) { "Counter" }
-                    text (fg: muted) { "A rafter demo application" }
+                    text (fg: muted) { "A rafter demo with smooth animations" }
                 }
 
-                column (border: rounded) {
+                // Value display with transition - background color animates on value change
+                // Note: id is required for transitions to track style changes
+                column (id: "value-display", border: rounded, bg: {value_bg}, transition: 300, easing: ease_out) {
                     row (gap: 2) {
                         text (fg: muted) { "Value:" }
                         text (bold, fg: primary) { value_str }

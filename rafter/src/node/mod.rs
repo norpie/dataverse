@@ -32,6 +32,8 @@ pub enum Node {
         children: Vec<Node>,
         style: Style,
         layout: Layout,
+        /// Optional ID for transition tracking
+        id: Option<String>,
     },
 
     /// Container with horizontal layout
@@ -39,6 +41,8 @@ pub enum Node {
         children: Vec<Node>,
         style: Style,
         layout: Layout,
+        /// Optional ID for transition tracking
+        id: Option<String>,
     },
 
     /// Stack (z-axis layering)
@@ -46,6 +50,8 @@ pub enum Node {
         children: Vec<Node>,
         style: Style,
         layout: Layout,
+        /// Optional ID for transition tracking
+        id: Option<String>,
     },
 
     // =========================================================================
@@ -102,6 +108,7 @@ impl Node {
             children,
             style: Style::new(),
             layout: Layout::default(),
+            id: None,
         }
     }
 
@@ -111,6 +118,7 @@ impl Node {
             children,
             style,
             layout,
+            id: None,
         }
     }
 
@@ -120,6 +128,7 @@ impl Node {
             children,
             style: Style::new(),
             layout: Layout::default(),
+            id: None,
         }
     }
 
@@ -129,6 +138,7 @@ impl Node {
             children,
             style,
             layout,
+            id: None,
         }
     }
 

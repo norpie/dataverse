@@ -341,11 +341,16 @@ impl AnimationManager {
     ///
     /// Returns a list of current interpolated values.
     pub fn get_values(&self, widget_id: &str) -> Vec<AnimatedValue> {
-        self.animations
+        let values: Vec<_> = self.animations
             .iter()
             .filter(|a| a.widget_id == widget_id)
-            .map(|a| a.current_value())
-            .collect()
+            .map(|a| {
+                let value = a.current_value();
+                log::debug!("Animation for {}: progress={:.3}, value={:?}", widget_id, a.progress(), value);
+                value
+            })
+            .collect();
+        values
     }
 
     /// Get all animations (for debugging).

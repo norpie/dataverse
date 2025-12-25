@@ -40,6 +40,7 @@ fn check_style_transitions(
     // Get previous style if any
     let Some(prev_style) = previous_styles.get(widget_id) else {
         // First render - store style but don't animate
+        log::debug!("First render for {}, storing style", widget_id);
         previous_styles.insert(widget_id.to_string(), new_style.clone());
         return;
     };
@@ -68,6 +69,10 @@ fn check_style_transitions(
 
             // Only animate if there's a meaningful difference
             if (prev_l - new_l).abs() > 0.001 {
+                log::debug!(
+                    "Starting bg lightness animation for {}: {} -> {} over {:?}",
+                    widget_id, prev_l, new_l, duration
+                );
                 animations.start(Animation::transition(
                     widget_id,
                     AnimatedProperty::BackgroundLightness {
@@ -182,10 +187,14 @@ pub(crate) fn style_to_ratatui(
     let mut opacity = style.opacity;
 
     // Apply animated values (override base style)
+    if !animated_values.is_empty() {
+        log::debug!("Applying {} animated values for {:?}", animated_values.len(), widget_id);
+    }
     for value in &animated_values {
         match value {
             AnimatedValue::BackgroundLightness(l) => {
                 // Modify bg color lightness
+                log::debug!("Applying animated bg lightness: {}", l);
                 if let Some(ref color) = bg {
                     let resolved = resolve_color(color, theme);
                     bg = Some(crate::styling::StyleColor::Concrete(
@@ -281,11 +290,16 @@ pub fn render_node(
             children,
             style,
             layout,
+            id,
         } => {
+            // Check for style transitions if this container has an ID
+            if let Some(container_id) = id {
+                check_style_transitions(container_id, style, previous_styles, animations);
+            }
             render_container(
                 frame,
                 children,
-                style_to_ratatui(style, theme, None, animations),
+                style_to_ratatui(style, theme, id.as_deref(), animations),
                 layout,
                 area,
                 false,
@@ -301,11 +315,16 @@ pub fn render_node(
             children,
             style,
             layout,
+            id,
         } => {
+            // Check for style transitions if this container has an ID
+            if let Some(container_id) = id {
+                check_style_transitions(container_id, style, previous_styles, animations);
+            }
             render_container(
                 frame,
                 children,
-                style_to_ratatui(style, theme, None, animations),
+                style_to_ratatui(style, theme, id.as_deref(), animations),
                 layout,
                 area,
                 true,
@@ -321,11 +340,16 @@ pub fn render_node(
             children,
             style,
             layout,
+            id,
         } => {
+            // Check for style transitions if this container has an ID
+            if let Some(container_id) = id {
+                check_style_transitions(container_id, style, previous_styles, animations);
+            }
             render_stack(
                 frame,
                 children,
-                style_to_ratatui(style, theme, None, animations),
+                style_to_ratatui(style, theme, id.as_deref(), animations),
                 layout,
                 area,
                 hit_map,

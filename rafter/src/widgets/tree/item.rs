@@ -147,6 +147,7 @@ pub trait TreeItem: Send + Sync + Clone + 'static {
             children: vec![child],
             style,
             layout,
+            id: None,
         }
     }
 

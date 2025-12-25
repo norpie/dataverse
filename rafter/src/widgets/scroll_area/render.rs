@@ -234,6 +234,7 @@ pub fn render_node_clipped(
             children,
             style,
             layout: node_layout,
+            ..
         } => {
             render_container_clipped(
                 frame,
@@ -256,6 +257,7 @@ pub fn render_node_clipped(
             children,
             style,
             layout: node_layout,
+            ..
         } => {
             render_container_clipped(
                 frame,
@@ -278,6 +280,7 @@ pub fn render_node_clipped(
             children,
             style,
             layout: node_layout,
+            ..
         } => {
             let ratatui_style = style_to_ratatui(style, theme);
             if ratatui_style.bg.is_some() {

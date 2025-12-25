@@ -763,8 +763,10 @@ pub async fn run_event_loop(
             }
 
             // Animation cleanup after render
-            // 1. Remove animations for widgets that are no longer in the render tree
-            state.animations.cleanup_removed_widgets(hit_map.widget_ids());
+            // 1. Remove animations for widgets/containers that are no longer in the render tree
+            // We use previous_styles keys since that tracks all IDs with transitions enabled
+            // (both widgets and containers). This is more complete than hit_map which only tracks widgets.
+            state.animations.cleanup_removed_widgets(state.previous_styles.keys().map(|s| s.as_str()));
             // 2. Remove completed (finite) animations
             let completed = state.animations.cleanup_completed();
             if completed > 0 {

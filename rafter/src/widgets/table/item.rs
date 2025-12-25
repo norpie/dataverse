@@ -187,6 +187,7 @@ pub trait TableRow: Send + Sync + Clone + 'static {
             children: cells,
             style: Style::new(),
             layout: Layout::default(),
+            id: None,
         };
         Self::apply_default_row_style(row_content, focused, selected)
     }
@@ -228,6 +229,7 @@ pub trait TableRow: Send + Sync + Clone + 'static {
             children: vec![child],
             style,
             layout,
+            id: None,
         }
     }
 

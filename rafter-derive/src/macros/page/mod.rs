@@ -48,6 +48,7 @@ pub fn expand(input: TokenStream) -> TokenStream {
             children: vec![#(#nodes),*],
             style: rafter::style::Style::new(),
             layout: rafter::node::Layout::default(),
+            id: None,
         }
     }
 }

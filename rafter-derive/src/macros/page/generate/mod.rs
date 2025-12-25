@@ -117,6 +117,7 @@ fn generate_control_flow(cf: &ControlFlowNode) -> TokenStream {
                         children: vec![#(#then_nodes),*],
                         style: rafter::style::Style::new(),
                         layout: rafter::node::Layout::default(),
+                        id: None,
                     }
                 }
             };
@@ -131,6 +132,7 @@ fn generate_control_flow(cf: &ControlFlowNode) -> TokenStream {
                             children: vec![#(#else_nodes),*],
                             style: rafter::style::Style::new(),
                             layout: rafter::node::Layout::default(),
+                            id: None,
                         }
                     }
                 }
@@ -161,6 +163,7 @@ fn generate_control_flow(cf: &ControlFlowNode) -> TokenStream {
                         children: vec![#(#then_nodes),*],
                         style: rafter::style::Style::new(),
                         layout: rafter::node::Layout::default(),
+                        id: None,
                     }
                 }
             };
@@ -175,6 +178,7 @@ fn generate_control_flow(cf: &ControlFlowNode) -> TokenStream {
                             children: vec![#(#else_nodes),*],
                             style: rafter::style::Style::new(),
                             layout: rafter::node::Layout::default(),
+                            id: None,
                         }
                     }
                 }
@@ -204,6 +208,7 @@ fn generate_control_flow(cf: &ControlFlowNode) -> TokenStream {
                         children: vec![#(#body_nodes),*],
                         style: rafter::style::Style::new(),
                         layout: rafter::node::Layout::default(),
+                        id: None,
                     }
                 }
             };
@@ -215,6 +220,7 @@ fn generate_control_flow(cf: &ControlFlowNode) -> TokenStream {
                     }).collect(),
                     style: rafter::style::Style::new(),
                     layout: rafter::node::Layout::default(),
+                    id: None,
                 }
             }
         }
@@ -233,6 +239,7 @@ fn generate_control_flow(cf: &ControlFlowNode) -> TokenStream {
                                 children: vec![#(#body_nodes),*],
                                 style: rafter::style::Style::new(),
                                 layout: rafter::node::Layout::default(),
+                                id: None,
                             }
                         }
                     };
