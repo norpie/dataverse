@@ -83,6 +83,7 @@ fn generate_component_args(elem: &ElementNode) -> TokenStream {
             let name = &attr.name;
             match &attr.value {
                 Some(AttrValue::Int(v)) => quote! { #name: #v },
+                Some(AttrValue::Float(v)) => quote! { #name: #v },
                 Some(AttrValue::Str(s)) => quote! { #name: #s },
                 Some(AttrValue::Bool(b)) => quote! { #name: #b },
                 Some(AttrValue::Ident(i)) => quote! { #name: #i },

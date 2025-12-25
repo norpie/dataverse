@@ -13,6 +13,9 @@ pub fn generate_style(attrs: &[Attr]) -> TokenStream {
     let mut dim = quote! { false };
     let mut fg = quote! { None };
     let mut bg = quote! { None };
+    let mut opacity = quote! { None };
+    let mut transition_duration = quote! { None };
+    let mut transition_easing = quote! { rafter::runtime::Easing::Linear };
 
     for attr in attrs {
         let name_str = attr.name.to_string();
@@ -51,6 +54,40 @@ pub fn generate_style(attrs: &[Attr]) -> TokenStream {
             "bg" | "background" => {
                 bg = generate_color_value(&attr.value);
             }
+            "opacity" => {
+                // opacity: 0.5 or opacity: {expr}
+                if let Some(AttrValue::Float(f)) = &attr.value {
+                    opacity = quote! { Some(#f as f32) };
+                } else if let Some(AttrValue::Int(i)) = &attr.value {
+                    let f = *i as f32;
+                    opacity = quote! { Some(#f) };
+                } else if let Some(AttrValue::Expr(e)) = &attr.value {
+                    opacity = quote! { Some(#e) };
+                }
+            }
+            "transition" => {
+                // transition: 200 (milliseconds)
+                if let Some(AttrValue::Int(ms)) = &attr.value {
+                    let ms_u64 = *ms as u64;
+                    transition_duration =
+                        quote! { Some(std::time::Duration::from_millis(#ms_u64)) };
+                } else if let Some(AttrValue::Expr(e)) = &attr.value {
+                    transition_duration = quote! { Some(#e) };
+                }
+            }
+            "easing" => {
+                // easing: ease_in, ease_out, ease_in_out, linear
+                if let Some(AttrValue::Ident(ident)) = &attr.value {
+                    let easing_name = ident.to_string();
+                    transition_easing = match easing_name.as_str() {
+                        "linear" => quote! { rafter::runtime::Easing::Linear },
+                        "ease_in" => quote! { rafter::runtime::Easing::EaseIn },
+                        "ease_out" => quote! { rafter::runtime::Easing::EaseOut },
+                        "ease_in_out" => quote! { rafter::runtime::Easing::EaseInOut },
+                        _ => quote! { rafter::runtime::Easing::Linear },
+                    };
+                }
+            }
             _ => {}
         }
     }
@@ -63,9 +100,9 @@ pub fn generate_style(attrs: &[Attr]) -> TokenStream {
             italic: #italic,
             underline: #underline,
             dim: #dim,
-            opacity: None,
-            transition_duration: None,
-            transition_easing: rafter::runtime::Easing::Linear,
+            opacity: #opacity,
+            transition_duration: #transition_duration,
+            transition_easing: #transition_easing,
         }
     }
 }

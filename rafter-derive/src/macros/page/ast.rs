@@ -34,6 +34,8 @@ pub struct Attr {
 pub enum AttrValue {
     /// Literal integer
     Int(i64),
+    /// Literal float
+    Float(f64),
     /// Literal string
     Str(String),
     /// Boolean

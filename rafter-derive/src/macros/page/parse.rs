@@ -107,6 +107,9 @@ pub fn parse_attrs(input: ParseStream) -> syn::Result<Vec<Attr>> {
             if input.peek(LitStr) {
                 let lit: LitStr = input.parse()?;
                 Some(AttrValue::Str(lit.value()))
+            } else if input.peek(syn::LitFloat) {
+                let lit: syn::LitFloat = input.parse()?;
+                Some(AttrValue::Float(lit.base10_parse()?))
             } else if input.peek(syn::LitInt) {
                 let lit: syn::LitInt = input.parse()?;
                 Some(AttrValue::Int(lit.base10_parse()?))
