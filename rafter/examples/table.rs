@@ -201,7 +201,7 @@ impl TableApp {
     async fn on_activate(&self, cx: &AppContext) {
         // Read from widget state (context is cleared after dispatch)
         if let Some(id) = self.users.cursor_id() {
-            cx.show_toast(Toast::info(format!("Activated row: {}", id)));
+            cx.toast(Toast::info(format!("Activated row: {}", id)));
         }
     }
 

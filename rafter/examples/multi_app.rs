@@ -328,7 +328,7 @@ impl AppA {
         info!("[App A] API response: {}", response);
         info!("[App A] Total requests made: {}", count);
 
-        cx.toast_success(format!("API: {} (total: {})", response, count));
+        cx.toast(Toast::success(format!("API: {} (total: {})", response, count)));
     }
 
     #[handler]
@@ -455,6 +455,7 @@ impl AppB {
         }
     }
 
+    #[allow(dead_code)]
     async fn on_foreground(&self, cx: &AppContext) {
         // Publish event when we become active
         info!("[App B] Publishing AppActivated event");
@@ -537,6 +538,7 @@ impl AppC {
         }
     }
 
+    #[allow(dead_code)]
     async fn on_foreground(&self, cx: &AppContext) {
         // Publish event when we become active
         info!("[App C] Publishing AppActivated event");
@@ -619,6 +621,7 @@ impl AppD {
         }
     }
 
+    #[allow(dead_code)]
     async fn on_foreground(&self, cx: &AppContext) {
         info!("[App D] Publishing AppActivated event");
         cx.publish(AppActivated {

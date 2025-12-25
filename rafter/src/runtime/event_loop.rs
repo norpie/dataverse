@@ -25,7 +25,7 @@ use super::handlers::dispatch_event;
 use super::hit_test::HitTestMap;
 use super::input::InputState;
 use super::modal::{ModalStackEntry, calculate_modal_area};
-use super::render::{dim_backdrop, fill_background, has_animating_toasts, render_node, render_toasts, SLIDE_OUT_DURATION};
+use super::render::{calculate_toast_removal_time, dim_backdrop, fill_background, has_animating_toasts, render_node, render_toasts};
 use super::state::EventLoopState;
 use super::terminal::TerminalGuard;
 
@@ -359,10 +359,11 @@ fn compute_next_deadline(
     toasts: &[(crate::context::Toast, Instant)],
     animations: &AnimationManager,
 ) -> Option<Instant> {
-    // Calculate expiry from created_at + duration
+    // Calculate removal time for each toast (accounts for activation time and slide-out)
     let toast_deadline = toasts
         .iter()
-        .map(|(toast, created_at)| *created_at + toast.duration)
+        .enumerate()
+        .map(|(i, _)| calculate_toast_removal_time(i, toasts))
         .min();
     let animation_deadline = animations.next_completion_time();
 
@@ -543,17 +544,22 @@ pub async fn run_event_loop(
         // Process any pending toasts
         for toast in cx.take_toasts() {
             let created_at = Instant::now();
-            info!("Toast: {}", toast.message);
+            info!("Toast: {}", toast.title);
             state.active_toasts.push((toast, created_at));
         }
 
-        // Remove expired toasts (expiry = created_at + duration + slide_out_animation)
+        // Remove expired toasts (accounting for activation time and slide-out animation)
         let now = Instant::now();
-        state.active_toasts.retain(|(toast, created_at)| {
-            // Keep toast until slide-out animation completes
-            let removal_time = *created_at + toast.duration + SLIDE_OUT_DURATION;
-            removal_time > now
-        });
+        let toasts_for_calc = state.active_toasts.clone();
+        state.active_toasts = state.active_toasts
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| {
+                let removal_time = calculate_toast_removal_time(*i, &toasts_for_calc);
+                removal_time > now
+            })
+            .map(|(_, t)| t.clone())
+            .collect();
 
         // Get page and render using focused instance
         let reg = registry.read().unwrap();

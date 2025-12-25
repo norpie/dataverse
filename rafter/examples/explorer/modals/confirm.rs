@@ -24,6 +24,7 @@ impl ConfirmModal {
     }
 
     /// Set custom button text.
+    #[allow(dead_code)]
     pub fn with_buttons(mut self, confirm: impl Into<String>, cancel: impl Into<String>) -> Self {
         self.confirm_text = confirm.into();
         self.cancel_text = cancel.into();

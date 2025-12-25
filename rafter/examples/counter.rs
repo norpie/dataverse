@@ -214,7 +214,8 @@ impl Counter {
             self.value.set(0);
             self.step.set(1);
             self.data.set_idle();
-            cx.toast("Reset");
+            cx.toast(Toast::success("Counter Reset")
+                .with_body("Value and step have been restored to defaults."));
         }
     }
 
@@ -236,7 +237,8 @@ impl Counter {
     #[handler]
     async fn load_data(&self, cx: &AppContext) {
         self.data.set_loading();
-        cx.toast("Loading...");
+        cx.toast(Toast::info("Loading Data")
+            .with_body("Fetching from remote server..."));
 
         // Simulate network request with progress
         for i in 1..=3 {
@@ -248,7 +250,23 @@ impl Counter {
             });
         }
         tokio::time::sleep(Duration::from_millis(400)).await;
-        self.data.set_ready("API response received".to_string());
+
+        // Random chance of error (roughly 30%)
+        let random_value = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .subsec_nanos();
+        
+        if random_value % 10 < 3 {
+            self.data.set_error("Connection timeout".to_string());
+            cx.toast(Toast::error("Request Failed")
+                .with_body("Could not connect to the server.\nPlease check your connection and try again.")
+                .with_duration(Duration::from_secs(6)));
+        } else {
+            self.data.set_ready("API response received".to_string());
+            cx.toast(Toast::success("Data Loaded")
+                .with_body("Successfully fetched 42 records."));
+        }
     }
 
     #[handler]

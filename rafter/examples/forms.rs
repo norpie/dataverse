@@ -105,12 +105,12 @@ impl FormsApp {
         if result.is_valid() {
             // Success
             self.submitted.set(true);
-            cx.toast_success("Form submitted successfully!");
+            cx.toast(Toast::success("Form submitted successfully!"));
         } else {
             // Show first error and focus that field
             result.focus_first(cx);
             if let Some(err) = result.first_error() {
-                cx.toast_error(&err.message);
+                cx.toast(Toast::error(&err.message));
             }
         }
     }

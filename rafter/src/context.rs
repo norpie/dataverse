@@ -70,8 +70,10 @@ pub enum ToastLevel {
 /// A toast notification
 #[derive(Debug, Clone)]
 pub struct Toast {
-    /// Message to display
-    pub message: String,
+    /// Title to display (single line)
+    pub title: String,
+    /// Optional body text (can be multi-line)
+    pub body: Option<String>,
     /// Toast level (affects styling)
     pub level: ToastLevel,
     /// How long to show the toast
@@ -80,39 +82,82 @@ pub struct Toast {
 
 impl Toast {
     /// Create a simple info toast
-    pub fn info(message: impl Into<String>) -> Self {
+    pub fn info(title: impl Into<String>) -> Self {
         Self {
-            message: message.into(),
+            title: title.into(),
+            body: None,
             level: ToastLevel::Info,
             duration: Duration::from_secs(3),
         }
     }
 
     /// Create an error toast
-    pub fn error(message: impl Into<String>) -> Self {
+    pub fn error(title: impl Into<String>) -> Self {
         Self {
-            message: message.into(),
+            title: title.into(),
+            body: None,
             level: ToastLevel::Error,
             duration: Duration::from_secs(5),
         }
     }
 
     /// Create a success toast
-    pub fn success(message: impl Into<String>) -> Self {
+    pub fn success(title: impl Into<String>) -> Self {
         Self {
-            message: message.into(),
+            title: title.into(),
+            body: None,
             level: ToastLevel::Success,
             duration: Duration::from_secs(3),
         }
     }
 
     /// Create a warning toast
-    pub fn warning(message: impl Into<String>) -> Self {
+    pub fn warning(title: impl Into<String>) -> Self {
         Self {
-            message: message.into(),
+            title: title.into(),
+            body: None,
             level: ToastLevel::Warning,
             duration: Duration::from_secs(4),
         }
+    }
+
+    /// Add a body to the toast
+    pub fn with_body(mut self, body: impl Into<String>) -> Self {
+        self.body = Some(body.into());
+        self
+    }
+
+    /// Set custom duration
+    pub fn with_duration(mut self, duration: Duration) -> Self {
+        self.duration = duration;
+        self
+    }
+
+    /// Calculate the height of this toast in lines
+    pub fn height(&self, max_width: u16) -> u16 {
+        let mut height = 1; // Title line
+        if let Some(body) = &self.body {
+            // Count wrapped lines for body
+            let body_width = max_width.saturating_sub(3) as usize; // Account for padding
+            if body_width > 0 {
+                for line in body.lines() {
+                    height += ((line.len() + body_width - 1) / body_width).max(1) as u16;
+                }
+            }
+        }
+        height
+    }
+}
+
+impl From<String> for Toast {
+    fn from(message: String) -> Self {
+        Toast::info(message)
+    }
+}
+
+impl From<&str> for Toast {
+    fn from(message: &str) -> Self {
+        Toast::info(message)
     }
 }
 
@@ -345,16 +390,29 @@ impl AppContext {
         }
     }
 
-    /// Show a toast notification
-    pub fn toast(&self, message: impl Into<String>) {
+    /// Show a toast notification.
+    ///
+    /// Accepts either a string (creates an info toast) or a Toast directly.
+    ///
+    /// # Examples
+    /// ```ignore
+    /// // Simple string toast
+    /// cx.toast("Operation completed");
+    ///
+    /// // Toast with body
+    /// cx.toast(Toast::success("File saved")
+    ///     .with_body("Your changes have been saved."));
+    /// ```
+    pub fn toast(&self, toast: impl Into<Toast>) {
         if let Ok(mut inner) = self.inner.write() {
-            inner.pending_toasts.push(Toast::info(message));
+            inner.pending_toasts.push(toast.into());
             log::debug!("AppContext: sending wakeup (toast)");
             self.send_wakeup();
         }
     }
 
     /// Show an error toast notification
+    #[deprecated(note = "Use cx.toast(Toast::error(...)) instead")]
     pub fn toast_error(&self, message: impl Into<String>) {
         if let Ok(mut inner) = self.inner.write() {
             inner.pending_toasts.push(Toast::error(message));
@@ -364,6 +422,7 @@ impl AppContext {
     }
 
     /// Show a success toast notification
+    #[deprecated(note = "Use cx.toast(Toast::success(...)) instead")]
     pub fn toast_success(&self, message: impl Into<String>) {
         if let Ok(mut inner) = self.inner.write() {
             inner.pending_toasts.push(Toast::success(message));
@@ -373,6 +432,7 @@ impl AppContext {
     }
 
     /// Show a warning toast notification
+    #[deprecated(note = "Use cx.toast(Toast::warning(...)) instead")]
     pub fn toast_warning(&self, message: impl Into<String>) {
         if let Ok(mut inner) = self.inner.write() {
             inner.pending_toasts.push(Toast::warning(message));
@@ -382,6 +442,7 @@ impl AppContext {
     }
 
     /// Show a configured toast
+    #[deprecated(note = "Use cx.toast(...) instead")]
     pub fn show_toast(&self, toast: Toast) {
         if let Ok(mut inner) = self.inner.write() {
             inner.pending_toasts.push(toast);

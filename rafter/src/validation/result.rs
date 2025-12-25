@@ -59,15 +59,15 @@ impl ValidationResult {
     pub fn toast_errors(&self, cx: &AppContext) {
         match self.errors().len() {
             0 => {}
-            1 => cx.toast_error(&self.errors()[0].message),
-            n => cx.toast_error(format!("{} validation errors", n)),
+            1 => cx.toast(crate::context::Toast::error(&self.errors()[0].message)),
+            n => cx.toast(crate::context::Toast::error(format!("{} validation errors", n))),
         }
     }
 
     /// Show a toast for each validation error.
     pub fn toast_all_errors(&self, cx: &AppContext) {
         for err in self.errors() {
-            cx.toast_error(&err.message);
+            cx.toast(crate::context::Toast::error(&err.message));
         }
     }
 }
