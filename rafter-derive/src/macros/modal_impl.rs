@@ -292,8 +292,16 @@ fn generate_modal_dispatch(handlers: &[HandlerMethod]) -> TokenStream {
                         #name_str => {
                             let this = self.clone();
                             let cx = cx.clone();
+                            // Capture trigger_widget_id before spawning to avoid race condition
+                            let trigger_widget_id = cx.trigger_widget_id();
                             tokio::spawn(async move {
+                                // Restore trigger_widget_id inside the spawned task
+                                if let Some(ref id) = trigger_widget_id {
+                                    cx.set_trigger_widget_id(id);
+                                }
                                 #call
+                                // Clear trigger_widget_id after handler completes
+                                cx.clear_trigger_widget_id();
                             });
                         }
                     }
@@ -315,8 +323,16 @@ fn generate_modal_dispatch(handlers: &[HandlerMethod]) -> TokenStream {
                             let this = self.clone();
                             let cx = cx.clone();
                             let mx = mx.clone();
+                            // Capture trigger_widget_id before spawning to avoid race condition
+                            let trigger_widget_id = cx.trigger_widget_id();
                             tokio::spawn(async move {
+                                // Restore trigger_widget_id inside the spawned task
+                                if let Some(ref id) = trigger_widget_id {
+                                    cx.set_trigger_widget_id(id);
+                                }
                                 #call
+                                // Clear trigger_widget_id after handler completes
+                                cx.clear_trigger_widget_id();
                             });
                         }
                     }

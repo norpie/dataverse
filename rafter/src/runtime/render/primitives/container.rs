@@ -79,8 +79,33 @@ pub fn render_container(
     let chunks = Layout::default()
         .direction(direction)
         .flex(flex)
-        .constraints(constraints)
+        .constraints(constraints.clone())
         .split(padded_area);
+
+    // Debug: log chunk allocation for taskbar debugging (y=46 is bottom row)
+    if padded_area.y >= 46 {
+        log::debug!(
+            "Row layout: padded_area=({}, {}, {}x{}), {} children, {} constraints, {} chunks, horizontal={}",
+            padded_area.x,
+            padded_area.y,
+            padded_area.width,
+            padded_area.height,
+            children.len(),
+            constraints.len(),
+            chunks.len(),
+            horizontal
+        );
+        for (i, chunk) in chunks.iter().enumerate() {
+            log::debug!(
+                "  chunk[{}]: ({}, {}, {}x{})",
+                i,
+                chunk.x,
+                chunk.y,
+                chunk.width,
+                chunk.height
+            );
+        }
+    }
 
     // Render children
     let mut chunk_idx = 0;

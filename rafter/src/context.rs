@@ -261,6 +261,9 @@ struct AppContextInner {
     collapsed_id: Option<String>,
     /// Sorted column info (column index, ascending) (for table)
     sorted_column: Option<(usize, bool)>,
+
+    /// Widget ID that triggered the current handler (for button clicks etc.)
+    trigger_widget_id: Option<String>,
 }
 
 /// Context passed to app handlers, providing access to framework functionality.
@@ -324,6 +327,7 @@ impl AppContext {
                 expanded_id: None,
                 collapsed_id: None,
                 sorted_column: None,
+                trigger_widget_id: None,
             })),
             keybinds,
             registry: None,
@@ -681,6 +685,56 @@ impl AppContext {
     pub fn clear_sorted(&self) {
         if let Ok(mut inner) = self.inner.write() {
             inner.sorted_column = None;
+        }
+    }
+
+    /// Set the widget ID that triggered the current handler.
+    ///
+    /// Called by the runtime before dispatching a handler.
+    ///
+    /// # Note
+    /// This is an internal API used by generated code. Do not call directly.
+    #[doc(hidden)]
+    pub fn set_trigger_widget_id(&self, id: impl Into<String>) {
+        if let Ok(mut inner) = self.inner.write() {
+            inner.trigger_widget_id = Some(id.into());
+        }
+    }
+
+    /// Get the widget ID that triggered the current handler.
+    ///
+    /// Returns the ID of the widget (e.g., button) that triggered this handler.
+    /// Useful for handlers that are shared between multiple widgets.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// #[handler]
+    /// async fn on_click(&self, cx: &AppContext) {
+    ///     if let Some(id) = cx.trigger_widget_id() {
+    ///         match id.as_str() {
+    ///             "btn-save" => self.save(),
+    ///             "btn-cancel" => self.cancel(),
+    ///             _ => {}
+    ///         }
+    ///     }
+    /// }
+    /// ```
+    pub fn trigger_widget_id(&self) -> Option<String> {
+        self.inner
+            .read()
+            .ok()
+            .and_then(|inner| inner.trigger_widget_id.clone())
+    }
+
+    /// Clear the trigger widget ID.
+    ///
+    /// # Note
+    /// This is an internal API used by generated code. Do not call directly.
+    #[doc(hidden)]
+    pub fn clear_trigger_widget_id(&self) {
+        if let Ok(mut inner) = self.inner.write() {
+            inner.trigger_widget_id = None;
         }
     }
 
@@ -1245,6 +1299,7 @@ impl Default for AppContext {
                 expanded_id: None,
                 collapsed_id: None,
                 sorted_column: None,
+                trigger_widget_id: None,
             })),
             keybinds: Arc::new(RwLock::new(Keybinds::new())),
             registry: None,

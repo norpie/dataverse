@@ -33,6 +33,17 @@ impl HitTestMap {
 
     /// Register a hit box for an element
     pub fn register(&mut self, id: String, rect: Rect, captures_input: bool) {
+        // Log registration of taskbar buttons for debugging
+        if id.starts_with("taskbar-btn") {
+            log::debug!(
+                "HitMap register: id={}, rect=({}, {}, {}x{})",
+                id,
+                rect.x,
+                rect.y,
+                rect.width,
+                rect.height
+            );
+        }
         self.boxes.push(HitBox {
             id,
             rect,

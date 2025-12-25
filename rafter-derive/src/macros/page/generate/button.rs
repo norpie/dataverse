@@ -33,7 +33,11 @@ pub fn generate_button_element(elem: &ElementNode) -> TokenStream {
                 if let Some(AttrValue::Str(s)) = &attr.value {
                     custom_id = Some(quote! { #s });
                 } else if let Some(AttrValue::Ident(i)) = &attr.value {
-                    custom_id = Some(quote! { stringify!(#i) });
+                    // Variable reference - use the variable value as the ID
+                    custom_id = Some(quote! { #i });
+                } else if let Some(AttrValue::Expr(e)) = &attr.value {
+                    // Expression - evaluate it
+                    custom_id = Some(quote! { #e });
                 }
             }
             "on_click" => {

@@ -771,6 +771,10 @@ pub async fn run_event_loop(
             // Will collect active overlays during render
             let mut active_overlays_result: Vec<ActiveOverlay> = Vec::new();
             
+            // Will collect system overlay hit info during render
+            use super::state::SystemOverlayHitInfo;
+            let mut system_overlay_hit_info_result: Vec<SystemOverlayHitInfo> = Vec::new();
+            
             let draw_start = Instant::now();
             term_guard.terminal().draw(|frame| {
                 let area = frame.area();
@@ -803,7 +807,16 @@ pub async fn run_event_loop(
                 );
 
                 // Render edge system overlays (they don't dim backdrop)
+                // Each overlay gets its own hit_map for handler dispatch
                 for overlay_entry in &overlay_layout.edge_overlays {
+                    log::debug!(
+                        "Rendering system overlay '{}' at area=({}, {}, {}x{})",
+                        overlay_entry.overlay.name(),
+                        overlay_entry.area.x,
+                        overlay_entry.area.y,
+                        overlay_entry.area.width,
+                        overlay_entry.area.height
+                    );
                     let overlay_view = overlay_entry.overlay.view();
                     // System overlays don't participate in modal focus
                     let overlay_focused = if modal_stack_ref.is_empty() {
@@ -811,17 +824,25 @@ pub async fn run_event_loop(
                     } else {
                         None
                     };
+                    // Create a separate hit_map for this overlay
+                    let mut overlay_hit_map = HitTestMap::new();
                     render_node(
                         frame,
                         &overlay_view,
                         overlay_entry.area,
-                        &mut hit_map,
+                        &mut overlay_hit_map,
                         theme.as_ref(),
                         overlay_focused,
                         &mut overlay_requests,
                         animations,
                         previous_styles,
                     );
+                    // Store the overlay hit info for handler dispatch
+                    system_overlay_hit_info_result.push(SystemOverlayHitInfo {
+                        overlay_index: overlay_entry.index,
+                        area: overlay_entry.area,
+                        hit_map: overlay_hit_map,
+                    });
                 }
 
                 // Render modals on top with backdrop dimming
@@ -913,17 +934,25 @@ pub async fn run_event_loop(
                         None
                     };
                     let mut nested_overlays: Vec<OverlayRequest> = Vec::new();
+                    // Create a separate hit_map for this overlay
+                    let mut overlay_hit_map = HitTestMap::new();
                     render_node(
                         frame,
                         &overlay_view,
                         overlay_entry.area,
-                        &mut hit_map,
+                        &mut overlay_hit_map,
                         theme.as_ref(),
                         overlay_focused,
                         &mut nested_overlays,
                         animations,
                         previous_styles,
                     );
+                    // Store the overlay hit info for handler dispatch
+                    system_overlay_hit_info_result.push(SystemOverlayHitInfo {
+                        overlay_index: overlay_entry.index,
+                        area: overlay_entry.area,
+                        hit_map: overlay_hit_map,
+                    });
                 }
 
                 // Store active overlays for later assignment
@@ -936,6 +965,8 @@ pub async fn run_event_loop(
             
             // Update active overlays from render result
             state.active_overlays = active_overlays_result;
+            // Update system overlay hit info from render result
+            state.system_overlay_hit_info = system_overlay_hit_info_result;
             let draw_elapsed = draw_start.elapsed();
             if draw_elapsed.as_millis() > 5 {
                 warn!("PROFILE: terminal.draw() took {:?}", draw_elapsed);

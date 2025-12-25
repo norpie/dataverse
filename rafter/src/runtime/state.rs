@@ -4,6 +4,8 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Instant;
 
+use ratatui::layout::Rect;
+
 use crate::context::Toast;
 use crate::input::focus::FocusState;
 use crate::input::keybinds::Keybinds;
@@ -14,8 +16,20 @@ use crate::styling::theme::Theme;
 use crate::system::AnySystem;
 
 use super::animation::AnimationManager;
+use super::hit_test::HitTestMap;
 use super::input::InputState;
 use super::modal::ModalStackEntry;
+
+/// Tracking info for a system overlay's rendered area and widgets.
+#[derive(Debug)]
+pub struct SystemOverlayHitInfo {
+    /// Index of the overlay in the system_overlays vector.
+    pub overlay_index: usize,
+    /// The rendered area of this overlay.
+    pub area: Rect,
+    /// Hit test map for widgets within this overlay.
+    pub hit_map: HitTestMap,
+}
 
 /// Bundled state for the event loop.
 ///
@@ -72,6 +86,9 @@ pub struct EventLoopState {
 
     /// Last view identifier (for clearing previous_styles on view change).
     pub last_view: Option<String>,
+
+    /// Hit info for system overlays (populated during render).
+    pub system_overlay_hit_info: Vec<SystemOverlayHitInfo>,
 }
 
 impl EventLoopState {
@@ -110,6 +127,7 @@ impl EventLoopState {
             animations: AnimationManager::new(reduce_motion),
             previous_styles: HashMap::new(),
             last_view: None,
+            system_overlay_hit_info: Vec::new(),
         }
     }
 

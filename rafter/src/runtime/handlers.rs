@@ -112,7 +112,10 @@ pub fn dispatch_component_handlers(
         };
 
         if let Some(handler_id) = handler {
+            // Set the trigger widget ID so handlers can access it
+            cx.set_trigger_widget_id(&event.widget_id);
             dispatch_to_layer(instance, modal_stack, &handler_id, cx);
+            cx.clear_trigger_widget_id();
         }
     }
 
@@ -123,6 +126,111 @@ pub fn dispatch_component_handlers(
     cx.clear_expanded();
     cx.clear_collapsed();
     cx.clear_sorted();
+}
+
+/// Dispatch component handlers for a system overlay.
+///
+/// Similar to `dispatch_component_handlers`, but dispatches to a system overlay
+/// instead of an app instance.
+pub fn dispatch_overlay_component_handlers(
+    overlay_view: &Node,
+    overlay: &dyn crate::layers::system_overlay::AnySystemOverlay,
+    cx: &AppContext,
+) {
+    use crate::widgets::events::WidgetEventKind;
+
+    // Process the unified event queue
+    for event in cx.drain_events() {
+        let handler = match event.kind {
+            WidgetEventKind::Activate => overlay_view.get_submit_handler(&event.widget_id),
+            WidgetEventKind::CursorMove => overlay_view.get_cursor_handler(&event.widget_id),
+            WidgetEventKind::SelectionChange => overlay_view.get_selection_handler(&event.widget_id),
+            WidgetEventKind::Expand => overlay_view.get_expand_handler(&event.widget_id),
+            WidgetEventKind::Collapse => overlay_view.get_collapse_handler(&event.widget_id),
+            WidgetEventKind::Sort => overlay_view.get_sort_handler(&event.widget_id),
+            WidgetEventKind::Change => overlay_view.get_change_handler(&event.widget_id),
+        };
+
+        if let Some(handler_id) = handler {
+            // Set the trigger widget ID so handlers can access it
+            cx.set_trigger_widget_id(&event.widget_id);
+            overlay.dispatch(&handler_id, cx);
+            cx.clear_trigger_widget_id();
+        }
+    }
+
+    // Clear the unified fields after processing
+    cx.clear_activated();
+    cx.clear_cursor();
+    cx.clear_selected();
+    cx.clear_expanded();
+    cx.clear_collapsed();
+    cx.clear_sorted();
+}
+
+// =============================================================================
+// System Overlay Click Helper
+// =============================================================================
+
+/// Check if a click is on a system overlay and handle it.
+///
+/// Returns `Some(true)` if the click was handled by an overlay,
+/// `Some(false)` if click was in overlay area but not handled,
+/// or `None` if the click was not in any overlay area.
+fn handle_system_overlay_click(
+    click: &ClickEvent,
+    state: &mut EventLoopState,
+    cx: &AppContext,
+) -> Option<bool> {
+    // Find which overlay (if any) contains this click position
+    let overlay_info = state.system_overlay_hit_info.iter().find(|info| {
+        click.position.x >= info.area.x
+            && click.position.x < info.area.x + info.area.width
+            && click.position.y >= info.area.y
+            && click.position.y < info.area.y + info.area.height
+    });
+
+    let info = overlay_info?;
+
+    // Get the overlay
+    let overlay = state.system_overlays.get(info.overlay_index)?;
+    let overlay_view = overlay.view();
+
+    // Hit test within the overlay's hit map
+    let Some(hit_box) = info.hit_map.hit_test(click.position.x, click.position.y) else {
+        debug!("Click in system overlay area but no widget hit");
+        return Some(false);
+    };
+
+    debug!("Click on system overlay widget: {}", hit_box.id);
+
+    // Calculate relative coordinates
+    let x_rel = click.position.x.saturating_sub(hit_box.rect.x);
+    let y_rel = click.position.y.saturating_sub(hit_box.rect.y);
+
+    // Try to dispatch click to the widget
+    if let Some(result) = overlay_view.dispatch_click_event(&hit_box.id, x_rel, y_rel, cx)
+        && result.is_handled()
+    {
+        dispatch_overlay_component_handlers(&overlay_view, overlay.as_ref(), cx);
+        return Some(true);
+    }
+
+    // If it's a button (non-capturing widget), dispatch submit handler
+    if !hit_box.captures_input
+        && let Some(handler_id) = overlay_view.get_submit_handler(&hit_box.id)
+    {
+        debug!(
+            "Dispatching submit handler for overlay widget: {}",
+            hit_box.id
+        );
+        cx.set_trigger_widget_id(&hit_box.id);
+        overlay.dispatch(&handler_id, cx);
+        cx.clear_trigger_widget_id();
+        return Some(true);
+    }
+
+    Some(false)
 }
 
 // =============================================================================
@@ -285,7 +393,14 @@ pub fn handle_click_event(
     state: &mut EventLoopState,
     cx: &AppContext,
 ) -> bool {
-    // First check if click is on an active overlay - route to overlay owner
+    // First check if click is on a system overlay - route to overlay's handlers
+    // We check system overlays before widget overlays because system overlays 
+    // (like taskbar) should be rendered on top
+    if let Some(result) = handle_system_overlay_click(click, state, cx) {
+        return result;
+    }
+
+    // Check if click is on an active widget overlay - route to overlay owner
     for overlay in &state.active_overlays {
         if overlay.contains(click.position.x, click.position.y) {
             debug!("Click on overlay owned by: {}", overlay.owner_id);
