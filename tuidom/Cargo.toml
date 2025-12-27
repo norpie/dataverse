@@ -1,0 +1,12 @@
+[package]
+name = "tuidom"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+crossterm = "0.28"
+palette = "0.7"
+unicode-width = "0.2"
+
+[lints]
+workspace = true
