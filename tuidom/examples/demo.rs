@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use tuidom::{
-    Border, Color, Direction, Edges, Element, Justify, Size, Style, Terminal,
+    Border, Color, Direction, Edges, Element, Justify, Size, Style, Terminal, TextAlign, TextWrap,
 };
 
 fn main() -> std::io::Result<()> {
@@ -85,9 +85,72 @@ fn main_panel() -> Element {
                 .border(Border::Single),
         )
         .padding(Edges::all(1))
-        .child(Element::text("Main Content Area"))
-        .child(Element::text(""))
-        .child(Element::text("Press 'q' to quit"))
+        .gap(1)
+        .child(Element::text("Text Features Demo").style(Style::new().bold()))
+        .child(text_examples())
+}
+
+fn text_examples() -> Element {
+    Element::row()
+        .width(Size::Fill)
+        .height(Size::Fill)
+        .gap(1)
+        .child(
+            // Word wrap example
+            Element::col()
+                .width(Size::Fixed(25))
+                .height(Size::Fill)
+                .style(
+                    Style::new()
+                        .background(Color::oklch(0.2, 0.03, 200.0))
+                        .border(Border::Single),
+                )
+                .padding(Edges::all(1))
+                .child(Element::text("Word Wrap:").style(Style::new().bold()))
+                .child(
+                    Element::text("This is a longer sentence that will wrap at word boundaries automatically.")
+                        .text_wrap(TextWrap::WordWrap),
+                ),
+        )
+        .child(
+            // Truncation example
+            Element::col()
+                .width(Size::Fixed(20))
+                .height(Size::Fill)
+                .style(
+                    Style::new()
+                        .background(Color::oklch(0.2, 0.03, 150.0))
+                        .border(Border::Single),
+                )
+                .padding(Edges::all(1))
+                .child(Element::text("Truncate:").style(Style::new().bold()))
+                .child(
+                    Element::text("This text will be truncated with ellipsis")
+                        .text_wrap(TextWrap::Truncate),
+                ),
+        )
+        .child(
+            // Alignment examples
+            Element::col()
+                .width(Size::Fill)
+                .height(Size::Fill)
+                .style(
+                    Style::new()
+                        .background(Color::oklch(0.2, 0.03, 100.0))
+                        .border(Border::Single),
+                )
+                .padding(Edges::all(1))
+                .gap(1)
+                .child(Element::text("Alignment:").style(Style::new().bold()))
+                .child(Element::text("Left aligned").text_align(TextAlign::Left))
+                .child(Element::text("Center aligned").text_align(TextAlign::Center))
+                .child(Element::text("Right aligned").text_align(TextAlign::Right))
+                .child(Element::text(""))
+                .child(Element::text("Unicode:").style(Style::new().bold()))
+                .child(Element::text("日本語テスト"))
+                .child(Element::text("한글 테스트"))
+                .child(Element::text("Emoji: 😀🎉✨")),
+        )
 }
 
 fn footer() -> Element {

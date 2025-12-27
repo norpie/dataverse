@@ -1,7 +1,8 @@
 use crate::buffer::{Buffer, Cell};
 use crate::element::{Content, Element};
 use crate::layout::{LayoutResult, Rect};
-use crate::types::Rgb;
+use crate::text::{align_offset, char_width, display_width, truncate_to_width, wrap_chars, wrap_words};
+use crate::types::{Rgb, TextWrap};
 
 pub fn render_to_buffer(element: &Element, layout: &LayoutResult, buf: &mut Buffer) {
     render_element(element, layout, buf);
@@ -71,31 +72,81 @@ fn render_text(text: &str, element: &Element, rect: Rect, buf: &mut Buffer) {
         element.padding.left + border_size,
     );
 
-    let mut x = inner.x;
-    let y = inner.y;
+    if inner.width == 0 || inner.height == 0 {
+        return;
+    }
 
-    for ch in text.chars() {
-        if x >= inner.right() {
-            break;
+    let max_width = inner.width as usize;
+
+    // Get lines based on wrap mode
+    let lines: Vec<String> = match element.text_wrap {
+        TextWrap::NoWrap => {
+            // Split on newlines, but don't wrap within lines
+            text.lines().map(|s| s.to_string()).collect()
         }
+        TextWrap::WordWrap => wrap_words(text, max_width),
+        TextWrap::CharWrap => wrap_chars(text, max_width),
+        TextWrap::Truncate => {
+            // Single line with truncation
+            let first_line = text.lines().next().unwrap_or("");
+            vec![truncate_to_width(first_line, max_width)]
+        }
+    };
+
+    // Render each line
+    for (line_idx, line) in lines.iter().enumerate() {
+        let y = inner.y + line_idx as u16;
+
+        // Clip if beyond height
         if y >= inner.bottom() {
             break;
         }
 
-        // Preserve existing background if no explicit background set
-        let bg = explicit_bg.unwrap_or_else(|| {
-            buf.get(x, y).map(|c| c.bg).unwrap_or(Rgb::new(0, 0, 0))
-        });
+        // Calculate alignment offset
+        let line_width = display_width(line);
+        let x_offset = align_offset(line_width, max_width, element.text_align) as u16;
+        let mut x = inner.x + x_offset;
 
-        buf.set(
-            x,
-            y,
-            Cell::new(ch)
-                .with_fg(fg)
-                .with_bg(bg)
-                .with_style(element.style.text_style),
-        );
-        x += 1;
+        // Render characters
+        for ch in line.chars() {
+            let ch_w = char_width(ch);
+
+            if ch_w == 0 {
+                // Zero-width char (combining mark, etc.) - attach to previous cell
+                continue;
+            }
+
+            // Check if we have room for the full character width
+            if x + ch_w as u16 > inner.right() {
+                break;
+            }
+
+            // Preserve existing background if no explicit background set
+            let bg = explicit_bg.unwrap_or_else(|| {
+                buf.get(x, y).map(|c| c.bg).unwrap_or(Rgb::new(0, 0, 0))
+            });
+
+            buf.set(
+                x,
+                y,
+                Cell::new(ch)
+                    .with_fg(fg)
+                    .with_bg(bg)
+                    .with_style(element.style.text_style),
+            );
+
+            // For wide chars (CJK), fill the next cell with a continuation marker
+            if ch_w == 2 && x + 1 < inner.right() {
+                let mut continuation = Cell::new(' ')
+                    .with_fg(fg)
+                    .with_bg(bg)
+                    .with_style(element.style.text_style);
+                continuation.wide_continuation = true;
+                buf.set(x + 1, y, continuation);
+            }
+
+            x += ch_w as u16;
+        }
     }
 }
 

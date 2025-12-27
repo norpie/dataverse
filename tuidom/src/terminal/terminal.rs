@@ -13,6 +13,7 @@ use crate::buffer::Buffer;
 use crate::element::Element;
 use crate::layout::{layout, Rect};
 use crate::render::render_to_buffer;
+use crate::text::char_width;
 use crate::types::Rgb;
 
 pub struct Terminal {
@@ -101,6 +102,7 @@ impl Terminal {
     fn flush_diff(&mut self) -> io::Result<()> {
         let mut last_x = u16::MAX;
         let mut last_y = u16::MAX;
+        let mut last_char_width: u16 = 1;
         let mut last_fg = Rgb::new(255, 255, 255);
         let mut last_bg = Rgb::new(0, 0, 0);
         let mut last_style = crate::types::TextStyle::new();
@@ -109,8 +111,13 @@ impl Terminal {
         execute!(self.stdout, SetAttribute(Attribute::Reset))?;
 
         for (x, y, cell) in self.current_buffer.diff(&self.previous_buffer) {
-            // Move cursor if not sequential
-            if y != last_y || x != last_x + 1 {
+            // Skip wide character continuation cells - the wide char already occupies this space
+            if cell.wide_continuation {
+                continue;
+            }
+
+            // Move cursor if not sequential (accounting for wide chars)
+            if y != last_y || x != last_x + last_char_width {
                 execute!(self.stdout, cursor::MoveTo(x, y))?;
             }
 
@@ -175,6 +182,7 @@ impl Terminal {
 
             last_x = x;
             last_y = y;
+            last_char_width = char_width(cell.char).max(1) as u16;
         }
 
         // Reset at end

@@ -62,7 +62,8 @@ pub enum Wrap {
 pub enum TextWrap {
     #[default]
     NoWrap,
-    Wrap,
+    WordWrap,
+    CharWrap,
     Truncate,
 }
 

@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use super::Rect;
 use crate::element::{Content, Element};
+use crate::text::display_width;
 use crate::types::{Direction, Position, Size};
 
 pub type LayoutResult = HashMap<String, Rect>;
@@ -179,9 +180,10 @@ fn estimate_size(element: &Element, is_width: bool) -> u16 {
     let content_size = match &element.content {
         Content::Text(text) => {
             if is_width {
-                text.len() as u16
+                display_width(text) as u16
             } else {
-                1
+                // Count newlines for height
+                text.lines().count().max(1) as u16
             }
         }
         Content::Children(children) => {

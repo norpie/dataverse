@@ -6,6 +6,7 @@ pub struct Cell {
     pub fg: Rgb,
     pub bg: Rgb,
     pub style: TextStyle,
+    pub wide_continuation: bool,
 }
 
 impl Default for Cell {
@@ -15,6 +16,7 @@ impl Default for Cell {
             fg: Rgb::new(255, 255, 255),
             bg: Rgb::new(0, 0, 0),
             style: TextStyle::new(),
+            wide_continuation: false,
         }
     }
 }

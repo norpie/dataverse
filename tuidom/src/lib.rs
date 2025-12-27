@@ -3,6 +3,7 @@ pub mod element;
 pub mod layout;
 pub mod render;
 pub mod terminal;
+pub mod text;
 pub mod types;
 
 pub use buffer::Buffer;
