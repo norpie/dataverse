@@ -1,5 +1,5 @@
-mod buffer;
 mod cell;
+mod grid;
 
-pub use buffer::Buffer;
 pub use cell::Cell;
+pub use grid::Buffer;

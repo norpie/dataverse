@@ -1,17 +1,13 @@
 use crate::buffer::Buffer;
 use crate::layout::Rect;
 
+#[derive(Default)]
 pub enum Content {
+    #[default]
     None,
     Text(String),
     Children(Vec<super::Element>),
     Custom(Box<dyn CustomContent>),
-}
-
-impl Default for Content {
-    fn default() -> Self {
-        Self::None
-    }
 }
 
 impl std::fmt::Debug for Content {

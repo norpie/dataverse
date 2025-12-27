@@ -1,5 +1,5 @@
 mod content;
-mod element;
+mod node;
 
 pub use content::{Content, CustomContent};
-pub use element::Element;
+pub use node::Element;
