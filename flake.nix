@@ -29,6 +29,8 @@
               })
               openssl
               pkg-config
+
+              mdbook
             ];
 
             shellHook = ''
