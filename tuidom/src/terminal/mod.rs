@@ -11,7 +11,7 @@ use crossterm::{
 
 use crate::buffer::Buffer;
 use crate::element::Element;
-use crate::layout::{layout, Rect};
+use crate::layout::{layout, LayoutResult, Rect};
 use crate::render::render_to_buffer;
 use crate::text::char_width;
 use crate::types::Rgb;
@@ -20,6 +20,7 @@ pub struct Terminal {
     stdout: io::Stdout,
     current_buffer: Buffer,
     previous_buffer: Buffer,
+    last_layout: LayoutResult,
 }
 
 impl Terminal {
@@ -42,6 +43,7 @@ impl Terminal {
             stdout,
             current_buffer,
             previous_buffer,
+            last_layout: LayoutResult::new(),
         })
     }
 
@@ -72,7 +74,7 @@ impl Terminal {
         Ok(events)
     }
 
-    pub fn render(&mut self, root: &Element) -> io::Result<()> {
+    pub fn render(&mut self, root: &Element) -> io::Result<&LayoutResult> {
         // Check if terminal size changed
         let (width, height) = terminal::size()?;
         if width != self.current_buffer.width() || height != self.current_buffer.height() {
@@ -85,10 +87,10 @@ impl Terminal {
 
         // Layout
         let available = Rect::from_size(width, height);
-        let layout_result = layout(root, available);
+        self.last_layout = layout(root, available);
 
         // Render to buffer
-        render_to_buffer(root, &layout_result, &mut self.current_buffer);
+        render_to_buffer(root, &self.last_layout, &mut self.current_buffer);
 
         // Diff and write changes
         self.flush_diff()?;
@@ -96,7 +98,12 @@ impl Terminal {
         // Swap buffers
         std::mem::swap(&mut self.current_buffer, &mut self.previous_buffer);
 
-        Ok(())
+        Ok(&self.last_layout)
+    }
+
+    /// Get the layout from the last render.
+    pub fn layout(&self) -> &LayoutResult {
+        &self.last_layout
     }
 
     fn flush_diff(&mut self) -> io::Result<()> {
