@@ -35,8 +35,8 @@ fn main() -> std::io::Result<()> {
                 Event::Blur { target } => {
                     last_event = Some(format!("Blur: {}", target));
                 }
-                Event::Scroll { target, delta, .. } => {
-                    last_event = Some(format!("Scroll {} on {:?}", delta, target));
+                Event::Scroll { target, delta_x, delta_y, .. } => {
+                    last_event = Some(format!("Scroll ({}, {}) on {:?}", delta_x, delta_y, target));
                 }
                 _ => {}
             }

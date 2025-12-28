@@ -1,4 +1,4 @@
-use tuidom::{Buffer, Color, Element, Position, Rect, Size, Style};
+use tuidom::{Buffer, Color, Element, Overflow, Position, Rect, Size, Style};
 
 fn render_to_buffer(root: &Element, width: u16, height: u16) -> Buffer {
     let layout = tuidom::layout::layout(root, Rect::new(0, 0, width, height));
@@ -205,4 +205,200 @@ fn test_negative_z_index() {
     // At overlap - green (z=0) should be on top of red (z=-1)
     let cell = buf.get(7, 3).unwrap();
     assert_eq!(cell.bg.g, 255, "z_index 0 should be on top of z_index -1");
+}
+
+// ============================================================================
+// Overflow Tests
+// ============================================================================
+
+#[test]
+fn test_overflow_hidden_clips_children() {
+    // Parent with overflow: hidden clips child that extends beyond
+    let root = Element::box_()
+        .id("container")
+        .width(Size::Fixed(10))
+        .height(Size::Fixed(5))
+        .overflow(Overflow::Hidden)
+        .style(Style::new().background(Color::rgb(50, 50, 50))) // Dark gray
+        .child(
+            Element::box_()
+                .id("child")
+                .width(Size::Fixed(20)) // Child is wider than parent
+                .height(Size::Fixed(3))
+                .style(Style::new().background(Color::rgb(255, 0, 0))), // Red
+        );
+
+    let buf = render_to_buffer(&root, 20, 10);
+
+    // Inside container (x=5, y=1) - should show red child
+    let inside = buf.get(5, 1).unwrap();
+    assert_eq!(inside.bg.r, 255, "Child should be visible inside container");
+
+    // Outside container (x=12, y=1) - should NOT show red
+    let outside = buf.get(12, 1).unwrap();
+    assert_ne!(
+        outside.bg.r, 255,
+        "Child should be clipped outside container"
+    );
+}
+
+#[test]
+fn test_overflow_visible_does_not_clip() {
+    // Parent with overflow: visible (default) does not clip
+    // Use absolute positioning so child can extend beyond parent
+    let root = Element::box_()
+        .id("container")
+        .width(Size::Fixed(10))
+        .height(Size::Fixed(5))
+        .overflow(Overflow::Visible)
+        .style(Style::new().background(Color::rgb(50, 50, 50)))
+        .child(
+            Element::box_()
+                .id("child")
+                .position(Position::Absolute)
+                .left(0)
+                .top(0)
+                .width(Size::Fixed(20)) // Child extends beyond parent
+                .height(Size::Fixed(3))
+                .style(Style::new().background(Color::rgb(255, 0, 0))),
+        );
+
+    let buf = render_to_buffer(&root, 20, 10);
+
+    // Outside container - child should still be visible (not clipped)
+    let outside = buf.get(12, 1).unwrap();
+    assert_eq!(
+        outside.bg.r, 255,
+        "Child should extend beyond container with overflow: visible"
+    );
+}
+
+#[test]
+fn test_overflow_scroll_clips_children() {
+    // Scroll should also clip like Hidden
+    let root = Element::box_()
+        .id("container")
+        .width(Size::Fixed(10))
+        .height(Size::Fixed(5))
+        .overflow(Overflow::Scroll)
+        .style(Style::new().background(Color::rgb(50, 50, 50)))
+        .child(
+            Element::box_()
+                .id("child")
+                .width(Size::Fixed(20))
+                .height(Size::Fixed(3))
+                .style(Style::new().background(Color::rgb(255, 0, 0))),
+        );
+
+    let buf = render_to_buffer(&root, 20, 10);
+
+    // Outside container - should be clipped
+    let outside = buf.get(12, 1).unwrap();
+    assert_ne!(
+        outside.bg.r, 255,
+        "Scroll overflow should clip like Hidden"
+    );
+}
+
+#[test]
+fn test_scroll_offset_moves_children() {
+    // scroll_offset should move children up/left
+    let root = Element::box_()
+        .id("container")
+        .width(Size::Fixed(10))
+        .height(Size::Fixed(5))
+        .overflow(Overflow::Scroll)
+        .scroll_offset(0, 2) // Scroll down by 2
+        .style(Style::new().background(Color::rgb(50, 50, 50)))
+        .child(
+            Element::text("Line 1").id("line1"),
+        )
+        .child(
+            Element::text("Line 2").id("line2"),
+        )
+        .child(
+            Element::text("Line 3").id("line3"),
+        )
+        .child(
+            Element::text("Line 4").id("line4"),
+        )
+        .child(
+            Element::text("Line 5").id("line5"),
+        );
+
+    let layout = tuidom::layout::layout(&root, Rect::new(0, 0, 20, 10));
+
+    // Line 1 should be at y = 0 - 2 = -2 (effectively not visible, clamped to 0 but scrolled out)
+    // Line 3 should be at y = 2 - 2 = 0
+    let line3_rect = layout.get("line3").unwrap();
+    assert_eq!(
+        line3_rect.y, 0,
+        "Line 3 should be scrolled to top (y=0) with scroll_offset 2"
+    );
+}
+
+#[test]
+fn test_scroll_renders_scrollbar() {
+    // Scroll overflow should render a scrollbar
+    let root = Element::box_()
+        .id("container")
+        .width(Size::Fixed(10))
+        .height(Size::Fixed(5))
+        .overflow(Overflow::Scroll)
+        .style(Style::new().background(Color::rgb(50, 50, 50)));
+
+    let buf = render_to_buffer(&root, 20, 10);
+
+    // Right edge should have scrollbar characters
+    let scrollbar_cell = buf.get(9, 2).unwrap();
+    assert!(
+        scrollbar_cell.char == '█' || scrollbar_cell.char == '░',
+        "Scrollbar should be rendered on right edge"
+    );
+}
+
+#[test]
+fn test_nested_overflow_hidden() {
+    // Nested overflow containers - each clips independently
+    let root = Element::box_()
+        .id("outer")
+        .width(Size::Fixed(20))
+        .height(Size::Fixed(10))
+        .overflow(Overflow::Hidden)
+        .style(Style::new().background(Color::rgb(30, 30, 30)))
+        .child(
+            Element::box_()
+                .id("inner")
+                .width(Size::Fixed(15))
+                .height(Size::Fixed(8))
+                .overflow(Overflow::Hidden)
+                .style(Style::new().background(Color::rgb(60, 60, 60)))
+                .child(
+                    Element::box_()
+                        .id("content")
+                        .width(Size::Fixed(30)) // Much wider than both containers
+                        .height(Size::Fixed(3))
+                        .style(Style::new().background(Color::rgb(255, 0, 0))),
+                ),
+        );
+
+    let buf = render_to_buffer(&root, 30, 15);
+
+    // Inside inner container - should show red
+    let inside_inner = buf.get(10, 1).unwrap();
+    assert_eq!(inside_inner.bg.r, 255, "Content visible inside inner container");
+
+    // Outside inner but inside outer - should NOT show red (clipped by inner)
+    let outside_inner = buf.get(17, 1).unwrap();
+    assert_ne!(
+        outside_inner.bg.r, 255,
+        "Content clipped by inner container"
+    );
+
+    // Outside outer - should also not show red
+    let outside_outer = buf.get(22, 1).unwrap();
+    assert_ne!(
+        outside_outer.bg.r, 255,
+        "Content clipped by outer container"
+    );
 }

@@ -3,9 +3,50 @@ use std::collections::HashMap;
 use super::Rect;
 use crate::element::{Content, Element};
 use crate::text::display_width;
-use crate::types::{Align, Direction, Position, Size, Wrap};
+use crate::types::{Align, Direction, Overflow, Position, Size, Wrap};
 
-pub type LayoutResult = HashMap<String, Rect>;
+/// Layout results containing element rects and content sizes.
+#[derive(Debug, Default, Clone)]
+pub struct LayoutResult {
+    rects: HashMap<String, Rect>,
+    /// Content and viewport sizes for scrollable elements
+    /// (content_width, content_height, viewport_width, viewport_height)
+    content_sizes: HashMap<String, (u16, u16, u16, u16)>,
+}
+
+impl LayoutResult {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn get(&self, id: &str) -> Option<&Rect> {
+        self.rects.get(id)
+    }
+
+    pub fn get_mut(&mut self, id: &str) -> Option<&mut Rect> {
+        self.rects.get_mut(id)
+    }
+
+    pub fn insert(&mut self, id: String, rect: Rect) {
+        self.rects.insert(id, rect);
+    }
+
+    /// Get the content size for a scrollable element.
+    /// Returns (content_width, content_height) if the element has overflow != Visible.
+    pub fn content_size(&self, id: &str) -> Option<(u16, u16)> {
+        self.content_sizes.get(id).map(|(cw, ch, _, _)| (*cw, *ch))
+    }
+
+    /// Get the viewport (inner) size for a scrollable element.
+    /// Returns (viewport_width, viewport_height) if the element has overflow != Visible.
+    pub fn viewport_size(&self, id: &str) -> Option<(u16, u16)> {
+        self.content_sizes.get(id).map(|(_, _, vw, vh)| (*vw, *vh))
+    }
+
+    pub fn set_content_size(&mut self, id: String, content_width: u16, content_height: u16, viewport_width: u16, viewport_height: u16) {
+        self.content_sizes.insert(id, (content_width, content_height, viewport_width, viewport_height));
+    }
+}
 
 pub fn layout(element: &Element, available: Rect) -> LayoutResult {
     let mut result = LayoutResult::new();
@@ -54,7 +95,7 @@ fn layout_element(element: &Element, available: Rect, result: &mut LayoutResult)
 /// Layout an absolutely positioned element within its containing block.
 /// Supports left/top and right/bottom anchoring, including stretching when both are specified.
 fn layout_absolute(element: &Element, container: Rect) -> Rect {
-    // Determine width
+    // Determine width - absolute elements can overflow container, so use unclamped
     let width = match (element.left, element.right) {
         // Both specified: stretch to fill between anchors
         (Some(left), Some(right)) => {
@@ -62,11 +103,11 @@ fn layout_absolute(element: &Element, container: Rect) -> Rect {
             let right_u = right.max(0) as u16;
             container.width.saturating_sub(left_u + right_u)
         }
-        // Only explicit size or default
-        _ => resolve_size(element.width, container.width, element, true),
+        // Only explicit size or default - use unclamped to allow overflow
+        _ => resolve_size_clamped(element.width, container.width, element, true, false),
     };
 
-    // Determine height
+    // Determine height - absolute elements can overflow container, so use unclamped
     let height = match (element.top, element.bottom) {
         // Both specified: stretch to fill between anchors
         (Some(top), Some(bottom)) => {
@@ -74,8 +115,8 @@ fn layout_absolute(element: &Element, container: Rect) -> Rect {
             let bottom_u = bottom.max(0) as u16;
             container.height.saturating_sub(top_u + bottom_u)
         }
-        // Only explicit size or default
-        _ => resolve_size(element.height, container.height, element, false),
+        // Only explicit size or default - use unclamped to allow overflow
+        _ => resolve_size_clamped(element.height, container.height, element, false, false),
     };
 
     // Determine x position
@@ -147,6 +188,7 @@ fn layout_children(element: &Element, rect: Rect, result: &mut LayoutResult) {
 
     // Layout each line
     let mut cross_offset = 0u16;
+
     for line in &lines {
         let line_cross_size = layout_line(
             line,
@@ -161,9 +203,70 @@ fn layout_children(element: &Element, rect: Rect, result: &mut LayoutResult) {
         cross_offset += line_cross_size + element.gap;
     }
 
-    // Layout absolute children (they position themselves)
+    // Store content size for scrollable elements by measuring actual laid out children
+    if element.overflow == Overflow::Scroll || element.overflow == Overflow::Auto {
+        // Calculate actual content bounds from laid out child rects
+        let (content_width, content_height) = compute_content_size(&flow_children, inner, result);
+        result.set_content_size(element.id.clone(), content_width, content_height, inner.width, inner.height);
+    }
+
+    // Apply scroll offset to all flow children
+    let (scroll_x, scroll_y) = element.scroll_offset;
+    if scroll_x > 0 || scroll_y > 0 {
+        for child in &flow_children {
+            apply_scroll_offset_recursive(child, scroll_x, scroll_y, result);
+        }
+    }
+
+    // Layout absolute children (they position themselves, not affected by scroll)
     for child in absolute_children {
         layout_element(child, rect, result);
+    }
+}
+
+/// Compute the actual content size from laid out child rects.
+/// Returns (width, height) of the bounding box of all children relative to the container.
+fn compute_content_size(children: &[&Element], inner: Rect, result: &LayoutResult) -> (u16, u16) {
+    if children.is_empty() {
+        return (inner.width, inner.height);
+    }
+
+    let mut max_right = inner.x;
+    let mut max_bottom = inner.y;
+
+    for child in children {
+        if let Some(child_rect) = result.get(&child.id) {
+            max_right = max_right.max(child_rect.right());
+            max_bottom = max_bottom.max(child_rect.bottom());
+        }
+    }
+
+    // Content size is the extent from inner origin to the furthest child edge
+    let content_width = max_right.saturating_sub(inner.x).max(inner.width);
+    let content_height = max_bottom.saturating_sub(inner.y).max(inner.height);
+
+    (content_width, content_height)
+}
+
+/// Apply scroll offset to an element and all its descendants
+fn apply_scroll_offset_recursive(
+    element: &Element,
+    scroll_x: u16,
+    scroll_y: u16,
+    result: &mut LayoutResult,
+) {
+    if let Some(rect) = result.get_mut(&element.id) {
+        rect.x = rect.x.saturating_sub(scroll_x);
+        rect.y = rect.y.saturating_sub(scroll_y);
+    }
+
+    if let Content::Children(children) = &element.content {
+        for child in children {
+            // Don't scroll absolute children
+            if child.position != Position::Absolute {
+                apply_scroll_offset_recursive(child, scroll_x, scroll_y, result);
+            }
+        }
     }
 }
 
@@ -430,12 +533,41 @@ fn layout_line(
     line_cross_size
 }
 
-fn resolve_size(size: Size, available: u16, element: &Element, is_width: bool) -> u16 {
+/// Resolve a size value to a concrete pixel value.
+/// If `clamp` is true, the result is clamped to available space.
+/// Absolute positioned elements should use clamp=false to allow overflow.
+fn resolve_size_clamped(
+    size: Size,
+    available: u16,
+    element: &Element,
+    is_width: bool,
+    clamp: bool,
+) -> u16 {
     let base = match size {
-        Size::Fixed(n) => n.min(available),
+        Size::Fixed(n) => {
+            if clamp {
+                n.min(available)
+            } else {
+                n
+            }
+        }
         Size::Fill | Size::Flex(_) => available,
-        Size::Auto => estimate_size(element, is_width).min(available),
-        Size::Percent(p) => ((available as f32 * p) as u16).min(available),
+        Size::Auto => {
+            let est = estimate_size(element, is_width);
+            if clamp {
+                est.min(available)
+            } else {
+                est
+            }
+        }
+        Size::Percent(p) => {
+            let pct = (available as f32 * p) as u16;
+            if clamp {
+                pct.min(available)
+            } else {
+                pct
+            }
+        }
     };
 
     // Apply min/max constraints
@@ -448,7 +580,15 @@ fn resolve_size(size: Size, available: u16, element: &Element, is_width: bool) -
     let with_min = min.map_or(base, |m| base.max(m));
     let with_max = max.map_or(with_min, |m| with_min.min(m));
 
-    with_max.min(available)
+    if clamp {
+        with_max.min(available)
+    } else {
+        with_max
+    }
+}
+
+fn resolve_size(size: Size, available: u16, element: &Element, is_width: bool) -> u16 {
+    resolve_size_clamped(size, available, element, is_width, true)
 }
 
 fn estimate_size(element: &Element, is_width: bool) -> u16 {

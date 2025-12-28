@@ -192,7 +192,8 @@ impl FocusState {
                                 target,
                                 x,
                                 y,
-                                delta: -1,
+                                delta_x: 0,
+                                delta_y: -1,
                             });
                         }
 
@@ -202,7 +203,30 @@ impl FocusState {
                                 target,
                                 x,
                                 y,
-                                delta: 1,
+                                delta_x: 0,
+                                delta_y: 1,
+                            });
+                        }
+
+                        MouseEventKind::ScrollLeft => {
+                            let target = crate::hit::hit_test(layout, root, x, y);
+                            events.push(Event::Scroll {
+                                target,
+                                x,
+                                y,
+                                delta_x: -1,
+                                delta_y: 0,
+                            });
+                        }
+
+                        MouseEventKind::ScrollRight => {
+                            let target = crate::hit::hit_test(layout, root, x, y);
+                            events.push(Event::Scroll {
+                                target,
+                                x,
+                                y,
+                                delta_x: 1,
+                                delta_y: 0,
                             });
                         }
 

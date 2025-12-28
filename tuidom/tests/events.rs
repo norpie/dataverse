@@ -1,14 +1,14 @@
-use std::collections::HashMap;
-
 use tuidom::{
-    collect_focusable, hit_test, hit_test_any, hit_test_focusable, Element, FocusState, Rect,
+    collect_focusable, hit_test, hit_test_any, hit_test_focusable, Element, FocusState,
+    LayoutResult, Rect,
 };
 
-fn create_layout(elements: &[(&str, Rect)]) -> HashMap<String, Rect> {
-    elements
-        .iter()
-        .map(|(id, rect)| (id.to_string(), *rect))
-        .collect()
+fn create_layout(elements: &[(&str, Rect)]) -> LayoutResult {
+    let mut layout = LayoutResult::new();
+    for (id, rect) in elements {
+        layout.insert(id.to_string(), *rect);
+    }
+    layout
 }
 
 // ============================================================================

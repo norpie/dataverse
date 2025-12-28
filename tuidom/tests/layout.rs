@@ -1,6 +1,6 @@
-use tuidom::{Align, Edges, Element, Position, Rect, Size, Wrap};
+use tuidom::{Align, Edges, Element, LayoutResult, Position, Rect, Size, Wrap};
 
-fn layout_root(root: &Element, width: u16, height: u16) -> std::collections::HashMap<String, Rect> {
+fn layout_root(root: &Element, width: u16, height: u16) -> LayoutResult {
     tuidom::layout::layout(root, Rect::new(0, 0, width, height))
 }
 

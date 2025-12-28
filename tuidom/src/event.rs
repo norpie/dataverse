@@ -19,7 +19,8 @@ pub enum Event {
         target: Option<String>,
         x: u16,
         y: u16,
-        delta: i16,
+        delta_x: i16,
+        delta_y: i16,
     },
     /// Mouse move event (for hover tracking)
     MouseMove { x: u16, y: u16 },
