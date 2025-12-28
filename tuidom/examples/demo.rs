@@ -253,7 +253,7 @@ fn layout_examples(_focused: Option<&str>) -> Element {
                         ),
                 ),
         )
-        // Positioning demo
+        // z_index demo - overlapping boxes with different z_index
         .child(
             Element::box_()
                 .width(Size::Fill)
@@ -264,33 +264,51 @@ fn layout_examples(_focused: Option<&str>) -> Element {
                         .border(Border::Single),
                 )
                 .padding(Edges::all(1))
-                .child(Element::text("Positioning:").style(Style::new().bold()))
-                // Relative: offset from normal flow
-                .child(
-                    Element::text("Relative +3,+1")
-                        .position(Position::Relative)
-                        .left(3)
-                        .top(1)
-                        .style(Style::new().background(Color::oklch(0.4, 0.1, 60.0))),
-                )
-                // Absolute anchored to bottom-right
-                .child(
-                    Element::text("bottom-right")
-                        .position(Position::Absolute)
-                        .right(2)
-                        .bottom(2)
-                        .style(Style::new().background(Color::oklch(0.4, 0.12, 30.0))),
-                )
-                // Absolute stretched between left and right
+                .child(Element::text("z_index:").style(Style::new().bold()))
+                // Three overlapping boxes with different z_index
+                // Red box at z=0 (lowest)
                 .child(
                     Element::box_()
                         .position(Position::Absolute)
-                        .left(1)
-                        .right(1)
-                        .top(8)
-                        .height(Size::Fixed(1))
-                        .style(Style::new().background(Color::oklch(0.5, 0.15, 90.0)))
-                        .child(Element::text("stretched left+right")),
+                        .left(2)
+                        .top(3)
+                        .width(Size::Fixed(14))
+                        .height(Size::Fixed(6))
+                        .z_index(0)
+                        .style(Style::new().background(Color::oklch(0.4, 0.15, 25.0))) // Red
+                        .child(Element::text("z=0 (back)")),
+                )
+                // Green box at z=1 (middle)
+                .child(
+                    Element::box_()
+                        .position(Position::Absolute)
+                        .left(6)
+                        .top(5)
+                        .width(Size::Fixed(14))
+                        .height(Size::Fixed(6))
+                        .z_index(1)
+                        .style(Style::new().background(Color::oklch(0.45, 0.15, 140.0))) // Green
+                        .child(Element::text("z=1 (mid)")),
+                )
+                // Blue box at z=2 (front)
+                .child(
+                    Element::box_()
+                        .position(Position::Absolute)
+                        .left(10)
+                        .top(7)
+                        .width(Size::Fixed(14))
+                        .height(Size::Fixed(6))
+                        .z_index(2)
+                        .style(Style::new().background(Color::oklch(0.4, 0.15, 250.0))) // Blue
+                        .child(Element::text("z=2 (front)")),
+                )
+                // Label at bottom
+                .child(
+                    Element::text("Higher z = on top")
+                        .position(Position::Absolute)
+                        .left(2)
+                        .bottom(2)
+                        .style(Style::new().dim()),
                 ),
         )
 }

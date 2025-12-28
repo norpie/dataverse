@@ -5,10 +5,44 @@ use crate::text::{align_offset, char_width, display_width, truncate_to_width, wr
 use crate::types::{Rgb, TextWrap};
 
 pub fn render_to_buffer(element: &Element, layout: &LayoutResult, buf: &mut Buffer) {
-    render_element(element, layout, buf);
+    // Collect all elements with their effective z_index and tree order
+    let mut render_list: Vec<(&Element, i16, usize)> = Vec::new();
+    collect_elements(element, &mut render_list, 0, element.z_index);
+
+    // Sort by z_index (stable sort preserves tree order for equal z_index)
+    render_list.sort_by_key(|(_, z_index, tree_order)| (*z_index, *tree_order));
+
+    // Render in sorted order
+    for (elem, _, _) in render_list {
+        render_single_element(elem, layout, buf);
+    }
 }
 
-fn render_element(element: &Element, layout: &LayoutResult, buf: &mut Buffer) {
+/// Collect all elements in tree order with their effective z_index.
+/// Children inherit their parent's z_index as a minimum (they render in the same layer or higher).
+fn collect_elements<'a>(
+    element: &'a Element,
+    list: &mut Vec<(&'a Element, i16, usize)>,
+    tree_order: usize,
+    parent_z_index: i16,
+) -> usize {
+    let mut order = tree_order;
+    // Effective z_index: use element's z_index if explicitly higher, otherwise inherit parent's
+    let effective_z = element.z_index.max(parent_z_index);
+    list.push((element, effective_z, order));
+    order += 1;
+
+    if let Content::Children(children) = &element.content {
+        for child in children {
+            order = collect_elements(child, list, order, effective_z);
+        }
+    }
+
+    order
+}
+
+/// Render a single element (without recursing into children)
+fn render_single_element(element: &Element, layout: &LayoutResult, buf: &mut Buffer) {
     let Some(rect) = layout.get(&element.id) else {
         return;
     };
@@ -22,16 +56,11 @@ fn render_element(element: &Element, layout: &LayoutResult, buf: &mut Buffer) {
     // Render border if set
     render_border(element, *rect, buf);
 
-    // Render content
+    // Render content (text or custom only, children handled separately)
     match &element.content {
-        Content::None => {}
+        Content::None | Content::Children(_) => {}
         Content::Text(text) => {
             render_text(text, element, *rect, buf);
-        }
-        Content::Children(children) => {
-            for child in children {
-                render_element(child, layout, buf);
-            }
         }
         Content::Custom(custom) => {
             custom.render(*rect, buf);
