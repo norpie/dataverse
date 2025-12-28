@@ -1,5 +1,5 @@
 use tuidom::{
-    Border, Color, Direction, Edges, Element, Event, FocusState, Justify, Key, Size, Style,
+    Align, Border, Color, Direction, Edges, Element, Event, FocusState, Justify, Key, Size, Style,
     Terminal, TextAlign, TextWrap,
 };
 
@@ -51,24 +51,6 @@ fn ui(focused: Option<&str>, last_event: Option<&str>) -> Element {
         .child(header())
         .child(content(focused))
         .child(footer(last_event))
-        .child(overlay())
-}
-
-fn overlay() -> Element {
-    Element::box_()
-        .id("overlay")
-        .position(tuidom::Position::Absolute)
-        .left(30)
-        .top(8)
-        .width(Size::Fixed(20))
-        .height(Size::Fixed(5))
-        .style(
-            Style::new()
-                .background(Color::oklch(0.4, 0.15, 30.0))
-                .border(Border::Double),
-        )
-        .padding(Edges::all(1))
-        .child(Element::text("Absolute overlay!"))
 }
 
 fn header() -> Element {
@@ -158,26 +140,20 @@ fn main_panel(focused: Option<&str>) -> Element {
                 .border(Border::Single),
         )
         .padding(Edges::all(1))
-        .gap(1)
-        .child(Element::text("Focus & Events Demo").style(Style::new().bold()))
-        .child(Element::text(""))
-        .child(Element::text("Instructions:"))
-        .child(Element::text("- Hover over items to focus (Linux WM style)"))
-        .child(Element::text("- Tab/Shift+Tab for keyboard navigation"))
-        .child(Element::text("- Click on buttons"))
-        .child(Element::text("- Press 'q' or Escape to quit"))
-        .child(Element::text(""))
-        .child(text_examples(focused))
+        .child(Element::text("Layout Features Demo").style(Style::new().bold()))
+        .child(Element::text("q=quit | Tab=navigate | Hover=focus"))
+        .child(layout_examples(focused))
 }
 
-fn text_examples(focused: Option<&str>) -> Element {
+fn layout_examples(_focused: Option<&str>) -> Element {
     Element::row()
         .width(Size::Fill)
         .height(Size::Fill)
         .gap(1)
+        // Margin demo
         .child(
             Element::col()
-                .width(Size::Fixed(25))
+                .width(Size::Fixed(22))
                 .height(Size::Fill)
                 .style(
                     Style::new()
@@ -185,47 +161,97 @@ fn text_examples(focused: Option<&str>) -> Element {
                         .border(Border::Single),
                 )
                 .padding(Edges::all(1))
-                .child(Element::text("Word Wrap:").style(Style::new().bold()))
+                .child(Element::text("Margin:").style(Style::new().bold()))
                 .child(
-                    Element::text(
-                        "This is a longer sentence that will wrap at word boundaries.",
-                    )
-                    .text_wrap(TextWrap::WordWrap),
+                    Element::box_()
+                        .height(Size::Fixed(3))
+                        .margin(Edges::new(1, 2, 1, 2))
+                        .style(Style::new().background(Color::oklch(0.4, 0.1, 120.0)))
+                        .child(Element::text("margin: 1,2")),
+                )
+                .child(
+                    Element::box_()
+                        .height(Size::Fixed(3))
+                        .style(Style::new().background(Color::oklch(0.4, 0.1, 180.0)))
+                        .child(Element::text("no margin")),
                 ),
         )
+        // Align demo
         .child(
             Element::col()
-                .id("input_area")
-                .focusable(true)
+                .width(Size::Fixed(24))
+                .height(Size::Fill)
+                .style(
+                    Style::new()
+                        .background(Color::oklch(0.2, 0.03, 280.0))
+                        .border(Border::Single),
+                )
+                .padding(Edges::all(1))
+                .child(Element::text("Cross-Axis Align:").style(Style::new().bold()))
+                .child(
+                    Element::row()
+                        .height(Size::Fixed(5))
+                        .align(Align::Start)
+                        .style(Style::new().background(Color::oklch(0.35, 0.05, 280.0)))
+                        .child(Element::text("Start").style(Style::new().background(Color::oklch(0.5, 0.12, 60.0)))),
+                )
+                .child(
+                    Element::row()
+                        .height(Size::Fixed(5))
+                        .align(Align::Center)
+                        .style(Style::new().background(Color::oklch(0.35, 0.05, 280.0)))
+                        .child(Element::text("Center").style(Style::new().background(Color::oklch(0.5, 0.12, 120.0)))),
+                )
+                .child(
+                    Element::row()
+                        .height(Size::Fixed(5))
+                        .align(Align::End)
+                        .style(Style::new().background(Color::oklch(0.35, 0.05, 280.0)))
+                        .child(Element::text("End").style(Style::new().background(Color::oklch(0.5, 0.12, 180.0)))),
+                ),
+        )
+        // Min/Max demo
+        .child(
+            Element::col()
                 .width(Size::Fill)
                 .height(Size::Fill)
                 .style(
                     Style::new()
-                        .background(if focused == Some("input_area") {
-                            Color::oklch(0.25, 0.05, 100.0)
-                        } else {
-                            Color::oklch(0.2, 0.03, 100.0)
-                        })
-                        .border(if focused == Some("input_area") {
-                            Border::Double
-                        } else {
-                            Border::Single
-                        }),
+                        .background(Color::oklch(0.2, 0.03, 320.0))
+                        .border(Border::Single),
                 )
                 .padding(Edges::all(1))
-                .gap(1)
-                .child(Element::text("Input Area (focusable)").style(Style::new().bold()))
-                .child(Element::text("Type when focused:"))
-                .child(Element::text(format!(
-                    "Status: {}",
-                    if focused == Some("input_area") {
-                        "FOCUSED"
-                    } else {
-                        "not focused"
-                    }
-                )))
+                .child(Element::text("Min/Max Width:").style(Style::new().bold()))
+                .child(
+                    Element::box_()
+                        .width(Size::Fill)
+                        .max_width(20)
+                        .height(Size::Fixed(3))
+                        .style(Style::new().background(Color::oklch(0.35, 0.1, 30.0)))
+                        .child(Element::text("max: 20")),
+                )
+                .child(
+                    Element::box_()
+                        .width(Size::Fixed(5))
+                        .min_width(15)
+                        .height(Size::Fixed(3))
+                        .style(Style::new().background(Color::oklch(0.35, 0.1, 90.0)))
+                        .child(Element::text("min: 15")),
+                )
                 .child(Element::text(""))
-                .child(Element::text("Unicode: 日本語 한글 😀")),
+                .child(Element::text("align_self:").style(Style::new().bold()))
+                .child(
+                    Element::row()
+                        .height(Size::Fixed(5))
+                        .align(Align::Start)
+                        .style(Style::new().background(Color::oklch(0.15, 0.02, 320.0)))
+                        .child(Element::text("Start").style(Style::new().background(Color::oklch(0.3, 0.06, 200.0))))
+                        .child(
+                            Element::text("End")
+                                .align_self(Align::End)
+                                .style(Style::new().background(Color::oklch(0.3, 0.06, 260.0))),
+                        ),
+                ),
         )
 }
 
