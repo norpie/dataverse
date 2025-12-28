@@ -1,9 +1,11 @@
+use tuidom::animation::AnimationState;
 use tuidom::{Buffer, Color, Element, Overflow, Position, Rect, Size, Style};
 
 fn render_to_buffer(root: &Element, width: u16, height: u16) -> Buffer {
     let layout = tuidom::layout::layout(root, Rect::new(0, 0, width, height));
     let mut buf = Buffer::new(width, height);
-    tuidom::render::render_to_buffer(root, &layout, &mut buf);
+    let animation = AnimationState::new();
+    tuidom::render::render_to_buffer(root, &layout, &mut buf, &animation);
     buf
 }
 
