@@ -16,11 +16,7 @@ pub fn layout(element: &Element, available: Rect) -> LayoutResult {
 fn layout_element(element: &Element, available: Rect, result: &mut LayoutResult) {
     // Handle absolute positioning
     if element.position == Position::Absolute {
-        let x = element.left.unwrap_or(0) as u16;
-        let y = element.top.unwrap_or(0) as u16;
-        let width = resolve_size(element.width, available.width, element, true);
-        let height = resolve_size(element.height, available.height, element, false);
-        let rect = Rect::new(x, y, width, height);
+        let rect = layout_absolute(element, available);
         result.insert(element.id.clone(), rect);
         layout_children(element, rect, result);
         return;
@@ -33,10 +29,76 @@ fn layout_element(element: &Element, available: Rect, result: &mut LayoutResult)
     // Calculate this element's size within margin-adjusted space
     let width = resolve_size(element.width, after_margin.width, element, true);
     let height = resolve_size(element.height, after_margin.height, element, false);
-    let rect = Rect::new(after_margin.x, after_margin.y, width, height);
-    result.insert(element.id.clone(), rect);
+    let mut rect = Rect::new(after_margin.x, after_margin.y, width, height);
 
+    // Handle relative positioning - offset from normal flow position
+    if element.position == Position::Relative {
+        if let Some(left) = element.left {
+            rect.x = (rect.x as i16 + left).max(0) as u16;
+        }
+        if let Some(right) = element.right {
+            rect.x = (rect.x as i16 - right).max(0) as u16;
+        }
+        if let Some(top) = element.top {
+            rect.y = (rect.y as i16 + top).max(0) as u16;
+        }
+        if let Some(bottom) = element.bottom {
+            rect.y = (rect.y as i16 - bottom).max(0) as u16;
+        }
+    }
+
+    result.insert(element.id.clone(), rect);
     layout_children(element, rect, result);
+}
+
+/// Layout an absolutely positioned element within its containing block.
+/// Supports left/top and right/bottom anchoring, including stretching when both are specified.
+fn layout_absolute(element: &Element, container: Rect) -> Rect {
+    // Determine width
+    let width = match (element.left, element.right) {
+        // Both specified: stretch to fill between anchors
+        (Some(left), Some(right)) => {
+            let left_u = left.max(0) as u16;
+            let right_u = right.max(0) as u16;
+            container.width.saturating_sub(left_u + right_u)
+        }
+        // Only explicit size or default
+        _ => resolve_size(element.width, container.width, element, true),
+    };
+
+    // Determine height
+    let height = match (element.top, element.bottom) {
+        // Both specified: stretch to fill between anchors
+        (Some(top), Some(bottom)) => {
+            let top_u = top.max(0) as u16;
+            let bottom_u = bottom.max(0) as u16;
+            container.height.saturating_sub(top_u + bottom_u)
+        }
+        // Only explicit size or default
+        _ => resolve_size(element.height, container.height, element, false),
+    };
+
+    // Determine x position
+    let x = match (element.left, element.right) {
+        (Some(left), _) => container.x.saturating_add_signed(left),
+        (None, Some(right)) => {
+            // Anchor to right edge
+            (container.right() as i16 - width as i16 - right).max(0) as u16
+        }
+        (None, None) => container.x,
+    };
+
+    // Determine y position
+    let y = match (element.top, element.bottom) {
+        (Some(top), _) => container.y.saturating_add_signed(top),
+        (None, Some(bottom)) => {
+            // Anchor to bottom edge
+            (container.bottom() as i16 - height as i16 - bottom).max(0) as u16
+        }
+        (None, None) => container.y,
+    };
+
+    Rect::new(x, y, width, height)
 }
 
 fn layout_children(element: &Element, rect: Rect, result: &mut LayoutResult) {
@@ -224,7 +286,7 @@ fn layout_children(element: &Element, rect: Rect, result: &mut LayoutResult) {
         };
 
         // Apply margin_before to offset
-        let child_rect = if is_row {
+        let mut child_rect = if is_row {
             Rect::new(
                 inner.x + offset + margin_before,
                 inner.y + cross_offset,
@@ -239,6 +301,22 @@ fn layout_children(element: &Element, rect: Rect, result: &mut LayoutResult) {
                 clamped_main,
             )
         };
+
+        // Apply relative positioning offset (element still takes space in flow)
+        if child.position == Position::Relative {
+            if let Some(left) = child.left {
+                child_rect.x = (child_rect.x as i16 + left).max(0) as u16;
+            }
+            if let Some(right) = child.right {
+                child_rect.x = (child_rect.x as i16 - right).max(0) as u16;
+            }
+            if let Some(top) = child.top {
+                child_rect.y = (child_rect.y as i16 + top).max(0) as u16;
+            }
+            if let Some(bottom) = child.bottom {
+                child_rect.y = (child_rect.y as i16 - bottom).max(0) as u16;
+            }
+        }
 
         // Insert child rect directly (parent has determined dimensions)
         result.insert(child.id.clone(), child_rect);

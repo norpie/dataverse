@@ -1,6 +1,6 @@
 use tuidom::{
-    Align, Border, Color, Direction, Edges, Element, Event, FocusState, Justify, Key, Size, Style,
-    Terminal, TextAlign, TextWrap,
+    Align, Border, Color, Direction, Edges, Element, Event, FocusState, Justify, Key, Position,
+    Size, Style, Terminal, TextAlign, TextWrap,
 };
 
 fn main() -> std::io::Result<()> {
@@ -213,7 +213,7 @@ fn layout_examples(_focused: Option<&str>) -> Element {
         // Min/Max demo
         .child(
             Element::col()
-                .width(Size::Fill)
+                .width(Size::Fixed(24))
                 .height(Size::Fill)
                 .style(
                     Style::new()
@@ -251,6 +251,46 @@ fn layout_examples(_focused: Option<&str>) -> Element {
                                 .align_self(Align::End)
                                 .style(Style::new().background(Color::oklch(0.3, 0.06, 260.0))),
                         ),
+                ),
+        )
+        // Positioning demo
+        .child(
+            Element::box_()
+                .width(Size::Fill)
+                .height(Size::Fill)
+                .style(
+                    Style::new()
+                        .background(Color::oklch(0.2, 0.03, 60.0))
+                        .border(Border::Single),
+                )
+                .padding(Edges::all(1))
+                .child(Element::text("Positioning:").style(Style::new().bold()))
+                // Relative: offset from normal flow
+                .child(
+                    Element::text("Relative +3,+1")
+                        .position(Position::Relative)
+                        .left(3)
+                        .top(1)
+                        .style(Style::new().background(Color::oklch(0.4, 0.1, 60.0))),
+                )
+                // Absolute anchored to bottom-right
+                .child(
+                    Element::text("bottom-right")
+                        .position(Position::Absolute)
+                        .right(2)
+                        .bottom(2)
+                        .style(Style::new().background(Color::oklch(0.4, 0.12, 30.0))),
+                )
+                // Absolute stretched between left and right
+                .child(
+                    Element::box_()
+                        .position(Position::Absolute)
+                        .left(1)
+                        .right(1)
+                        .top(8)
+                        .height(Size::Fixed(1))
+                        .style(Style::new().background(Color::oklch(0.5, 0.15, 90.0)))
+                        .child(Element::text("stretched left+right")),
                 ),
         )
 }
