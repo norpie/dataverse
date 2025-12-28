@@ -1,3 +1,5 @@
+use std::time::Instant;
+
 use crate::animation::{AnimationState, PropertyValue, TransitionProperty};
 use crate::buffer::{Buffer, Cell};
 use crate::element::{Content, Element};
@@ -13,18 +15,55 @@ struct RenderItem<'a> {
     clip: Option<Rect>,
 }
 
+/// Timing stats for render operations (in microseconds).
+#[derive(Default)]
+struct RenderStats {
+    collect_us: f64,
+    sort_us: f64,
+    background_us: f64,
+    border_us: f64,
+    text_us: f64,
+    scrollbar_us: f64,
+    other_us: f64,
+    element_count: usize,
+}
+
 pub fn render_to_buffer(element: &Element, layout: &LayoutResult, buf: &mut Buffer, animation: &AnimationState) {
+    let t0 = Instant::now();
+
     // Collect all elements with their effective z_index, tree order, and clip rects
     let mut render_list: Vec<RenderItem> = Vec::new();
     collect_elements(element, layout, &mut render_list, 0, element.z_index, None);
+    let t1 = Instant::now();
 
     // Sort by z_index (stable sort preserves tree order for equal z_index)
     render_list.sort_by_key(|item| (item.z_index, item.tree_order));
+    let t2 = Instant::now();
+
+    // Track per-operation timing
+    let mut stats = RenderStats {
+        collect_us: t1.duration_since(t0).as_secs_f64() * 1_000_000.0,
+        sort_us: t2.duration_since(t1).as_secs_f64() * 1_000_000.0,
+        element_count: render_list.len(),
+        ..Default::default()
+    };
 
     // Render in sorted order
     for item in render_list {
-        render_single_element(item.element, layout, buf, item.clip, animation);
+        render_single_element_timed(item.element, layout, buf, item.clip, animation, &mut stats);
     }
+
+    log::debug!(
+        "  render breakdown: collect={:>6.2}µs sort={:>6.2}µs bg={:>6.2}µs border={:>6.2}µs text={:>6.2}µs scrollbar={:>6.2}µs other={:>6.2}µs elements={}",
+        stats.collect_us,
+        stats.sort_us,
+        stats.background_us,
+        stats.border_us,
+        stats.text_us,
+        stats.scrollbar_us,
+        stats.other_us,
+        stats.element_count,
+    );
 }
 
 /// Collect all elements in tree order with their effective z_index and clip rects.
@@ -103,14 +142,17 @@ fn intersect_rects(rect: Rect, parent_clip: Option<Rect>) -> Rect {
     }
 }
 
-/// Render a single element (without recursing into children)
-fn render_single_element(
+/// Render a single element with timing stats collection.
+fn render_single_element_timed(
     element: &Element,
     layout: &LayoutResult,
     buf: &mut Buffer,
     clip: Option<Rect>,
     animation: &AnimationState,
+    stats: &mut RenderStats,
 ) {
+    let t0 = Instant::now();
+
     let Some(layout_rect) = layout.get(&element.id) else {
         return;
     };
@@ -131,6 +173,9 @@ fn render_single_element(
         None => rect,
     };
 
+    let t1 = Instant::now();
+    stats.other_us += t1.duration_since(t0).as_secs_f64() * 1_000_000.0;
+
     // Get background color (potentially interpolated)
     let background = get_interpolated_color(
         animation,
@@ -144,9 +189,13 @@ fn render_single_element(
         let rgb = bg.to_rgb();
         fill_rect(buf, visible_rect, rgb);
     }
+    let t2 = Instant::now();
+    stats.background_us += t2.duration_since(t1).as_secs_f64() * 1_000_000.0;
 
     // Render border if set (needs full rect for corners, but clip to visible)
     render_border(element, rect, buf, clip, animation);
+    let t3 = Instant::now();
+    stats.border_us += t3.duration_since(t2).as_secs_f64() * 1_000_000.0;
 
     // Render content (text or custom only, children handled separately)
     match &element.content {
@@ -159,11 +208,15 @@ fn render_single_element(
             custom.render(rect, buf);
         }
     }
+    let t4 = Instant::now();
+    stats.text_us += t4.duration_since(t3).as_secs_f64() * 1_000_000.0;
 
     // Render scrollbars for Scroll/Auto overflow
     let content_size = layout.content_size(&element.id);
     let viewport_size = layout.viewport_size(&element.id);
     render_scrollbar(element, rect, buf, clip, content_size, viewport_size);
+    let t5 = Instant::now();
+    stats.scrollbar_us += t5.duration_since(t4).as_secs_f64() * 1_000_000.0;
 }
 
 /// Get interpolated color if there's an active transition, otherwise return the current color.
