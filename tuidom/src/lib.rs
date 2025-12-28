@@ -1,3 +1,4 @@
+pub mod animation;
 pub mod buffer;
 pub mod element;
 pub mod event;
@@ -8,6 +9,7 @@ pub mod render;
 pub mod scroll;
 pub mod terminal;
 pub mod text;
+pub mod transitions;
 pub mod types;
 
 pub use buffer::Buffer;
@@ -18,4 +20,5 @@ pub use hit::{hit_test, hit_test_any, hit_test_focusable};
 pub use layout::{LayoutResult, Rect};
 pub use scroll::{collect_scrollable, ScrollOffset, ScrollState};
 pub use terminal::Terminal;
+pub use transitions::{Easing, TransitionConfig, Transitions};
 pub use types::*;

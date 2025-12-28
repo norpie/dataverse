@@ -1,6 +1,7 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use super::{Content, CustomContent};
+use crate::transitions::Transitions;
 use crate::types::{
     Align, Direction, Edges, Justify, Overflow, Position, Size, Style, TextAlign, TextWrap, Wrap,
 };
@@ -56,6 +57,7 @@ pub struct Element {
 
     // Visual
     pub style: Style,
+    pub transitions: Transitions,
 
     // Text-specific
     pub text_wrap: TextWrap,
@@ -97,6 +99,7 @@ impl Default for Element {
             overflow: Overflow::Visible,
             scroll_offset: (0, 0),
             style: Style::default(),
+            transitions: Transitions::default(),
             text_wrap: TextWrap::NoWrap,
             text_align: TextAlign::Left,
             focusable: false,
@@ -280,6 +283,11 @@ impl Element {
     // Visual
     pub fn style(mut self, style: Style) -> Self {
         self.style = style;
+        self
+    }
+
+    pub fn transitions(mut self, transitions: Transitions) -> Self {
+        self.transitions = transitions;
         self
     }
 
