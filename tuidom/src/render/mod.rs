@@ -1,8 +1,9 @@
+use crate::animation::{AnimationState, PropertyValue, TransitionProperty};
 use crate::buffer::{Buffer, Cell};
 use crate::element::{Content, Element};
 use crate::layout::{LayoutResult, Rect};
 use crate::text::{align_offset, char_width, display_width, truncate_to_width, wrap_chars, wrap_words};
-use crate::types::{Overflow, Rgb, TextWrap};
+use crate::types::{Color, Overflow, Rgb, TextWrap};
 
 /// A render item contains an element with its z_index, tree order, and clip rect.
 struct RenderItem<'a> {
@@ -12,7 +13,7 @@ struct RenderItem<'a> {
     clip: Option<Rect>,
 }
 
-pub fn render_to_buffer(element: &Element, layout: &LayoutResult, buf: &mut Buffer) {
+pub fn render_to_buffer(element: &Element, layout: &LayoutResult, buf: &mut Buffer, animation: &AnimationState) {
     // Collect all elements with their effective z_index, tree order, and clip rects
     let mut render_list: Vec<RenderItem> = Vec::new();
     collect_elements(element, layout, &mut render_list, 0, element.z_index, None);
@@ -22,7 +23,7 @@ pub fn render_to_buffer(element: &Element, layout: &LayoutResult, buf: &mut Buff
 
     // Render in sorted order
     for item in render_list {
-        render_single_element(item.element, layout, buf, item.clip);
+        render_single_element(item.element, layout, buf, item.clip, animation);
     }
 }
 
@@ -108,49 +109,127 @@ fn render_single_element(
     layout: &LayoutResult,
     buf: &mut Buffer,
     clip: Option<Rect>,
+    animation: &AnimationState,
 ) {
-    let Some(rect) = layout.get(&element.id) else {
+    let Some(layout_rect) = layout.get(&element.id) else {
         return;
     };
+
+    // Adjust rect for interpolated position (for Relative/Absolute elements)
+    let rect = adjust_rect_for_position(element, *layout_rect, animation);
 
     // If we have a clip rect, intersect with element rect
     let visible_rect = match clip {
         Some(clip_rect) => {
-            let clipped = intersect_rects(*rect, Some(clip_rect));
+            let clipped = intersect_rects(rect, Some(clip_rect));
             // If completely clipped, skip rendering
             if clipped.width == 0 || clipped.height == 0 {
                 return;
             }
             clipped
         }
-        None => *rect,
+        None => rect,
     };
 
+    // Get background color (potentially interpolated)
+    let background = get_interpolated_color(
+        animation,
+        &element.id,
+        TransitionProperty::Background,
+        element.style.background.as_ref(),
+    );
+
     // Render background if set (only within visible area)
-    if let Some(bg) = &element.style.background {
+    if let Some(bg) = background {
         let rgb = bg.to_rgb();
         fill_rect(buf, visible_rect, rgb);
     }
 
     // Render border if set (needs full rect for corners, but clip to visible)
-    render_border(element, *rect, buf, clip);
+    render_border(element, rect, buf, clip, animation);
 
     // Render content (text or custom only, children handled separately)
     match &element.content {
         Content::None | Content::Children(_) => {}
         Content::Text(text) => {
-            render_text(text, element, *rect, buf, clip);
+            render_text(text, element, rect, buf, clip, animation);
         }
         Content::Custom(custom) => {
             // Custom content gets the full rect; it should handle clipping internally
-            custom.render(*rect, buf);
+            custom.render(rect, buf);
         }
     }
 
     // Render scrollbars for Scroll/Auto overflow
     let content_size = layout.content_size(&element.id);
     let viewport_size = layout.viewport_size(&element.id);
-    render_scrollbar(element, *rect, buf, clip, content_size, viewport_size);
+    render_scrollbar(element, rect, buf, clip, content_size, viewport_size);
+}
+
+/// Get interpolated color if there's an active transition, otherwise return the current color.
+fn get_interpolated_color(
+    animation: &AnimationState,
+    element_id: &str,
+    property: TransitionProperty,
+    current: Option<&Color>,
+) -> Option<Color> {
+    // Check for active transition
+    if let Some(PropertyValue::Color(color)) = animation.get_interpolated(element_id, property) {
+        return Some(color);
+    }
+    // No transition, use current value
+    current.cloned()
+}
+
+/// Get interpolated i16 value if there's an active transition, otherwise return the current value.
+fn get_interpolated_i16(
+    animation: &AnimationState,
+    element_id: &str,
+    property: TransitionProperty,
+    current: Option<i16>,
+) -> Option<i16> {
+    // Check for active transition
+    if let Some(PropertyValue::I16(val)) = animation.get_interpolated(element_id, property) {
+        return Some(val);
+    }
+    // No transition, use current value
+    current
+}
+
+/// Adjust rect based on interpolated position offsets for Relative/Absolute positioned elements.
+fn adjust_rect_for_position(
+    element: &Element,
+    rect: Rect,
+    animation: &AnimationState,
+) -> Rect {
+    use crate::types::Position;
+
+    // Only adjust for Relative or Absolute positioned elements
+    if element.position != Position::Relative && element.position != Position::Absolute {
+        return rect;
+    }
+
+    // Get interpolated offsets (or current if no transition)
+    let left = get_interpolated_i16(animation, &element.id, TransitionProperty::Left, element.left);
+    let top = get_interpolated_i16(animation, &element.id, TransitionProperty::Top, element.top);
+    let right = get_interpolated_i16(animation, &element.id, TransitionProperty::Right, element.right);
+    let bottom = get_interpolated_i16(animation, &element.id, TransitionProperty::Bottom, element.bottom);
+
+    // Calculate offset from current element values vs interpolated
+    let dx = left.unwrap_or(0) - element.left.unwrap_or(0);
+    let dy = top.unwrap_or(0) - element.top.unwrap_or(0);
+
+    // For right/bottom, the offset is inverted
+    let dx = dx - (right.unwrap_or(0) - element.right.unwrap_or(0));
+    let dy = dy - (bottom.unwrap_or(0) - element.bottom.unwrap_or(0));
+
+    // Apply offset to rect
+    Rect::new(
+        (rect.x as i32 + dx as i32).max(0) as u16,
+        (rect.y as i32 + dy as i32).max(0) as u16,
+        rect.width,
+        rect.height,
+    )
 }
 
 fn fill_rect(buf: &mut Buffer, rect: Rect, bg: Rgb) {
@@ -165,15 +244,27 @@ fn fill_rect(buf: &mut Buffer, rect: Rect, bg: Rgb) {
     }
 }
 
-fn render_text(text: &str, element: &Element, rect: Rect, buf: &mut Buffer, clip: Option<Rect>) {
-    let fg = element
-        .style
-        .foreground
+fn render_text(text: &str, element: &Element, rect: Rect, buf: &mut Buffer, clip: Option<Rect>, animation: &AnimationState) {
+    // Get foreground color (potentially interpolated)
+    let foreground = get_interpolated_color(
+        animation,
+        &element.id,
+        TransitionProperty::Foreground,
+        element.style.foreground.as_ref(),
+    );
+    let fg = foreground
         .as_ref()
         .map(|c| c.to_rgb())
         .unwrap_or(Rgb::new(255, 255, 255));
 
-    let explicit_bg = element.style.background.as_ref().map(|c| c.to_rgb());
+    // Get background color (potentially interpolated)
+    let background = get_interpolated_color(
+        animation,
+        &element.id,
+        TransitionProperty::Background,
+        element.style.background.as_ref(),
+    );
+    let explicit_bg = background.as_ref().map(|c| c.to_rgb());
 
     let border_size = if element.style.border == crate::types::Border::None {
         0
@@ -285,7 +376,7 @@ fn render_text(text: &str, element: &Element, rect: Rect, buf: &mut Buffer, clip
     }
 }
 
-fn render_border(element: &Element, rect: Rect, buf: &mut Buffer, clip: Option<Rect>) {
+fn render_border(element: &Element, rect: Rect, buf: &mut Buffer, clip: Option<Rect>, animation: &AnimationState) {
     use crate::types::Border;
 
     let (tl, tr, bl, br, h, v) = match element.style.border {
@@ -296,9 +387,14 @@ fn render_border(element: &Element, rect: Rect, buf: &mut Buffer, clip: Option<R
         Border::Thick => ('┏', '┓', '┗', '┛', '━', '┃'),
     };
 
-    let fg = element
-        .style
-        .foreground
+    // Get foreground color (potentially interpolated)
+    let foreground = get_interpolated_color(
+        animation,
+        &element.id,
+        TransitionProperty::Foreground,
+        element.style.foreground.as_ref(),
+    );
+    let fg = foreground
         .as_ref()
         .map(|c| c.to_rgb())
         .unwrap_or(Rgb::new(255, 255, 255));

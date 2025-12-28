@@ -9,6 +9,7 @@ use crossterm::{
     terminal,
 };
 
+use crate::animation::{collect_element_ids, AnimationState};
 use crate::buffer::Buffer;
 use crate::element::Element;
 use crate::layout::{layout, LayoutResult, Rect};
@@ -21,6 +22,7 @@ pub struct Terminal {
     current_buffer: Buffer,
     previous_buffer: Buffer,
     last_layout: LayoutResult,
+    animation: AnimationState,
 }
 
 impl Terminal {
@@ -44,6 +46,7 @@ impl Terminal {
             current_buffer,
             previous_buffer,
             last_layout: LayoutResult::new(),
+            animation: AnimationState::new(),
         })
     }
 
@@ -54,7 +57,18 @@ impl Terminal {
     pub fn poll(&self, timeout: Option<Duration>) -> io::Result<Vec<CrosstermEvent>> {
         let mut events = Vec::new();
 
-        let has_event = match timeout {
+        // Use short timeout when transitions are active for smooth animation
+        let effective_timeout = if self.animation.has_active_transitions() {
+            Some(
+                timeout
+                    .map(|t| t.min(Duration::from_millis(16)))
+                    .unwrap_or(Duration::from_millis(16)),
+            )
+        } else {
+            timeout
+        };
+
+        let has_event = match effective_timeout {
             Some(dur) => event::poll(dur)?,
             None => {
                 // Block until event
@@ -74,6 +88,17 @@ impl Terminal {
         Ok(events)
     }
 
+    /// Enable or disable reduced motion (accessibility).
+    /// When enabled, transitions complete instantly.
+    pub fn set_reduced_motion(&mut self, enabled: bool) {
+        self.animation.set_reduced_motion(enabled);
+    }
+
+    /// Returns true if any transitions are currently active.
+    pub fn has_active_transitions(&self) -> bool {
+        self.animation.has_active_transitions()
+    }
+
     pub fn render(&mut self, root: &Element) -> io::Result<&LayoutResult> {
         // Check if terminal size changed
         let (width, height) = terminal::size()?;
@@ -82,6 +107,9 @@ impl Terminal {
             self.previous_buffer = Buffer::new(width, height);
         }
 
+        // Update animation state (detect property changes, start/complete transitions)
+        self.animation.update(root);
+
         // Clear current buffer
         self.current_buffer.clear();
 
@@ -89,14 +117,18 @@ impl Terminal {
         let available = Rect::from_size(width, height);
         self.last_layout = layout(root, available);
 
-        // Render to buffer
-        render_to_buffer(root, &self.last_layout, &mut self.current_buffer);
+        // Render to buffer with animation state for interpolated values
+        render_to_buffer(root, &self.last_layout, &mut self.current_buffer, &self.animation);
 
         // Diff and write changes
         self.flush_diff()?;
 
         // Swap buffers
         std::mem::swap(&mut self.current_buffer, &mut self.previous_buffer);
+
+        // Cleanup animation state for removed elements
+        let current_ids = collect_element_ids(root);
+        self.animation.cleanup(&current_ids);
 
         Ok(&self.last_layout)
     }
