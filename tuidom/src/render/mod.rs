@@ -289,6 +289,10 @@ fn fill_rect(buf: &mut Buffer, rect: Rect, bg: Rgb) {
     for y in rect.y..rect.bottom().min(buf.height()) {
         for x in rect.x..rect.right().min(buf.width()) {
             if let Some(cell) = buf.get_mut(x, y) {
+                // Skip if cell already has correct state
+                if cell.bg == bg && cell.char == ' ' && !cell.wide_continuation {
+                    continue;
+                }
                 cell.char = ' ';
                 cell.bg = bg;
                 cell.wide_continuation = false;
@@ -369,9 +373,13 @@ fn render_text(text: &str, element: &Element, rect: Rect, buf: &mut Buffer, clip
             }
         }
 
-        // Calculate alignment offset
-        let line_width = display_width(line);
-        let x_offset = align_offset(line_width, max_width, element.text_align) as u16;
+        // Calculate alignment offset (skip width calculation for left-align)
+        let x_offset = if element.text_align == crate::types::TextAlign::Left {
+            0
+        } else {
+            let line_width = display_width(line);
+            align_offset(line_width, max_width, element.text_align) as u16
+        };
         let mut x = inner.x + x_offset;
 
         // Render characters
