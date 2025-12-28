@@ -46,8 +46,8 @@ fn main() -> std::io::Result<()> {
 
 fn ui(focused: Option<&str>, last_event: Option<&str>) -> Element {
     Element::col()
-        .padding(Edges::all(1))
-        .gap(1)
+        .width(Size::Fill)
+        .height(Size::Fill)
         .child(header())
         .child(content(focused))
         .child(footer(last_event))
