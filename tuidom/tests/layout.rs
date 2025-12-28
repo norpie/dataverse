@@ -1,4 +1,4 @@
-use tuidom::{Align, Edges, Element, Position, Rect, Size};
+use tuidom::{Align, Edges, Element, Position, Rect, Size, Wrap};
 
 fn layout_root(root: &Element, width: u16, height: u16) -> std::collections::HashMap<String, Rect> {
     tuidom::layout::layout(root, Rect::new(0, 0, width, height))
@@ -503,4 +503,340 @@ fn test_absolute_all_anchors_stretches_both() {
     assert_eq!(child.y, 10);
     assert_eq!(child.width, 80, "width = 100 - 10 - 10");
     assert_eq!(child.height, 80, "height = 100 - 10 - 10");
+}
+
+// ============================================================================
+// flex_grow Tests
+// ============================================================================
+
+#[test]
+fn test_flex_grow_equal_distribution() {
+    // Two Fill children should split space equally
+    let root = Element::row()
+        .id("root")
+        .width(Size::Fixed(100))
+        .height(Size::Fixed(20))
+        .child(Element::box_().id("a").width(Size::Fill).height(Size::Fixed(20)))
+        .child(Element::box_().id("b").width(Size::Fill).height(Size::Fixed(20)));
+
+    let layout = layout_root(&root, 100, 20);
+
+    let a = layout.get("a").unwrap();
+    let b = layout.get("b").unwrap();
+
+    assert_eq!(a.width, 50, "equal split");
+    assert_eq!(b.width, 50, "equal split");
+    assert_eq!(a.x, 0);
+    assert_eq!(b.x, 50);
+}
+
+#[test]
+fn test_flex_grow_ratio() {
+    // Flex(1) and Flex(2) should split 1:2
+    let root = Element::row()
+        .id("root")
+        .width(Size::Fixed(90))
+        .height(Size::Fixed(20))
+        .child(
+            Element::box_()
+                .id("a")
+                .width(Size::Flex(1))
+                .height(Size::Fixed(20)),
+        )
+        .child(
+            Element::box_()
+                .id("b")
+                .width(Size::Flex(2))
+                .height(Size::Fixed(20)),
+        );
+
+    let layout = layout_root(&root, 90, 20);
+
+    let a = layout.get("a").unwrap();
+    let b = layout.get("b").unwrap();
+
+    assert_eq!(a.width, 30, "1/3 of 90");
+    assert_eq!(b.width, 60, "2/3 of 90");
+}
+
+#[test]
+fn test_flex_grow_with_fixed() {
+    // Fixed + Flex should give remaining space to flex
+    let root = Element::row()
+        .id("root")
+        .width(Size::Fixed(100))
+        .height(Size::Fixed(20))
+        .child(
+            Element::box_()
+                .id("fixed")
+                .width(Size::Fixed(30))
+                .height(Size::Fixed(20)),
+        )
+        .child(
+            Element::box_()
+                .id("flex")
+                .width(Size::Fill)
+                .height(Size::Fixed(20)),
+        );
+
+    let layout = layout_root(&root, 100, 20);
+
+    let fixed = layout.get("fixed").unwrap();
+    let flex = layout.get("flex").unwrap();
+
+    assert_eq!(fixed.width, 30);
+    assert_eq!(flex.width, 70, "takes remaining space");
+}
+
+// ============================================================================
+// flex_shrink Tests
+// ============================================================================
+
+#[test]
+fn test_flex_shrink_overflow() {
+    // Two 60px items in 100px container should shrink
+    let root = Element::row()
+        .id("root")
+        .width(Size::Fixed(100))
+        .height(Size::Fixed(20))
+        .child(
+            Element::box_()
+                .id("a")
+                .width(Size::Fixed(60))
+                .height(Size::Fixed(20))
+                .flex_shrink(1),
+        )
+        .child(
+            Element::box_()
+                .id("b")
+                .width(Size::Fixed(60))
+                .height(Size::Fixed(20))
+                .flex_shrink(1),
+        );
+
+    let layout = layout_root(&root, 100, 20);
+
+    let a = layout.get("a").unwrap();
+    let b = layout.get("b").unwrap();
+
+    // Total 120px needs to fit in 100px, shrink by 20px total
+    // Equal shrink: each shrinks by 10px
+    assert_eq!(a.width, 50, "shrunk by 10");
+    assert_eq!(b.width, 50, "shrunk by 10");
+}
+
+#[test]
+fn test_flex_shrink_ratio() {
+    // shrink 1:2 ratio
+    let root = Element::row()
+        .id("root")
+        .width(Size::Fixed(100))
+        .height(Size::Fixed(20))
+        .child(
+            Element::box_()
+                .id("a")
+                .width(Size::Fixed(60))
+                .height(Size::Fixed(20))
+                .flex_shrink(1),
+        )
+        .child(
+            Element::box_()
+                .id("b")
+                .width(Size::Fixed(60))
+                .height(Size::Fixed(20))
+                .flex_shrink(2),
+        );
+
+    let layout = layout_root(&root, 100, 20);
+
+    let a = layout.get("a").unwrap();
+    let b = layout.get("b").unwrap();
+
+    // Need to shrink 20px. Ratio 1:2 means a shrinks ~7, b shrinks ~13
+    // Due to integer division, may be off by 1
+    assert!(a.width > b.width, "a shrinks less than b");
+    // a should shrink ~1/3 of 20 = ~7, b should shrink ~2/3 of 20 = ~13
+    assert!(a.width >= 53 && a.width <= 55, "a.width ~ 54");
+    assert!(b.width >= 46 && b.width <= 48, "b.width ~ 47");
+}
+
+#[test]
+fn test_flex_shrink_zero_no_shrink() {
+    // Item with flex_shrink=0 should not shrink
+    let root = Element::row()
+        .id("root")
+        .width(Size::Fixed(100))
+        .height(Size::Fixed(20))
+        .child(
+            Element::box_()
+                .id("no_shrink")
+                .width(Size::Fixed(60))
+                .height(Size::Fixed(20))
+                .flex_shrink(0),
+        )
+        .child(
+            Element::box_()
+                .id("shrinks")
+                .width(Size::Fixed(60))
+                .height(Size::Fixed(20))
+                .flex_shrink(1),
+        );
+
+    let layout = layout_root(&root, 100, 20);
+
+    let no_shrink = layout.get("no_shrink").unwrap();
+    let shrinks = layout.get("shrinks").unwrap();
+
+    assert_eq!(no_shrink.width, 60, "doesn't shrink");
+    assert_eq!(shrinks.width, 40, "takes all the shrink");
+}
+
+// ============================================================================
+// Wrap Tests
+// ============================================================================
+
+#[test]
+fn test_wrap_single_line() {
+    // Items fit, no wrap needed
+    let root = Element::row()
+        .id("root")
+        .width(Size::Fixed(100))
+        .height(Size::Fixed(50))
+        .wrap(Wrap::Wrap)
+        .child(
+            Element::box_()
+                .id("a")
+                .width(Size::Fixed(30))
+                .height(Size::Fixed(20)),
+        )
+        .child(
+            Element::box_()
+                .id("b")
+                .width(Size::Fixed(30))
+                .height(Size::Fixed(20)),
+        );
+
+    let layout = layout_root(&root, 100, 50);
+
+    let a = layout.get("a").unwrap();
+    let b = layout.get("b").unwrap();
+
+    assert_eq!(a.y, 0, "same line");
+    assert_eq!(b.y, 0, "same line");
+    assert_eq!(a.x, 0);
+    assert_eq!(b.x, 30);
+}
+
+#[test]
+fn test_wrap_multiple_lines() {
+    // Items exceed width, should wrap
+    let root = Element::row()
+        .id("root")
+        .width(Size::Fixed(50))
+        .height(Size::Fixed(100))
+        .wrap(Wrap::Wrap)
+        .child(
+            Element::box_()
+                .id("a")
+                .width(Size::Fixed(30))
+                .height(Size::Fixed(20)),
+        )
+        .child(
+            Element::box_()
+                .id("b")
+                .width(Size::Fixed(30))
+                .height(Size::Fixed(20)),
+        )
+        .child(
+            Element::box_()
+                .id("c")
+                .width(Size::Fixed(30))
+                .height(Size::Fixed(20)),
+        );
+
+    let layout = layout_root(&root, 50, 100);
+
+    let a = layout.get("a").unwrap();
+    let b = layout.get("b").unwrap();
+    let c = layout.get("c").unwrap();
+
+    // a fits on line 1, b wraps to line 2, c wraps to line 3
+    assert_eq!(a.y, 0, "line 1");
+    assert_eq!(b.y, 20, "line 2");
+    assert_eq!(c.y, 40, "line 3");
+    assert_eq!(a.x, 0);
+    assert_eq!(b.x, 0);
+    assert_eq!(c.x, 0);
+}
+
+#[test]
+fn test_wrap_with_gap() {
+    let root = Element::row()
+        .id("root")
+        .width(Size::Fixed(70))
+        .height(Size::Fixed(100))
+        .wrap(Wrap::Wrap)
+        .gap(5)
+        .child(
+            Element::box_()
+                .id("a")
+                .width(Size::Fixed(30))
+                .height(Size::Fixed(20)),
+        )
+        .child(
+            Element::box_()
+                .id("b")
+                .width(Size::Fixed(30))
+                .height(Size::Fixed(20)),
+        )
+        .child(
+            Element::box_()
+                .id("c")
+                .width(Size::Fixed(30))
+                .height(Size::Fixed(20)),
+        );
+
+    let layout = layout_root(&root, 70, 100);
+
+    let a = layout.get("a").unwrap();
+    let b = layout.get("b").unwrap();
+    let c = layout.get("c").unwrap();
+
+    // a + gap + b = 30 + 5 + 30 = 65, fits in 70
+    // c wraps to line 2
+    assert_eq!(a.y, 0, "line 1");
+    assert_eq!(b.y, 0, "line 1");
+    assert_eq!(c.y, 25, "line 2 (20 + gap 5)");
+    assert_eq!(b.x, 35, "a.width + gap");
+}
+
+#[test]
+fn test_nowrap_overflow() {
+    // Without wrap, items just get clamped/overflow
+    let root = Element::row()
+        .id("root")
+        .width(Size::Fixed(50))
+        .height(Size::Fixed(100))
+        .wrap(Wrap::NoWrap)
+        .child(
+            Element::box_()
+                .id("a")
+                .width(Size::Fixed(30))
+                .height(Size::Fixed(20)),
+        )
+        .child(
+            Element::box_()
+                .id("b")
+                .width(Size::Fixed(30))
+                .height(Size::Fixed(20)),
+        );
+
+    let layout = layout_root(&root, 50, 100);
+
+    let a = layout.get("a").unwrap();
+    let b = layout.get("b").unwrap();
+
+    // Both on same line
+    assert_eq!(a.y, 0);
+    assert_eq!(b.y, 0);
 }

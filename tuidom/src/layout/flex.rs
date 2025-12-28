@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use super::Rect;
 use crate::element::{Content, Element};
 use crate::text::display_width;
-use crate::types::{Align, Direction, Position, Size};
+use crate::types::{Align, Direction, Position, Size, Wrap};
 
 pub type LayoutResult = HashMap<String, Rect>;
 
@@ -138,131 +138,239 @@ fn layout_children(element: &Element, rect: Rect, result: &mut LayoutResult) {
     let main_size = if is_row { inner.width } else { inner.height };
     let cross_size = if is_row { inner.height } else { inner.width };
 
-    // First pass: calculate fixed sizes and count flex items (flow children only)
-    let mut fixed_total = 0u16;
-    let mut flex_count = 0u16;
-    let gap_total = element.gap * flow_children.len().saturating_sub(1) as u16;
+    // Split children into lines (for wrapping)
+    let lines = if element.wrap == Wrap::Wrap {
+        split_into_lines(&flow_children, main_size, element.gap, is_row)
+    } else {
+        vec![flow_children.clone()]
+    };
 
-    for child in &flow_children {
-        // Account for child's margin in main axis
-        let child_margin_main = if is_row {
+    // Layout each line
+    let mut cross_offset = 0u16;
+    for line in &lines {
+        let line_cross_size = layout_line(
+            line,
+            element,
+            inner,
+            cross_offset,
+            main_size,
+            cross_size,
+            is_row,
+            result,
+        );
+        cross_offset += line_cross_size + element.gap;
+    }
+
+    // Layout absolute children (they position themselves)
+    for child in absolute_children {
+        layout_element(child, rect, result);
+    }
+}
+
+/// Split children into lines based on available main axis space
+fn split_into_lines<'a>(
+    children: &[&'a Element],
+    main_size: u16,
+    gap: u16,
+    is_row: bool,
+) -> Vec<Vec<&'a Element>> {
+    let mut lines: Vec<Vec<&Element>> = vec![vec![]];
+    let mut current_line_size = 0u16;
+
+    for child in children {
+        let child_main = get_base_main_size(child, is_row);
+        let child_margin = if is_row {
             child.margin.left + child.margin.right
         } else {
             child.margin.top + child.margin.bottom
         };
+        let child_total = child_main + child_margin;
 
-        let child_main_size = if is_row { child.width } else { child.height };
-        match child_main_size {
-            Size::Fixed(n) => fixed_total += n + child_margin_main,
-            Size::Auto => {
-                // For auto, estimate based on content
-                let estimated = estimate_size(child, is_row);
-                fixed_total += estimated + child_margin_main;
-            }
-            Size::Fill | Size::Flex(_) => flex_count += 1,
-            Size::Percent(p) => fixed_total += (main_size as f32 * p) as u16 + child_margin_main,
+        // Add gap if not first item in line
+        let with_gap = if lines.last().map_or(true, |l| l.is_empty()) {
+            child_total
+        } else {
+            child_total + gap
+        };
+
+        // Check if we need to wrap
+        if current_line_size + with_gap > main_size && !lines.last().unwrap().is_empty() {
+            lines.push(vec![]);
+            current_line_size = child_total;
+        } else {
+            current_line_size += with_gap;
         }
+
+        lines.last_mut().unwrap().push(child);
     }
 
-    // Calculate remaining space for flex items
-    let remaining = main_size.saturating_sub(fixed_total + gap_total);
-    let flex_size = if flex_count > 0 {
-        remaining / flex_count
-    } else {
-        0
-    };
+    lines
+}
 
-    // Calculate child sizes first (including margins)
-    let mut child_sizes: Vec<(u16, u16, u16)> = Vec::with_capacity(flow_children.len()); // (main, margin_before, margin_after)
-    let mut total_child_size = 0u16;
+/// Get the base main axis size for a child (before flex grow/shrink)
+fn get_base_main_size(child: &Element, is_row: bool) -> u16 {
+    let size = if is_row { child.width } else { child.height };
+    match size {
+        Size::Fixed(n) => n,
+        Size::Auto => estimate_size(child, is_row),
+        Size::Fill => 0, // Will be distributed via flex
+        Size::Flex(_) => 0, // Will be distributed via flex
+        Size::Percent(_) => 0, // Needs container size, treat as flex for wrapping
+    }
+}
 
-    for child in &flow_children {
+/// Layout a single line of flex items, returns the line's cross-axis size
+fn layout_line(
+    line: &[&Element],
+    parent: &Element,
+    inner: Rect,
+    cross_offset: u16,
+    main_size: u16,
+    cross_size: u16,
+    is_row: bool,
+    result: &mut LayoutResult,
+) -> u16 {
+    if line.is_empty() {
+        return 0;
+    }
+
+    let gap_total = parent.gap * line.len().saturating_sub(1) as u16;
+
+    // First pass: calculate base sizes and collect flex info
+    let mut base_sizes: Vec<u16> = Vec::with_capacity(line.len());
+    let mut margins: Vec<(u16, u16)> = Vec::with_capacity(line.len());
+    let mut total_base = 0u16;
+    let mut total_flex_grow = 0u16;
+    let mut total_flex_shrink = 0u16;
+
+    for child in line {
         let (margin_before, margin_after) = if is_row {
             (child.margin.left, child.margin.right)
         } else {
             (child.margin.top, child.margin.bottom)
         };
+        margins.push((margin_before, margin_after));
 
         let child_main_size = if is_row { child.width } else { child.height };
-
-        let main = match child_main_size {
-            Size::Fixed(n) => n,
-            Size::Auto => estimate_size(child, is_row),
-            Size::Fill | Size::Flex(_) => flex_size,
-            Size::Percent(p) => (main_size as f32 * p) as u16,
+        let (base, flex_grow) = match child_main_size {
+            Size::Fixed(n) => (n, child.flex_grow),
+            Size::Auto => (estimate_size(child, is_row), child.flex_grow),
+            Size::Fill => (0, 1.max(child.flex_grow)), // Fill acts as flex_grow: 1
+            Size::Flex(n) => (0, n.max(child.flex_grow)), // Flex(n) acts as flex_grow: n
+            Size::Percent(p) => ((main_size as f32 * p) as u16, child.flex_grow),
         };
 
-        // Apply min/max constraints on main axis
+        base_sizes.push(base);
+        total_base += base + margin_before + margin_after;
+        total_flex_grow += flex_grow;
+        total_flex_shrink += child.flex_shrink;
+    }
+
+    // Calculate remaining space (positive = grow, negative = shrink)
+    let total_with_gaps = total_base + gap_total;
+    let remaining = main_size as i32 - total_with_gaps as i32;
+
+    // Second pass: apply flex grow or shrink
+    let mut final_sizes: Vec<u16> = Vec::with_capacity(line.len());
+
+    for (i, child) in line.iter().enumerate() {
+        let base = base_sizes[i];
+        let child_main_size = if is_row { child.width } else { child.height };
+
+        let flex_grow = match child_main_size {
+            Size::Fill => 1.max(child.flex_grow),
+            Size::Flex(n) => n.max(child.flex_grow),
+            _ => child.flex_grow,
+        };
+
+        let adjusted = if remaining > 0 && total_flex_grow > 0 {
+            // Grow: distribute extra space proportionally
+            let grow_amount = (remaining as u32 * flex_grow as u32 / total_flex_grow as u32) as u16;
+            base + grow_amount
+        } else if remaining < 0 && total_flex_shrink > 0 {
+            // Shrink: reduce size proportionally
+            let shrink_amount =
+                ((-remaining) as u32 * child.flex_shrink as u32 / total_flex_shrink as u32) as u16;
+            base.saturating_sub(shrink_amount)
+        } else {
+            base
+        };
+
+        // Apply min/max constraints
         let (min_main, max_main) = if is_row {
             (child.min_width, child.max_width)
         } else {
             (child.min_height, child.max_height)
         };
-        let main = min_main.map_or(main, |m| main.max(m));
-        let main = max_main.map_or(main, |m| main.min(m));
+        let constrained = min_main.map_or(adjusted, |m| adjusted.max(m));
+        let constrained = max_main.map_or(constrained, |m| constrained.min(m));
 
-        child_sizes.push((main, margin_before, margin_after));
-        total_child_size += main + margin_before + margin_after;
+        final_sizes.push(constrained);
     }
 
-    // Calculate justify spacing
-    let total_with_gaps = total_child_size + gap_total;
+    // Recalculate total for justify spacing
+    let mut total_final = 0u16;
+    for (i, &size) in final_sizes.iter().enumerate() {
+        total_final += size + margins[i].0 + margins[i].1;
+    }
+    let total_with_gaps = total_final + gap_total;
     let extra_space = main_size.saturating_sub(total_with_gaps);
 
-    let (start_offset, between_gap) = match element.justify {
-        crate::types::Justify::Start => (0, element.gap),
-        crate::types::Justify::End => (extra_space, element.gap),
-        crate::types::Justify::Center => (extra_space / 2, element.gap),
+    let (start_offset, between_gap) = match parent.justify {
+        crate::types::Justify::Start => (0, parent.gap),
+        crate::types::Justify::End => (extra_space, parent.gap),
+        crate::types::Justify::Center => (extra_space / 2, parent.gap),
         crate::types::Justify::SpaceBetween => {
-            if flow_children.len() > 1 {
-                (0, extra_space / (flow_children.len() - 1) as u16 + element.gap)
+            if line.len() > 1 {
+                (0, extra_space / (line.len() - 1) as u16 + parent.gap)
             } else {
-                (0, element.gap)
+                (0, parent.gap)
             }
         }
         crate::types::Justify::SpaceAround => {
-            if flow_children.is_empty() {
-                (0, element.gap)
+            if line.is_empty() {
+                (0, parent.gap)
             } else {
-                let spacing = extra_space / flow_children.len() as u16;
-                (spacing / 2, spacing + element.gap)
+                let spacing = extra_space / line.len() as u16;
+                (spacing / 2, spacing + parent.gap)
             }
         }
     };
 
-    // Second pass: assign rects to flow children with justify
-    let mut offset = start_offset;
+    // Third pass: position children and calculate line cross size
+    let mut main_offset = start_offset;
+    let mut line_cross_size = 0u16;
+    let available_cross = cross_size.saturating_sub(cross_offset);
 
-    for (i, child) in flow_children.iter().enumerate() {
-        let (main, margin_before, margin_after) = child_sizes[i];
+    for (i, child) in line.iter().enumerate() {
+        let main = final_sizes[i];
+        let (margin_before, margin_after) = margins[i];
 
-        // Account for cross-axis margin
+        // Cross-axis margin
         let (cross_margin_before, cross_margin_after) = if is_row {
             (child.margin.top, child.margin.bottom)
         } else {
             (child.margin.left, child.margin.right)
         };
 
-        // Determine alignment for this child (align_self overrides parent's align)
-        let child_align = child.align_self.unwrap_or(element.align);
-
+        let child_align = child.align_self.unwrap_or(parent.align);
         let child_cross_size = if is_row { child.height } else { child.width };
-        let available_cross = cross_size.saturating_sub(cross_margin_before + cross_margin_after);
+        let cross_available = available_cross.saturating_sub(cross_margin_before + cross_margin_after);
 
         let cross = match child_cross_size {
-            Size::Fixed(n) => n,
-            Size::Fill | Size::Flex(_) => available_cross,
+            Size::Fixed(n) => n.min(cross_available),
+            Size::Fill | Size::Flex(_) => cross_available,
             Size::Auto => {
                 if child_align == Align::Stretch {
-                    available_cross
+                    cross_available
                 } else {
-                    estimate_size(child, !is_row).min(available_cross)
+                    estimate_size(child, !is_row).min(cross_available)
                 }
             }
-            Size::Percent(p) => (cross_size as f32 * p) as u16,
+            Size::Percent(p) => ((available_cross as f32 * p) as u16).min(cross_available),
         };
 
-        // Apply min/max constraints on cross axis
+        // Apply min/max on cross axis
         let (min_cross, max_cross) = if is_row {
             (child.min_height, child.max_height)
         } else {
@@ -271,38 +379,33 @@ fn layout_children(element: &Element, rect: Rect, result: &mut LayoutResult) {
         let cross = min_cross.map_or(cross, |m| cross.max(m));
         let cross = max_cross.map_or(cross, |m| cross.min(m));
 
-        // Clamp to available space
-        let clamped_main = main.min(main_size.saturating_sub(offset + margin_before));
-        let clamped_cross = cross.min(available_cross);
+        line_cross_size = line_cross_size.max(cross + cross_margin_before + cross_margin_after);
 
-        // Calculate cross-axis offset based on alignment
-        let cross_offset = match child_align {
+        // Calculate cross-axis position
+        let child_cross_offset = match child_align {
             Align::Start => cross_margin_before,
-            Align::Center => {
-                cross_margin_before + (available_cross.saturating_sub(clamped_cross)) / 2
-            }
-            Align::End => cross_margin_before + available_cross.saturating_sub(clamped_cross),
+            Align::Center => cross_margin_before + (cross_available.saturating_sub(cross)) / 2,
+            Align::End => cross_margin_before + cross_available.saturating_sub(cross),
             Align::Stretch => cross_margin_before,
         };
 
-        // Apply margin_before to offset
         let mut child_rect = if is_row {
             Rect::new(
-                inner.x + offset + margin_before,
-                inner.y + cross_offset,
-                clamped_main,
-                clamped_cross,
+                inner.x + main_offset + margin_before,
+                inner.y + cross_offset + child_cross_offset,
+                main,
+                cross,
             )
         } else {
             Rect::new(
-                inner.x + cross_offset,
-                inner.y + offset + margin_before,
-                clamped_cross,
-                clamped_main,
+                inner.x + cross_offset + child_cross_offset,
+                inner.y + main_offset + margin_before,
+                cross,
+                main,
             )
         };
 
-        // Apply relative positioning offset (element still takes space in flow)
+        // Apply relative positioning
         if child.position == Position::Relative {
             if let Some(left) = child.left {
                 child_rect.x = (child_rect.x as i16 + left).max(0) as u16;
@@ -318,18 +421,13 @@ fn layout_children(element: &Element, rect: Rect, result: &mut LayoutResult) {
             }
         }
 
-        // Insert child rect directly (parent has determined dimensions)
         result.insert(child.id.clone(), child_rect);
-        // Recurse for grandchildren
         layout_children(child, child_rect, result);
 
-        offset += margin_before + main + margin_after + between_gap;
+        main_offset += margin_before + main + margin_after + between_gap;
     }
 
-    // Layout absolute children (they position themselves)
-    for child in absolute_children {
-        layout_element(child, rect, result);
-    }
+    line_cross_size
 }
 
 fn resolve_size(size: Size, available: u16, element: &Element, is_width: bool) -> u16 {

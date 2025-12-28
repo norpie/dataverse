@@ -1,6 +1,6 @@
 use tuidom::{
     Align, Border, Color, Direction, Edges, Element, Event, FocusState, Justify, Key, Position,
-    Size, Style, Terminal, TextAlign, TextWrap,
+    Size, Style, Terminal, TextAlign, TextWrap, Wrap,
 };
 
 fn main() -> std::io::Result<()> {
@@ -210,10 +210,10 @@ fn layout_examples(_focused: Option<&str>) -> Element {
                         .child(Element::text("End").style(Style::new().background(Color::oklch(0.5, 0.12, 180.0)))),
                 ),
         )
-        // Min/Max demo
+        // Flex demo - flex_grow ratios and wrap
         .child(
             Element::col()
-                .width(Size::Fixed(24))
+                .width(Size::Fixed(28))
                 .height(Size::Fill)
                 .style(
                     Style::new()
@@ -221,35 +221,46 @@ fn layout_examples(_focused: Option<&str>) -> Element {
                         .border(Border::Single),
                 )
                 .padding(Edges::all(1))
-                .child(Element::text("Min/Max Width:").style(Style::new().bold()))
-                .child(
-                    Element::box_()
-                        .width(Size::Fill)
-                        .max_width(20)
-                        .height(Size::Fixed(3))
-                        .style(Style::new().background(Color::oklch(0.35, 0.1, 30.0)))
-                        .child(Element::text("max: 20")),
-                )
-                .child(
-                    Element::box_()
-                        .width(Size::Fixed(5))
-                        .min_width(15)
-                        .height(Size::Fixed(3))
-                        .style(Style::new().background(Color::oklch(0.35, 0.1, 90.0)))
-                        .child(Element::text("min: 15")),
-                )
-                .child(Element::text(""))
-                .child(Element::text("align_self:").style(Style::new().bold()))
+                .child(Element::text("flex_grow 1:2:").style(Style::new().bold()))
+                // flex_grow ratio demo: 1:2 split
                 .child(
                     Element::row()
-                        .height(Size::Fixed(5))
-                        .align(Align::Start)
-                        .style(Style::new().background(Color::oklch(0.15, 0.02, 320.0)))
-                        .child(Element::text("Start").style(Style::new().background(Color::oklch(0.3, 0.06, 200.0))))
+                        .width(Size::Fill)
+                        .height(Size::Fixed(1))
                         .child(
-                            Element::text("End")
-                                .align_self(Align::End)
-                                .style(Style::new().background(Color::oklch(0.3, 0.06, 260.0))),
+                            Element::text("A")
+                                .width(Size::Flex(1))
+                                .style(Style::new().background(Color::oklch(0.4, 0.12, 30.0))),
+                        )
+                        .child(
+                            Element::text("B")
+                                .width(Size::Flex(2))
+                                .style(Style::new().background(Color::oklch(0.4, 0.12, 200.0))),
+                        ),
+                )
+                .child(Element::text(""))
+                .child(Element::text("Wrap (3 items):").style(Style::new().bold()))
+                // Wrap demo - items wrap to next line
+                .child(
+                    Element::row()
+                        .height(Size::Fixed(8))
+                        .wrap(Wrap::Wrap)
+                        .gap(1)
+                        .style(Style::new().background(Color::oklch(0.15, 0.02, 320.0)))
+                        .child(
+                            Element::text("one")
+                                .width(Size::Fixed(12))
+                                .style(Style::new().background(Color::oklch(0.4, 0.1, 60.0))),
+                        )
+                        .child(
+                            Element::text("two")
+                                .width(Size::Fixed(12))
+                                .style(Style::new().background(Color::oklch(0.4, 0.1, 120.0))),
+                        )
+                        .child(
+                            Element::text("three")
+                                .width(Size::Fixed(12))
+                                .style(Style::new().background(Color::oklch(0.4, 0.1, 180.0))),
                         ),
                 ),
         )
