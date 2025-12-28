@@ -43,7 +43,9 @@ fn fill_rect(buf: &mut Buffer, rect: Rect, bg: Rgb) {
     for y in rect.y..rect.bottom().min(buf.height()) {
         for x in rect.x..rect.right().min(buf.width()) {
             if let Some(cell) = buf.get_mut(x, y) {
+                cell.char = ' ';
                 cell.bg = bg;
+                cell.wide_continuation = false;
             }
         }
     }

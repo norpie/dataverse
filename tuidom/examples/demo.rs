@@ -51,6 +51,24 @@ fn ui(focused: Option<&str>, last_event: Option<&str>) -> Element {
         .child(header())
         .child(content(focused))
         .child(footer(last_event))
+        .child(overlay())
+}
+
+fn overlay() -> Element {
+    Element::box_()
+        .id("overlay")
+        .position(tuidom::Position::Absolute)
+        .left(30)
+        .top(8)
+        .width(Size::Fixed(20))
+        .height(Size::Fixed(5))
+        .style(
+            Style::new()
+                .background(Color::oklch(0.4, 0.15, 30.0))
+                .border(Border::Double),
+        )
+        .padding(Edges::all(1))
+        .child(Element::text("Absolute overlay!"))
 }
 
 fn header() -> Element {

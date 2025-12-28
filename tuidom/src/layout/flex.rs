@@ -44,6 +44,16 @@ fn layout_children(element: &Element, rect: Rect, result: &mut LayoutResult) {
         return;
     }
 
+    // Separate flow children from absolute children
+    let flow_children: Vec<_> = children
+        .iter()
+        .filter(|c| c.position != Position::Absolute)
+        .collect();
+    let absolute_children: Vec<_> = children
+        .iter()
+        .filter(|c| c.position == Position::Absolute)
+        .collect();
+
     // Account for border
     let border_size = if element.style.border == crate::types::Border::None {
         0
@@ -62,12 +72,12 @@ fn layout_children(element: &Element, rect: Rect, result: &mut LayoutResult) {
     let main_size = if is_row { inner.width } else { inner.height };
     let cross_size = if is_row { inner.height } else { inner.width };
 
-    // First pass: calculate fixed sizes and count flex items
+    // First pass: calculate fixed sizes and count flex items (flow children only)
     let mut fixed_total = 0u16;
     let mut flex_count = 0u16;
-    let gap_total = element.gap * (children.len().saturating_sub(1)) as u16;
+    let gap_total = element.gap * flow_children.len().saturating_sub(1) as u16;
 
-    for child in children {
+    for child in &flow_children {
         let child_main_size = if is_row { child.width } else { child.height };
         match child_main_size {
             Size::Fixed(n) => fixed_total += n,
@@ -90,10 +100,10 @@ fn layout_children(element: &Element, rect: Rect, result: &mut LayoutResult) {
     };
 
     // Calculate child sizes first
-    let mut child_sizes: Vec<u16> = Vec::with_capacity(children.len());
+    let mut child_sizes: Vec<u16> = Vec::with_capacity(flow_children.len());
     let mut total_child_size = 0u16;
 
-    for child in children {
+    for child in &flow_children {
         let child_main_size = if is_row { child.width } else { child.height };
 
         let main = match child_main_size {
@@ -116,22 +126,26 @@ fn layout_children(element: &Element, rect: Rect, result: &mut LayoutResult) {
         crate::types::Justify::End => (extra_space, element.gap),
         crate::types::Justify::Center => (extra_space / 2, element.gap),
         crate::types::Justify::SpaceBetween => {
-            if children.len() > 1 {
-                (0, extra_space / (children.len() - 1) as u16 + element.gap)
+            if flow_children.len() > 1 {
+                (0, extra_space / (flow_children.len() - 1) as u16 + element.gap)
             } else {
                 (0, element.gap)
             }
         }
         crate::types::Justify::SpaceAround => {
-            let spacing = extra_space / children.len() as u16;
-            (spacing / 2, spacing + element.gap)
+            if flow_children.is_empty() {
+                (0, element.gap)
+            } else {
+                let spacing = extra_space / flow_children.len() as u16;
+                (spacing / 2, spacing + element.gap)
+            }
         }
     };
 
-    // Second pass: assign rects with justify
+    // Second pass: assign rects to flow children with justify
     let mut offset = start_offset;
 
-    for (i, child) in children.iter().enumerate() {
+    for (i, child) in flow_children.iter().enumerate() {
         let child_cross_size = if is_row { child.height } else { child.width };
         let main = child_sizes[i];
 
@@ -153,6 +167,11 @@ fn layout_children(element: &Element, rect: Rect, result: &mut LayoutResult) {
 
         layout_element(child, child_rect, result);
         offset += main + between_gap;
+    }
+
+    // Layout absolute children (they position themselves)
+    for child in absolute_children {
+        layout_element(child, rect, result);
     }
 }
 
