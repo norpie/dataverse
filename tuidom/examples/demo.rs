@@ -1,9 +1,17 @@
+use std::fs::File;
+
+use simplelog::{Config, LevelFilter, WriteLogger};
 use tuidom::{
     Align, Border, Color, Direction, Edges, Element, Event, FocusState, Justify, Key, Position,
     Size, Style, Terminal, TextAlign, TextWrap, Wrap,
 };
 
 fn main() -> std::io::Result<()> {
+    // Set up file logging
+    let log_file = File::create("demo.log")?;
+    WriteLogger::init(LevelFilter::Debug, Config::default(), log_file)
+        .expect("Failed to initialize logger");
+
     let mut term = Terminal::new()?;
     let mut focus = FocusState::new();
     let mut last_event: Option<String> = None;

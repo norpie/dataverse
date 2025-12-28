@@ -1,11 +1,18 @@
+use std::fs::File;
 use std::time::Duration;
 
+use simplelog::{Config, LevelFilter, WriteLogger};
 use tuidom::{
     Border, Color, Easing, Edges, Element, Event, FocusState, Key, Position, Size, Style,
     Terminal, Transitions,
 };
 
 fn main() -> std::io::Result<()> {
+    // Set up file logging
+    let log_file = File::create("transitions.log")?;
+    WriteLogger::init(LevelFilter::Debug, Config::default(), log_file)
+        .expect("Failed to initialize logger");
+
     let mut term = Terminal::new()?;
     let mut focus = FocusState::new();
 

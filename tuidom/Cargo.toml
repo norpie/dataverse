@@ -5,7 +5,9 @@ edition = "2021"
 
 [dependencies]
 crossterm = "0.28"
+log = "0.4"
 palette = "0.7"
+simplelog = "0.12"
 unicode-width = "0.2"
 
 [lints]

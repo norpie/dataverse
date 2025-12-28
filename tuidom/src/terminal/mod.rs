@@ -1,5 +1,5 @@
 use std::io::{self, Write};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use crossterm::{
     cursor,
@@ -100,28 +100,36 @@ impl Terminal {
     }
 
     pub fn render(&mut self, root: &Element) -> io::Result<&LayoutResult> {
+        let t_start = Instant::now();
+
         // Check if terminal size changed
         let (width, height) = terminal::size()?;
         if width != self.current_buffer.width() || height != self.current_buffer.height() {
             self.current_buffer = Buffer::new(width, height);
             self.previous_buffer = Buffer::new(width, height);
         }
+        let t_resize = Instant::now();
 
         // Update animation state (detect property changes, start/complete transitions)
         self.animation.update(root);
+        let t_animation = Instant::now();
 
         // Clear current buffer
         self.current_buffer.clear();
+        let t_clear = Instant::now();
 
         // Layout
         let available = Rect::from_size(width, height);
         self.last_layout = layout(root, available);
+        let t_layout = Instant::now();
 
         // Render to buffer with animation state for interpolated values
         render_to_buffer(root, &self.last_layout, &mut self.current_buffer, &self.animation);
+        let t_render = Instant::now();
 
         // Diff and write changes
         self.flush_diff()?;
+        let t_flush = Instant::now();
 
         // Swap buffers
         std::mem::swap(&mut self.current_buffer, &mut self.previous_buffer);
@@ -129,6 +137,19 @@ impl Terminal {
         // Cleanup animation state for removed elements
         let current_ids = collect_element_ids(root);
         self.animation.cleanup(&current_ids);
+        let t_cleanup = Instant::now();
+
+        log::debug!(
+            "render: resize={:>6.2}µs animation={:>6.2}µs clear={:>6.2}µs layout={:>6.2}µs render={:>6.2}µs flush={:>6.2}µs cleanup={:>6.2}µs total={:>6.2}µs",
+            t_resize.duration_since(t_start).as_secs_f64() * 1_000_000.0,
+            t_animation.duration_since(t_resize).as_secs_f64() * 1_000_000.0,
+            t_clear.duration_since(t_animation).as_secs_f64() * 1_000_000.0,
+            t_layout.duration_since(t_clear).as_secs_f64() * 1_000_000.0,
+            t_render.duration_since(t_layout).as_secs_f64() * 1_000_000.0,
+            t_flush.duration_since(t_render).as_secs_f64() * 1_000_000.0,
+            t_cleanup.duration_since(t_flush).as_secs_f64() * 1_000_000.0,
+            t_cleanup.duration_since(t_start).as_secs_f64() * 1_000_000.0,
+        );
 
         Ok(&self.last_layout)
     }

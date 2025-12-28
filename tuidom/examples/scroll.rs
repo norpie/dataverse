@@ -1,4 +1,7 @@
+use std::fs::File;
+
 use crossterm::event::{Event as CrosstermEvent, MouseButton, MouseEventKind};
+use simplelog::{Config, LevelFilter, WriteLogger};
 use tuidom::{
     Border, Color, Edges, Element, Event, FocusState, Key, LayoutResult, Overflow, ScrollState,
     Size, Style, Terminal,
@@ -15,6 +18,11 @@ struct DragState {
 }
 
 fn main() -> std::io::Result<()> {
+    // Set up file logging
+    let log_file = File::create("scroll.log")?;
+    WriteLogger::init(LevelFilter::Debug, Config::default(), log_file)
+        .expect("Failed to initialize logger");
+
     let mut term = Terminal::new()?;
     let mut focus = FocusState::new();
     let mut scroll = ScrollState::new();
