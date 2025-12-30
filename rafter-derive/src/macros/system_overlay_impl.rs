@@ -9,10 +9,9 @@ use syn::{ImplItem, ImplItemFn, ItemImpl, parse2};
 
 use super::handler::HandlerParams;
 use super::impl_common::{
-    EventHandlerMethod, HandlerMethod, KeybindsMethod, RequestHandlerMethod,
-    get_type_name, is_keybinds_method, parse_event_handler_metadata,
-    parse_handler_metadata, parse_request_handler_metadata, strip_custom_attrs,
-    KeybindScope,
+    EventHandlerMethod, HandlerMethod, KeybindScope, KeybindsMethod, RequestHandlerMethod,
+    get_type_name, is_keybinds_method, parse_event_handler_metadata, parse_handler_metadata,
+    parse_request_handler_metadata, strip_custom_attrs,
 };
 
 /// Check if method is named "view".
@@ -59,7 +58,10 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
         }
     };
 
-    let metadata_mod = format_ident!("__rafter_system_overlay_metadata_{}", type_name.to_string().to_lowercase());
+    let metadata_mod = format_ident!(
+        "__rafter_system_overlay_metadata_{}",
+        type_name.to_string().to_lowercase()
+    );
     let overlay_name_snake = to_snake_case(&type_name.to_string());
 
     // Collect method information

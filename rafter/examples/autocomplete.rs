@@ -132,11 +132,19 @@ impl AutocompleteDemo {
 
         let fruit_value = {
             let v = self.fruit.value();
-            if v.is_empty() { "(empty)".to_string() } else { v }
+            if v.is_empty() {
+                "(empty)".to_string()
+            } else {
+                v
+            }
         };
         let country_value = {
             let v = self.country.value();
-            if v.is_empty() { "(empty)".to_string() } else { v }
+            if v.is_empty() {
+                "(empty)".to_string()
+            } else {
+                v
+            }
         };
         let last_event = self.last_event.get();
 
@@ -193,26 +201,86 @@ impl AutocompleteDemo {
 
 fn get_countries() -> Vec<Country> {
     vec![
-        Country { code: "US".into(), name: "United States".into() },
-        Country { code: "GB".into(), name: "United Kingdom".into() },
-        Country { code: "CA".into(), name: "Canada".into() },
-        Country { code: "AU".into(), name: "Australia".into() },
-        Country { code: "DE".into(), name: "Germany".into() },
-        Country { code: "FR".into(), name: "France".into() },
-        Country { code: "JP".into(), name: "Japan".into() },
-        Country { code: "CN".into(), name: "China".into() },
-        Country { code: "IN".into(), name: "India".into() },
-        Country { code: "BR".into(), name: "Brazil".into() },
-        Country { code: "MX".into(), name: "Mexico".into() },
-        Country { code: "ES".into(), name: "Spain".into() },
-        Country { code: "IT".into(), name: "Italy".into() },
-        Country { code: "NL".into(), name: "Netherlands".into() },
-        Country { code: "SE".into(), name: "Sweden".into() },
-        Country { code: "NO".into(), name: "Norway".into() },
-        Country { code: "DK".into(), name: "Denmark".into() },
-        Country { code: "FI".into(), name: "Finland".into() },
-        Country { code: "PL".into(), name: "Poland".into() },
-        Country { code: "RU".into(), name: "Russia".into() },
+        Country {
+            code: "US".into(),
+            name: "United States".into(),
+        },
+        Country {
+            code: "GB".into(),
+            name: "United Kingdom".into(),
+        },
+        Country {
+            code: "CA".into(),
+            name: "Canada".into(),
+        },
+        Country {
+            code: "AU".into(),
+            name: "Australia".into(),
+        },
+        Country {
+            code: "DE".into(),
+            name: "Germany".into(),
+        },
+        Country {
+            code: "FR".into(),
+            name: "France".into(),
+        },
+        Country {
+            code: "JP".into(),
+            name: "Japan".into(),
+        },
+        Country {
+            code: "CN".into(),
+            name: "China".into(),
+        },
+        Country {
+            code: "IN".into(),
+            name: "India".into(),
+        },
+        Country {
+            code: "BR".into(),
+            name: "Brazil".into(),
+        },
+        Country {
+            code: "MX".into(),
+            name: "Mexico".into(),
+        },
+        Country {
+            code: "ES".into(),
+            name: "Spain".into(),
+        },
+        Country {
+            code: "IT".into(),
+            name: "Italy".into(),
+        },
+        Country {
+            code: "NL".into(),
+            name: "Netherlands".into(),
+        },
+        Country {
+            code: "SE".into(),
+            name: "Sweden".into(),
+        },
+        Country {
+            code: "NO".into(),
+            name: "Norway".into(),
+        },
+        Country {
+            code: "DK".into(),
+            name: "Denmark".into(),
+        },
+        Country {
+            code: "FI".into(),
+            name: "Finland".into(),
+        },
+        Country {
+            code: "PL".into(),
+            name: "Poland".into(),
+        },
+        Country {
+            code: "RU".into(),
+            name: "Russia".into(),
+        },
     ]
 }
 

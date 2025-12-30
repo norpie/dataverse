@@ -25,17 +25,35 @@ fn main() -> std::io::Result<()> {
 
         for event in events {
             match &event {
-                Event::Key { key: Key::Char('q'), .. } | Event::Key { key: Key::Escape, .. } => {
+                Event::Key {
+                    key: Key::Char('q'),
+                    ..
+                }
+                | Event::Key {
+                    key: Key::Escape, ..
+                } => {
                     return Ok(());
                 }
-                Event::Key { target, key, modifiers } => {
+                Event::Key {
+                    target,
+                    key,
+                    modifiers,
+                } => {
                     last_event = Some(format!(
                         "Key {:?} (shift={}, ctrl={}) on {:?}",
                         key, modifiers.shift, modifiers.ctrl, target
                     ));
                 }
-                Event::Click { target, x, y, button } => {
-                    last_event = Some(format!("Click {:?} at ({}, {}) on {:?}", button, x, y, target));
+                Event::Click {
+                    target,
+                    x,
+                    y,
+                    button,
+                } => {
+                    last_event = Some(format!(
+                        "Click {:?} at ({}, {}) on {:?}",
+                        button, x, y, target
+                    ));
                 }
                 Event::Focus { target } => {
                     last_event = Some(format!("Focus: {}", target));
@@ -43,7 +61,12 @@ fn main() -> std::io::Result<()> {
                 Event::Blur { target } => {
                     last_event = Some(format!("Blur: {}", target));
                 }
-                Event::Scroll { target, delta_x, delta_y, .. } => {
+                Event::Scroll {
+                    target,
+                    delta_x,
+                    delta_y,
+                    ..
+                } => {
                     last_event = Some(format!("Scroll ({}, {}) on {:?}", delta_x, delta_y, target));
                 }
                 _ => {}
@@ -201,21 +224,30 @@ fn layout_examples(_focused: Option<&str>) -> Element {
                         .height(Size::Fixed(5))
                         .align(Align::Start)
                         .style(Style::new().background(Color::oklch(0.35, 0.05, 280.0)))
-                        .child(Element::text("Start").style(Style::new().background(Color::oklch(0.5, 0.12, 60.0)))),
+                        .child(
+                            Element::text("Start")
+                                .style(Style::new().background(Color::oklch(0.5, 0.12, 60.0))),
+                        ),
                 )
                 .child(
                     Element::row()
                         .height(Size::Fixed(5))
                         .align(Align::Center)
                         .style(Style::new().background(Color::oklch(0.35, 0.05, 280.0)))
-                        .child(Element::text("Center").style(Style::new().background(Color::oklch(0.5, 0.12, 120.0)))),
+                        .child(
+                            Element::text("Center")
+                                .style(Style::new().background(Color::oklch(0.5, 0.12, 120.0))),
+                        ),
                 )
                 .child(
                     Element::row()
                         .height(Size::Fixed(5))
                         .align(Align::End)
                         .style(Style::new().background(Color::oklch(0.35, 0.05, 280.0)))
-                        .child(Element::text("End").style(Style::new().background(Color::oklch(0.5, 0.12, 180.0)))),
+                        .child(
+                            Element::text("End")
+                                .style(Style::new().background(Color::oklch(0.5, 0.12, 180.0))),
+                        ),
                 ),
         )
         // Flex demo - flex_grow ratios and wrap

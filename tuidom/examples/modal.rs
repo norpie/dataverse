@@ -52,8 +52,11 @@ fn background_content() -> Element {
         .padding(Edges::all(2))
         .gap(1)
         .child(
-            Element::text("Background Application")
-                .style(Style::new().bold().foreground(Color::oklch(0.9, 0.05, 250.0))),
+            Element::text("Background Application").style(
+                Style::new()
+                    .bold()
+                    .foreground(Color::oklch(0.9, 0.05, 250.0)),
+            ),
         )
         .child(Element::text("This is some content behind the modal."))
         .child(Element::text("It will be dimmed when the modal is shown."))
@@ -112,8 +115,11 @@ fn modal(width: u16, height: u16) -> Element {
         .padding(Edges::all(1))
         .gap(1)
         .child(
-            Element::text("Modal Dialog")
-                .style(Style::new().bold().foreground(Color::oklch(0.95, 0.08, 140.0))),
+            Element::text("Modal Dialog").style(
+                Style::new()
+                    .bold()
+                    .foreground(Color::oklch(0.95, 0.08, 140.0)),
+            ),
         )
         .child(Element::text("This modal has a dimmed backdrop."))
         .child(Element::text("Notice the colorful boxes are now darker."))

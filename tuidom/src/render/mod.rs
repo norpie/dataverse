@@ -5,7 +5,9 @@ use crate::animation::{AnimationState, PropertyValue, TransitionProperty};
 use crate::buffer::{Buffer, Cell};
 use crate::element::{Content, Element};
 use crate::layout::{LayoutResult, Rect};
-use crate::text::{align_offset, char_width, display_width, truncate_to_width, wrap_chars, wrap_words};
+use crate::text::{
+    align_offset, char_width, display_width, truncate_to_width, wrap_chars, wrap_words,
+};
 use crate::types::{Backdrop, Color, ColorKey, Oklch, Overflow, TextWrap};
 
 /// Cache for Color → Oklch conversions during render.
@@ -52,7 +54,12 @@ struct RenderStats {
     element_count: usize,
 }
 
-pub fn render_to_buffer(element: &Element, layout: &LayoutResult, buf: &mut Buffer, animation: &AnimationState) {
+pub fn render_to_buffer(
+    element: &Element,
+    layout: &LayoutResult,
+    buf: &mut Buffer,
+    animation: &AnimationState,
+) {
     let t0 = Instant::now();
 
     // Collect all elements with their effective z_index, tree order, and clip rects
@@ -77,7 +84,15 @@ pub fn render_to_buffer(element: &Element, layout: &LayoutResult, buf: &mut Buff
 
     // Render in sorted order
     for item in render_list {
-        render_single_element_timed(item.element, layout, buf, item.clip, animation, &mut stats, &mut oklch_cache);
+        render_single_element_timed(
+            item.element,
+            layout,
+            buf,
+            item.clip,
+            animation,
+            &mut stats,
+            &mut oklch_cache,
+        );
     }
 
     log::debug!(
@@ -159,12 +174,7 @@ fn intersect_rects(rect: Rect, parent_clip: Option<Rect>) -> Rect {
             let y = rect.y.max(clip.y);
             let right = rect.right().min(clip.right());
             let bottom = rect.bottom().min(clip.bottom());
-            Rect::new(
-                x,
-                y,
-                right.saturating_sub(x),
-                bottom.saturating_sub(y),
-            )
+            Rect::new(x, y, right.saturating_sub(x), bottom.saturating_sub(y))
         }
     }
 }
@@ -281,11 +291,7 @@ fn get_interpolated_i16(
 }
 
 /// Adjust rect based on interpolated position offsets for Relative/Absolute positioned elements.
-fn adjust_rect_for_position(
-    element: &Element,
-    rect: Rect,
-    animation: &AnimationState,
-) -> Rect {
+fn adjust_rect_for_position(element: &Element, rect: Rect, animation: &AnimationState) -> Rect {
     use crate::types::Position;
 
     // Only adjust for Relative or Absolute positioned elements
@@ -294,10 +300,25 @@ fn adjust_rect_for_position(
     }
 
     // Get interpolated offsets (or current if no transition)
-    let left = get_interpolated_i16(animation, &element.id, TransitionProperty::Left, element.left);
+    let left = get_interpolated_i16(
+        animation,
+        &element.id,
+        TransitionProperty::Left,
+        element.left,
+    );
     let top = get_interpolated_i16(animation, &element.id, TransitionProperty::Top, element.top);
-    let right = get_interpolated_i16(animation, &element.id, TransitionProperty::Right, element.right);
-    let bottom = get_interpolated_i16(animation, &element.id, TransitionProperty::Bottom, element.bottom);
+    let right = get_interpolated_i16(
+        animation,
+        &element.id,
+        TransitionProperty::Right,
+        element.right,
+    );
+    let bottom = get_interpolated_i16(
+        animation,
+        &element.id,
+        TransitionProperty::Bottom,
+        element.bottom,
+    );
 
     // Calculate offset from current element values vs interpolated
     let dx = left.unwrap_or(0) - element.left.unwrap_or(0);
@@ -332,7 +353,15 @@ fn fill_rect(buf: &mut Buffer, rect: Rect, bg: Oklch) {
     }
 }
 
-fn render_text(text: &str, element: &Element, rect: Rect, buf: &mut Buffer, clip: Option<Rect>, animation: &AnimationState, oklch_cache: &mut OklchCache) {
+fn render_text(
+    text: &str,
+    element: &Element,
+    rect: Rect,
+    buf: &mut Buffer,
+    clip: Option<Rect>,
+    animation: &AnimationState,
+    oklch_cache: &mut OklchCache,
+) {
     // Get foreground color (potentially interpolated)
     let foreground = get_interpolated_color(
         animation,
@@ -437,7 +466,9 @@ fn render_text(text: &str, element: &Element, rect: Rect, buf: &mut Buffer, clip
 
             // Preserve existing background if no explicit background set
             let bg = explicit_bg.unwrap_or_else(|| {
-                buf.get(x, y).map(|c| c.bg).unwrap_or(Oklch::new(0.0, 0.0, 0.0))
+                buf.get(x, y)
+                    .map(|c| c.bg)
+                    .unwrap_or(Oklch::new(0.0, 0.0, 0.0))
             });
 
             buf.set(
@@ -468,7 +499,14 @@ fn render_text(text: &str, element: &Element, rect: Rect, buf: &mut Buffer, clip
     }
 }
 
-fn render_border(element: &Element, rect: Rect, buf: &mut Buffer, clip: Option<Rect>, animation: &AnimationState, oklch_cache: &mut OklchCache) {
+fn render_border(
+    element: &Element,
+    rect: Rect,
+    buf: &mut Buffer,
+    clip: Option<Rect>,
+    animation: &AnimationState,
+    oklch_cache: &mut OklchCache,
+) {
     use crate::types::Border;
 
     let (tl, tr, bl, br, h, v) = match element.style.border {
@@ -497,7 +535,9 @@ fn render_border(element: &Element, rect: Rect, buf: &mut Buffer, clip: Option<R
 
     // Helper to check if a point is within clip bounds
     let is_visible = |x: u16, y: u16| -> bool {
-        clip.map_or(true, |c| x >= c.x && x < c.right() && y >= c.y && y < c.bottom())
+        clip.map_or(true, |c| {
+            x >= c.x && x < c.right() && y >= c.y && y < c.bottom()
+        })
     };
 
     // Corners
@@ -588,7 +628,9 @@ fn render_scrollbar(
 
     // Helper to check if a point is within clip bounds
     let is_visible = |x: u16, y: u16| -> bool {
-        clip.map_or(true, |c| x >= c.x && x < c.right() && y >= c.y && y < c.bottom())
+        clip.map_or(true, |c| {
+            x >= c.x && x < c.right() && y >= c.y && y < c.bottom()
+        })
     };
 
     // Vertical scrollbar (right edge, inside border)

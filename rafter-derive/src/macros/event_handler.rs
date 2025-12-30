@@ -67,8 +67,11 @@ pub fn expand(_attr: TokenStream, item: TokenStream) -> TokenStream {
 
     // Validate cx parameter
     if !has_app_context(&func) {
-        return syn::Error::new_spanned(&func.sig, "event_handler requires an &AppContext parameter")
-            .to_compile_error();
+        return syn::Error::new_spanned(
+            &func.sig,
+            "event_handler requires an &AppContext parameter",
+        )
+        .to_compile_error();
     }
 
     // Encode metadata: event type path as string

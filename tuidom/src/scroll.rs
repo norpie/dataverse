@@ -100,10 +100,12 @@ impl ScrollState {
                 // Find the scrollable element at this position
                 if let Some(scrollable_id) = find_scrollable_at(root, layout, *x, *y) {
                     // Get content and viewport sizes from layout (computed during layout pass)
-                    let Some((content_width, content_height)) = layout.content_size(&scrollable_id) else {
+                    let Some((content_width, content_height)) = layout.content_size(&scrollable_id)
+                    else {
                         continue;
                     };
-                    let Some((inner_width, inner_height)) = layout.viewport_size(&scrollable_id) else {
+                    let Some((inner_width, inner_height)) = layout.viewport_size(&scrollable_id)
+                    else {
                         continue;
                     };
 
@@ -118,20 +120,20 @@ impl ScrollState {
                     // Handle vertical scrolling
                     if *delta_y != 0 && can_scroll_vertical {
                         let max_scroll_y = content_height.saturating_sub(inner_height);
-                        new_y = (current.y as i32 + *delta_y as i32).clamp(0, max_scroll_y as i32) as u16;
+                        new_y = (current.y as i32 + *delta_y as i32).clamp(0, max_scroll_y as i32)
+                            as u16;
                     }
 
                     // Handle horizontal scrolling
                     if *delta_x != 0 && can_scroll_horizontal {
                         let max_scroll_x = content_width.saturating_sub(inner_width);
-                        new_x = (current.x as i32 + *delta_x as i32).clamp(0, max_scroll_x as i32) as u16;
+                        new_x = (current.x as i32 + *delta_x as i32).clamp(0, max_scroll_x as i32)
+                            as u16;
                     }
 
                     if new_x != current.x || new_y != current.y {
-                        self.offsets.insert(
-                            scrollable_id.clone(),
-                            ScrollOffset::new(new_x, new_y),
-                        );
+                        self.offsets
+                            .insert(scrollable_id.clone(), ScrollOffset::new(new_x, new_y));
                         consumed.push(event.clone());
                     }
 

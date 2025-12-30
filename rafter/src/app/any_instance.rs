@@ -13,7 +13,7 @@ use crate::node::Node;
 use crate::widgets::events::EventResult;
 
 use super::config::AppConfig;
-use super::error::{extract_panic_message, AppError, AppErrorKind};
+use super::error::{AppError, AppErrorKind, extract_panic_message};
 use super::instance::{InstanceId, InstanceInfo};
 use super::traits::App;
 
@@ -110,7 +110,12 @@ pub trait AnyAppInstance: Send + Sync {
     ///
     /// Returns true if a handler was found and invoked.
     /// The handler runs in a spawned task (fire-and-forget).
-    fn dispatch_event(&self, event_type: TypeId, event: Box<dyn Any + Send + Sync>, cx: &AppContext) -> bool;
+    fn dispatch_event(
+        &self,
+        event_type: TypeId,
+        event: Box<dyn Any + Send + Sync>,
+        cx: &AppContext,
+    ) -> bool;
 
     /// Dispatch a request to this instance's handlers.
     ///
@@ -381,7 +386,12 @@ impl<A: App> AnyAppInstance for AppInstance<A> {
         self.app.has_request_handler(request_type)
     }
 
-    fn dispatch_event(&self, event_type: TypeId, event: Box<dyn Any + Send + Sync>, cx: &AppContext) -> bool {
+    fn dispatch_event(
+        &self,
+        event_type: TypeId,
+        event: Box<dyn Any + Send + Sync>,
+        cx: &AppContext,
+    ) -> bool {
         self.app.dispatch_event(event_type, event, cx)
     }
 

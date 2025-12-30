@@ -228,21 +228,24 @@ impl RadioGroup {
     /// Select an option by index
     pub fn select(&self, index: usize) {
         if let Ok(mut guard) = self.inner.write()
-            && index < guard.options.len() && guard.selected != Some(index) {
-                guard.selected = Some(index);
-                guard.error = None; // Auto-clear error on value change
-                self.dirty.store(true, Ordering::SeqCst);
-            }
+            && index < guard.options.len()
+            && guard.selected != Some(index)
+        {
+            guard.selected = Some(index);
+            guard.error = None; // Auto-clear error on value change
+            self.dirty.store(true, Ordering::SeqCst);
+        }
     }
 
     /// Clear the selection
     pub fn clear(&self) {
         if let Ok(mut guard) = self.inner.write()
-            && guard.selected.is_some() {
-                guard.selected = None;
-                guard.error = None; // Auto-clear error on value change
-                self.dirty.store(true, Ordering::SeqCst);
-            }
+            && guard.selected.is_some()
+        {
+            guard.selected = None;
+            guard.error = None; // Auto-clear error on value change
+            self.dirty.store(true, Ordering::SeqCst);
+        }
     }
 
     /// Set the available options (clears selection if now out of bounds)
@@ -251,9 +254,10 @@ impl RadioGroup {
             guard.options = options.into_iter().map(|l| l.into()).collect();
             // Clear selection if it's no longer valid
             if let Some(idx) = guard.selected
-                && idx >= guard.options.len() {
-                    guard.selected = None;
-                }
+                && idx >= guard.options.len()
+            {
+                guard.selected = None;
+            }
             self.dirty.store(true, Ordering::SeqCst);
         }
     }
@@ -329,10 +333,11 @@ impl RadioGroup {
     /// Clear the validation error.
     pub fn clear_error(&self) {
         if let Ok(mut guard) = self.inner.write()
-            && guard.error.is_some() {
-                guard.error = None;
-                self.dirty.store(true, Ordering::SeqCst);
-            }
+            && guard.error.is_some()
+        {
+            guard.error = None;
+            self.dirty.store(true, Ordering::SeqCst);
+        }
     }
 
     /// Check if this radio group has a validation error.

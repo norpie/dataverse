@@ -64,7 +64,12 @@ pub fn calculate_system_overlay_layout<'a>(
             SystemOverlayPosition::Right { width } => {
                 right_overlays.push((idx, overlay.as_ref(), width));
             }
-            SystemOverlayPosition::Absolute { x, y, width, height } => {
+            SystemOverlayPosition::Absolute {
+                x,
+                y,
+                width,
+                height,
+            } => {
                 // Absolute overlays don't affect app area
                 let area = Rect::new(
                     terminal_area.x + x,
@@ -88,7 +93,11 @@ pub fn calculate_system_overlay_layout<'a>(
             continue;
         }
         let area = Rect::new(app_area.x, app_area.y, app_area.width, height);
-        edge_overlays.push(OverlayLayout { index: idx, overlay, area });
+        edge_overlays.push(OverlayLayout {
+            index: idx,
+            overlay,
+            area,
+        });
         // Shrink app area from top
         app_area.y += height;
         app_area.height = app_area.height.saturating_sub(height);
@@ -108,10 +117,20 @@ pub fn calculate_system_overlay_layout<'a>(
         );
         log::debug!(
             "Bottom overlay: app_area=({}, {}, {}x{}), overlay_area=({}, {}, {}x{})",
-            app_area.x, app_area.y, app_area.width, app_area.height,
-            area.x, area.y, area.width, area.height
+            app_area.x,
+            app_area.y,
+            app_area.width,
+            app_area.height,
+            area.x,
+            area.y,
+            area.width,
+            area.height
         );
-        edge_overlays.push(OverlayLayout { index: idx, overlay, area });
+        edge_overlays.push(OverlayLayout {
+            index: idx,
+            overlay,
+            area,
+        });
         // Shrink app area from bottom
         app_area.height = app_area.height.saturating_sub(height);
     }
@@ -123,7 +142,11 @@ pub fn calculate_system_overlay_layout<'a>(
             continue;
         }
         let area = Rect::new(app_area.x, app_area.y, width, app_area.height);
-        edge_overlays.push(OverlayLayout { index: idx, overlay, area });
+        edge_overlays.push(OverlayLayout {
+            index: idx,
+            overlay,
+            area,
+        });
         // Shrink app area from left
         app_area.x += width;
         app_area.width = app_area.width.saturating_sub(width);
@@ -141,7 +164,11 @@ pub fn calculate_system_overlay_layout<'a>(
             width,
             app_area.height,
         );
-        edge_overlays.push(OverlayLayout { index: idx, overlay, area });
+        edge_overlays.push(OverlayLayout {
+            index: idx,
+            overlay,
+            area,
+        });
         // Shrink app area from right
         app_area.width = app_area.width.saturating_sub(width);
     }

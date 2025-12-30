@@ -22,7 +22,7 @@ pub mod table;
 mod traits;
 pub mod tree;
 
-pub use autocomplete::{fuzzy_filter, Autocomplete, AutocompleteId, AutocompleteItem, FilterMatch};
+pub use autocomplete::{Autocomplete, AutocompleteId, AutocompleteItem, FilterMatch, fuzzy_filter};
 pub use button::Button;
 pub use checkbox::{Checkbox, CheckboxId};
 pub use collapsible::{Collapsible, CollapsibleId};

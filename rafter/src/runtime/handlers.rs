@@ -45,9 +45,10 @@ fn focus_next_with_blur(state: &mut EventLoopState, page: &Node, cx: &AppContext
     state.focus_state_mut().focus_next();
     let new_id = state.focused_id();
     if old_id != new_id
-        && let Some(ref old) = old_id {
-            page.dispatch_blur(old, cx);
-        }
+        && let Some(ref old) = old_id
+    {
+        page.dispatch_blur(old, cx);
+    }
 }
 
 /// Focus previous element, dispatching blur to the old focused widget.
@@ -56,9 +57,10 @@ fn focus_prev_with_blur(state: &mut EventLoopState, page: &Node, cx: &AppContext
     state.focus_state_mut().focus_prev();
     let new_id = state.focused_id();
     if old_id != new_id
-        && let Some(ref old) = old_id {
-            page.dispatch_blur(old, cx);
-        }
+        && let Some(ref old) = old_id
+    {
+        page.dispatch_blur(old, cx);
+    }
 }
 
 /// Clear focus, dispatching blur to the old focused widget.
@@ -145,7 +147,9 @@ pub fn dispatch_overlay_component_handlers(
         let handler = match event.kind {
             WidgetEventKind::Activate => overlay_view.get_submit_handler(&event.widget_id),
             WidgetEventKind::CursorMove => overlay_view.get_cursor_handler(&event.widget_id),
-            WidgetEventKind::SelectionChange => overlay_view.get_selection_handler(&event.widget_id),
+            WidgetEventKind::SelectionChange => {
+                overlay_view.get_selection_handler(&event.widget_id)
+            }
             WidgetEventKind::Expand => overlay_view.get_expand_handler(&event.widget_id),
             WidgetEventKind::Collapse => overlay_view.get_collapse_handler(&event.widget_id),
             WidgetEventKind::Sort => overlay_view.get_sort_handler(&event.widget_id),
@@ -310,12 +314,16 @@ pub fn handle_key_event(
     // Check system keybinds FIRST (highest priority)
     // Systems are global and not affected by modals or page scope
     let keybind_start = Instant::now();
-    let system_match = state
-        .system_input_state
-        .process_key(key_combo.clone(), &state.system_keybinds, None);
+    let system_match =
+        state
+            .system_input_state
+            .process_key(key_combo.clone(), &state.system_keybinds, None);
     let system_keybind_elapsed = keybind_start.elapsed();
     if system_keybind_elapsed.as_micros() > 500 {
-        warn!("PROFILE: system keybind matching took {:?}", system_keybind_elapsed);
+        warn!(
+            "PROFILE: system keybind matching took {:?}",
+            system_keybind_elapsed
+        );
     }
 
     if let KeybindMatch::Match(handler_id) = system_match {
@@ -323,7 +331,12 @@ pub fn handle_key_event(
         // Find and dispatch to the appropriate system
         for system in &state.systems {
             // Check if this system's keybinds contain this handler
-            if system.keybinds().all().iter().any(|b| b.handler == handler_id) {
+            if system
+                .keybinds()
+                .all()
+                .iter()
+                .any(|b| b.handler == handler_id)
+            {
                 system.dispatch(&handler_id, cx);
                 return ControlFlow::Continue(true);
             }
@@ -359,7 +372,10 @@ pub fn handle_key_event(
     };
     let app_keybind_elapsed = app_keybind_start.elapsed();
     if app_keybind_elapsed.as_micros() > 500 {
-        warn!("PROFILE: app keybind matching took {:?}", app_keybind_elapsed);
+        warn!(
+            "PROFILE: app keybind matching took {:?}",
+            app_keybind_elapsed
+        );
     }
 
     match keybind_match {
@@ -396,7 +412,7 @@ pub fn handle_click_event(
     cx: &AppContext,
 ) -> bool {
     // First check if click is on a system overlay - route to overlay's handlers
-    // We check system overlays before widget overlays because system overlays 
+    // We check system overlays before widget overlays because system overlays
     // (like taskbar) should be rendered on top
     if let Some(result) = handle_system_overlay_click(click, state, cx) {
         return result;
@@ -413,16 +429,17 @@ pub fn handle_click_event(
 
             // Dispatch overlay click to owner widget
             if let Some(result) = page.dispatch_overlay_click(&overlay.owner_id, x_rel, y_rel, cx)
-                && result.is_handled() {
-                    dispatch_component_handlers(
-                        page,
-                        &overlay.owner_id,
-                        instance,
-                        &state.modal_stack,
-                        cx,
-                    );
-                    return true;
-                }
+                && result.is_handled()
+            {
+                dispatch_component_handlers(
+                    page,
+                    &overlay.owner_id,
+                    instance,
+                    &state.modal_stack,
+                    cx,
+                );
+                return true;
+            }
 
             // If overlay didn't handle it, don't propagate to widgets below
             return true;
@@ -503,9 +520,10 @@ pub fn handle_click_event(
 
     // If it's a button (non-capturing widget), dispatch submit handler
     if !hit_box.captures_input
-        && let Some(handler_id) = page.get_submit_handler(&hit_box.id) {
-            dispatch_to_layer(instance, &state.modal_stack, &handler_id, cx);
-        }
+        && let Some(handler_id) = page.get_submit_handler(&hit_box.id)
+    {
+        dispatch_to_layer(instance, &state.modal_stack, &handler_id, cx);
+    }
 
     false
 }
@@ -534,15 +552,16 @@ pub fn handle_hover_event(
 
             // Dispatch overlay hover to owner widget
             if let Some(result) = page.dispatch_overlay_hover(&overlay.owner_id, x_rel, y_rel, cx)
-                && result.is_handled() {
-                    dispatch_component_handlers(
-                        page,
-                        &overlay.owner_id,
-                        instance,
-                        &state.modal_stack,
-                        cx,
-                    );
-                }
+                && result.is_handled()
+            {
+                dispatch_component_handlers(
+                    page,
+                    &overlay.owner_id,
+                    instance,
+                    &state.modal_stack,
+                    cx,
+                );
+            }
 
             // Don't propagate to widgets below overlay
             return false;
@@ -595,12 +614,13 @@ pub fn handle_scroll_event(
             // Dispatch overlay scroll to owner widget
             if let Some(result) =
                 page.dispatch_overlay_scroll(&overlay.owner_id, scroll.direction, scroll.amount, cx)
-                && result.is_handled() {
-                    // Dispatch on_scroll handler if present
-                    if let Some(handler_id) = page.get_list_scroll_handler(&overlay.owner_id) {
-                        dispatch_to_layer(instance, &state.modal_stack, &handler_id, cx);
-                    }
+                && result.is_handled()
+            {
+                // Dispatch on_scroll handler if present
+                if let Some(handler_id) = page.get_list_scroll_handler(&overlay.owner_id) {
+                    dispatch_to_layer(instance, &state.modal_stack, &handler_id, cx);
                 }
+            }
 
             // Don't propagate to widgets below overlay
             return;
@@ -659,7 +679,11 @@ pub fn dispatch_event(
     let result = dispatch_event_inner(event, page, hit_map, instance, state, app_keybinds, cx);
     let dispatch_elapsed = dispatch_start.elapsed();
     if dispatch_elapsed.as_millis() > 2 {
-        warn!("PROFILE: dispatch_event({:?}) took {:?}", event.name(), dispatch_elapsed);
+        warn!(
+            "PROFILE: dispatch_event({:?}) took {:?}",
+            event.name(),
+            dispatch_elapsed
+        );
     }
     result
 }

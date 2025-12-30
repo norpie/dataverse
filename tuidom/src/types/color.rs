@@ -188,8 +188,8 @@ impl Color {
         match self {
             Self::Oklch { l, c, h, .. } => Oklch::new(*l, *c, *h),
             Self::Rgb { r, g, b } => Oklch::from_rgb(Rgb::new(*r, *g, *b)),
-            Self::Var(_) => Oklch::default(),          // needs ColorContext to resolve
-            Self::Derived { .. } => Oklch::default(),  // TODO: resolve ops
+            Self::Var(_) => Oklch::default(), // needs ColorContext to resolve
+            Self::Derived { .. } => Oklch::default(), // TODO: resolve ops
         }
     }
 

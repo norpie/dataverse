@@ -135,11 +135,12 @@ impl Select {
     /// Set the selected index.
     pub fn set_selected_index(&self, index: Option<usize>) {
         if let Ok(mut guard) = self.inner.write()
-            && guard.selected_index != index {
-                guard.selected_index = index;
-                guard.error = None; // Clear error on selection change
-                self.dirty.store(true, Ordering::SeqCst);
-            }
+            && guard.selected_index != index
+        {
+            guard.selected_index = index;
+            guard.error = None; // Clear error on selection change
+            self.dirty.store(true, Ordering::SeqCst);
+        }
     }
 
     /// Clear the selection.
@@ -310,10 +311,11 @@ impl Select {
     /// Clear the validation error.
     pub fn clear_error(&self) {
         if let Ok(mut guard) = self.inner.write()
-            && guard.error.is_some() {
-                guard.error = None;
-                self.dirty.store(true, Ordering::SeqCst);
-            }
+            && guard.error.is_some()
+        {
+            guard.error = None;
+            self.dirty.store(true, Ordering::SeqCst);
+        }
     }
 
     /// Check if this select has a validation error.

@@ -45,12 +45,7 @@ fn main() -> std::io::Result<()> {
 
         // Handle scrollbar dragging from raw events
         for raw_event in &raw_events {
-            handle_scrollbar_interaction(
-                raw_event,
-                &mut scroll,
-                &mut drag,
-                term.layout(),
-            );
+            handle_scrollbar_interaction(raw_event, &mut scroll, &mut drag, term.layout());
         }
 
         let events = focus.process_events(&raw_events, &root, term.layout());
@@ -104,7 +99,12 @@ fn handle_scrollbar_interaction(
                                 // Clicked on track - center thumb on click position
                                 drag.thumb_offset = thumb_size / 2;
                                 if let Some(scroll_pos) = calculate_scroll_from_position(
-                                    id, x, y, is_vertical, drag.thumb_offset, layout,
+                                    id,
+                                    x,
+                                    y,
+                                    is_vertical,
+                                    drag.thumb_offset,
+                                    layout,
                                 ) {
                                     let current = scroll.get(id);
                                     if is_vertical {
@@ -128,7 +128,12 @@ fn handle_scrollbar_interaction(
                     // Update scroll position while dragging
                     if let Some(ref id) = drag.element_id {
                         if let Some(scroll_pos) = calculate_scroll_from_position(
-                            id, x, y, drag.is_vertical, drag.thumb_offset, layout,
+                            id,
+                            x,
+                            y,
+                            drag.is_vertical,
+                            drag.thumb_offset,
+                            layout,
                         ) {
                             let current = scroll.get(id);
                             if drag.is_vertical {
@@ -178,7 +183,8 @@ fn check_scrollbar_hit(
                 .min(track_height as u32) as u16;
             let scroll_range = track_height.saturating_sub(thumb_size);
             let thumb_pos = if max_scroll > 0 && scroll_range > 0 {
-                ((current.y as u32 * scroll_range as u32) / max_scroll as u32).min(scroll_range as u32) as u16
+                ((current.y as u32 * scroll_range as u32) / max_scroll as u32)
+                    .min(scroll_range as u32) as u16
             } else {
                 0
             };
@@ -216,7 +222,8 @@ fn check_scrollbar_hit(
                 .min(track_width as u32) as u16;
             let scroll_range = track_width.saturating_sub(thumb_size);
             let thumb_pos = if max_scroll > 0 && scroll_range > 0 {
-                ((current.x as u32 * scroll_range as u32) / max_scroll as u32).min(scroll_range as u32) as u16
+                ((current.x as u32 * scroll_range as u32) / max_scroll as u32)
+                    .min(scroll_range as u32) as u16
             } else {
                 0
             };
@@ -276,7 +283,8 @@ fn calculate_scroll_from_position(
         let clamped_thumb_start = thumb_start_y.clamp(track_start, track_start + scroll_range);
         let thumb_offset_in_track = clamped_thumb_start - track_start;
 
-        let scroll_pos = (thumb_offset_in_track as u32 * max_scroll as u32 / scroll_range as u32) as u16;
+        let scroll_pos =
+            (thumb_offset_in_track as u32 * max_scroll as u32 / scroll_range as u32) as u16;
         Some(scroll_pos.min(max_scroll))
     } else {
         let track_start = rect.x + border_size;
@@ -310,7 +318,8 @@ fn calculate_scroll_from_position(
         let clamped_thumb_start = thumb_start_x.clamp(track_start, track_start + scroll_range);
         let thumb_offset_in_track = clamped_thumb_start - track_start;
 
-        let scroll_pos = (thumb_offset_in_track as u32 * max_scroll as u32 / scroll_range as u32) as u16;
+        let scroll_pos =
+            (thumb_offset_in_track as u32 * max_scroll as u32 / scroll_range as u32) as u16;
         Some(scroll_pos.min(max_scroll))
     }
 }
@@ -361,7 +370,8 @@ fn scroll_list(id: &str, scroll_y: u16) -> Element {
 
 fn list_item(n: u32) -> Element {
     let hue = (n as f32 * 18.0) % 360.0;
-    Element::text(format!("Item {}", n)).style(Style::new().background(Color::oklch(0.35, 0.08, hue)))
+    Element::text(format!("Item {}", n))
+        .style(Style::new().background(Color::oklch(0.35, 0.08, hue)))
 }
 
 fn scroll_content(id: &str, scroll_y: u16) -> Element {
@@ -396,9 +406,7 @@ fn scroll_content(id: &str, scroll_y: u16) -> Element {
         .child(Element::text(""))
         .child(Element::text("--- More content below ---"))
         .child(Element::text(""))
-        .children((1..=30).map(|i| {
-            Element::text(format!("Line {}: Some content here", i))
-        }))
+        .children((1..=30).map(|i| Element::text(format!("Line {}: Some content here", i))))
         .child(Element::text(""))
         .child(Element::text("--- End of content ---"))
 }

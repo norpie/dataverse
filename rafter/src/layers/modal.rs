@@ -9,9 +9,9 @@ use std::sync::{Arc, Mutex};
 use tokio::sync::oneshot;
 
 use crate::context::AppContext;
-use crate::runtime::wakeup;
 use crate::input::keybinds::{HandlerId, Keybinds};
 use crate::node::Node;
+use crate::runtime::wakeup;
 
 /// Modal position configuration.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
@@ -74,10 +74,15 @@ impl<R> ModalContext<R> {
     /// }
     /// ```
     pub fn close(&self, result: R) {
-        if let Some(tx) = self.result_tx.lock().unwrap_or_else(|e| {
-            log::warn!("Modal result lock poisoned, recovering");
-            e.into_inner()
-        }).take() {
+        if let Some(tx) = self
+            .result_tx
+            .lock()
+            .unwrap_or_else(|e| {
+                log::warn!("Modal result lock poisoned, recovering");
+                e.into_inner()
+            })
+            .take()
+        {
             let _ = tx.send(result);
         }
         self.closed.store(true, Ordering::SeqCst);

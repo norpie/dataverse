@@ -172,10 +172,7 @@ fn test_transitions_clone() {
     let t2 = t1.clone();
 
     assert!(t2.background.is_some());
-    assert_eq!(
-        t2.background.unwrap().duration,
-        Duration::from_millis(300)
-    );
+    assert_eq!(t2.background.unwrap().duration, Duration::from_millis(300));
 }
 
 // =============================================================================

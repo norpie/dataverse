@@ -43,8 +43,23 @@ impl LayoutResult {
         self.content_sizes.get(id).map(|(_, _, vw, vh)| (*vw, *vh))
     }
 
-    pub fn set_content_size(&mut self, id: String, content_width: u16, content_height: u16, viewport_width: u16, viewport_height: u16) {
-        self.content_sizes.insert(id, (content_width, content_height, viewport_width, viewport_height));
+    pub fn set_content_size(
+        &mut self,
+        id: String,
+        content_width: u16,
+        content_height: u16,
+        viewport_width: u16,
+        viewport_height: u16,
+    ) {
+        self.content_sizes.insert(
+            id,
+            (
+                content_width,
+                content_height,
+                viewport_width,
+                viewport_height,
+            ),
+        );
     }
 }
 
@@ -207,7 +222,13 @@ fn layout_children(element: &Element, rect: Rect, result: &mut LayoutResult) {
     if element.overflow == Overflow::Scroll || element.overflow == Overflow::Auto {
         // Calculate actual content bounds from laid out child rects
         let (content_width, content_height) = compute_content_size(&flow_children, inner, result);
-        result.set_content_size(element.id.clone(), content_width, content_height, inner.width, inner.height);
+        result.set_content_size(
+            element.id.clone(),
+            content_width,
+            content_height,
+            inner.width,
+            inner.height,
+        );
     }
 
     // Apply scroll offset to all flow children
@@ -316,8 +337,8 @@ fn get_base_main_size(child: &Element, is_row: bool) -> u16 {
     match size {
         Size::Fixed(n) => n,
         Size::Auto => estimate_size(child, is_row),
-        Size::Fill => 0, // Will be distributed via flex
-        Size::Flex(_) => 0, // Will be distributed via flex
+        Size::Fill => 0,       // Will be distributed via flex
+        Size::Flex(_) => 0,    // Will be distributed via flex
         Size::Percent(_) => 0, // Needs container size, treat as flex for wrapping
     }
 }
@@ -458,7 +479,8 @@ fn layout_line(
 
         let child_align = child.align_self.unwrap_or(parent.align);
         let child_cross_size = if is_row { child.height } else { child.width };
-        let cross_available = available_cross.saturating_sub(cross_margin_before + cross_margin_after);
+        let cross_available =
+            available_cross.saturating_sub(cross_margin_before + cross_margin_after);
 
         let cross = match child_cross_size {
             Size::Fixed(n) => n.min(cross_available),

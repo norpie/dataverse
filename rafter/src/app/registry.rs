@@ -144,9 +144,10 @@ impl InstanceRegistry {
         // Update focused state on old focused instance
         if let Some(old_id) = self.focused
             && old_id != id
-                && let Some(old_instance) = self.instances.get_mut(&old_id) {
-                    old_instance.set_focused(false);
-                }
+            && let Some(old_instance) = self.instances.get_mut(&old_id)
+        {
+            old_instance.set_focused(false);
+        }
 
         // Update focused state on new instance
         if let Some(instance) = self.instances.get_mut(&id) {
@@ -268,5 +269,3 @@ impl Default for InstanceRegistry {
         Self::new()
     }
 }
-
-

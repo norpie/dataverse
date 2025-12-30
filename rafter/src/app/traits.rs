@@ -212,7 +212,12 @@ pub trait App: Clone + Send + Sync + 'static {
     ///
     /// Returns true if the event was handled (a handler exists for this event type).
     /// The handler runs in a spawned task and doesn't block.
-    fn dispatch_event(&self, event_type: TypeId, event: Box<dyn Any + Send + Sync>, cx: &AppContext) -> bool {
+    fn dispatch_event(
+        &self,
+        event_type: TypeId,
+        event: Box<dyn Any + Send + Sync>,
+        cx: &AppContext,
+    ) -> bool {
         // Default: no event handlers
         let _ = (event_type, event, cx);
         false

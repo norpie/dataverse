@@ -14,8 +14,7 @@ pub struct FieldError {
 }
 
 /// Result of validating one or more fields.
-#[derive(Debug, Clone)]
-#[derive(Default)]
+#[derive(Debug, Clone, Default)]
 pub enum ValidationResult {
     /// All fields passed validation.
     #[default]
@@ -60,7 +59,10 @@ impl ValidationResult {
         match self.errors().len() {
             0 => {}
             1 => cx.toast(crate::context::Toast::error(&self.errors()[0].message)),
-            n => cx.toast(crate::context::Toast::error(format!("{} validation errors", n))),
+            n => cx.toast(crate::context::Toast::error(format!(
+                "{} validation errors",
+                n
+            ))),
         }
     }
 
@@ -71,4 +73,3 @@ impl ValidationResult {
         }
     }
 }
-

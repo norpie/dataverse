@@ -11,8 +11,8 @@ use crate::node::Node;
 use crate::widgets::events::{EventResult, WidgetEvent, WidgetEventKind, WidgetEvents};
 use crate::widgets::traits::{AnyWidget, RenderContext};
 
-use super::render;
 use super::Autocomplete;
+use super::render;
 
 impl WidgetEvents for Autocomplete {
     fn on_key(&self, key: &KeyCombo, cx: &AppContext) -> EventResult {
@@ -185,7 +185,11 @@ impl AnyWidget for Autocomplete {
         // Width based on value or placeholder, plus dropdown indicator
         let value = self.value();
         let placeholder = self.placeholder();
-        let content = if value.is_empty() { &placeholder } else { &value };
+        let content = if value.is_empty() {
+            &placeholder
+        } else {
+            &value
+        };
         (content.len() + 2).max(15) as u16
     }
 

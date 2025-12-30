@@ -262,7 +262,8 @@ impl AnimationManager {
         // Remove any existing animation for the same widget and property type
         self.animations.retain(|a| {
             !(a.widget_id == animation.widget_id
-                && std::mem::discriminant(&a.property) == std::mem::discriminant(&animation.property))
+                && std::mem::discriminant(&a.property)
+                    == std::mem::discriminant(&animation.property))
         });
 
         // Add the new animation
@@ -341,12 +342,18 @@ impl AnimationManager {
     ///
     /// Returns a list of current interpolated values.
     pub fn get_values(&self, widget_id: &str) -> Vec<AnimatedValue> {
-        let values: Vec<_> = self.animations
+        let values: Vec<_> = self
+            .animations
             .iter()
             .filter(|a| a.widget_id == widget_id)
             .map(|a| {
                 let value = a.current_value();
-                log::debug!("Animation for {}: progress={:.3}, value={:?}", widget_id, a.progress(), value);
+                log::debug!(
+                    "Animation for {}: progress={:.3}, value={:?}",
+                    widget_id,
+                    a.progress(),
+                    value
+                );
                 value
             })
             .collect();

@@ -149,7 +149,12 @@ impl Terminal {
         let t_layout = Instant::now();
 
         // Render to buffer with animation state for interpolated values
-        render_to_buffer(root, &self.last_layout, &mut self.current_buffer, &self.animation);
+        render_to_buffer(
+            root,
+            &self.last_layout,
+            &mut self.current_buffer,
+            &self.animation,
+        );
         let t_render = Instant::now();
 
         // Diff and write changes

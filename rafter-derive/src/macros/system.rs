@@ -10,11 +10,8 @@ use syn::{DeriveInput, Fields, parse2};
 pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
     // #[system] takes no attributes for now
     if !attr.is_empty() {
-        return syn::Error::new_spanned(
-            attr,
-            "#[system] does not accept attributes",
-        )
-        .to_compile_error();
+        return syn::Error::new_spanned(attr, "#[system] does not accept attributes")
+            .to_compile_error();
     }
 
     let input: DeriveInput = match parse2(item) {
@@ -56,13 +53,17 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
             }
             Fields::Named(fields) => {
                 // Named fields struct
-                let field_defs: Vec<_> = fields.named.iter().map(|f| {
-                    let vis = &f.vis;
-                    let ident = &f.ident;
-                    let ty = &f.ty;
-                    let attrs: Vec<_> = f.attrs.iter().collect();
-                    quote! { #(#attrs)* #vis #ident: #ty }
-                }).collect();
+                let field_defs: Vec<_> = fields
+                    .named
+                    .iter()
+                    .map(|f| {
+                        let vis = &f.vis;
+                        let ident = &f.ident;
+                        let ty = &f.ty;
+                        let attrs: Vec<_> = f.attrs.iter().collect();
+                        quote! { #(#attrs)* #vis #ident: #ty }
+                    })
+                    .collect();
 
                 let struct_def = quote! {
                     #(#other_attrs)*
@@ -71,10 +72,14 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
                     }
                 };
 
-                let field_clones: Vec<_> = fields.named.iter().map(|f| {
-                    let ident = &f.ident;
-                    quote! { #ident: self.#ident.clone() }
-                }).collect();
+                let field_clones: Vec<_> = fields
+                    .named
+                    .iter()
+                    .map(|f| {
+                        let ident = &f.ident;
+                        quote! { #ident: self.#ident.clone() }
+                    })
+                    .collect();
 
                 let clone_impl = quote! {
                     impl #generics Clone for #name #generics {
@@ -84,10 +89,14 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
                     }
                 };
 
-                let field_defaults: Vec<_> = fields.named.iter().map(|f| {
-                    let ident = &f.ident;
-                    quote! { #ident: Default::default() }
-                }).collect();
+                let field_defaults: Vec<_> = fields
+                    .named
+                    .iter()
+                    .map(|f| {
+                        let ident = &f.ident;
+                        quote! { #ident: Default::default() }
+                    })
+                    .collect();
 
                 let default_impl = quote! {
                     impl #generics Default for #name #generics {
@@ -100,11 +109,8 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
                 (struct_def, clone_impl, default_impl)
             }
             Fields::Unnamed(_) => {
-                return syn::Error::new_spanned(
-                    &input,
-                    "#[system] does not support tuple structs",
-                )
-                .to_compile_error();
+                return syn::Error::new_spanned(&input, "#[system] does not support tuple structs")
+                    .to_compile_error();
             }
         },
         _ => {
@@ -125,7 +131,10 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
     };
 
     // Generate metadata module
-    let metadata_name = format_ident!("__rafter_system_metadata_{}", name.to_string().to_lowercase());
+    let metadata_name = format_ident!(
+        "__rafter_system_metadata_{}",
+        name.to_string().to_lowercase()
+    );
     let metadata = quote! {
         #[doc(hidden)]
         #[allow(non_snake_case)]

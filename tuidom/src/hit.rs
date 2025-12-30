@@ -37,7 +37,12 @@ fn hit_test_element(layout: &LayoutResult, element: &Element, x: u16, y: u16) ->
     }
 }
 
-fn hit_test_element_any(layout: &LayoutResult, element: &Element, x: u16, y: u16) -> Option<String> {
+fn hit_test_element_any(
+    layout: &LayoutResult,
+    element: &Element,
+    x: u16,
+    y: u16,
+) -> Option<String> {
     let rect = layout.get(&element.id)?;
 
     if !rect.contains(x, y) {
@@ -59,12 +64,7 @@ fn hit_test_element_any(layout: &LayoutResult, element: &Element, x: u16, y: u16
 
 /// Find the focusable element at the given coordinates.
 /// Returns None if no focusable element contains the point.
-pub fn hit_test_focusable(
-    layout: &LayoutResult,
-    root: &Element,
-    x: u16,
-    y: u16,
-) -> Option<String> {
+pub fn hit_test_focusable(layout: &LayoutResult, root: &Element, x: u16, y: u16) -> Option<String> {
     hit_test_element_focusable(layout, root, x, y)
 }
 

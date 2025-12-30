@@ -3,8 +3,8 @@ use std::time::Duration;
 
 use simplelog::{Config, LevelFilter, WriteLogger};
 use tuidom::{
-    Border, Color, Easing, Edges, Element, Event, FocusState, Key, Position, Size, Style,
-    Terminal, Transitions,
+    Border, Color, Easing, Edges, Element, Event, FocusState, Key, Position, Size, Style, Terminal,
+    Transitions,
 };
 
 fn main() -> std::io::Result<()> {
@@ -71,8 +71,11 @@ fn ui(focused: Option<&str>, active: Option<&str>) -> Element {
         .padding(Edges::all(2))
         .gap(2)
         .child(
-            Element::text("Transitions Demo")
-                .style(Style::new().bold().foreground(Color::oklch(0.9, 0.05, 250.0))),
+            Element::text("Transitions Demo").style(
+                Style::new()
+                    .bold()
+                    .foreground(Color::oklch(0.9, 0.05, 250.0)),
+            ),
         )
         .child(Element::text("Tab to navigate, click buttons, q=quit"))
         .child(Element::text(""))
@@ -101,13 +104,43 @@ fn easing_demo(focused: Option<&str>, active: Option<&str>) -> Element {
         .child(Element::text("Easing Functions").style(Style::new().bold()))
         .child(Element::text("Click buttons to see transitions"))
         .child(Element::text(""))
-        .child(button("btn_linear", "Linear", Easing::Linear, focused, active))
-        .child(button("btn_ease_in", "Ease In", Easing::EaseIn, focused, active))
-        .child(button("btn_ease_out", "Ease Out", Easing::EaseOut, focused, active))
-        .child(button("btn_ease_inout", "Ease In-Out", Easing::EaseInOut, focused, active))
+        .child(button(
+            "btn_linear",
+            "Linear",
+            Easing::Linear,
+            focused,
+            active,
+        ))
+        .child(button(
+            "btn_ease_in",
+            "Ease In",
+            Easing::EaseIn,
+            focused,
+            active,
+        ))
+        .child(button(
+            "btn_ease_out",
+            "Ease Out",
+            Easing::EaseOut,
+            focused,
+            active,
+        ))
+        .child(button(
+            "btn_ease_inout",
+            "Ease In-Out",
+            Easing::EaseInOut,
+            focused,
+            active,
+        ))
 }
 
-fn button(id: &str, label: &str, easing: Easing, focused: Option<&str>, active: Option<&str>) -> Element {
+fn button(
+    id: &str,
+    label: &str,
+    easing: Easing,
+    focused: Option<&str>,
+    active: Option<&str>,
+) -> Element {
     let is_focused = focused == Some(id);
     let is_active = active == Some(id);
 
@@ -169,7 +202,11 @@ fn moving_box(id: &str, base_left: i16, base_top: i16, focused: Option<&str>) ->
     let is_focused = focused == Some(id);
 
     // Move right when focused
-    let left = if is_focused { base_left + 15 } else { base_left };
+    let left = if is_focused {
+        base_left + 15
+    } else {
+        base_left
+    };
 
     let bg = if is_focused {
         Color::oklch(0.55, 0.15, 140.0)
@@ -196,7 +233,11 @@ fn moving_box(id: &str, base_left: i16, base_top: i16, focused: Option<&str>) ->
                 .left(Duration::from_millis(400), Easing::EaseOut)
                 .background(Duration::from_millis(300), Easing::EaseOut),
         )
-        .child(Element::text(if is_focused { "→ Moving" } else { "  Static" }))
+        .child(Element::text(if is_focused {
+            "→ Moving"
+        } else {
+            "  Static"
+        }))
 }
 
 fn color_boxes(focused: Option<&str>) -> Element {

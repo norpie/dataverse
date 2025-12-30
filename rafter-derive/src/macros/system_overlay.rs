@@ -33,11 +33,24 @@ use super::field_utils::{is_resource_type, is_widget_type};
 /// Parsed overlay position from attributes.
 #[derive(Debug, Clone)]
 enum OverlayPositionAttr {
-    Top { height: u16 },
-    Bottom { height: u16 },
-    Left { width: u16 },
-    Right { width: u16 },
-    Absolute { x: u16, y: u16, width: u16, height: u16 },
+    Top {
+        height: u16,
+    },
+    Bottom {
+        height: u16,
+    },
+    Left {
+        width: u16,
+    },
+    Right {
+        width: u16,
+    },
+    Absolute {
+        x: u16,
+        y: u16,
+        width: u16,
+        height: u16,
+    },
 }
 
 /// Parsed attributes for #[system_overlay].
@@ -84,7 +97,10 @@ impl SystemOverlayAttrs {
             } else {
                 return Err(meta.error(format!(
                     "unknown system_overlay attribute: `{}`",
-                    meta.path.get_ident().map(|i| i.to_string()).unwrap_or_default()
+                    meta.path
+                        .get_ident()
+                        .map(|i| i.to_string())
+                        .unwrap_or_default()
                 )));
             }
             Ok(())
@@ -161,7 +177,12 @@ impl SystemOverlayAttrs {
                         "Absolute position requires `height` attribute",
                     )
                 })?;
-                OverlayPositionAttr::Absolute { x, y, width, height }
+                OverlayPositionAttr::Absolute {
+                    x,
+                    y,
+                    width,
+                    height,
+                }
             }
             other => {
                 return Err(syn::Error::new(
@@ -325,14 +346,23 @@ fn generate_position_const(position: &OverlayPositionAttr) -> TokenStream {
         OverlayPositionAttr::Right { width } => {
             quote! { rafter::layers::SystemOverlayPosition::Right { width: #width } }
         }
-        OverlayPositionAttr::Absolute { x, y, width, height } => {
+        OverlayPositionAttr::Absolute {
+            x,
+            y,
+            width,
+            height,
+        } => {
             quote! { rafter::layers::SystemOverlayPosition::Absolute { x: #x, y: #y, width: #width, height: #height } }
         }
     }
 }
 
 /// Generate metadata module.
-fn generate_metadata(name: &Ident, attrs: &SystemOverlayAttrs, fields: &FieldsNamed) -> TokenStream {
+fn generate_metadata(
+    name: &Ident,
+    attrs: &SystemOverlayAttrs,
+    fields: &FieldsNamed,
+) -> TokenStream {
     let name_str = name.to_string();
     let position = generate_position_const(&attrs.position);
 
@@ -372,7 +402,10 @@ fn generate_metadata(name: &Ident, attrs: &SystemOverlayAttrs, fields: &FieldsNa
         quote! { overlay.#f.install_wakeup(sender.clone()); }
     });
 
-    let metadata_name = format_ident!("__rafter_system_overlay_metadata_{}", name.to_string().to_lowercase());
+    let metadata_name = format_ident!(
+        "__rafter_system_overlay_metadata_{}",
+        name.to_string().to_lowercase()
+    );
 
     quote! {
         #[doc(hidden)]
@@ -427,7 +460,10 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
                 let registration = generate_registration(name);
                 let position = generate_position_const(&attrs.position);
                 let name_str = name.to_string();
-                let metadata_name = format_ident!("__rafter_system_overlay_metadata_{}", name.to_string().to_lowercase());
+                let metadata_name = format_ident!(
+                    "__rafter_system_overlay_metadata_{}",
+                    name.to_string().to_lowercase()
+                );
 
                 return quote! {
                     #(#other_attrs)*
@@ -466,8 +502,11 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
             }
         },
         _ => {
-            return syn::Error::new_spanned(&input, "#[system_overlay] can only be applied to structs")
-                .to_compile_error();
+            return syn::Error::new_spanned(
+                &input,
+                "#[system_overlay] can only be applied to structs",
+            )
+            .to_compile_error();
         }
     };
 

@@ -7,8 +7,8 @@ use ratatui::layout::Rect;
 
 use crate::validation::ErrorDisplay;
 
-use super::filter::{fuzzy_filter, FilterMatch};
 use super::AutocompleteItem;
+use super::filter::{FilterMatch, fuzzy_filter};
 
 /// Unique identifier for an Autocomplete widget instance.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

@@ -250,24 +250,25 @@ impl Runtime {
         let registry = Arc::new(RwLock::new(InstanceRegistry::new()));
 
         // Add the initial app instance to registry if provided
-        let (initial_keybinds, initial_instance_id) = if let Some(initial_instance) = self.initial_app {
-            let instance_id = initial_instance.id();
-            let keybinds = initial_instance.keybinds();
+        let (initial_keybinds, initial_instance_id) =
+            if let Some(initial_instance) = self.initial_app {
+                let instance_id = initial_instance.id();
+                let keybinds = initial_instance.keybinds();
 
-            {
-                let mut reg = registry.write().unwrap_or_else(|e| {
-                    log::warn!("Registry lock poisoned, recovering");
-                    e.into_inner()
-                });
-                reg.insert(instance_id, initial_instance);
-                reg.focus(instance_id);
-            }
+                {
+                    let mut reg = registry.write().unwrap_or_else(|e| {
+                        log::warn!("Registry lock poisoned, recovering");
+                        e.into_inner()
+                    });
+                    reg.insert(instance_id, initial_instance);
+                    reg.focus(instance_id);
+                }
 
-            (keybinds, Some(instance_id))
-        } else {
-            info!("No initial app set, starting with empty registry");
-            (Keybinds::new(), None)
-        };
+                (keybinds, Some(instance_id))
+            } else {
+                info!("No initial app set, starting with empty registry");
+                (Keybinds::new(), None)
+            };
 
         // Create app context with shared keybinds, registry, and data
         let app_keybinds = Arc::new(RwLock::new(initial_keybinds));

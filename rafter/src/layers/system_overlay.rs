@@ -185,7 +185,9 @@ pub trait AnySystemOverlay: Send + Sync {
         request_type: std::any::TypeId,
         request: Box<dyn Any + Send + Sync>,
         cx: &AppContext,
-    ) -> Option<std::pin::Pin<Box<dyn std::future::Future<Output = Box<dyn Any + Send + Sync>> + Send>>>;
+    ) -> Option<
+        std::pin::Pin<Box<dyn std::future::Future<Output = Box<dyn Any + Send + Sync>> + Send>>,
+    >;
 }
 
 /// Wrapper that implements AnySystemOverlay for any SystemOverlay.
@@ -269,7 +271,9 @@ impl<S: SystemOverlay + Clone + 'static> AnySystemOverlay for SystemOverlayInsta
         request_type: std::any::TypeId,
         request: Box<dyn Any + Send + Sync>,
         cx: &AppContext,
-    ) -> Option<std::pin::Pin<Box<dyn std::future::Future<Output = Box<dyn Any + Send + Sync>> + Send>>> {
+    ) -> Option<
+        std::pin::Pin<Box<dyn std::future::Future<Output = Box<dyn Any + Send + Sync>> + Send>>,
+    > {
         System::dispatch_request(&self.overlay, request_type, request, cx)
     }
 }

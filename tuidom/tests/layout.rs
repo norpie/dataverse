@@ -63,7 +63,10 @@ fn test_child_margin_in_column() {
     assert_eq!(child1.height, 20);
 
     let child2 = layout.get("child2").unwrap();
-    assert_eq!(child2.y, 30, "child2 starts after child1 + margins (5 + 20 + 5)");
+    assert_eq!(
+        child2.y, 30,
+        "child2 starts after child1 + margins (5 + 20 + 5)"
+    );
 }
 
 // ============================================================================
@@ -85,10 +88,7 @@ fn test_min_width() {
 
 #[test]
 fn test_max_width() {
-    let root = Element::box_()
-        .id("root")
-        .width(Size::Fill)
-        .max_width(50);
+    let root = Element::box_().id("root").width(Size::Fill).max_width(50);
 
     let layout = layout_root(&root, 100, 100);
     let rect = layout.get("root").unwrap();
@@ -116,12 +116,7 @@ fn test_max_constrains_fill() {
         .id("root")
         .width(Size::Fixed(100))
         .height(Size::Fixed(100))
-        .child(
-            Element::box_()
-                .id("child")
-                .width(Size::Fill)
-                .max_width(40),
-        );
+        .child(Element::box_().id("child").width(Size::Fill).max_width(40));
 
     let layout = layout_root(&root, 100, 100);
     let child = layout.get("child").unwrap();
@@ -516,8 +511,18 @@ fn test_flex_grow_equal_distribution() {
         .id("root")
         .width(Size::Fixed(100))
         .height(Size::Fixed(20))
-        .child(Element::box_().id("a").width(Size::Fill).height(Size::Fixed(20)))
-        .child(Element::box_().id("b").width(Size::Fill).height(Size::Fixed(20)));
+        .child(
+            Element::box_()
+                .id("a")
+                .width(Size::Fill)
+                .height(Size::Fixed(20)),
+        )
+        .child(
+            Element::box_()
+                .id("b")
+                .width(Size::Fill)
+                .height(Size::Fixed(20)),
+        );
 
     let layout = layout_root(&root, 100, 20);
 

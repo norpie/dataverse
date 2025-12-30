@@ -77,10 +77,7 @@ pub fn render_trigger(
         let after = &value[after_start.min(value.len())..];
 
         let cursor_span = if let Some(c) = cursor_char {
-            Span::styled(
-                c.to_string(),
-                text_style.add_modifier(Modifier::REVERSED),
-            )
+            Span::styled(c.to_string(), text_style.add_modifier(Modifier::REVERSED))
         } else {
             // Cursor at end - show a block
             Span::styled(" ", text_style.add_modifier(Modifier::REVERSED))
@@ -94,7 +91,9 @@ pub fn render_trigger(
             before
         };
 
-        let remaining = inner_width.saturating_sub(truncated_before.len()).saturating_sub(1);
+        let remaining = inner_width
+            .saturating_sub(truncated_before.len())
+            .saturating_sub(1);
         let truncated_after: String = after.chars().take(remaining).collect();
         let padding_len = inner_width
             .saturating_sub(truncated_before.len())

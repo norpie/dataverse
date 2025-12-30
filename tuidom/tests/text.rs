@@ -1,4 +1,6 @@
-use tuidom::text::{align_offset, char_width, display_width, truncate_to_width, wrap_chars, wrap_words};
+use tuidom::text::{
+    align_offset, char_width, display_width, truncate_to_width, wrap_chars, wrap_words,
+};
 use tuidom::TextAlign;
 
 #[test]

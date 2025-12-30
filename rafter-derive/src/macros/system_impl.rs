@@ -6,10 +6,9 @@ use syn::{ImplItem, ItemImpl, parse2};
 
 use super::handler::HandlerParams;
 use super::impl_common::{
-    EventHandlerMethod, HandlerMethod, KeybindsMethod, RequestHandlerMethod,
-    get_type_name, is_keybinds_method, parse_event_handler_metadata,
-    parse_handler_metadata, parse_request_handler_metadata, strip_custom_attrs,
-    KeybindScope,
+    EventHandlerMethod, HandlerMethod, KeybindScope, KeybindsMethod, RequestHandlerMethod,
+    get_type_name, is_keybinds_method, parse_event_handler_metadata, parse_handler_metadata,
+    parse_request_handler_metadata, strip_custom_attrs,
 };
 
 /// Convert a PascalCase or camelCase identifier to snake_case

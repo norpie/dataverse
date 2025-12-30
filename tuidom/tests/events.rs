@@ -55,10 +55,7 @@ fn test_hit_test_overlapping_elements() {
     assert_eq!(hit_test(&layout, &root, 40, 40), Some("top".to_string()));
 
     // Click only in bottom (before overlap)
-    assert_eq!(
-        hit_test(&layout, &root, 15, 15),
-        Some("bottom".to_string())
-    );
+    assert_eq!(hit_test(&layout, &root, 15, 15), Some("bottom".to_string()));
 }
 
 #[test]
@@ -88,7 +85,10 @@ fn test_hit_test_any() {
     ]);
 
     // hit_test_any returns element even if not clickable
-    assert_eq!(hit_test_any(&layout, &root, 15, 11), Some("text".to_string()));
+    assert_eq!(
+        hit_test_any(&layout, &root, 15, 11),
+        Some("text".to_string())
+    );
 }
 
 #[test]

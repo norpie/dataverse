@@ -15,8 +15,8 @@ use crate::context::{AppContext, InstanceCommand, RequestTarget};
 use crate::input::focus::FocusId;
 use crate::input::keybinds::Keybinds;
 use crate::layers::overlay::{ActiveOverlay, OverlayRequest, calculate_overlay_position};
-use crate::request::RequestError;
 use crate::layers::system_overlay::{AnySystemOverlay, registered_system_overlays};
+use crate::request::RequestError;
 use crate::styling::theme::Theme;
 use crate::system::registered_systems;
 
@@ -26,8 +26,11 @@ use super::handlers::dispatch_event;
 use super::hit_test::HitTestMap;
 use super::input::InputState;
 use super::modal::{ModalStackEntry, calculate_modal_area};
-use super::render::{calculate_toast_removal_time, dim_backdrop, fill_background, has_animating_toasts, render_node, render_toasts};
 use super::render::system_overlay::calculate_system_overlay_layout;
+use super::render::{
+    calculate_toast_removal_time, dim_backdrop, fill_background, has_animating_toasts, render_node,
+    render_toasts,
+};
 use super::state::EventLoopState;
 use super::terminal::TerminalGuard;
 
@@ -107,7 +110,10 @@ fn apply_blur_policy(
         }
         BlurPolicy::Close => {
             // Schedule for closure
-            debug!("Instance {:?} scheduled for close (BlurPolicy::Close)", instance_id);
+            debug!(
+                "Instance {:?} scheduled for close (BlurPolicy::Close)",
+                instance_id
+            );
             Some(instance_id)
         }
     }
@@ -203,10 +209,11 @@ fn process_instance_commands(
                 // Check on_close_request if not forcing
                 if !force
                     && let Some(instance) = reg.get(id)
-                        && !instance.on_close_request(cx) {
-                            debug!("Close cancelled by on_close_request");
-                            continue;
-                        }
+                    && !instance.on_close_request(cx)
+                {
+                    debug!("Close cancelled by on_close_request");
+                    continue;
+                }
 
                 // Call on_close lifecycle hook
                 if let Some(instance) = reg.get(id) {
@@ -265,7 +272,7 @@ fn process_instance_commands(
                         system.dispatch_event(event_type, event_clone.into_inner(), cx);
                     }
                 }
-                
+
                 // Dispatch to all system overlays that have a handler
                 for overlay in system_overlays {
                     if overlay.has_event_handler(event_type) {
@@ -434,9 +441,7 @@ pub async fn run_event_loop(
     term_guard: &mut TerminalGuard,
 ) -> Result<(), RuntimeError> {
     // Collect registered systems
-    let systems: Vec<_> = registered_systems()
-        .map(|reg| (reg.factory)())
-        .collect();
+    let systems: Vec<_> = registered_systems().map(|reg| (reg.factory)()).collect();
 
     info!("Registered {} systems", systems.len());
     for system in &systems {
@@ -456,7 +461,11 @@ pub async fn run_event_loop(
 
     info!("Registered {} system overlays", system_overlays.len());
     for overlay in &system_overlays {
-        info!("  Overlay: {} (position: {:?})", overlay.name(), overlay.position());
+        info!(
+            "  Overlay: {} (position: {:?})",
+            overlay.name(),
+            overlay.position()
+        );
         for bind in overlay.keybinds().all() {
             debug!(
                 "    Keybind: {} ({:?}) => {:?}",
@@ -530,7 +539,6 @@ pub async fn run_event_loop(
 
     // Main event loop
     loop {
-
         // Check if exit was requested (by a handler from previous iteration)
         if cx.is_exit_requested() {
             info!("Exit requested by handler");
@@ -539,7 +547,14 @@ pub async fn run_event_loop(
 
         // Process pending instance commands
         let cmd_start = Instant::now();
-        let cmd_result = process_instance_commands(&registry, &app_keybinds, &state.systems, &state.system_overlays, &cx, &wakeup_sender);
+        let cmd_result = process_instance_commands(
+            &registry,
+            &app_keybinds,
+            &state.systems,
+            &state.system_overlays,
+            &cx,
+            &wakeup_sender,
+        );
         if cmd_result.should_exit {
             info!("All instances closed, exiting");
             break;
@@ -550,7 +565,10 @@ pub async fn run_event_loop(
         }
         let cmd_elapsed = cmd_start.elapsed();
         if cmd_elapsed.as_millis() > 2 {
-            warn!("PROFILE: process_instance_commands() took {:?}", cmd_elapsed);
+            warn!(
+                "PROFILE: process_instance_commands() took {:?}",
+                cmd_elapsed
+            );
         }
 
         // Get focused instance - if none, exit
@@ -624,7 +642,8 @@ pub async fn run_event_loop(
         // Remove expired toasts (accounting for activation time and slide-out animation)
         let now = Instant::now();
         let toasts_for_calc = state.active_toasts.clone();
-        state.active_toasts = state.active_toasts
+        state.active_toasts = state
+            .active_toasts
             .iter()
             .enumerate()
             .filter(|(i, _)| {
@@ -658,7 +677,7 @@ pub async fn run_event_loop(
             // Collect focusable IDs from system overlays in focus order:
             // [Top/Left overlays] → [App] → [Right/Bottom overlays] → [Absolute overlays]
             let mut ids = Vec::new();
-            
+
             // Prepend overlays (Top, Left)
             for overlay in &state.system_overlays {
                 if overlay.position().prepend_focus() {
@@ -666,10 +685,10 @@ pub async fn run_event_loop(
                     ids.extend(overlay_view.focusable_ids().into_iter().map(FocusId::new));
                 }
             }
-            
+
             // App focusables
             ids.extend(page.focusable_ids().into_iter().map(FocusId::new));
-            
+
             // Append edge overlays (Right, Bottom - non-prepend, non-absolute)
             for overlay in &state.system_overlays {
                 let pos = overlay.position();
@@ -678,7 +697,7 @@ pub async fn run_event_loop(
                     ids.extend(overlay_view.focusable_ids().into_iter().map(FocusId::new));
                 }
             }
-            
+
             // Append absolute overlays last
             for overlay in &state.system_overlays {
                 if !overlay.position().is_edge() {
@@ -686,7 +705,7 @@ pub async fn run_event_loop(
                     ids.extend(overlay_view.focusable_ids().into_iter().map(FocusId::new));
                 }
             }
-            
+
             ids
         } else {
             // In modal mode, only modal focusables
@@ -734,7 +753,15 @@ pub async fn run_event_loop(
 
         debug!(
             "Render check: needs={} (force={}, inst_dirty={}, modal_dirty={}, overlay_dirty={}, toast_dirty={}, modal_closed={}, focus_changed={}, event_dispatched={})",
-            needs_render, force_render, instance_is_dirty, modal_dirty, system_overlay_dirty, toast_dirty, modal_closed, focus_changed, state.event_dispatched
+            needs_render,
+            force_render,
+            instance_is_dirty,
+            modal_dirty,
+            system_overlay_dirty,
+            toast_dirty,
+            modal_closed,
+            focus_changed,
+            state.event_dispatched
         );
 
         // Get theme and focus info (needed for render and reference)
@@ -767,14 +794,14 @@ pub async fn run_event_loop(
             let modal_stack_ref = &state.modal_stack;
             let active_toasts_ref = &state.active_toasts;
             let system_overlays_ref = &state.system_overlays;
-            
+
             // Will collect active overlays during render
             let mut active_overlays_result: Vec<ActiveOverlay> = Vec::new();
-            
+
             // Will collect system overlay hit info during render
             use super::state::SystemOverlayHitInfo;
             let mut system_overlay_hit_info_result: Vec<SystemOverlayHitInfo> = Vec::new();
-            
+
             let draw_start = Instant::now();
             term_guard.terminal().draw(|frame| {
                 let area = frame.area();
@@ -925,7 +952,7 @@ pub async fn run_event_loop(
                 for overlay_entry in &overlay_layout.absolute_overlays {
                     // Clear the overlay area first
                     frame.render_widget(ratatui::widgets::Clear, overlay_entry.area);
-                    
+
                     let overlay_view = overlay_entry.overlay.view();
                     // Absolute overlays can have focus when no modal is open
                     let overlay_focused = if modal_stack_ref.is_empty() {
@@ -962,7 +989,7 @@ pub async fn run_event_loop(
                 let now = Instant::now();
                 render_toasts(frame, active_toasts_ref, theme.as_ref(), now);
             })?;
-            
+
             // Update active overlays from render result
             state.active_overlays = active_overlays_result;
             // Update system overlay hit info from render result
@@ -978,7 +1005,7 @@ pub async fn run_event_loop(
             } else {
                 instance.clear_dirty();
             }
-            
+
             // Clear dirty flags for system overlays
             for overlay in &state.system_overlays {
                 overlay.clear_dirty();
@@ -988,7 +1015,9 @@ pub async fn run_event_loop(
             // 1. Remove animations for widgets/containers that are no longer in the render tree
             // We use previous_styles keys since that tracks all IDs with transitions enabled
             // (both widgets and containers). This is more complete than hit_map which only tracks widgets.
-            state.animations.cleanup_removed_widgets(state.previous_styles.keys().map(|s| s.as_str()));
+            state
+                .animations
+                .cleanup_removed_widgets(state.previous_styles.keys().map(|s| s.as_str()));
             // 2. Remove completed (finite) animations
             let completed = state.animations.cleanup_completed();
             if completed > 0 {
@@ -1175,7 +1204,7 @@ pub async fn run_event_loop(
                 }
                 _ => {}
             }
-            
+
             // For hover events, only trigger a render if focus actually changes
             // Track focus before dispatching
             let focus_before_dispatch = if matches!(event_to_dispatch, Event::Hover(_)) {
@@ -1226,7 +1255,6 @@ pub async fn run_event_loop(
                 // Not a hover event - always trigger render
                 state.event_dispatched = true;
             }
-
         }
     }
 

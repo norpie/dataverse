@@ -51,12 +51,12 @@ pub mod prelude {
     // Widgets
     pub use crate::widgets::{Alignment, Column, Table, TableId, TableRow};
     pub use crate::widgets::{AnyWidget, Scrollable, Selectable, WidgetHandlers};
+    pub use crate::widgets::{Autocomplete, AutocompleteId, AutocompleteItem};
     pub use crate::widgets::{
         Button, Checkbox, Collapsible, Input, RadioGroup, ScrollArea, ScrollDirection,
         ScrollbarConfig, ScrollbarVisibility,
     };
     pub use crate::widgets::{List, ListId, ListItem, Selection, SelectionMode};
-    pub use crate::widgets::{Autocomplete, AutocompleteId, AutocompleteItem};
     pub use crate::widgets::{Select, SelectId, SelectItem};
     pub use crate::widgets::{Tree, TreeId, TreeItem};
 
@@ -70,7 +70,9 @@ pub mod prelude {
     pub use crate::state::State;
 
     // Animation
-    pub use crate::runtime::{AnimatedProperty, AnimatedValue, Animation, AnimationManager, Easing};
+    pub use crate::runtime::{
+        AnimatedProperty, AnimatedValue, Animation, AnimationManager, Easing,
+    };
 
     // Validation
     pub use crate::validation::{

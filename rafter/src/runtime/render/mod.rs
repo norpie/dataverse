@@ -72,7 +72,10 @@ fn check_style_transitions(
             if (prev_l - new_l).abs() > 0.001 {
                 log::debug!(
                     "Starting bg lightness animation for {}: {} -> {} over {:?}",
-                    widget_id, prev_l, new_l, duration
+                    widget_id,
+                    prev_l,
+                    new_l,
+                    duration
                 );
                 animations.start(Animation::transition(
                     widget_id,
@@ -189,7 +192,11 @@ pub(crate) fn style_to_ratatui(
 
     // Apply animated values (override base style)
     if !animated_values.is_empty() {
-        log::debug!("Applying {} animated values for {:?}", animated_values.len(), widget_id);
+        log::debug!(
+            "Applying {} animated values for {:?}",
+            animated_values.len(),
+            widget_id
+        );
     }
     for value in &animated_values {
         match value {

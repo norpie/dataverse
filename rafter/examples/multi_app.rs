@@ -13,7 +13,7 @@
 use std::fs::File;
 use std::sync::atomic::{AtomicU32, Ordering};
 
-use log::{debug, info, LevelFilter};
+use log::{LevelFilter, debug, info};
 use rafter::app::InstanceInfo;
 use rafter::node::{Layout, Node};
 use rafter::prelude::*;
@@ -128,9 +128,16 @@ impl Taskbar {
     #[event_handler]
     async fn on_app_activated(&self, event: AppActivated, cx: &AppContext) {
         let instances = cx.instances();
-        info!("[Taskbar] on_app_activated({}): {} instances", event.app_name, instances.len());
+        info!(
+            "[Taskbar] on_app_activated({}): {} instances",
+            event.app_name,
+            instances.len()
+        );
         for inst in &instances {
-            info!("[Taskbar]   - {} (focused={})", inst.app_name, inst.is_focused);
+            info!(
+                "[Taskbar]   - {} (focused={})",
+                inst.app_name, inst.is_focused
+            );
         }
         self.instances.set(instances);
     }
@@ -146,7 +153,10 @@ impl Taskbar {
                     let instances = self.instances.get();
                     if let Some(info) = instances.get(index) {
                         if !info.is_focused {
-                            info!("[Taskbar] Focusing app: {} (from button {})", info.app_name, widget_id);
+                            info!(
+                                "[Taskbar] Focusing app: {} (from button {})",
+                                info.app_name, widget_id
+                            );
                             cx.focus_instance(info.id);
                         }
                     }
@@ -175,21 +185,22 @@ impl Taskbar {
                 let marker = if info.is_focused { ">" } else { " " };
                 let label = format!("{}[{}]", marker, info.app_name);
                 let id = format!("taskbar-btn-{}", i);
-                
+
                 page! { button(id: id, label: label, on_click: on_click) }
             })
             .collect();
 
         // Build the row manually to avoid the `for` loop wrapping in a Column
-        let mut children = vec![
-            page! { text(fg: muted) { " Taskbar |" } }
-        ];
+        let mut children = vec![page! { text(fg: muted) { " Taskbar |" } }];
         children.extend(buttons);
-        
+
         Node::Row {
             children,
             style: Style::new().bg(StyleColor::Named("surface".to_string())),
-            layout: Layout { gap: 1, ..Default::default() },
+            layout: Layout {
+                gap: 1,
+                ..Default::default()
+            },
             id: None,
         }
     }
@@ -258,7 +269,11 @@ impl GlobalKeys {
         // Find the current focused instance and get the previous one
         let current = instances.iter().position(|i| i.is_focused);
         if let Some(idx) = current {
-            let prev_idx = if idx == 0 { instances.len() - 1 } else { idx - 1 };
+            let prev_idx = if idx == 0 {
+                instances.len() - 1
+            } else {
+                idx - 1
+            };
             let prev_id = instances[prev_idx].id;
             info!("[System] Cycling to previous instance: {:?}", prev_id);
             cx.focus_instance(prev_id);
@@ -427,16 +442,32 @@ impl AppA {
         info!("[App A] API response: {}", response);
         info!("[App A] Total requests made: {}", count);
 
-        cx.toast(Toast::success(format!("API: {} (total: {})", response, count)));
+        cx.toast(Toast::success(format!(
+            "API: {} (total: {})",
+            response, count
+        )));
     }
 
     #[handler]
     async fn refresh(&self, cx: &AppContext) {
         let instances = cx.instances();
-        info!("[App A] Refreshing instance list: {} instances", instances.len());
+        info!(
+            "[App A] Refreshing instance list: {} instances",
+            instances.len()
+        );
         for inst in &instances {
-            info!("  - {} ({}): {}", inst.app_name, &inst.id.to_string()[..8],
-                  if inst.is_sleeping { "sleeping" } else if inst.is_focused { "focused" } else { "background" });
+            info!(
+                "  - {} ({}): {}",
+                inst.app_name,
+                &inst.id.to_string()[..8],
+                if inst.is_sleeping {
+                    "sleeping"
+                } else if inst.is_focused {
+                    "focused"
+                } else {
+                    "background"
+                }
+            );
         }
         self.instances.set(instances);
     }
@@ -474,7 +505,10 @@ impl AppA {
                     "(background)"
                 };
                 let short_id = &info.id.to_string()[..8];
-                format!("• [{}] {} - {} {}", short_id, info.app_name, info.title, status)
+                format!(
+                    "• [{}] {} - {} {}",
+                    short_id, info.app_name, info.title, status
+                )
             })
             .collect();
 
@@ -587,7 +621,10 @@ impl AppB {
     async fn next_app(&self, cx: &AppContext) {
         // Check if an App C instance already exists
         if let Some(id) = cx.instance_of::<AppC>() {
-            info!("[App B] Focusing existing App C instance: {}", &id.to_string()[..8]);
+            info!(
+                "[App B] Focusing existing App C instance: {}",
+                &id.to_string()[..8]
+            );
             cx.focus_instance(id);
         } else {
             info!("[App B] No App C exists, spawning new instance");
@@ -658,7 +695,10 @@ impl AppC {
 
         // Check if an App A instance already exists
         if let Some(id) = cx.instance_of::<AppA>() {
-            info!("[App C] Focusing existing App A instance: {}", &id.to_string()[..8]);
+            info!(
+                "[App C] Focusing existing App A instance: {}",
+                &id.to_string()[..8]
+            );
             cx.focus_instance(id);
         } else {
             info!("[App C] No App A exists, spawning new instance");
@@ -741,7 +781,10 @@ impl AppD {
     async fn handle_increment(&self, _request: IncrementCounter, _cx: &AppContext) -> i32 {
         self.counter.update(|v| *v += 1);
         let new_value = self.counter.get();
-        info!("[App D] IncrementCounter request received, new value: {}", new_value);
+        info!(
+            "[App D] IncrementCounter request received, new value: {}",
+            new_value
+        );
         new_value
     }
 

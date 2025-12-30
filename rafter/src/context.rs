@@ -17,8 +17,8 @@ use crate::input::focus::FocusId;
 use crate::input::keybinds::{KeybindError, KeybindInfo, Keybinds};
 use crate::layers::modal::{Modal, ModalContext, ModalDyn, ModalEntry};
 use crate::request::RequestError;
-use crate::runtime::wakeup;
 use crate::runtime::DataStore;
+use crate::runtime::wakeup;
 use crate::styling::theme::Theme;
 use crate::widgets::events::WidgetEvent;
 
@@ -36,7 +36,9 @@ impl CloneableEvent {
         Self {
             event: Box::new(event),
             clone_fn: |e| {
-                let e = e.downcast_ref::<E>().expect("type mismatch in CloneableEvent");
+                let e = e
+                    .downcast_ref::<E>()
+                    .expect("type mismatch in CloneableEvent");
                 Box::new(e.clone())
             },
         }

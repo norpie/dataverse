@@ -168,9 +168,7 @@ impl FocusState {
 
                         MouseEventKind::Moved => {
                             // Focus follows mouse - check if we're over a focusable element
-                            if let Some(focusable_target) =
-                                hit_test_focusable(layout, root, x, y)
-                            {
+                            if let Some(focusable_target) = hit_test_focusable(layout, root, x, y) {
                                 // Only change focus if different
                                 if self.focused.as_ref() != Some(&focusable_target) {
                                     if let Some(old) = self.focused.take() {

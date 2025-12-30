@@ -92,7 +92,10 @@ fn test_lower_z_index_renders_underneath() {
     // At position (2, 1) - only bottom element - should be red
     let cell = buf.get(2, 1).unwrap();
     let bg = to_rgb(cell.bg);
-    assert_eq!(bg.r, 255, "Red (lower z_index) should be visible where not overlapped");
+    assert_eq!(
+        bg.r, 255,
+        "Red (lower z_index) should be visible where not overlapped"
+    );
 }
 
 #[test]
@@ -130,7 +133,10 @@ fn test_equal_z_index_preserves_tree_order() {
     // At overlap position - second (green) should be on top due to tree order
     let cell = buf.get(7, 3).unwrap();
     let bg = to_rgb(cell.bg);
-    assert_eq!(bg.g, 255, "Later in tree should render on top when z_index equal");
+    assert_eq!(
+        bg.g, 255,
+        "Later in tree should render on top when z_index equal"
+    );
 }
 
 #[test]
@@ -177,7 +183,10 @@ fn test_z_index_works_across_siblings() {
     // At overlap position - blue (z=10) should be on top of yellow (z=5)
     let cell = buf.get(6, 3).unwrap();
     let bg = to_rgb(cell.bg);
-    assert_eq!(bg.b, 255, "Higher z_index child should render on top of lower z_index sibling");
+    assert_eq!(
+        bg.b, 255,
+        "Higher z_index child should render on top of lower z_index sibling"
+    );
     assert_eq!(bg.r, 0, "Yellow should not show through");
 }
 
@@ -310,10 +319,7 @@ fn test_overflow_scroll_clips_children() {
     // Outside container - should be clipped
     let outside = buf.get(12, 1).unwrap();
     let outside_bg = to_rgb(outside.bg);
-    assert_ne!(
-        outside_bg.r, 255,
-        "Scroll overflow should clip like Hidden"
-    );
+    assert_ne!(outside_bg.r, 255, "Scroll overflow should clip like Hidden");
 }
 
 #[test]
@@ -326,21 +332,11 @@ fn test_scroll_offset_moves_children() {
         .overflow(Overflow::Scroll)
         .scroll_offset(0, 2) // Scroll down by 2
         .style(Style::new().background(Color::rgb(50, 50, 50)))
-        .child(
-            Element::text("Line 1").id("line1"),
-        )
-        .child(
-            Element::text("Line 2").id("line2"),
-        )
-        .child(
-            Element::text("Line 3").id("line3"),
-        )
-        .child(
-            Element::text("Line 4").id("line4"),
-        )
-        .child(
-            Element::text("Line 5").id("line5"),
-        );
+        .child(Element::text("Line 1").id("line1"))
+        .child(Element::text("Line 2").id("line2"))
+        .child(Element::text("Line 3").id("line3"))
+        .child(Element::text("Line 4").id("line4"))
+        .child(Element::text("Line 5").id("line5"));
 
     let layout = tuidom::layout::layout(&root, Rect::new(0, 0, 20, 10));
 
@@ -403,7 +399,10 @@ fn test_nested_overflow_hidden() {
     // Inside inner container - should show red
     let inside_inner = buf.get(10, 1).unwrap();
     let inside_inner_bg = to_rgb(inside_inner.bg);
-    assert_eq!(inside_inner_bg.r, 255, "Content visible inside inner container");
+    assert_eq!(
+        inside_inner_bg.r, 255,
+        "Content visible inside inner container"
+    );
 
     // Outside inner but inside outer - should NOT show red (clipped by inner)
     let outside_inner = buf.get(17, 1).unwrap();

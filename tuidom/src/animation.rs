@@ -82,9 +82,8 @@ impl AnimationState {
         let now = Instant::now();
 
         // Prune completed transitions
-        self.active.retain(|_, transition| {
-            now.duration_since(transition.start) < transition.duration
-        });
+        self.active
+            .retain(|_, transition| now.duration_since(transition.start) < transition.duration);
 
         // Walk tree and check for property changes
         self.update_element(root, now);
@@ -201,7 +200,14 @@ impl AnimationState {
         // Check if there's already an active transition for this property
         let from = if let Some(existing) = self.active.get(&key) {
             // Transition from current interpolated value
-            self.interpolate_value(&existing.from, &existing.to, existing.start, existing.duration, existing.easing, now)
+            self.interpolate_value(
+                &existing.from,
+                &existing.to,
+                existing.start,
+                existing.duration,
+                existing.easing,
+                now,
+            )
         } else {
             PropertyValue::I16(prev_val)
         };
@@ -245,7 +251,14 @@ impl AnimationState {
         // Check if there's already an active transition for this property
         let from = if let Some(existing) = self.active.get(&key) {
             // Transition from current interpolated value
-            self.interpolate_value(&existing.from, &existing.to, existing.start, existing.duration, existing.easing, now)
+            self.interpolate_value(
+                &existing.from,
+                &existing.to,
+                existing.start,
+                existing.duration,
+                existing.easing,
+                now,
+            )
         } else {
             PropertyValue::U16(prev_val)
         };
@@ -289,7 +302,14 @@ impl AnimationState {
         // Check if there's already an active transition for this property
         let from = if let Some(existing) = self.active.get(&key) {
             // Transition from current interpolated value
-            self.interpolate_value(&existing.from, &existing.to, existing.start, existing.duration, existing.easing, now)
+            self.interpolate_value(
+                &existing.from,
+                &existing.to,
+                existing.start,
+                existing.duration,
+                existing.easing,
+                now,
+            )
         } else {
             PropertyValue::Color(prev_color.clone())
         };
@@ -429,11 +449,7 @@ fn color_to_oklch(color: &Color) -> (f32, f32, f32) {
             use palette::{IntoColor, Oklch, Srgb};
             let srgb = Srgb::new(*r as f32 / 255.0, *g as f32 / 255.0, *b as f32 / 255.0);
             let oklch: Oklch = srgb.into_color();
-            (
-                oklch.l,
-                oklch.chroma,
-                oklch.hue.into_positive_degrees(),
-            )
+            (oklch.l, oklch.chroma, oklch.hue.into_positive_degrees())
         }
         // For Var and Derived, we can't interpolate without resolving them first
         // Return neutral values that won't cause issues

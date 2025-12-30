@@ -85,11 +85,8 @@ pub fn expand(_attr: TokenStream, item: TokenStream) -> TokenStream {
 
     // Validate return type exists
     if extract_return_type(&func).is_none() {
-        return syn::Error::new_spanned(
-            &func.sig,
-            "request_handler must have a return type",
-        )
-        .to_compile_error();
+        return syn::Error::new_spanned(&func.sig, "request_handler must have a return type")
+            .to_compile_error();
     }
 
     // Encode metadata: request type path as string
