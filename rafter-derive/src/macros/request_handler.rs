@@ -19,11 +19,10 @@ fn extract_request_type(func: &ItemFn) -> Option<Type> {
             }
 
             // Skip if it's self
-            if let Pat::Ident(pat) = pat_type.pat.as_ref() {
-                if pat.ident == "self" {
+            if let Pat::Ident(pat) = pat_type.pat.as_ref()
+                && pat.ident == "self" {
                     continue;
                 }
-            }
 
             return Some((**ty).clone());
         }

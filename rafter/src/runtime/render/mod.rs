@@ -91,8 +91,8 @@ fn check_style_transitions(
     }
 
     // Check for foreground color lightness changes
-    if let (Some(prev_fg), Some(new_fg)) = (&prev_style.fg, &new_style.fg) {
-        if let (
+    if let (Some(prev_fg), Some(new_fg)) = (&prev_style.fg, &new_style.fg)
+        && let (
             crate::styling::StyleColor::Concrete(prev_color),
             crate::styling::StyleColor::Concrete(new_color),
         ) = (prev_fg, new_fg)
@@ -112,7 +112,6 @@ fn check_style_transitions(
                 ));
             }
         }
-    }
 
     // Check for opacity changes
     let prev_opacity = prev_style.opacity.unwrap_or(1.0);

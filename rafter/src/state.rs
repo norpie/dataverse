@@ -57,11 +57,10 @@ impl<T> State<T> {
 
     /// Send a wakeup signal if a sender is installed
     fn send_wakeup(&self) {
-        if let Ok(guard) = self.wakeup.lock() {
-            if let Some(sender) = guard.as_ref() {
+        if let Ok(guard) = self.wakeup.lock()
+            && let Some(sender) = guard.as_ref() {
                 sender.send();
             }
-        }
     }
 
     /// Get a clone of the current value

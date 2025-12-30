@@ -392,16 +392,14 @@ impl Autocomplete {
     /// Sets the input value to the selected item's label.
     pub fn select_at_cursor(&self) {
         let cursor = self.cursor();
-        if let Ok(guard) = self.inner.read() {
-            if let Some(filter_match) = guard.filtered.get(cursor) {
-                if let Some(label) = guard.option_labels.get(filter_match.index) {
+        if let Ok(guard) = self.inner.read()
+            && let Some(filter_match) = guard.filtered.get(cursor)
+                && let Some(label) = guard.option_labels.get(filter_match.index) {
                     let label = label.clone();
                     drop(guard);
                     self.set_value(label);
                     self.close();
                 }
-            }
-        }
     }
 
     // -------------------------------------------------------------------------

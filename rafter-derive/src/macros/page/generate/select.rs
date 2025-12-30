@@ -71,16 +71,12 @@ pub fn generate_select_element(elem: &ElementNode) -> TokenStream {
 
     for attr in &elem.attrs {
         let name_str = attr.name.to_string();
-        match name_str.as_str() {
-            "on_change" => {
-                if let Some(AttrValue::Ident(i)) = &attr.value {
-                    let handler_name = i.to_string();
-                    on_change =
-                        quote! { Some(rafter::keybinds::HandlerId(#handler_name.to_string())) };
-                }
+        if name_str.as_str() == "on_change"
+            && let Some(AttrValue::Ident(i)) = &attr.value {
+                let handler_name = i.to_string();
+                on_change =
+                    quote! { Some(rafter::keybinds::HandlerId(#handler_name.to_string())) };
             }
-            _ => {}
-        }
     }
 
     // Generate code that:

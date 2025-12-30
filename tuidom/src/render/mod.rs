@@ -484,7 +484,7 @@ fn render_text(
             if ch_w == 2 && x + 1 < inner.right() {
                 // Only render continuation if not clipped
                 let cont_x = x + 1;
-                if clip.map_or(true, |c| cont_x >= c.x && cont_x < c.right()) {
+                if clip.is_none_or(|c| cont_x >= c.x && cont_x < c.right()) {
                     let mut continuation = Cell::new(' ')
                         .with_fg(fg)
                         .with_bg(bg)
@@ -535,7 +535,7 @@ fn render_border(
 
     // Helper to check if a point is within clip bounds
     let is_visible = |x: u16, y: u16| -> bool {
-        clip.map_or(true, |c| {
+        clip.is_none_or(|c| {
             x >= c.x && x < c.right() && y >= c.y && y < c.bottom()
         })
     };
@@ -628,7 +628,7 @@ fn render_scrollbar(
 
     // Helper to check if a point is within clip bounds
     let is_visible = |x: u16, y: u16| -> bool {
-        clip.map_or(true, |c| {
+        clip.is_none_or(|c| {
             x >= c.x && x < c.right() && y >= c.y && y < c.bottom()
         })
     };

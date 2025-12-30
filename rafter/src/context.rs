@@ -148,7 +148,7 @@ impl Toast {
             let body_width = max_width.saturating_sub(3) as usize; // Account for padding
             if body_width > 0 {
                 for line in body.lines() {
-                    height += ((line.len() + body_width - 1) / body_width).max(1) as u16;
+                    height += line.len().div_ceil(body_width).max(1) as u16;
                 }
             }
         }
@@ -403,10 +403,8 @@ impl AppContext {
     /// let result = client.fetch().await;
     /// ```
     pub fn data<T: Send + Sync + 'static>(&self) -> &T {
-        self.try_data::<T>().expect(&format!(
-            "No data of type {} registered. Use Runtime::data() to register it.",
-            std::any::type_name::<T>()
-        ))
+        self.try_data::<T>().unwrap_or_else(|| panic!("No data of type {} registered. Use Runtime::data() to register it.",
+            std::any::type_name::<T>()))
     }
 
     /// Request to exit the current app

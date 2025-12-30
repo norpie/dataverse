@@ -311,7 +311,7 @@ fn split_into_lines<'a>(
         let child_total = child_main + child_margin;
 
         // Add gap if not first item in line
-        let with_gap = if lines.last().map_or(true, |l| l.is_empty()) {
+        let with_gap = if lines.last().is_none_or(|l| l.is_empty()) {
             child_total
         } else {
             child_total + gap

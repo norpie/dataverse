@@ -210,8 +210,8 @@ impl FieldAttrs {
         let mut skip = false;
 
         for attr in attrs {
-            if attr.path().is_ident("state") {
-                if let Meta::List(list) = attr.meta.clone() {
+            if attr.path().is_ident("state")
+                && let Meta::List(list) = attr.meta.clone() {
                     let _ = list.parse_nested_meta(|meta| {
                         if meta.path.is_ident("skip") {
                             skip = true;
@@ -219,7 +219,6 @@ impl FieldAttrs {
                         Ok(())
                     });
                 }
-            }
         }
 
         Self { skip }
