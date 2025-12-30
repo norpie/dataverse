@@ -6,7 +6,7 @@ use crate::buffer::{Buffer, Cell};
 use crate::element::{Content, Element};
 use crate::layout::{LayoutResult, Rect};
 use crate::text::{align_offset, char_width, display_width, truncate_to_width, wrap_chars, wrap_words};
-use crate::types::{Color, ColorKey, Oklch, Overflow, TextWrap};
+use crate::types::{Backdrop, Color, ColorKey, Oklch, Overflow, TextWrap};
 
 /// Cache for Color → Oklch conversions during render.
 /// Avoids repeated palette conversions for the same colors within a frame.
@@ -180,6 +180,9 @@ fn render_single_element_timed(
     oklch_cache: &mut OklchCache,
 ) {
     let t0 = Instant::now();
+
+    // Apply backdrop BEFORE rendering this element (dims entire buffer)
+    apply_backdrop(buf, &element.backdrop);
 
     let Some(layout_rect) = layout.get(&element.id) else {
         return;
@@ -670,6 +673,34 @@ fn render_scrollbar(
                             && x < track_start + thumb_pos + thumb_size;
                         cell.char = if in_thumb { '█' } else { '░' };
                         cell.fg = if in_thumb { thumb_color } else { track_color };
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Apply backdrop effect to the entire buffer.
+/// This is used for modal-like effects where the background is dimmed.
+fn apply_backdrop(buf: &mut Buffer, backdrop: &Backdrop) {
+    match backdrop {
+        Backdrop::None => {}
+        Backdrop::Dim(amount) => {
+            for y in 0..buf.height() {
+                for x in 0..buf.width() {
+                    if let Some(cell) = buf.get_mut(x, y) {
+                        cell.fg = cell.fg.darken(*amount);
+                        cell.bg = cell.bg.darken(*amount);
+                    }
+                }
+            }
+        }
+        Backdrop::Desaturate(amount) => {
+            for y in 0..buf.height() {
+                for x in 0..buf.width() {
+                    if let Some(cell) = buf.get_mut(x, y) {
+                        cell.fg = cell.fg.desaturate(*amount);
+                        cell.bg = cell.bg.desaturate(*amount);
                     }
                 }
             }

@@ -94,6 +94,16 @@ pub struct TextStyle {
     pub strikethrough: bool,
 }
 
+#[derive(Debug, Clone, PartialEq, Default)]
+pub enum Backdrop {
+    #[default]
+    None,
+    /// Darken the entire buffer by amount (0.0-1.0)
+    Dim(f32),
+    /// Reduce chroma of the entire buffer by amount (0.0-1.0)
+    Desaturate(f32),
+}
+
 impl TextStyle {
     pub const fn new() -> Self {
         Self {
