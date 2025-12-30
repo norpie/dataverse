@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::io::{self, Write};
 use std::time::{Duration, Instant};
 
@@ -15,7 +16,31 @@ use crate::element::Element;
 use crate::layout::{layout, LayoutResult, Rect};
 use crate::render::render_to_buffer;
 use crate::text::char_width;
-use crate::types::Rgb;
+use crate::types::{Oklch, Rgb};
+
+/// Cache for OKLCH → RGB conversions within a frame.
+/// Uses quantized key to allow f32 hashing.
+struct RgbCache {
+    cache: HashMap<(i32, i32, i32), Rgb>,
+}
+
+impl RgbCache {
+    fn new() -> Self {
+        Self {
+            cache: HashMap::with_capacity(64),
+        }
+    }
+
+    fn get(&mut self, oklch: Oklch) -> Rgb {
+        // Quantize to reasonable precision (avoids f32 hash issues)
+        let key = (
+            (oklch.l * 1000.0) as i32,
+            (oklch.c * 10000.0) as i32, // chroma needs more precision
+            (oklch.h * 10.0) as i32,
+        );
+        *self.cache.entry(key).or_insert_with(|| oklch.to_rgb())
+    }
+}
 
 pub struct Terminal {
     stdout: io::Stdout,
@@ -160,11 +185,12 @@ impl Terminal {
     }
 
     fn flush_diff(&mut self) -> io::Result<()> {
+        let mut rgb_cache = RgbCache::new();
         let mut last_x = u16::MAX;
         let mut last_y = u16::MAX;
         let mut last_char_width: u16 = 1;
-        let mut last_fg = Rgb::new(255, 255, 255);
-        let mut last_bg = Rgb::new(0, 0, 0);
+        let mut last_fg = Oklch::new(1.0, 0.0, 0.0); // white
+        let mut last_bg = Oklch::new(0.0, 0.0, 0.0); // black
         let mut last_style = crate::types::TextStyle::new();
 
         // Reset to known state at start
@@ -181,26 +207,28 @@ impl Terminal {
                 execute!(self.stdout, cursor::MoveTo(x, y))?;
             }
 
-            // Update colors if changed
+            // Update colors if changed (convert to RGB via cache)
             if cell.fg != last_fg {
+                let rgb = rgb_cache.get(cell.fg);
                 execute!(
                     self.stdout,
                     SetForegroundColor(CtColor::Rgb {
-                        r: cell.fg.r,
-                        g: cell.fg.g,
-                        b: cell.fg.b,
+                        r: rgb.r,
+                        g: rgb.g,
+                        b: rgb.b,
                     })
                 )?;
                 last_fg = cell.fg;
             }
 
             if cell.bg != last_bg {
+                let rgb = rgb_cache.get(cell.bg);
                 execute!(
                     self.stdout,
                     SetBackgroundColor(CtColor::Rgb {
-                        r: cell.bg.r,
-                        g: cell.bg.g,
-                        b: cell.bg.b,
+                        r: rgb.r,
+                        g: rgb.g,
+                        b: rgb.b,
                     })
                 )?;
                 last_bg = cell.bg;

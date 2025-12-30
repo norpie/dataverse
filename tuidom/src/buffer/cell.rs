@@ -1,10 +1,10 @@
-use crate::types::{Rgb, TextStyle};
+use crate::types::{Oklch, TextStyle};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Cell {
     pub char: char,
-    pub fg: Rgb,
-    pub bg: Rgb,
+    pub fg: Oklch,
+    pub bg: Oklch,
     pub style: TextStyle,
     pub wide_continuation: bool,
 }
@@ -13,8 +13,8 @@ impl Default for Cell {
     fn default() -> Self {
         Self {
             char: ' ',
-            fg: Rgb::new(255, 255, 255),
-            bg: Rgb::new(0, 0, 0),
+            fg: Oklch::new(1.0, 0.0, 0.0), // white
+            bg: Oklch::new(0.0, 0.0, 0.0), // black
             style: TextStyle::new(),
             wide_continuation: false,
         }
@@ -29,12 +29,12 @@ impl Cell {
         }
     }
 
-    pub fn with_fg(mut self, fg: Rgb) -> Self {
+    pub fn with_fg(mut self, fg: Oklch) -> Self {
         self.fg = fg;
         self
     }
 
-    pub fn with_bg(mut self, bg: Rgb) -> Self {
+    pub fn with_bg(mut self, bg: Oklch) -> Self {
         self.bg = bg;
         self
     }

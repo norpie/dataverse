@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::time::Instant;
 
 use crate::animation::{AnimationState, PropertyValue, TransitionProperty};
@@ -5,7 +6,30 @@ use crate::buffer::{Buffer, Cell};
 use crate::element::{Content, Element};
 use crate::layout::{LayoutResult, Rect};
 use crate::text::{align_offset, char_width, display_width, truncate_to_width, wrap_chars, wrap_words};
-use crate::types::{Color, Overflow, Rgb, TextWrap};
+use crate::types::{Color, ColorKey, Oklch, Overflow, TextWrap};
+
+/// Cache for Color → Oklch conversions during render.
+/// Avoids repeated palette conversions for the same colors within a frame.
+struct OklchCache {
+    cache: HashMap<ColorKey, Oklch>,
+}
+
+impl OklchCache {
+    fn new() -> Self {
+        Self {
+            cache: HashMap::with_capacity(32),
+        }
+    }
+
+    fn get(&mut self, color: &Color) -> Oklch {
+        if let Some(key) = color.cache_key() {
+            *self.cache.entry(key).or_insert_with(|| color.to_oklch())
+        } else {
+            // Derived colors: compute without caching
+            color.to_oklch()
+        }
+    }
+}
 
 /// A render item contains an element with its z_index, tree order, and clip rect.
 struct RenderItem<'a> {
@@ -48,9 +72,12 @@ pub fn render_to_buffer(element: &Element, layout: &LayoutResult, buf: &mut Buff
         ..Default::default()
     };
 
+    // Create color cache for this frame
+    let mut oklch_cache = OklchCache::new();
+
     // Render in sorted order
     for item in render_list {
-        render_single_element_timed(item.element, layout, buf, item.clip, animation, &mut stats);
+        render_single_element_timed(item.element, layout, buf, item.clip, animation, &mut stats, &mut oklch_cache);
     }
 
     log::debug!(
@@ -150,6 +177,7 @@ fn render_single_element_timed(
     clip: Option<Rect>,
     animation: &AnimationState,
     stats: &mut RenderStats,
+    oklch_cache: &mut OklchCache,
 ) {
     let t0 = Instant::now();
 
@@ -186,14 +214,14 @@ fn render_single_element_timed(
 
     // Render background if set (only within visible area)
     if let Some(bg) = background {
-        let rgb = bg.to_rgb();
-        fill_rect(buf, visible_rect, rgb);
+        let oklch = oklch_cache.get(&bg);
+        fill_rect(buf, visible_rect, oklch);
     }
     let t2 = Instant::now();
     stats.background_us += t2.duration_since(t1).as_secs_f64() * 1_000_000.0;
 
     // Render border if set (needs full rect for corners, but clip to visible)
-    render_border(element, rect, buf, clip, animation);
+    render_border(element, rect, buf, clip, animation, oklch_cache);
     let t3 = Instant::now();
     stats.border_us += t3.duration_since(t2).as_secs_f64() * 1_000_000.0;
 
@@ -201,7 +229,7 @@ fn render_single_element_timed(
     match &element.content {
         Content::None | Content::Children(_) => {}
         Content::Text(text) => {
-            render_text(text, element, rect, buf, clip, animation);
+            render_text(text, element, rect, buf, clip, animation, oklch_cache);
         }
         Content::Custom(custom) => {
             // Custom content gets the full rect; it should handle clipping internally
@@ -285,7 +313,7 @@ fn adjust_rect_for_position(
     )
 }
 
-fn fill_rect(buf: &mut Buffer, rect: Rect, bg: Rgb) {
+fn fill_rect(buf: &mut Buffer, rect: Rect, bg: Oklch) {
     for y in rect.y..rect.bottom().min(buf.height()) {
         for x in rect.x..rect.right().min(buf.width()) {
             if let Some(cell) = buf.get_mut(x, y) {
@@ -301,7 +329,7 @@ fn fill_rect(buf: &mut Buffer, rect: Rect, bg: Rgb) {
     }
 }
 
-fn render_text(text: &str, element: &Element, rect: Rect, buf: &mut Buffer, clip: Option<Rect>, animation: &AnimationState) {
+fn render_text(text: &str, element: &Element, rect: Rect, buf: &mut Buffer, clip: Option<Rect>, animation: &AnimationState, oklch_cache: &mut OklchCache) {
     // Get foreground color (potentially interpolated)
     let foreground = get_interpolated_color(
         animation,
@@ -311,8 +339,8 @@ fn render_text(text: &str, element: &Element, rect: Rect, buf: &mut Buffer, clip
     );
     let fg = foreground
         .as_ref()
-        .map(|c| c.to_rgb())
-        .unwrap_or(Rgb::new(255, 255, 255));
+        .map(|c| oklch_cache.get(c))
+        .unwrap_or(Oklch::new(1.0, 0.0, 0.0)); // white
 
     // Get background color (potentially interpolated)
     let background = get_interpolated_color(
@@ -321,7 +349,7 @@ fn render_text(text: &str, element: &Element, rect: Rect, buf: &mut Buffer, clip
         TransitionProperty::Background,
         element.style.background.as_ref(),
     );
-    let explicit_bg = background.as_ref().map(|c| c.to_rgb());
+    let explicit_bg = background.as_ref().map(|c| oklch_cache.get(c));
 
     let border_size = if element.style.border == crate::types::Border::None {
         0
@@ -406,7 +434,7 @@ fn render_text(text: &str, element: &Element, rect: Rect, buf: &mut Buffer, clip
 
             // Preserve existing background if no explicit background set
             let bg = explicit_bg.unwrap_or_else(|| {
-                buf.get(x, y).map(|c| c.bg).unwrap_or(Rgb::new(0, 0, 0))
+                buf.get(x, y).map(|c| c.bg).unwrap_or(Oklch::new(0.0, 0.0, 0.0))
             });
 
             buf.set(
@@ -437,7 +465,7 @@ fn render_text(text: &str, element: &Element, rect: Rect, buf: &mut Buffer, clip
     }
 }
 
-fn render_border(element: &Element, rect: Rect, buf: &mut Buffer, clip: Option<Rect>, animation: &AnimationState) {
+fn render_border(element: &Element, rect: Rect, buf: &mut Buffer, clip: Option<Rect>, animation: &AnimationState, oklch_cache: &mut OklchCache) {
     use crate::types::Border;
 
     let (tl, tr, bl, br, h, v) = match element.style.border {
@@ -457,8 +485,8 @@ fn render_border(element: &Element, rect: Rect, buf: &mut Buffer, clip: Option<R
     );
     let fg = foreground
         .as_ref()
-        .map(|c| c.to_rgb())
-        .unwrap_or(Rgb::new(255, 255, 255));
+        .map(|c| oklch_cache.get(c))
+        .unwrap_or(Oklch::new(1.0, 0.0, 0.0)); // white
 
     if rect.width < 2 || rect.height < 2 {
         return;
@@ -504,7 +532,7 @@ fn render_border(element: &Element, rect: Rect, buf: &mut Buffer, clip: Option<R
     }
 }
 
-fn set_char(buf: &mut Buffer, x: u16, y: u16, ch: char, fg: Rgb) {
+fn set_char(buf: &mut Buffer, x: u16, y: u16, ch: char, fg: Oklch) {
     if let Some(cell) = buf.get_mut(x, y) {
         cell.char = ch;
         cell.fg = fg;
@@ -551,8 +579,9 @@ fn render_scrollbar(
     let show_vertical = element.overflow == Overflow::Scroll || overflows_vertical;
     let show_horizontal = element.overflow == Overflow::Scroll || overflows_horizontal;
 
-    let track_color = Rgb::new(60, 60, 60);
-    let thumb_color = Rgb::new(150, 150, 150);
+    // Scrollbar colors in OKLCH (gray tones)
+    let track_color = Oklch::from_rgb(crate::types::Rgb::new(60, 60, 60));
+    let thumb_color = Oklch::from_rgb(crate::types::Rgb::new(150, 150, 150));
 
     // Helper to check if a point is within clip bounds
     let is_visible = |x: u16, y: u16| -> bool {

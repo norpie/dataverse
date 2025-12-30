@@ -30,6 +30,70 @@ impl Rgb {
     }
 }
 
+/// OKLCH color representation for perceptually uniform operations.
+/// Colors are stored in this format throughout the rendering pipeline,
+/// only converting to RGB at terminal flush time.
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct Oklch {
+    pub l: f32, // lightness 0.0-1.0
+    pub c: f32, // chroma 0.0-~0.4
+    pub h: f32, // hue 0.0-360.0
+}
+
+impl Oklch {
+    pub const fn new(l: f32, c: f32, h: f32) -> Self {
+        Self { l, c, h }
+    }
+
+    /// Darken the color by reducing lightness.
+    /// `amount` of 0.0 = no change, 1.0 = fully black.
+    pub fn darken(self, amount: f32) -> Self {
+        Self {
+            l: (self.l * (1.0 - amount)).max(0.0),
+            ..self
+        }
+    }
+
+    /// Desaturate the color by reducing chroma.
+    /// `amount` of 0.0 = no change, 1.0 = fully grayscale.
+    pub fn desaturate(self, amount: f32) -> Self {
+        Self {
+            c: (self.c * (1.0 - amount)).max(0.0),
+            ..self
+        }
+    }
+
+    /// Convert to RGB for terminal output.
+    pub fn to_rgb(self) -> Rgb {
+        use palette::{IntoColor, Oklch as PaletteOklch, Srgb};
+        let oklch = PaletteOklch::new(self.l, self.c, self.h);
+        let srgb: Srgb = oklch.into_color();
+        let (r, g, b) = srgb.into_format::<u8>().into_components();
+        Rgb::new(r, g, b)
+    }
+
+    /// Convert from RGB.
+    pub fn from_rgb(rgb: Rgb) -> Self {
+        use palette::{IntoColor, Oklch as PaletteOklch, Srgb};
+        let srgb = Srgb::new(
+            rgb.r as f32 / 255.0,
+            rgb.g as f32 / 255.0,
+            rgb.b as f32 / 255.0,
+        );
+        let oklch: PaletteOklch = srgb.into_color();
+        Self::new(oklch.l, oklch.chroma, oklch.hue.into_positive_degrees())
+    }
+}
+
+/// Key for caching Color → Oklch conversions.
+/// Uses quantized values for f32 hashing.
+#[derive(Hash, Eq, PartialEq, Clone, Debug)]
+pub enum ColorKey {
+    Oklch(i32, i32, i32), // quantized l, c, h
+    Rgb(u8, u8, u8),
+    Var(String),
+}
+
 impl Color {
     pub fn oklch(l: f32, c: f32, h: f32) -> Self {
         Self::Oklch { l, c, h, a: 1.0 }
@@ -116,6 +180,31 @@ impl Color {
             Self::Oklch { l, c, h, .. } => oklch_to_rgb(*l, *c, *h),
             Self::Var(_) => Rgb::default(), // needs ColorContext to resolve
             Self::Derived { .. } => Rgb::default(), // needs ColorContext to resolve
+        }
+    }
+
+    /// Convert to OKLCH representation for rendering pipeline.
+    pub fn to_oklch(&self) -> Oklch {
+        match self {
+            Self::Oklch { l, c, h, .. } => Oklch::new(*l, *c, *h),
+            Self::Rgb { r, g, b } => Oklch::from_rgb(Rgb::new(*r, *g, *b)),
+            Self::Var(_) => Oklch::default(),          // needs ColorContext to resolve
+            Self::Derived { .. } => Oklch::default(),  // TODO: resolve ops
+        }
+    }
+
+    /// Generate a cache key for this color.
+    /// Returns None for Derived colors which can't be cached without resolution.
+    pub fn cache_key(&self) -> Option<ColorKey> {
+        match self {
+            Self::Oklch { l, c, h, .. } => Some(ColorKey::Oklch(
+                (l * 1000.0) as i32,
+                (c * 10000.0) as i32,
+                (h * 10.0) as i32,
+            )),
+            Self::Rgb { r, g, b } => Some(ColorKey::Rgb(*r, *g, *b)),
+            Self::Var(s) => Some(ColorKey::Var(s.clone())),
+            Self::Derived { .. } => None, // derived colors not cached
         }
     }
 }
