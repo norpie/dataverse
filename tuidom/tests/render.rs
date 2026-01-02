@@ -1,11 +1,16 @@
 use tuidom::animation::AnimationState;
-use tuidom::{Buffer, Color, Element, Oklch, Overflow, Position, Rect, Rgb, Size, Style};
+use tuidom::{
+    Buffer, Color, ColorContext, Element, EmptyTheme, Oklch, Overflow, Position, Rect, Rgb, Size,
+    Style,
+};
 
 fn render_to_buffer(root: &Element, width: u16, height: u16) -> Buffer {
-    let layout = tuidom::layout::layout(root, Rect::new(0, 0, width, height));
-    let mut buf = Buffer::new(width, height);
     let animation = AnimationState::new();
-    tuidom::render::render_to_buffer(root, &layout, &mut buf, &animation);
+    let layout = tuidom::layout::layout(root, Rect::new(0, 0, width, height), &animation);
+    let mut buf = Buffer::new(width, height);
+    let theme = EmptyTheme;
+    let color_ctx = ColorContext::new(&theme);
+    tuidom::render::render_to_buffer(root, &layout, &mut buf, &animation, &color_ctx);
     buf
 }
 
@@ -338,7 +343,8 @@ fn test_scroll_offset_moves_children() {
         .child(Element::text("Line 4").id("line4"))
         .child(Element::text("Line 5").id("line5"));
 
-    let layout = tuidom::layout::layout(&root, Rect::new(0, 0, 20, 10));
+    let animation = AnimationState::new();
+    let layout = tuidom::layout::layout(&root, Rect::new(0, 0, 20, 10), &animation);
 
     // Line 1 should be at y = 0 - 2 = -2 (effectively not visible, clamped to 0 but scrolled out)
     // Line 3 should be at y = 2 - 2 = 0

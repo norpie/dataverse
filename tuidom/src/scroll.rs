@@ -159,9 +159,7 @@ fn find_scrollable_recursive(
     x: u16,
     y: u16,
 ) -> Option<String> {
-    let Some(rect) = layout.get(&element.id) else {
-        return None;
-    };
+    let rect = layout.get(&element.id)?;
 
     // Check if point is within bounds
     if x < rect.x || x >= rect.right() || y < rect.y || y >= rect.bottom() {

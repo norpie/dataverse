@@ -84,15 +84,10 @@ impl Terminal {
     pub fn poll(&self, timeout: Option<Duration>) -> io::Result<Vec<CrosstermEvent>> {
         let mut events = Vec::new();
 
-        // Use short timeout when transitions are active for smooth animation
-        let effective_timeout = if self.animation.has_active_transitions() {
-            Some(
-                timeout
-                    .map(|t| t.min(Duration::from_millis(16)))
-                    .unwrap_or(Duration::from_millis(16)),
-            )
-        } else {
-            timeout
+        // Use short timeout when animations are active for smooth animation
+        let effective_timeout = match self.animation.next_tick_due() {
+            Some(tick_due) => Some(timeout.map(|t| t.min(tick_due)).unwrap_or(tick_due)),
+            None => timeout,
         };
 
         let has_event = match effective_timeout {
@@ -126,7 +121,13 @@ impl Terminal {
         self.theme = Box::new(theme);
     }
 
+    /// Returns true if any animations (transitions or frame animations) are currently active.
+    pub fn has_active_animations(&self) -> bool {
+        self.animation.has_active_animations()
+    }
+
     /// Returns true if any transitions are currently active.
+    /// Deprecated: use has_active_animations() instead.
     pub fn has_active_transitions(&self) -> bool {
         self.animation.has_active_transitions()
     }
@@ -152,7 +153,7 @@ impl Terminal {
 
         // Layout
         let available = Rect::from_size(width, height);
-        self.last_layout = layout(root, available);
+        self.last_layout = layout(root, available, &self.animation);
         let t_layout = Instant::now();
 
         // Create color context for theme resolution

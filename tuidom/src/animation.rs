@@ -49,6 +49,19 @@ struct ActiveTransition {
     easing: Easing,
 }
 
+/// Frame animation state for a single element.
+#[derive(Debug, Clone)]
+struct FrameState {
+    /// Current frame index
+    index: usize,
+    /// When the current frame started
+    started: Instant,
+    /// Frame interval
+    interval: Duration,
+    /// Total number of frames
+    count: usize,
+}
+
 /// Manages animation state across frames.
 #[derive(Debug, Default)]
 pub struct AnimationState {
@@ -56,6 +69,8 @@ pub struct AnimationState {
     snapshots: HashMap<String, ElementSnapshot>,
     /// Currently active transitions: (element_id, property) -> transition.
     active: HashMap<(String, TransitionProperty), ActiveTransition>,
+    /// Frame animation state per element.
+    frame_states: HashMap<String, FrameState>,
     /// Reduced motion flag - when true, transitions complete instantly.
     reduced_motion: bool,
 }
@@ -71,9 +86,47 @@ impl AnimationState {
         self.reduced_motion = enabled;
     }
 
+    /// Returns true if any animation (transition or frame) is currently active.
+    pub fn has_active_animations(&self) -> bool {
+        !self.active.is_empty() || !self.frame_states.is_empty()
+    }
+
     /// Returns true if any transition is currently active.
+    /// Deprecated: use has_active_animations() instead.
     pub fn has_active_transitions(&self) -> bool {
         !self.active.is_empty()
+    }
+
+    /// Returns when the next animation tick is due.
+    /// This considers both property transitions (which need ~16ms polling)
+    /// and frame animations (which have explicit intervals).
+    /// Returns None if no animations are active.
+    pub fn next_tick_due(&self) -> Option<Duration> {
+        let now = Instant::now();
+        let mut min_due: Option<Duration> = None;
+
+        // Check transitions - need 16ms polling for smooth animation
+        if !self.active.is_empty() {
+            min_due = Some(Duration::from_millis(16));
+        }
+
+        // Check frame animations
+        for state in self.frame_states.values() {
+            let elapsed = now.duration_since(state.started);
+            let remaining = state.interval.saturating_sub(elapsed);
+            min_due = Some(min_due.map_or(remaining, |m| m.min(remaining)));
+        }
+
+        min_due
+    }
+
+    /// Get the current frame index for an element with frame animation.
+    /// Returns 0 if the element has no frame state.
+    pub fn current_frame(&self, element_id: &str) -> usize {
+        self.frame_states
+            .get(element_id)
+            .map(|s| s.index)
+            .unwrap_or(0)
     }
 
     /// Update animation state based on current element tree.
@@ -166,10 +219,54 @@ impl AnimationState {
         self.snapshots.insert(id.clone(), current);
 
         // Recurse into children
-        if let Content::Children(children) = &element.content {
-            for child in children {
-                self.update_element(child, now);
+        match &element.content {
+            Content::Children(children) => {
+                for child in children {
+                    self.update_element(child, now);
+                }
             }
+            Content::Frames { children, interval } => {
+                // Update frame state
+                self.update_frame_state(id, children.len(), *interval, now);
+
+                // Recurse into the current frame only
+                let frame_idx = self.current_frame(id);
+                if let Some(child) = children.get(frame_idx) {
+                    self.update_element(child, now);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// Update frame animation state for an element.
+    fn update_frame_state(&mut self, id: &str, count: usize, interval: Duration, now: Instant) {
+        if count == 0 {
+            self.frame_states.remove(id);
+            return;
+        }
+
+        let state = self
+            .frame_states
+            .entry(id.to_string())
+            .or_insert(FrameState {
+                index: 0,
+                started: now,
+                interval,
+                count,
+            });
+
+        // Update interval and count in case they changed
+        state.interval = interval;
+        state.count = count;
+
+        // Advance frame if interval has elapsed
+        let elapsed = now.duration_since(state.started);
+        if elapsed >= interval {
+            // Calculate how many frames to advance (handles case where multiple intervals passed)
+            let frames_to_advance = (elapsed.as_millis() / interval.as_millis()) as usize;
+            state.index = (state.index + frames_to_advance) % count;
+            state.started = now;
         }
     }
 
@@ -397,10 +494,11 @@ impl AnimationState {
         }
     }
 
-    /// Remove transitions and snapshots for elements no longer in tree.
+    /// Remove transitions, snapshots, and frame states for elements no longer in tree.
     pub fn cleanup(&mut self, current_ids: &HashSet<String>) {
         self.snapshots.retain(|id, _| current_ids.contains(id));
         self.active.retain(|(id, _), _| current_ids.contains(id));
+        self.frame_states.retain(|id, _| current_ids.contains(id));
     }
 }
 

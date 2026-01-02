@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use super::Rect;
+use crate::animation::AnimationState;
 use crate::element::{Content, Element};
 use crate::text::display_width;
 use crate::types::{Align, Direction, Overflow, Position, Size, Wrap};
@@ -63,18 +64,23 @@ impl LayoutResult {
     }
 }
 
-pub fn layout(element: &Element, available: Rect) -> LayoutResult {
+pub fn layout(element: &Element, available: Rect, animation: &AnimationState) -> LayoutResult {
     let mut result = LayoutResult::new();
-    layout_element(element, available, &mut result);
+    layout_element(element, available, &mut result, animation);
     result
 }
 
-fn layout_element(element: &Element, available: Rect, result: &mut LayoutResult) {
+fn layout_element(
+    element: &Element,
+    available: Rect,
+    result: &mut LayoutResult,
+    animation: &AnimationState,
+) {
     // Handle absolute positioning
     if element.position == Position::Absolute {
         let rect = layout_absolute(element, available);
         result.insert(element.id.clone(), rect);
-        layout_children(element, rect, result);
+        layout_children(element, rect, result, animation);
         return;
     }
 
@@ -104,7 +110,7 @@ fn layout_element(element: &Element, available: Rect, result: &mut LayoutResult)
     }
 
     result.insert(element.id.clone(), rect);
-    layout_children(element, rect, result);
+    layout_children(element, rect, result, animation);
 }
 
 /// Layout an absolutely positioned element within its containing block.
@@ -157,7 +163,22 @@ fn layout_absolute(element: &Element, container: Rect) -> Rect {
     Rect::new(x, y, width, height)
 }
 
-fn layout_children(element: &Element, rect: Rect, result: &mut LayoutResult) {
+fn layout_children(
+    element: &Element,
+    rect: Rect,
+    result: &mut LayoutResult,
+    animation: &AnimationState,
+) {
+    // Handle Frames content - only layout current frame
+    if let Content::Frames { children, .. } = &element.content {
+        let frame_idx = animation.current_frame(&element.id);
+        if let Some(frame) = children.get(frame_idx) {
+            // Layout the current frame as a single child filling the container
+            layout_element(frame, rect, result, animation);
+        }
+        return;
+    }
+
     let Content::Children(children) = &element.content else {
         return;
     };
@@ -214,6 +235,7 @@ fn layout_children(element: &Element, rect: Rect, result: &mut LayoutResult) {
             cross_size,
             is_row,
             result,
+            animation,
         );
         cross_offset += line_cross_size + element.gap;
     }
@@ -241,7 +263,7 @@ fn layout_children(element: &Element, rect: Rect, result: &mut LayoutResult) {
 
     // Layout absolute children (they position themselves, not affected by scroll)
     for child in absolute_children {
-        layout_element(child, rect, result);
+        layout_element(child, rect, result, animation);
     }
 }
 
@@ -344,6 +366,7 @@ fn get_base_main_size(child: &Element, is_row: bool) -> u16 {
 }
 
 /// Layout a single line of flex items, returns the line's cross-axis size
+#[allow(clippy::too_many_arguments)]
 fn layout_line(
     line: &[&Element],
     parent: &Element,
@@ -353,6 +376,7 @@ fn layout_line(
     cross_size: u16,
     is_row: bool,
     result: &mut LayoutResult,
+    animation: &AnimationState,
 ) -> u16 {
     if line.is_empty() {
         return 0;
@@ -547,7 +571,7 @@ fn layout_line(
         }
 
         result.insert(child.id.clone(), child_rect);
-        layout_children(child, child_rect, result);
+        layout_children(child, child_rect, result, animation);
 
         main_offset += margin_before + main + margin_after + between_gap;
     }
@@ -658,6 +682,14 @@ fn estimate_size(element: &Element, is_width: bool) -> u16 {
         }
         Content::None => 0,
         Content::Custom(_) => 10, // arbitrary default
+        Content::Frames { children, .. } => {
+            // Size to fit the largest frame
+            children
+                .iter()
+                .map(|c| estimate_size(c, is_width))
+                .max()
+                .unwrap_or(0)
+        }
     };
 
     content_size + padding + border_size

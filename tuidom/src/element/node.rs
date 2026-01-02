@@ -1,4 +1,5 @@
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::Duration;
 
 use super::{Content, CustomContent};
 use crate::transitions::Transitions;
@@ -148,6 +149,16 @@ impl Element {
         Self {
             id: generate_id("custom"),
             content: Content::Custom(Box::new(content)),
+            ..Default::default()
+        }
+    }
+
+    /// Create an element that cycles through child frames at the given interval.
+    /// Only the current frame is laid out and rendered at any time.
+    pub fn frames(children: Vec<Element>, interval: Duration) -> Self {
+        Self {
+            id: generate_id("frames"),
+            content: Content::Frames { children, interval },
             ..Default::default()
         }
     }

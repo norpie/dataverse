@@ -71,7 +71,15 @@ pub fn render_to_buffer(
 
     // Collect all elements with their effective z_index, tree order, and clip rects
     let mut render_list: Vec<RenderItem> = Vec::new();
-    collect_elements(element, layout, &mut render_list, 0, element.z_index, None);
+    collect_elements(
+        element,
+        layout,
+        &mut render_list,
+        0,
+        element.z_index,
+        None,
+        animation,
+    );
     let t1 = Instant::now();
 
     // Sort by z_index (stable sort preserves tree order for equal z_index)
@@ -125,6 +133,7 @@ fn collect_elements<'a>(
     tree_order: usize,
     parent_z_index: i16,
     parent_clip: Option<Rect>,
+    animation: &AnimationState,
 ) -> usize {
     let mut order = tree_order;
     // Effective z_index: use element's z_index if explicitly higher, otherwise inherit parent's
@@ -162,10 +171,36 @@ fn collect_elements<'a>(
     });
     order += 1;
 
-    if let Content::Children(children) = &element.content {
-        for child in children {
-            order = collect_elements(child, layout, list, order, effective_z, child_clip);
+    match &element.content {
+        Content::Children(children) => {
+            for child in children {
+                order = collect_elements(
+                    child,
+                    layout,
+                    list,
+                    order,
+                    effective_z,
+                    child_clip,
+                    animation,
+                );
+            }
         }
+        Content::Frames { children, .. } => {
+            // Only collect the current frame
+            let frame_idx = animation.current_frame(&element.id);
+            if let Some(child) = children.get(frame_idx) {
+                order = collect_elements(
+                    child,
+                    layout,
+                    list,
+                    order,
+                    effective_z,
+                    child_clip,
+                    animation,
+                );
+            }
+        }
+        _ => {}
     }
 
     order
@@ -245,9 +280,9 @@ fn render_single_element_timed(
     let t3 = Instant::now();
     stats.border_us += t3.duration_since(t2).as_secs_f64() * 1_000_000.0;
 
-    // Render content (text or custom only, children handled separately)
+    // Render content (text or custom only, children/frames handled separately via collect_elements)
     match &element.content {
-        Content::None | Content::Children(_) => {}
+        Content::None | Content::Children(_) | Content::Frames { .. } => {}
         Content::Text(text) => {
             render_text(text, element, rect, buf, clip, animation, oklch_cache);
         }
@@ -542,9 +577,7 @@ fn render_border(
 
     // Helper to check if a point is within clip bounds
     let is_visible = |x: u16, y: u16| -> bool {
-        clip.is_none_or(|c| {
-            x >= c.x && x < c.right() && y >= c.y && y < c.bottom()
-        })
+        clip.is_none_or(|c| x >= c.x && x < c.right() && y >= c.y && y < c.bottom())
     };
 
     // Corners
@@ -635,9 +668,7 @@ fn render_scrollbar(
 
     // Helper to check if a point is within clip bounds
     let is_visible = |x: u16, y: u16| -> bool {
-        clip.is_none_or(|c| {
-            x >= c.x && x < c.right() && y >= c.y && y < c.bottom()
-        })
+        clip.is_none_or(|c| x >= c.x && x < c.right() && y >= c.y && y < c.bottom())
     };
 
     // Vertical scrollbar (right edge, inside border)

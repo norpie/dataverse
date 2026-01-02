@@ -12,6 +12,7 @@ pub mod text;
 pub mod transitions;
 pub mod types;
 
+pub use animation::AnimationState;
 pub use buffer::Buffer;
 pub use element::Element;
 pub use event::{Event, Key, Modifiers, MouseButton};

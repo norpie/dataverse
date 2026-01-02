@@ -1,7 +1,8 @@
-use tuidom::{Align, Edges, Element, LayoutResult, Position, Rect, Size, Wrap};
+use tuidom::{Align, AnimationState, Edges, Element, LayoutResult, Position, Rect, Size, Wrap};
 
 fn layout_root(root: &Element, width: u16, height: u16) -> LayoutResult {
-    tuidom::layout::layout(root, Rect::new(0, 0, width, height))
+    let animation = AnimationState::new();
+    tuidom::layout::layout(root, Rect::new(0, 0, width, height), &animation)
 }
 
 // ============================================================================
