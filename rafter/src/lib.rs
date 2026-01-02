@@ -1,4 +1,5 @@
 mod event;
+mod keybinds;
 mod request;
 mod resource;
 mod state;
@@ -6,6 +7,10 @@ mod toast;
 mod wakeup;
 
 pub use event::Event;
+pub use keybinds::{
+    parse_key_string, HandlerId, KeyCombo, Keybind, KeybindError, KeybindScope, Keybinds,
+    ParseKeyError,
+};
 pub use request::Request;
 pub use resource::{ProgressState, Resource, ResourceError, ResourceState};
 pub use state::State;
