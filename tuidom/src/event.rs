@@ -69,7 +69,7 @@ pub enum Key {
 }
 
 /// Key modifiers
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Hash)]
 pub struct Modifiers {
     pub shift: bool,
     pub ctrl: bool,
