@@ -164,6 +164,26 @@ impl Keybinds {
         self.binds.push(keybind);
     }
 
+    /// Add a keybind from a key string and handler name.
+    /// Returns false and logs if parsing fails.
+    pub fn add_str(&mut self, key_string: &str, handler: &str) -> bool {
+        match parse_key_string(key_string) {
+            Ok(keys) => {
+                self.binds.push(Keybind::new(handler, key_string, keys, handler));
+                true
+            }
+            Err(e) => {
+                log::error!(
+                    "Failed to parse keybind '{}' for handler '{}': {}",
+                    key_string,
+                    handler,
+                    e
+                );
+                false
+            }
+        }
+    }
+
     /// Look up handler for a single key, respecting page scope.
     pub fn get_single(&self, key: &KeyCombo, current_page: Option<&str>) -> Option<&HandlerId> {
         // Page-scoped keybinds take priority

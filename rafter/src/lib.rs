@@ -21,4 +21,4 @@ pub use toast::{Toast, DEFAULT_TOAST_DURATION};
 pub use wakeup::{channel as wakeup_channel, WakeupHandle, WakeupReceiver, WakeupSender};
 
 // Re-export derive macros
-pub use rafter_derive::{event_handler, handler, request_handler, Event, Request};
+pub use rafter_derive::{event_handler, handler, keybinds, request_handler, Event, Request};

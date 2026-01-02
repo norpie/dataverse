@@ -26,3 +26,8 @@ pub fn event_handler(attr: TokenStream, item: TokenStream) -> TokenStream {
 pub fn request_handler(attr: TokenStream, item: TokenStream) -> TokenStream {
     macros::request_handler::expand(attr.into(), item.into()).into()
 }
+
+#[proc_macro]
+pub fn keybinds(input: TokenStream) -> TokenStream {
+    macros::keybinds::expand(input.into()).into()
+}
