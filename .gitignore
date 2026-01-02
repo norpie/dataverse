@@ -9,3 +9,4 @@ rafter/perf.data.old
 .plans
 CLAUDE.md
 tuidom/docs/book
+**/*.old
