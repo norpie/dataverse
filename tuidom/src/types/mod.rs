@@ -2,6 +2,7 @@ mod color;
 mod edges;
 mod enums;
 mod style;
+mod theme;
 
 pub use color::{Color, ColorKey, ColorOp, Oklch, Rgb};
 pub use edges::Edges;
@@ -10,3 +11,4 @@ pub use enums::{
     TextWrap, Wrap,
 };
 pub use style::Style;
+pub use theme::{ColorContext, EmptyTheme, Theme};

@@ -96,6 +96,28 @@ pub struct ScrollOffset {
 ScrollOffset::new(x, y)
 ```
 
+## Theme
+
+```rust
+pub trait Theme: Send + Sync {
+    fn resolve(&self, name: &str) -> Option<Color>;
+}
+
+// Empty theme (default)
+pub struct EmptyTheme;
+
+// Set theme on terminal
+terminal.set_theme(my_theme);
+```
+
+## ColorContext
+
+```rust
+// Created internally during render
+ColorContext::new(theme)
+color_ctx.resolve(color) -> Color  // Resolves Var and Derived
+```
+
 ## Utility Functions
 
 ```rust

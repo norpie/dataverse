@@ -16,7 +16,7 @@ use crate::element::Element;
 use crate::layout::{layout, LayoutResult, Rect};
 use crate::render::render_to_buffer;
 use crate::text::char_width;
-use crate::types::{Oklch, Rgb};
+use crate::types::{ColorContext, EmptyTheme, Oklch, Rgb, Theme};
 
 /// Cache for OKLCH → RGB conversions within a frame.
 /// Uses quantized key to allow f32 hashing.
@@ -48,6 +48,7 @@ pub struct Terminal {
     previous_buffer: Buffer,
     last_layout: LayoutResult,
     animation: AnimationState,
+    theme: Box<dyn Theme>,
 }
 
 impl Terminal {
@@ -72,6 +73,7 @@ impl Terminal {
             previous_buffer,
             last_layout: LayoutResult::new(),
             animation: AnimationState::new(),
+            theme: Box::new(EmptyTheme),
         })
     }
 
@@ -119,6 +121,11 @@ impl Terminal {
         self.animation.set_reduced_motion(enabled);
     }
 
+    /// Set the theme for color variable resolution.
+    pub fn set_theme(&mut self, theme: impl Theme + 'static) {
+        self.theme = Box::new(theme);
+    }
+
     /// Returns true if any transitions are currently active.
     pub fn has_active_transitions(&self) -> bool {
         self.animation.has_active_transitions()
@@ -148,12 +155,16 @@ impl Terminal {
         self.last_layout = layout(root, available);
         let t_layout = Instant::now();
 
+        // Create color context for theme resolution
+        let color_ctx = ColorContext::new(self.theme.as_ref());
+
         // Render to buffer with animation state for interpolated values
         render_to_buffer(
             root,
             &self.last_layout,
             &mut self.current_buffer,
             &self.animation,
+            &color_ctx,
         );
         let t_render = Instant::now();
 

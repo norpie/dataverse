@@ -8,27 +8,33 @@ use crate::layout::{LayoutResult, Rect};
 use crate::text::{
     align_offset, char_width, display_width, truncate_to_width, wrap_chars, wrap_words,
 };
-use crate::types::{Backdrop, Color, ColorKey, Oklch, Overflow, TextWrap};
+use crate::types::{Backdrop, Color, ColorContext, ColorKey, Oklch, Overflow, TextWrap};
 
 /// Cache for Color → Oklch conversions during render.
 /// Avoids repeated palette conversions for the same colors within a frame.
-struct OklchCache {
+/// Uses ColorContext to resolve Var and Derived colors before conversion.
+struct OklchCache<'a> {
     cache: HashMap<ColorKey, Oklch>,
+    color_ctx: &'a ColorContext<'a>,
 }
 
-impl OklchCache {
-    fn new() -> Self {
+impl<'a> OklchCache<'a> {
+    fn new(color_ctx: &'a ColorContext<'a>) -> Self {
         Self {
             cache: HashMap::with_capacity(32),
+            color_ctx,
         }
     }
 
     fn get(&mut self, color: &Color) -> Oklch {
-        if let Some(key) = color.cache_key() {
-            *self.cache.entry(key).or_insert_with(|| color.to_oklch())
+        // First resolve any Var or Derived colors through the theme
+        let resolved = self.color_ctx.resolve(color);
+
+        if let Some(key) = resolved.cache_key() {
+            *self.cache.entry(key).or_insert_with(|| resolved.to_oklch())
         } else {
-            // Derived colors: compute without caching
-            color.to_oklch()
+            // Shouldn't happen after resolve(), but handle gracefully
+            resolved.to_oklch()
         }
     }
 }
@@ -59,6 +65,7 @@ pub fn render_to_buffer(
     layout: &LayoutResult,
     buf: &mut Buffer,
     animation: &AnimationState,
+    color_ctx: &ColorContext,
 ) {
     let t0 = Instant::now();
 
@@ -79,8 +86,8 @@ pub fn render_to_buffer(
         ..Default::default()
     };
 
-    // Create color cache for this frame
-    let mut oklch_cache = OklchCache::new();
+    // Create color cache for this frame (with theme resolution)
+    let mut oklch_cache = OklchCache::new(color_ctx);
 
     // Render in sorted order
     for item in render_list {
