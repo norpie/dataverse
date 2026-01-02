@@ -1,3 +1,5 @@
+#![deny(clippy::panic)]
+
 mod event;
 mod keybinds;
 mod request;
