@@ -8,6 +8,8 @@ pub enum Event {
     Click { target: Option<String>, x: u16, y: u16, button: MouseButton },
     Scroll { target: Option<String>, x: u16, y: u16, delta_x: i16, delta_y: i16 },
     MouseMove { x: u16, y: u16 },
+    Drag { target: Option<String>, x: u16, y: u16, button: MouseButton },
+    Release { target: Option<String>, x: u16, y: u16, button: MouseButton },
     Focus { target: String },
     Blur { target: String },
     Resize { width: u16, height: u16 },

@@ -24,6 +24,20 @@ pub enum Event {
     },
     /// Mouse move event (for hover tracking)
     MouseMove { x: u16, y: u16 },
+    /// Mouse drag event (button held while moving)
+    Drag {
+        target: Option<String>,
+        x: u16,
+        y: u16,
+        button: MouseButton,
+    },
+    /// Mouse button release event
+    Release {
+        target: Option<String>,
+        x: u16,
+        y: u16,
+        button: MouseButton,
+    },
     /// Element gained focus
     Focus { target: String },
     /// Element lost focus

@@ -228,7 +228,25 @@ impl FocusState {
                             });
                         }
 
-                        _ => {}
+                        MouseEventKind::Drag(button) => {
+                            let target = crate::hit::hit_test(layout, root, x, y);
+                            events.push(Event::Drag {
+                                target,
+                                x,
+                                y,
+                                button: button.into(),
+                            });
+                        }
+
+                        MouseEventKind::Up(button) => {
+                            let target = crate::hit::hit_test(layout, root, x, y);
+                            events.push(Event::Release {
+                                target,
+                                x,
+                                y,
+                                button: button.into(),
+                            });
+                        }
                     }
                 }
 
