@@ -4,6 +4,7 @@ pub mod event_handler;
 pub mod fields;
 pub mod handler;
 pub mod handler_common;
+pub mod impl_common;
 pub mod keybinds;
 pub mod modal;
 pub mod request;
