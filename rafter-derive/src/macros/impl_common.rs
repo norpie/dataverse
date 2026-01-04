@@ -15,20 +15,12 @@ pub struct HandlerContexts {
 }
 
 impl HandlerContexts {
-    pub fn none() -> Self {
-        Self::default()
-    }
-
     pub fn needs_app_context(&self) -> bool {
         self.app_context
     }
 
     pub fn needs_global_context(&self) -> bool {
         self.global_context
-    }
-
-    pub fn needs_modal_context(&self) -> bool {
-        self.modal_context
     }
 }
 

@@ -39,5 +39,6 @@ pub use widget::{Widget, WidgetResult};
 
 // Re-export derive macros
 pub use rafter_derive::{
-    app, event_handler, handler, keybinds, modal, request_handler, system, theme, Event, Request,
+    app, app_impl, event_handler, handler, keybinds, modal, modal_impl, request_handler, system,
+    system_impl, theme, Event, Request,
 };

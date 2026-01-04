@@ -51,3 +51,18 @@ pub fn modal(attr: TokenStream, item: TokenStream) -> TokenStream {
 pub fn system(attr: TokenStream, item: TokenStream) -> TokenStream {
     macros::system::expand(attr.into(), item.into()).into()
 }
+
+#[proc_macro_attribute]
+pub fn app_impl(attr: TokenStream, item: TokenStream) -> TokenStream {
+    macros::app_impl::expand(attr.into(), item.into()).into()
+}
+
+#[proc_macro_attribute]
+pub fn modal_impl(attr: TokenStream, item: TokenStream) -> TokenStream {
+    macros::modal_impl::expand(attr.into(), item.into()).into()
+}
+
+#[proc_macro_attribute]
+pub fn system_impl(attr: TokenStream, item: TokenStream) -> TokenStream {
+    macros::system_impl::expand(attr.into(), item.into()).into()
+}
