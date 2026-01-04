@@ -1,7 +1,7 @@
 //! App trait for main applications.
 //!
 //! Apps are the primary unit of composition in rafter. Each app has:
-//! - A view (`page() -> Element`)
+//! - A view (`element() -> Element`)
 //! - Keybinds
 //! - Lifecycle hooks
 //! - Event/request handlers
@@ -12,7 +12,7 @@ use std::pin::Pin;
 
 use tuidom::Element;
 
-use crate::{HandlerId, Keybinds, WakeupSender};
+use crate::{AppContext, GlobalContext, HandlerId, Keybinds, WakeupSender};
 
 /// App configuration.
 #[derive(Debug, Clone)]
@@ -78,8 +78,8 @@ pub trait App: Clone + Send + Sync + 'static {
         Keybinds::new()
     }
 
-    /// Render the app's page.
-    fn page(&self) -> Element;
+    /// Render the app's view.
+    fn element(&self) -> Element;
 
     /// Get current page identifier for keybind scoping.
     fn current_page(&self) -> Option<String> {
