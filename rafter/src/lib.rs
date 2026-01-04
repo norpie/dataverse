@@ -1,7 +1,9 @@
 #![deny(clippy::panic)]
 
 mod app;
+mod app_context;
 mod event;
+mod global_context;
 mod keybinds;
 mod modal;
 mod registration;
@@ -15,6 +17,8 @@ mod wakeup;
 mod widget;
 
 pub use app::{App, AppConfig, PanicBehavior};
+pub use app_context::AppContext;
+pub use global_context::GlobalContext;
 pub use event::Event;
 pub use keybinds::{
     parse_key_string, HandlerId, KeyCombo, Keybind, KeybindError, KeybindScope, Keybinds,
