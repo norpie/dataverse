@@ -36,3 +36,18 @@ pub fn keybinds(input: TokenStream) -> TokenStream {
 pub fn theme(attr: TokenStream, item: TokenStream) -> TokenStream {
     macros::theme::expand(attr.into(), item.into()).into()
 }
+
+#[proc_macro_attribute]
+pub fn app(attr: TokenStream, item: TokenStream) -> TokenStream {
+    macros::app::expand(attr.into(), item.into()).into()
+}
+
+#[proc_macro_attribute]
+pub fn modal(attr: TokenStream, item: TokenStream) -> TokenStream {
+    macros::modal::expand(attr.into(), item.into()).into()
+}
+
+#[proc_macro_attribute]
+pub fn system(attr: TokenStream, item: TokenStream) -> TokenStream {
+    macros::system::expand(attr.into(), item.into()).into()
+}
