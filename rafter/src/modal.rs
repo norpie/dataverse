@@ -9,7 +9,7 @@ use std::sync::{Arc, Mutex};
 use tokio::sync::oneshot;
 use tuidom::Element;
 
-use crate::{HandlerId, Keybinds};
+use crate::{AppContext, GlobalContext, HandlerId, Keybinds};
 
 /// Modal position configuration.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
@@ -118,7 +118,18 @@ pub trait Modal: Clone + Send + Sync + 'static {
     }
 
     /// Dispatch a handler by ID.
-    fn dispatch(&self, handler_id: &HandlerId, mx: &ModalContext<Self::Result>);
+    ///
+    /// For app-scoped modals, cx provides access to the parent app's context.
+    /// For global modals, cx may be a default/empty context.
+    fn dispatch(
+        &self,
+        handler_id: &HandlerId,
+        mx: &ModalContext<Self::Result>,
+        cx: &AppContext,
+        gx: &GlobalContext,
+    ) {
+        let _ = (handler_id, mx, cx, gx);
+    }
 
     /// Check if the modal needs re-rendering.
     fn is_dirty(&self) -> bool {

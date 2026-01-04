@@ -142,7 +142,11 @@ pub trait App: Clone + Send + Sync + 'static {
     // =========================================================================
 
     /// Dispatch a handler by ID.
-    fn dispatch(&self, handler_id: &HandlerId) {
+    ///
+    /// Generated code detects which contexts the handler needs from its signature
+    /// and passes them accordingly.
+    fn dispatch(&self, handler_id: &HandlerId, cx: &AppContext, gx: &GlobalContext) {
+        let _ = (cx, gx);
         log::warn!("No dispatch implementation for handler '{}'", handler_id.0);
     }
 
@@ -151,8 +155,10 @@ pub trait App: Clone + Send + Sync + 'static {
         &self,
         event_type: TypeId,
         event: Box<dyn Any + Send + Sync>,
+        cx: &AppContext,
+        gx: &GlobalContext,
     ) -> bool {
-        let _ = (event_type, event);
+        let _ = (event_type, event, cx, gx);
         false
     }
 
@@ -161,8 +167,10 @@ pub trait App: Clone + Send + Sync + 'static {
         &self,
         request_type: TypeId,
         request: Box<dyn Any + Send + Sync>,
+        cx: &AppContext,
+        gx: &GlobalContext,
     ) -> Option<Pin<Box<dyn Future<Output = Box<dyn Any + Send + Sync>> + Send>>> {
-        let _ = (request_type, request);
+        let _ = (request_type, request, cx, gx);
         None
     }
 

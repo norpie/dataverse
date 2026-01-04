@@ -9,7 +9,7 @@ use std::pin::Pin;
 
 use tuidom::Element;
 
-use crate::{HandlerId, Keybinds, WakeupSender};
+use crate::{GlobalContext, HandlerId, Keybinds, WakeupSender};
 
 /// Position configuration for a system overlay.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -128,7 +128,10 @@ pub trait System: Clone + Send + Sync + 'static {
     // =========================================================================
 
     /// Dispatch a handler by ID.
-    fn dispatch(&self, handler_id: &HandlerId) {
+    ///
+    /// Systems receive GlobalContext for access to runtime-wide operations.
+    fn dispatch(&self, handler_id: &HandlerId, gx: &GlobalContext) {
+        let _ = gx;
         log::warn!("No dispatch implementation for handler '{}'", handler_id.0);
     }
 
@@ -149,8 +152,9 @@ pub trait System: Clone + Send + Sync + 'static {
         &self,
         event_type: TypeId,
         event: Box<dyn Any + Send + Sync>,
+        gx: &GlobalContext,
     ) -> bool {
-        let _ = (event_type, event);
+        let _ = (event_type, event, gx);
         false
     }
 
@@ -159,8 +163,9 @@ pub trait System: Clone + Send + Sync + 'static {
         &self,
         request_type: TypeId,
         request: Box<dyn Any + Send + Sync>,
+        gx: &GlobalContext,
     ) -> Option<Pin<Box<dyn Future<Output = Box<dyn Any + Send + Sync>> + Send>>> {
-        let _ = (request_type, request);
+        let _ = (request_type, request, gx);
         None
     }
 }
