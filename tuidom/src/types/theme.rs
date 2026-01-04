@@ -4,14 +4,14 @@ use crate::types::{Color, ColorOp, Oklch, Rgb};
 pub trait Theme: Send + Sync {
     /// Resolve a color variable name to a concrete color.
     /// Returns None if the variable is not defined.
-    fn resolve(&self, name: &str) -> Option<Color>;
+    fn resolve(&self, name: &str) -> Option<&Color>;
 }
 
 /// Default empty theme that resolves nothing.
 pub struct EmptyTheme;
 
 impl Theme for EmptyTheme {
-    fn resolve(&self, _name: &str) -> Option<Color> {
+    fn resolve(&self, _name: &str) -> Option<&Color> {
         None
     }
 }
@@ -34,7 +34,7 @@ impl<'a> ColorContext<'a> {
             Color::Var(name) => {
                 if let Some(resolved) = self.theme.resolve(name) {
                     // Recursively resolve in case theme returns another Var or Derived
-                    self.resolve(&resolved)
+                    self.resolve(resolved)
                 } else {
                     // Unresolved variable: return transparent/default
                     Color::Rgb { r: 0, g: 0, b: 0 }
