@@ -29,4 +29,4 @@ pub use wakeup::{channel as wakeup_channel, WakeupHandle, WakeupReceiver, Wakeup
 pub use widget::{Widget, WidgetResult};
 
 // Re-export derive macros
-pub use rafter_derive::{event_handler, handler, keybinds, request_handler, Event, Request};
+pub use rafter_derive::{event_handler, handler, keybinds, request_handler, theme, Event, Request};

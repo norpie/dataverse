@@ -31,3 +31,8 @@ pub fn request_handler(attr: TokenStream, item: TokenStream) -> TokenStream {
 pub fn keybinds(input: TokenStream) -> TokenStream {
     macros::keybinds::expand(input.into()).into()
 }
+
+#[proc_macro_attribute]
+pub fn theme(attr: TokenStream, item: TokenStream) -> TokenStream {
+    macros::theme::expand(attr.into(), item.into()).into()
+}
