@@ -11,5 +11,9 @@ proc-macro2 = "1"
 quote = "1"
 syn = { version = "2", features = ["full", "extra-traits"] }
 
+[dev-dependencies]
+tuidom = { path = "../tuidom" }
+rafter = { path = "../rafter" }
+
 [lints]
 workspace = true

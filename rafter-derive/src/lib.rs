@@ -32,6 +32,11 @@ pub fn keybinds(input: TokenStream) -> TokenStream {
     macros::keybinds::expand(input.into()).into()
 }
 
+#[proc_macro]
+pub fn page(input: TokenStream) -> TokenStream {
+    macros::page::expand(input.into()).into()
+}
+
 #[proc_macro_attribute]
 pub fn theme(attr: TokenStream, item: TokenStream) -> TokenStream {
     macros::theme::expand(attr.into(), item.into()).into()

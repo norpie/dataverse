@@ -9,6 +9,7 @@ pub mod impl_common;
 pub mod keybinds;
 pub mod modal;
 pub mod modal_impl;
+pub mod page;
 pub mod request;
 pub mod request_handler;
 pub mod system;
