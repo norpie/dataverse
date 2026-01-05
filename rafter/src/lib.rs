@@ -10,6 +10,7 @@ mod modal;
 mod registration;
 mod request;
 mod resource;
+pub mod runtime;
 mod state;
 mod system;
 mod toast;
@@ -47,6 +48,9 @@ pub use system::{Overlay, OverlayPosition, System};
 pub use toast::{Toast, DEFAULT_TOAST_DURATION};
 pub use wakeup::{channel as wakeup_channel, WakeupHandle, WakeupReceiver, WakeupSender};
 pub use widget::{Widget, WidgetResult};
+
+// Runtime
+pub use runtime::{Runtime, RuntimeError};
 
 // Re-export derive macros
 pub use rafter_derive::{

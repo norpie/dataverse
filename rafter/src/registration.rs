@@ -1,7 +1,9 @@
 //! Registration types for inventory-based auto-discovery.
 
 use crate::app::App;
-use crate::system::System;
+use crate::instance::{AnyAppInstance, AppInstance};
+use crate::system::{Overlay, System};
+use crate::{GlobalContext, HandlerId, Keybinds, WakeupSender};
 
 /// App registration entry for inventory.
 pub struct AppRegistration {
@@ -31,6 +33,8 @@ pub trait CloneableApp: Send + Sync {
     fn clone_box(&self) -> Box<dyn CloneableApp>;
     /// Get the app's display name.
     fn name(&self) -> &'static str;
+    /// Convert into a type-erased instance.
+    fn into_instance(self: Box<Self>) -> Box<dyn AnyAppInstance>;
 }
 
 impl<T: App> CloneableApp for T {
@@ -40,6 +44,10 @@ impl<T: App> CloneableApp for T {
 
     fn name(&self) -> &'static str {
         App::name(self)
+    }
+
+    fn into_instance(self: Box<Self>) -> Box<dyn AnyAppInstance> {
+        Box::new(AppInstance::new(*self))
     }
 }
 
@@ -71,6 +79,16 @@ pub trait AnySystem: Send + Sync {
     fn clone_box(&self) -> Box<dyn AnySystem>;
     /// Get the system's name.
     fn name(&self) -> &'static str;
+    /// Get the system's keybinds.
+    fn keybinds(&self) -> Keybinds;
+    /// Get the system's overlay.
+    fn overlay(&self) -> Option<Overlay>;
+    /// Called on initialization.
+    fn on_init(&self);
+    /// Install wakeup sender.
+    fn install_wakeup(&self, sender: WakeupSender);
+    /// Dispatch a handler.
+    fn dispatch(&self, handler_id: &HandlerId, gx: &GlobalContext);
 }
 
 impl<T: System> AnySystem for T {
@@ -80,5 +98,25 @@ impl<T: System> AnySystem for T {
 
     fn name(&self) -> &'static str {
         System::name(self)
+    }
+
+    fn keybinds(&self) -> Keybinds {
+        System::keybinds(self)
+    }
+
+    fn overlay(&self) -> Option<Overlay> {
+        System::overlay(self)
+    }
+
+    fn on_init(&self) {
+        System::on_init(self)
+    }
+
+    fn install_wakeup(&self, sender: WakeupSender) {
+        System::install_wakeup(self, sender)
+    }
+
+    fn dispatch(&self, handler_id: &HandlerId, gx: &GlobalContext) {
+        System::dispatch(self, handler_id, gx)
     }
 }

@@ -32,6 +32,13 @@ impl WakeupReceiver {
         self.rx.recv().await
     }
 
+    /// Try to receive a wakeup signal without blocking.
+    ///
+    /// Returns true if a signal was received, false otherwise.
+    pub fn try_recv(&mut self) -> bool {
+        self.rx.try_recv().is_ok()
+    }
+
     /// Drain all pending wakeup signals.
     ///
     /// Called after receiving a wakeup to consume redundant signals.

@@ -54,6 +54,11 @@ impl ArcEvent {
     pub fn downcast_ref<E: Event>(&self) -> Option<&E> {
         self.event.downcast_ref()
     }
+
+    /// Get the inner Arc reference (for type-erased access).
+    pub fn as_ref(&self) -> &(dyn Any + Send + Sync) {
+        self.event.as_ref()
+    }
 }
 
 // =============================================================================
@@ -634,6 +639,11 @@ impl GlobalContext {
             .ok()
             .map(|mut inner| std::mem::take(&mut inner.instance_commands))
             .unwrap_or_default()
+    }
+
+    /// Get the wakeup sender (runtime use).
+    pub(crate) fn wakeup_sender(&self) -> Option<WakeupSender> {
+        self.wakeup_sender.clone()
     }
 }
 

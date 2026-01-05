@@ -184,6 +184,25 @@ impl Keybinds {
         }
     }
 
+    /// Match a tuidom key event against keybinds.
+    ///
+    /// Returns the handler ID if a keybind matches.
+    pub fn match_key(&self, key: Key, modifiers: Modifiers) -> Option<HandlerId> {
+        let combo = KeyCombo::new(key, modifiers);
+        self.get_single(&combo, None).cloned()
+    }
+
+    /// Match a tuidom key event against keybinds, respecting page scope.
+    pub fn match_key_for_page(
+        &self,
+        key: Key,
+        modifiers: Modifiers,
+        current_page: Option<&str>,
+    ) -> Option<HandlerId> {
+        let combo = KeyCombo::new(key, modifiers);
+        self.get_single(&combo, current_page).cloned()
+    }
+
     /// Look up handler for a single key, respecting page scope.
     pub fn get_single(&self, key: &KeyCombo, current_page: Option<&str>) -> Option<&HandlerId> {
         // Page-scoped keybinds take priority
