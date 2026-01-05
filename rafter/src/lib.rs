@@ -4,6 +4,7 @@ mod app;
 mod app_context;
 mod event;
 mod global_context;
+mod instance;
 mod keybinds;
 mod modal;
 mod registration;
@@ -18,13 +19,17 @@ mod widget;
 
 pub use app::{App, AppConfig, PanicBehavior};
 pub use app_context::AppContext;
-pub use global_context::GlobalContext;
 pub use event::Event;
-pub use keybinds::{
-    parse_key_string, HandlerId, KeyCombo, Keybind, KeybindError, KeybindScope, Keybinds,
-    ParseKeyError,
+pub use global_context::{
+    ArcEvent, DataStore, GlobalContext, GlobalModalRequest, InstanceCommand, InstanceQuery,
+    RequestTarget,
 };
-pub use modal::{Modal, ModalContext, ModalPosition, ModalSize};
+pub use instance::{InstanceId, InstanceInfo, RequestError, SpawnError};
+pub use keybinds::{
+    parse_key_string, HandlerId, KeyCombo, Keybind, KeybindError, KeybindInfo, KeybindScope,
+    Keybinds, ParseKeyError,
+};
+pub use modal::{Modal, ModalContext, ModalEntry, ModalPosition, ModalSize};
 pub use registration::{
     registered_apps, registered_systems, AnySystem, AppRegistration, CloneableApp,
     SystemRegistration,

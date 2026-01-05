@@ -139,3 +139,45 @@ pub trait Modal: Clone + Send + Sync + 'static {
     /// Clear dirty flags after rendering.
     fn clear_dirty(&self) {}
 }
+
+// =============================================================================
+// ModalEntry (type-erased modal storage)
+// =============================================================================
+
+/// Type-erased modal entry for runtime storage.
+///
+/// Stores a modal and its context in a type-erased form so the runtime
+/// can manage modals without knowing their concrete types.
+pub struct ModalEntry<M: Modal> {
+    /// The modal instance.
+    pub modal: M,
+    /// The modal context.
+    pub context: ModalContext<M::Result>,
+}
+
+impl<M: Modal> ModalEntry<M> {
+    /// Create a new modal entry.
+    pub fn new(modal: M, context: ModalContext<M::Result>) -> Self {
+        Self { modal, context }
+    }
+
+    /// Check if the modal has been closed.
+    pub fn is_closed(&self) -> bool {
+        self.context.is_closed()
+    }
+
+    /// Render the modal's element.
+    pub fn element(&self) -> Element {
+        self.modal.element()
+    }
+
+    /// Dispatch a handler.
+    pub fn dispatch(&self, handler_id: &HandlerId, cx: &AppContext, gx: &GlobalContext) {
+        self.modal.dispatch(handler_id, &self.context, cx, gx);
+    }
+
+    /// Get the modal's keybinds.
+    pub fn keybinds(&self) -> Keybinds {
+        self.modal.keybinds()
+    }
+}

@@ -289,6 +289,23 @@ impl Keybinds {
             }
         }
     }
+
+    /// Get display info for all keybinds.
+    pub fn infos(&self) -> Vec<KeybindInfo> {
+        self.binds
+            .iter()
+            .map(|bind| KeybindInfo {
+                id: bind.id.clone(),
+                keys: if bind.is_enabled() {
+                    Some(bind.default_keys.clone())
+                } else {
+                    None
+                },
+                handler: bind.handler.0.clone(),
+                enabled: bind.is_enabled(),
+            })
+            .collect()
+    }
 }
 
 /// Errors when manipulating keybinds.
@@ -308,6 +325,19 @@ impl std::fmt::Display for KeybindError {
 }
 
 impl std::error::Error for KeybindError {}
+
+/// Display info for a keybind (for UI display).
+#[derive(Debug, Clone)]
+pub struct KeybindInfo {
+    /// Unique identifier.
+    pub id: String,
+    /// Current key string (None if disabled).
+    pub keys: Option<String>,
+    /// Handler name.
+    pub handler: String,
+    /// Whether the keybind is enabled.
+    pub enabled: bool,
+}
 
 /// Parse a key string like "ctrl+shift+a" or "gg" into KeyCombo(s).
 pub fn parse_key_string(s: &str) -> Result<Vec<KeyCombo>, ParseKeyError> {
