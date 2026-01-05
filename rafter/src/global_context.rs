@@ -269,9 +269,7 @@ impl GlobalContext {
             }
         }
 
-        // Generate ID (will be replaced with proper generation in Chunk 3)
-        let id = InstanceId::new(rand_id());
-
+        // Queue the spawn command - ID will be assigned by registry
         if let Ok(mut inner) = self.inner.write() {
             inner.instance_commands.push(InstanceCommand::Spawn {
                 app: Box::new(app),
@@ -280,7 +278,8 @@ impl GlobalContext {
             self.send_wakeup();
         }
 
-        Ok(id)
+        // Return a placeholder - actual ID assigned by registry when processed
+        Ok(InstanceId::new())
     }
 
     /// Spawn a new app instance and immediately focus it.
@@ -298,9 +297,7 @@ impl GlobalContext {
             }
         }
 
-        // Generate ID (will be replaced with proper generation in Chunk 3)
-        let id = InstanceId::new(rand_id());
-
+        // Queue the spawn command - ID will be assigned by registry
         if let Ok(mut inner) = self.inner.write() {
             inner.instance_commands.push(InstanceCommand::Spawn {
                 app: Box::new(app),
@@ -309,7 +306,8 @@ impl GlobalContext {
             self.send_wakeup();
         }
 
-        Ok(id)
+        // Return a placeholder - actual ID assigned by registry when processed
+        Ok(InstanceId::new())
     }
 
     /// Close an instance.
@@ -651,17 +649,3 @@ impl Default for GlobalContext {
     }
 }
 
-// =============================================================================
-// Helpers
-// =============================================================================
-
-/// Generate a random ID for instances.
-///
-/// This is a placeholder - proper ID generation comes in Chunk 3.
-fn rand_id() -> u64 {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_nanos() as u64)
-        .unwrap_or(0)
-}

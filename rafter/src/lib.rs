@@ -27,7 +27,10 @@ pub use global_context::{
     ArcEvent, DataStore, GlobalContext, GlobalModalRequest, InstanceCommand, InstanceQuery,
     RequestTarget,
 };
-pub use instance::{InstanceId, InstanceInfo, RequestError, SpawnError};
+pub use instance::{
+    AnyAppInstance, AppInstance, InstanceId, InstanceInfo, InstanceRegistry, RequestError,
+    SpawnError,
+};
 pub use keybinds::{
     parse_key_string, HandlerId, KeyCombo, Keybind, KeybindError, KeybindInfo, KeybindScope,
     Keybinds, ParseKeyError,

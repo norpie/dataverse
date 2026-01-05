@@ -299,7 +299,7 @@ impl Default for AppContext {
     fn default() -> Self {
         Self {
             inner: Arc::new(RwLock::new(AppContextInner {
-                instance_id: InstanceId::new(0),
+                instance_id: InstanceId::default(),
                 focus_request: None,
                 modal_request: None,
             })),
