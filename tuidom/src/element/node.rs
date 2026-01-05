@@ -15,7 +15,7 @@ fn generate_id(prefix: &str) -> String {
     format!("{prefix}-{id}")
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Element {
     // Identity
     pub id: String,
