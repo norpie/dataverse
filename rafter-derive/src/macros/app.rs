@@ -204,43 +204,36 @@ fn generate_metadata(name: &Ident, attrs: &AppAttrs, fields: &FieldsNamed) -> To
         .filter_map(|f| f.ident.as_ref())
         .collect();
 
-    let is_dirty_checks = dirty_fields.iter().map(|f| quote! { self.#f.is_dirty() });
-    let clear_dirty_calls = dirty_fields.iter().map(|f| quote! { self.#f.clear_dirty(); });
-    let install_wakeup_calls = wakeup_fields.iter().map(|f| quote! { self.#f.install_wakeup(sender.clone()); });
-
     let widget_ids: Vec<_> = widget_fields.iter().map(|f| f.to_string()).collect();
 
     quote! {
         #[doc(hidden)]
         #[allow(non_snake_case)]
         pub mod #metadata_name {
-            pub const WIDGET_FIELDS: &[&str] = &[#(#widget_ids),*];
-        }
+            use super::*;
 
-        impl #name {
-            #[doc(hidden)]
-            pub fn __app_config() -> rafter::AppConfig {
+            pub const WIDGET_FIELDS: &[&str] = &[#(#widget_ids),*];
+            pub const PANIC_BEHAVIOR: rafter::PanicBehavior = #panic_behavior;
+
+            pub fn config() -> rafter::AppConfig {
                 rafter::AppConfig {
                     name: #config_name,
                     blur_on_background: false,
                     max_instances: #max_instances,
-                    panic_behavior: #panic_behavior,
+                    panic_behavior: PANIC_BEHAVIOR,
                 }
             }
 
-            #[doc(hidden)]
-            pub fn __is_dirty(&self) -> bool {
-                false #(|| #is_dirty_checks)*
+            pub fn is_dirty(app: &#name) -> bool {
+                false #(|| app.#dirty_fields.is_dirty())*
             }
 
-            #[doc(hidden)]
-            pub fn __clear_dirty(&self) {
-                #(#clear_dirty_calls)*
+            pub fn clear_dirty(app: &#name) {
+                #(app.#dirty_fields.clear_dirty();)*
             }
 
-            #[doc(hidden)]
-            pub fn __install_wakeup(&self, sender: rafter::WakeupSender) {
-                #(#install_wakeup_calls)*
+            pub fn install_wakeup(app: &#name, sender: rafter::WakeupSender) {
+                #(app.#wakeup_fields.install_wakeup(sender.clone());)*
             }
         }
     }
