@@ -9,6 +9,8 @@
 //! - Theme
 //! - Event loop
 
+pub mod dispatch;
+
 use std::any::{Any, TypeId};
 use std::collections::HashMap;
 use std::io;
@@ -24,6 +26,8 @@ use crate::system::System;
 use crate::toast::Toast;
 use crate::wakeup::{channel as wakeup_channel, WakeupReceiver};
 use crate::{App, AppContext, GlobalContext, Keybinds};
+
+use dispatch::AnyModal;
 
 // =============================================================================
 // RuntimeError
@@ -179,6 +183,9 @@ impl Runtime {
         // Active toasts
         let mut active_toasts: Vec<ActiveToast> = Vec::new();
 
+        // Global modals
+        let mut global_modals: Vec<Box<dyn AnyModal>> = Vec::new();
+
         // Run event loop
         let mut wakeup_rx = wakeup_rx;
         self.event_loop(
@@ -190,6 +197,7 @@ impl Runtime {
             &gx,
             &mut wakeup_rx,
             &mut active_toasts,
+            &mut global_modals,
         )
         .await
     }
@@ -206,6 +214,7 @@ impl Runtime {
         gx: &GlobalContext,
         wakeup_rx: &mut WakeupReceiver,
         active_toasts: &mut Vec<ActiveToast>,
+        global_modals: &mut Vec<Box<dyn AnyModal>>,
     ) -> Result<(), RuntimeError> {
         // Default poll timeout (16ms for ~60fps when animations active)
         let animation_timeout = Duration::from_millis(16);
@@ -287,7 +296,7 @@ impl Runtime {
 
             // 12. Dispatch events to keybinds and apps
             for event in &events {
-                self.dispatch_event(event, registry, systems, gx);
+                dispatch::dispatch_event(event, global_modals, systems, registry, gx, layout);
             }
 
             // 13. Check wakeups (state changes from async tasks)
@@ -503,43 +512,6 @@ impl Runtime {
         }
     }
 
-    /// Dispatch an event to keybinds and focused app.
-    fn dispatch_event(
-        &self,
-        event: &tuidom::Event,
-        registry: &Arc<RwLock<InstanceRegistry>>,
-        systems: &[Box<dyn AnySystem>],
-        gx: &GlobalContext,
-    ) {
-        // TODO: Implement proper event dispatch
-        // 1. Check global modals (capture all input)
-        // 2. Check app-scoped modals
-        // 3. Check system keybinds
-        // 4. Check app keybinds
-        // 5. Dispatch to focused widget
-
-        // For now, just handle basic key events for keybind matching
-        if let tuidom::Event::Key { key, modifiers, .. } = event {
-            // Try system keybinds first
-            for system in systems {
-                let keybinds = system.keybinds();
-                if let Some(handler_id) = keybinds.match_key(*key, *modifiers) {
-                    system.dispatch(&handler_id, gx);
-                    return;
-                }
-            }
-
-            // Try app keybinds
-            let reg = registry.read().unwrap();
-            if let Some(instance) = reg.focused_instance() {
-                let keybinds = instance.keybinds();
-                if let Some(handler_id) = keybinds.match_key(*key, *modifiers) {
-                    let cx = AppContext::new(instance.id(), gx.clone(), instance.config().name);
-                    instance.dispatch(&handler_id, &cx, gx);
-                }
-            }
-        }
-    }
 }
 
 impl Default for Runtime {
