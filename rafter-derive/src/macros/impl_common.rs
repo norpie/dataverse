@@ -1,5 +1,7 @@
 //! Common utilities shared between app_impl, modal_impl, and system_impl macros.
 
+use std::collections::HashMap;
+
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 use syn::{
@@ -657,6 +659,168 @@ pub fn generate_config_impl(type_name: &Ident) -> TokenStream {
     quote! {
         fn config() -> rafter::AppConfig {
             #metadata_mod::config()
+        }
+    }
+}
+
+// =============================================================================
+// Closure Generation for Keybinds
+// =============================================================================
+
+/// Generate a closure registration for a single keybind DSL entry.
+///
+/// Produces code like:
+/// ```ignore
+/// {
+///     let __self = self.clone();
+///     let __arg0 = (arg0_expr).clone();
+///     __keybinds.add("key", "type.handler", std::sync::Arc::new(move |__hx: &rafter::HandlerContext| {
+///         __self.handler(__arg0.clone(), __hx.cx(), __hx.gx());
+///     }));
+/// }
+/// ```
+///
+/// # Arguments
+/// * `entry` - The DSL entry containing keys, handler name, and args
+/// * `handler_contexts` - Map of handler names to their context requirements
+/// * `type_name` - Type name for ID prefix
+/// * `scope` - Optional page scope for the keybind
+pub fn generate_closure_for_keybind(
+    entry: &KeybindDslEntry,
+    handler_contexts: &HashMap<String, HandlerContexts>,
+    type_name: &Ident,
+) -> TokenStream {
+    let handler_name = &entry.handler;
+    let handler_name_str = handler_name.to_string();
+    let type_name_snake = to_snake_case(&type_name.to_string());
+    let keybind_id = format!("{}.{}", type_name_snake, handler_name_str);
+
+    // Look up handler's context requirements
+    let contexts = handler_contexts
+        .get(&handler_name_str)
+        .cloned()
+        .unwrap_or_default();
+
+    // Generate argument captures (evaluated when keybinds() is called)
+    let arg_captures: Vec<TokenStream> = entry
+        .args
+        .iter()
+        .enumerate()
+        .map(|(i, arg)| {
+            let arg_name = format_ident!("__arg{}", i);
+            quote! {
+                let #arg_name = (#arg).clone();
+            }
+        })
+        .collect();
+
+    // Generate context injections based on handler signature order
+    let context_injections: Vec<TokenStream> = contexts
+        .param_order
+        .iter()
+        .map(|param| match param {
+            ContextParam::App => quote! { __hx.cx() },
+            ContextParam::Global => quote! { __hx.gx() },
+            ContextParam::Modal => quote! { __hx.mx() },
+        })
+        .collect();
+
+    // Argument names for closure capture
+    let arg_names: Vec<Ident> = (0..entry.args.len())
+        .map(|i| format_ident!("__arg{}", i))
+        .collect();
+
+    let key_adds: Vec<TokenStream> = entry
+        .keys
+        .iter()
+        .map(|key| {
+            let cloned_args: Vec<TokenStream> = arg_names
+                .iter()
+                .map(|name| quote! { let #name = #name.clone(); })
+                .collect();
+            let arg_usages: Vec<TokenStream> = arg_names
+                .iter()
+                .map(|name| quote! { #name.clone() })
+                .collect();
+            let all_call_params: Vec<TokenStream> = arg_usages
+                .into_iter()
+                .chain(context_injections.clone())
+                .collect();
+
+            quote! {
+                __keybinds.add(#key, #keybind_id, std::sync::Arc::new({
+                    let __self = __self.clone();
+                    #(#cloned_args)*
+                    move |__hx: &rafter::HandlerContext| {
+                        __self.#handler_name(#(#all_call_params),*);
+                    }
+                }));
+            }
+        })
+        .collect();
+
+    quote! {
+        {
+            let __self = self.clone();
+            #(#arg_captures)*
+            #(#key_adds)*
+        }
+    }
+}
+
+/// Generate the full keybinds() method body using closures.
+///
+/// Parses each keybinds method body as DSL and generates closure registrations.
+pub fn generate_keybinds_closures_impl(
+    keybinds_methods: &[(KeybindsMethod, TokenStream)], // (method info, body tokens)
+    handler_contexts: &HashMap<String, HandlerContexts>,
+    type_name: &Ident,
+) -> TokenStream {
+    if keybinds_methods.is_empty() {
+        return quote! {
+            fn keybinds(&self) -> rafter::KeybindClosures {
+                rafter::KeybindClosures::new()
+            }
+        };
+    }
+
+    let mut all_closure_code = Vec::new();
+
+    for (method, body) in keybinds_methods {
+        // Parse the body as DSL
+        let dsl: KeybindsDsl = match syn::parse2(body.clone()) {
+            Ok(d) => d,
+            Err(e) => {
+                return e.to_compile_error();
+            }
+        };
+
+        // Generate closure code for each entry
+        for entry in &dsl.entries {
+            let closure_code =
+                generate_closure_for_keybind(entry, handler_contexts, type_name);
+
+            // Apply scope if page-scoped
+            let scoped_code = match &method.scope {
+                KeybindScope::Global => closure_code,
+                KeybindScope::Page(_page_name) => {
+                    // For page-scoped keybinds, we need to set scope on the keybind
+                    // This is handled by the KeybindClosures::add_scoped method if we have it
+                    // For now, we'll need to track this differently
+                    // TODO: Handle page scope in KeybindClosures
+                    closure_code
+                }
+            };
+
+            all_closure_code.push(scoped_code);
+        }
+    }
+
+    quote! {
+        fn keybinds(&self) -> rafter::KeybindClosures {
+            let mut __keybinds = rafter::KeybindClosures::new();
+            #(#all_closure_code)*
+            __keybinds
         }
     }
 }
