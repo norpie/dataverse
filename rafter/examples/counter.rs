@@ -45,8 +45,8 @@ impl ReallySureModal {
                 text (content: "Are you REALLY sure?") style (bold: true, fg: error)
                 text (content: "This action cannot be undone!") style (fg: muted)
                 row (gap: 2) {
-                    button (label: "No [n]", id: "no") on_click: cancel()
-                    button (label: "Yes [y]", id: "yes") on_click: confirm()
+                    button (label: "No [n]", id: "no") on_activate: cancel()
+                    button (label: "Yes [y]", id: "yes") on_activate: confirm()
                 }
             }
         }
@@ -93,8 +93,8 @@ impl ConfirmModal {
                 text (content: "Confirm") style (bold: true, fg: warning)
                 text (content: {message})
                 row (gap: 2) {
-                    button (label: "No [n]", id: "no") on_click: cancel()
-                    button (label: "Yes [y]", id: "yes") on_click: confirm()
+                    button (label: "No [n]", id: "no") on_activate: cancel()
+                    button (label: "Yes [y]", id: "yes") on_activate: confirm()
                 }
             }
         }
@@ -240,10 +240,10 @@ impl Counter {
                 }
 
                 row (gap: 1) {
-                    button (label: "−", id: "dec") on_click: decrement()
-                    button (label: "+", id: "inc") on_click: increment()
-                    button (label: "Reset", id: "reset") on_click: reset()
-                    button (label: "Load", id: "load") on_click: load_data()
+                    button (label: "−", id: "dec") on_activate: decrement()
+                    button (label: "+", id: "inc") on_activate: increment()
+                    button (label: "Reset", id: "reset") on_activate: reset()
+                    button (label: "Load", id: "load") on_activate: load_data()
                 }
 
                 row (gap: 1) {

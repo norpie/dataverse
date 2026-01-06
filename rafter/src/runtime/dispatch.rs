@@ -208,11 +208,10 @@ impl<'a> EventDispatcher<'a> {
         match event {
             Event::Key { key, modifiers, target } => {
                 // Dispatch to focused widget (if any)
-                if target.is_some() {
+                if let Some(target_id) = target {
                     let result = dispatch_key_to_instance(instance, *key, *modifiers, self.layout);
                     if result.is_handled() {
-                        // Map WidgetResult to handler dispatch
-                        dispatch_widget_result(handlers, &result, &hx);
+                        dispatch_widget_result(handlers, target_id, &result, &hx);
                         return Some(DispatchResult::HandledByWidget(result));
                     }
                 }
@@ -220,8 +219,8 @@ impl<'a> EventDispatcher<'a> {
 
             Event::Click { target, x: _, y: _, button: _ } => {
                 if let Some(target_id) = target {
-                    // Look up handler in the registry
-                    if let Some(handler) = handlers.get(target_id, "on_click") {
+                    // Click is an activation - look up on_activate handler
+                    if let Some(handler) = handlers.get(target_id, "on_activate") {
                         handler(&hx);
                         return Some(DispatchResult::HandledByWidget(WidgetResult::Activated));
                     }
@@ -229,30 +228,30 @@ impl<'a> EventDispatcher<'a> {
             }
 
             Event::Scroll { target, delta_y, .. } => {
-                if let Some(_target_id) = target {
+                if let Some(target_id) = target {
                     let result = dispatch_scroll_to_instance(instance, *delta_y, self.layout);
                     if result.is_handled() {
-                        dispatch_widget_result(handlers, &result, &hx);
+                        dispatch_widget_result(handlers, target_id, &result, &hx);
                         return Some(DispatchResult::HandledByWidget(result));
                     }
                 }
             }
 
             Event::Drag { target, x, y, button: _ } => {
-                if let Some(_target_id) = target {
+                if let Some(target_id) = target {
                     let result = dispatch_drag_to_instance(instance, *x, *y, self.layout);
                     if result.is_handled() {
-                        dispatch_widget_result(handlers, &result, &hx);
+                        dispatch_widget_result(handlers, target_id, &result, &hx);
                         return Some(DispatchResult::HandledByWidget(result));
                     }
                 }
             }
 
             Event::Release { target, .. } => {
-                if let Some(_target_id) = target {
+                if let Some(target_id) = target {
                     let result = dispatch_release_to_instance(instance, self.layout);
                     if result.is_handled() {
-                        dispatch_widget_result(handlers, &result, &hx);
+                        dispatch_widget_result(handlers, target_id, &result, &hx);
                         return Some(DispatchResult::HandledByWidget(result));
                     }
                 }
@@ -319,18 +318,14 @@ fn dispatch_release_to_instance(
 
 /// Map a WidgetResult to the appropriate handler dispatch.
 ///
-/// Note: This function currently doesn't have access to the target element ID,
-/// so it cannot look up specific handlers. Widget-specific handlers are handled
-/// directly in dispatch_to_widgets for events like Click.
+/// Looks up the handler for the given element and event type, then calls it.
 fn dispatch_widget_result(
-    _handlers: &crate::HandlerRegistry,
+    handlers: &crate::HandlerRegistry,
+    element_id: &str,
     result: &WidgetResult,
-    _hx: &HandlerContext,
+    hx: &HandlerContext,
 ) {
-    // Widget results like Activated, Changed, etc. would need the element ID
-    // to look up the specific handler. For now, these are no-ops until we
-    // have proper widget state tracking.
-    let _event_type = match result {
+    let event_type = match result {
         WidgetResult::Ignored | WidgetResult::Handled => return,
         WidgetResult::Activated => "on_activate",
         WidgetResult::Changed => "on_change",
@@ -342,8 +337,9 @@ fn dispatch_widget_result(
         WidgetResult::Submitted => "on_submit",
     };
 
-    // TODO: Need element ID to look up handler in registry
-    // handlers.get(element_id, event_type).map(|h| h(hx));
+    if let Some(handler) = handlers.get(element_id, event_type) {
+        handler(hx);
+    }
 }
 
 // =============================================================================
