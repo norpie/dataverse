@@ -1,3 +1,12 @@
+/// Direction for spatial navigation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum NavDirection {
+    Up,
+    Down,
+    Left,
+    Right,
+}
+
 /// High-level events with element targeting
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Event {

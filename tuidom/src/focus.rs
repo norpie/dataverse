@@ -1,9 +1,9 @@
 use crossterm::event::{Event as CrosstermEvent, KeyEventKind, MouseEventKind};
 
 use crate::element::{Content, Element};
-use crate::event::{Event, Key, Modifiers};
+use crate::event::{Event, Key, Modifiers, NavDirection};
 use crate::hit::hit_test_focusable;
-use crate::layout::LayoutResult;
+use crate::layout::{LayoutResult, Rect};
 
 /// Tracks which element is currently focused and processes events.
 #[derive(Debug, Default)]
@@ -97,6 +97,39 @@ impl FocusState {
         }
     }
 
+    /// Focus the nearest focusable element in the given direction.
+    /// Returns the newly focused element ID if focus changed.
+    pub fn focus_direction(
+        &mut self,
+        direction: NavDirection,
+        root: &Element,
+        layout: &LayoutResult,
+    ) -> Option<String> {
+        let current_id = self.focused.as_ref()?;
+        let current_rect = layout.get(current_id)?;
+
+        let focusable = collect_focusable(root);
+
+        // Find the best candidate in the given direction
+        let best = focusable
+            .iter()
+            .filter(|id| *id != current_id)
+            .filter_map(|id| {
+                let rect = layout.get(id)?;
+                let score = direction_score(current_rect, rect, direction)?;
+                Some((id, score))
+            })
+            .min_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))?;
+
+        let new_focus = best.0.clone();
+        if self.focused.as_ref() != Some(&new_focus) {
+            self.focused = Some(new_focus.clone());
+            Some(new_focus)
+        } else {
+            None
+        }
+    }
+
     /// Process raw crossterm events and produce high-level events.
     /// Focus follows mouse - hovering over a focusable element focuses it.
     pub fn process_events(
@@ -141,6 +174,28 @@ impl FocusState {
                             events.push(Event::Focus { target: new });
                         }
                         continue;
+                    }
+
+                    // Handle arrow keys for spatial navigation (only without modifiers)
+                    if modifiers.none() {
+                        let direction = match key {
+                            Key::Up => Some(NavDirection::Up),
+                            Key::Down => Some(NavDirection::Down),
+                            Key::Left => Some(NavDirection::Left),
+                            Key::Right => Some(NavDirection::Right),
+                            _ => None,
+                        };
+
+                        if let Some(dir) = direction {
+                            if let Some(old) = self.focused.clone() {
+                                if let Some(new) = self.focus_direction(dir, root, layout) {
+                                    events.push(Event::Blur { target: old });
+                                    events.push(Event::Focus { target: new });
+                                    continue;
+                                }
+                            }
+                            // If no navigation happened, fall through to emit key event
+                        }
                     }
 
                     // Regular key event
@@ -281,4 +336,41 @@ fn collect_focusable_recursive(element: &Element, result: &mut Vec<String>) {
             collect_focusable_recursive(child, result);
         }
     }
+}
+
+/// Score how good a candidate is for the given direction.
+/// Lower is better. Returns None if candidate is not in the direction.
+fn direction_score(from: &Rect, to: &Rect, direction: NavDirection) -> Option<f64> {
+    let (from_cx, from_cy) = from.center();
+    let (to_cx, to_cy) = to.center();
+
+    // Check if candidate is in the right direction
+    let in_direction = match direction {
+        NavDirection::Up => to_cy < from_cy,
+        NavDirection::Down => to_cy > from_cy,
+        NavDirection::Left => to_cx < from_cx,
+        NavDirection::Right => to_cx > from_cx,
+    };
+
+    if !in_direction {
+        return None;
+    }
+
+    // Score based on:
+    // 1. Primary axis distance (must move in direction)
+    // 2. Secondary axis alignment (prefer aligned elements)
+    let (primary_dist, secondary_dist) = match direction {
+        NavDirection::Up | NavDirection::Down => (
+            (to_cy as f64 - from_cy as f64).abs(),
+            (to_cx as f64 - from_cx as f64).abs(),
+        ),
+        NavDirection::Left | NavDirection::Right => (
+            (to_cx as f64 - from_cx as f64).abs(),
+            (to_cy as f64 - from_cy as f64).abs(),
+        ),
+    };
+
+    // Weight: primary distance + secondary distance * 0.5
+    // This prefers elements that are closer and more aligned
+    Some(primary_dist + secondary_dist * 0.5)
 }

@@ -65,4 +65,9 @@ impl Rect {
     pub fn contains(&self, x: u16, y: u16) -> bool {
         x >= self.x && x < self.right() && y >= self.y && y < self.bottom()
     }
+
+    /// Get the center point of this rectangle.
+    pub const fn center(&self) -> (u16, u16) {
+        (self.x + self.width / 2, self.y + self.height / 2)
+    }
 }
