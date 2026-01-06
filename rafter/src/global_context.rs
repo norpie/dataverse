@@ -18,7 +18,6 @@ use tokio::sync::oneshot;
 use tuidom::Theme;
 
 use crate::instance::{InstanceId, InstanceInfo, RequestError, SpawnError};
-use crate::keybinds::{KeybindError, KeybindInfo, Keybinds};
 use crate::modal::{Modal, ModalContext, ModalEntry};
 use crate::registration::CloneableApp;
 use crate::wakeup::WakeupSender;
@@ -195,8 +194,6 @@ pub type DataStore = HashMap<TypeId, Arc<dyn Any + Send + Sync>>;
 #[derive(Clone)]
 pub struct GlobalContext {
     inner: Arc<RwLock<GlobalContextInner>>,
-    /// Shared keybinds (can be modified at runtime).
-    keybinds: Arc<RwLock<Keybinds>>,
     /// Instance query interface.
     registry: Option<Arc<dyn InstanceQuery>>,
     /// Global data store (read-only, set at runtime startup).
@@ -207,10 +204,9 @@ pub struct GlobalContext {
 
 impl GlobalContext {
     /// Create a new global context.
-    pub fn new(keybinds: Arc<RwLock<Keybinds>>, data: Arc<DataStore>) -> Self {
+    pub fn new(data: Arc<DataStore>) -> Self {
         Self {
             inner: Arc::new(RwLock::new(GlobalContextInner::default())),
-            keybinds,
             registry: None,
             data,
             wakeup_sender: None,
@@ -550,52 +546,6 @@ impl GlobalContext {
     }
 
     // =========================================================================
-    // Keybinds
-    // =========================================================================
-
-    /// Get display info for all keybinds.
-    pub fn keybinds(&self) -> Vec<KeybindInfo> {
-        self.keybinds
-            .read()
-            .map(|kb| kb.infos())
-            .unwrap_or_default()
-    }
-
-    /// Override a keybind's key combination.
-    pub fn override_keybind(&self, id: &str, keys: &str) -> Result<(), KeybindError> {
-        let mut keybinds = self
-            .keybinds
-            .write()
-            .map_err(|_| KeybindError::ParseError("Failed to acquire keybinds lock".to_string()))?;
-        keybinds.override_keybind(id, keys)
-    }
-
-    /// Disable a keybind.
-    pub fn disable_keybind(&self, id: &str) -> Result<(), KeybindError> {
-        let mut keybinds = self
-            .keybinds
-            .write()
-            .map_err(|_| KeybindError::ParseError("Failed to acquire keybinds lock".to_string()))?;
-        keybinds.disable_keybind(id)
-    }
-
-    /// Reset a keybind to its default key combination.
-    pub fn reset_keybind(&self, id: &str) -> Result<(), KeybindError> {
-        let mut keybinds = self
-            .keybinds
-            .write()
-            .map_err(|_| KeybindError::ParseError("Failed to acquire keybinds lock".to_string()))?;
-        keybinds.reset_keybind(id)
-    }
-
-    /// Reset all keybinds to their defaults.
-    pub fn reset_all_keybinds(&self) {
-        if let Ok(mut keybinds) = self.keybinds.write() {
-            keybinds.reset_all();
-        }
-    }
-
-    // =========================================================================
     // Internal (runtime use)
     // =========================================================================
 
@@ -651,7 +601,6 @@ impl Default for GlobalContext {
     fn default() -> Self {
         Self {
             inner: Arc::new(RwLock::new(GlobalContextInner::default())),
-            keybinds: Arc::new(RwLock::new(Keybinds::new())),
             registry: None,
             data: Arc::new(HashMap::new()),
             wakeup_sender: None,

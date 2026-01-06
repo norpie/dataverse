@@ -2,8 +2,9 @@
 
 use crate::app::App;
 use crate::instance::{AnyAppInstance, AppInstance};
+use crate::keybinds::KeybindClosures;
 use crate::system::{Overlay, System};
-use crate::{GlobalContext, HandlerId, Keybinds, WakeupSender};
+use crate::wakeup::WakeupSender;
 
 /// App registration entry for inventory.
 pub struct AppRegistration {
@@ -79,16 +80,14 @@ pub trait AnySystem: Send + Sync {
     fn clone_box(&self) -> Box<dyn AnySystem>;
     /// Get the system's name.
     fn name(&self) -> &'static str;
-    /// Get the system's keybinds.
-    fn keybinds(&self) -> Keybinds;
+    /// Get the system's keybinds (closure-based).
+    fn keybinds(&self) -> KeybindClosures;
     /// Get the system's overlay.
     fn overlay(&self) -> Option<Overlay>;
     /// Called on initialization.
     fn on_init(&self);
     /// Install wakeup sender.
     fn install_wakeup(&self, sender: WakeupSender);
-    /// Dispatch a handler.
-    fn dispatch(&self, handler_id: &HandlerId, gx: &GlobalContext);
 }
 
 impl<T: System> AnySystem for T {
@@ -100,7 +99,7 @@ impl<T: System> AnySystem for T {
         System::name(self)
     }
 
-    fn keybinds(&self) -> Keybinds {
+    fn keybinds(&self) -> KeybindClosures {
         System::keybinds(self)
     }
 
@@ -114,9 +113,5 @@ impl<T: System> AnySystem for T {
 
     fn install_wakeup(&self, sender: WakeupSender) {
         System::install_wakeup(self, sender)
-    }
-
-    fn dispatch(&self, handler_id: &HandlerId, gx: &GlobalContext) {
-        System::dispatch(self, handler_id, gx)
     }
 }

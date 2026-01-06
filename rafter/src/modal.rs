@@ -4,12 +4,12 @@
 //! They return a result to the caller.
 
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 
 use tokio::sync::oneshot;
 use tuidom::Element;
 
-use crate::{AppContext, GlobalContext, HandlerId, Keybinds};
+use crate::{HandlerRegistry, KeybindClosures};
 
 /// Modal position configuration.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
@@ -112,25 +112,15 @@ pub trait Modal: Clone + Send + Sync + 'static {
     /// Render the modal's content.
     fn element(&self) -> Element;
 
-    /// Get the modal's keybinds.
-    fn keybinds(&self) -> Keybinds {
-        Keybinds::new()
+    /// Get the modal's keybinds (closure-based).
+    fn keybinds(&self) -> KeybindClosures {
+        KeybindClosures::new()
     }
 
-    /// Dispatch a handler by ID.
-    ///
-    /// For app-scoped modals, cx provides access to the parent app's context.
-    /// For global modals, cx may be a default/empty context.
-    /// Args are string-serialized values from element data.
-    fn dispatch(
-        &self,
-        handler_id: &HandlerId,
-        args: &[String],
-        mx: &ModalContext<Self::Result>,
-        cx: &AppContext,
-        gx: &GlobalContext,
-    ) {
-        let _ = (handler_id, args, mx, cx, gx);
+    /// Get the handler registry for widget events.
+    fn handlers(&self) -> &HandlerRegistry {
+        static EMPTY: OnceLock<HandlerRegistry> = OnceLock::new();
+        EMPTY.get_or_init(HandlerRegistry::new)
     }
 
     /// Check if the modal needs re-rendering.
@@ -173,13 +163,18 @@ impl<M: Modal> ModalEntry<M> {
         self.modal.element()
     }
 
-    /// Dispatch a handler.
-    pub fn dispatch(&self, handler_id: &HandlerId, args: &[String], cx: &AppContext, gx: &GlobalContext) {
-        self.modal.dispatch(handler_id, args, &self.context, cx, gx);
+    /// Get the modal's keybinds (closure-based).
+    pub fn keybinds(&self) -> KeybindClosures {
+        self.modal.keybinds()
     }
 
-    /// Get the modal's keybinds.
-    pub fn keybinds(&self) -> Keybinds {
-        self.modal.keybinds()
+    /// Get the handler registry for widget events.
+    pub fn handlers(&self) -> &HandlerRegistry {
+        self.modal.handlers()
+    }
+
+    /// Get a reference to the modal context.
+    pub fn context(&self) -> &ModalContext<M::Result> {
+        &self.context
     }
 }

@@ -25,7 +25,7 @@ use crate::registration::AnySystem;
 use crate::system::System;
 use crate::toast::Toast;
 use crate::wakeup::{channel as wakeup_channel, WakeupReceiver};
-use crate::{App, AppContext, GlobalContext, Keybinds};
+use crate::{App, AppContext, GlobalContext};
 
 use dispatch::AnyModal;
 
@@ -98,8 +98,6 @@ pub struct Runtime {
     data: HashMap<TypeId, Arc<dyn Any + Send + Sync>>,
     /// Systems to install.
     systems: Vec<Box<dyn AnySystem>>,
-    /// Global keybinds (collected from systems).
-    keybinds: Arc<RwLock<Keybinds>>,
 }
 
 impl Runtime {
@@ -108,7 +106,6 @@ impl Runtime {
         Ok(Self {
             data: HashMap::new(),
             systems: Vec::new(),
-            keybinds: Arc::new(RwLock::new(Keybinds::new())),
         })
     }
 
@@ -116,10 +113,6 @@ impl Runtime {
     ///
     /// Systems provide global keybinds and optional overlays (taskbar, status bar, etc.).
     pub fn system<S: System>(mut self, system: S) -> Self {
-        // Merge system keybinds
-        if let Ok(mut kb) = self.keybinds.write() {
-            kb.merge(system.keybinds());
-        }
         self.systems.push(Box::new(system));
         self
     }
@@ -154,8 +147,7 @@ impl Runtime {
 
         // Create global context
         let data_store: Arc<DataStore> = Arc::new(std::mem::take(&mut self.data));
-        let keybinds = Arc::clone(&self.keybinds);
-        let mut gx = GlobalContext::new(keybinds, Arc::clone(&data_store));
+        let mut gx = GlobalContext::new(Arc::clone(&data_store));
         gx.set_wakeup_sender(wakeup_tx.clone());
 
         // Create registry query wrapper
@@ -296,7 +288,7 @@ impl Runtime {
 
             // 12. Dispatch events to keybinds and apps
             for event in &events {
-                dispatch::dispatch_event(event, global_modals, systems, registry, gx, layout, &root);
+                dispatch::dispatch_event(event, global_modals, systems, registry, gx, layout);
             }
 
             // 13. Check wakeups (state changes from async tasks)

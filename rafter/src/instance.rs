@@ -14,9 +14,9 @@ use uuid::Uuid;
 
 use crate::app::{App, AppConfig};
 use crate::global_context::InstanceQuery;
-use crate::keybinds::{HandlerId, Keybinds};
+use crate::keybinds::KeybindClosures;
 use crate::wakeup::WakeupSender;
-use crate::{AppContext, GlobalContext};
+use crate::{AppContext, GlobalContext, HandlerRegistry};
 
 // =============================================================================
 // InstanceId
@@ -179,8 +179,11 @@ pub trait AnyAppInstance: Send + Sync {
     /// Get the app configuration.
     fn config(&self) -> AppConfig;
 
-    /// Get the app's keybinds.
-    fn keybinds(&self) -> Keybinds;
+    /// Get the app's keybinds (closure-based).
+    fn keybinds(&self) -> KeybindClosures;
+
+    /// Get the handler registry for widget events.
+    fn handlers(&self) -> &HandlerRegistry;
 
     /// Get the current page identifier for keybind scoping.
     fn current_page(&self) -> Option<String>;
@@ -199,10 +202,7 @@ pub trait AnyAppInstance: Send + Sync {
     /// Install wakeup sender on all State fields.
     fn install_wakeup(&self, sender: WakeupSender);
 
-    // Dispatch
-
-    /// Dispatch a handler by ID with optional arguments.
-    fn dispatch(&self, handler_id: &HandlerId, args: &[String], cx: &AppContext, gx: &GlobalContext);
+    // Event/Request Dispatch
 
     /// Check if this instance has a handler for the given event type.
     fn has_event_handler(&self, event_type: TypeId) -> bool;
@@ -301,8 +301,12 @@ impl<A: App> AnyAppInstance for AppInstance<A> {
         A::config()
     }
 
-    fn keybinds(&self) -> Keybinds {
+    fn keybinds(&self) -> KeybindClosures {
         self.app.keybinds()
+    }
+
+    fn handlers(&self) -> &HandlerRegistry {
+        self.app.handlers()
     }
 
     fn current_page(&self) -> Option<String> {
@@ -323,10 +327,6 @@ impl<A: App> AnyAppInstance for AppInstance<A> {
 
     fn install_wakeup(&self, sender: WakeupSender) {
         self.app.install_wakeup(sender);
-    }
-
-    fn dispatch(&self, handler_id: &HandlerId, args: &[String], cx: &AppContext, gx: &GlobalContext) {
-        self.app.dispatch(handler_id, args, cx, gx);
     }
 
     fn has_event_handler(&self, event_type: TypeId) -> bool {
