@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
@@ -70,6 +71,9 @@ pub struct Element {
     pub focusable: bool,
     pub clickable: bool,
     pub draggable: bool,
+
+    // Custom data storage (for handler IDs, etc.)
+    pub data: HashMap<String, String>,
 }
 
 impl Default for Element {
@@ -109,6 +113,7 @@ impl Default for Element {
             focusable: false,
             clickable: false,
             draggable: false,
+            data: HashMap::new(),
         }
     }
 }
@@ -335,6 +340,16 @@ impl Element {
     pub fn draggable(mut self, draggable: bool) -> Self {
         self.draggable = draggable;
         self
+    }
+
+    // Custom data
+    pub fn data(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
+        self.data.insert(key.into(), value.into());
+        self
+    }
+
+    pub fn get_data(&self, key: &str) -> Option<&String> {
+        self.data.get(key)
     }
 
     // Children
