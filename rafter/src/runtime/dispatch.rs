@@ -262,6 +262,9 @@ impl<'a> EventDispatcher<'a> {
 
             // MouseMove and Resize are not dispatched to widgets
             Event::MouseMove { .. } | Event::Resize { .. } => {}
+
+            // Change and Submit are emitted by TextInputState, handled by app handlers
+            Event::Change { .. } | Event::Submit { .. } => {}
         }
 
         None

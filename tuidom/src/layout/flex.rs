@@ -690,6 +690,21 @@ fn estimate_size(element: &Element, is_width: bool) -> u16 {
                 .max()
                 .unwrap_or(0)
         }
+        Content::TextInput {
+            value, placeholder, ..
+        } => {
+            let text = if value.is_empty() {
+                placeholder.as_deref().unwrap_or("")
+            } else {
+                value.as_str()
+            };
+            if is_width {
+                // Add 1 for cursor at end
+                display_width(text) as u16 + 1
+            } else {
+                1 // Single line input
+            }
+        }
     };
 
     content_size + padding + border_size

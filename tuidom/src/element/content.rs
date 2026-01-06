@@ -17,6 +17,14 @@ pub enum Content {
         children: Vec<super::Element>,
         interval: Duration,
     },
+    /// Text input field with cursor and selection support.
+    TextInput {
+        value: String,
+        cursor: usize,
+        selection: Option<(usize, usize)>,
+        placeholder: Option<String>,
+        focused: bool,
+    },
 }
 
 impl Clone for Box<dyn CustomContent> {
@@ -34,6 +42,9 @@ impl std::fmt::Debug for Content {
             Self::Custom(_) => write!(f, "Custom(...)"),
             Self::Frames { children, interval } => {
                 write!(f, "Frames({} frames, {:?})", children.len(), interval)
+            }
+            Self::TextInput { value, cursor, .. } => {
+                write!(f, "TextInput({value:?}, cursor={cursor})")
             }
         }
     }

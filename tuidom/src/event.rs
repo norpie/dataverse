@@ -53,6 +53,10 @@ pub enum Event {
     Blur { target: String },
     /// Terminal resized
     Resize { width: u16, height: u16 },
+    /// Text input value changed
+    Change { target: String, text: String },
+    /// Text input submitted (Enter pressed)
+    Submit { target: String },
 }
 
 /// Simplified key representation

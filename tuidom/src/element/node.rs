@@ -71,6 +71,9 @@ pub struct Element {
     pub focusable: bool,
     pub clickable: bool,
     pub draggable: bool,
+    /// When true, this element captures keyboard input (for text fields).
+    /// Arrow keys will move cursor instead of focus, etc.
+    pub captures_input: bool,
 
     // Custom data storage (for handler IDs, etc.)
     pub data: HashMap<String, String>,
@@ -113,6 +116,7 @@ impl Default for Element {
             focusable: false,
             clickable: false,
             draggable: false,
+            captures_input: false,
             data: HashMap::new(),
         }
     }
@@ -154,6 +158,23 @@ impl Element {
         Self {
             id: generate_id("custom"),
             content: Content::Custom(Box::new(content)),
+            ..Default::default()
+        }
+    }
+
+    /// Create a text input element.
+    pub fn text_input(value: impl Into<String>) -> Self {
+        Self {
+            id: generate_id("input"),
+            content: Content::TextInput {
+                value: value.into(),
+                cursor: 0,
+                selection: None,
+                placeholder: None,
+                focused: false,
+            },
+            focusable: true,
+            captures_input: true,
             ..Default::default()
         }
     }
@@ -339,6 +360,63 @@ impl Element {
 
     pub fn draggable(mut self, draggable: bool) -> Self {
         self.draggable = draggable;
+        self
+    }
+
+    pub fn captures_input(mut self, captures: bool) -> Self {
+        self.captures_input = captures;
+        self
+    }
+
+    // Text input methods
+
+    /// Set the cursor position for a text input.
+    pub fn cursor(mut self, position: usize) -> Self {
+        if let Content::TextInput { cursor, .. } = &mut self.content {
+            *cursor = position;
+        }
+        self
+    }
+
+    /// Set the selection range for a text input.
+    pub fn selection(mut self, range: Option<(usize, usize)>) -> Self {
+        if let Content::TextInput { selection, .. } = &mut self.content {
+            *selection = range;
+        }
+        self
+    }
+
+    /// Set the placeholder text for a text input.
+    pub fn placeholder(mut self, text: impl Into<String>) -> Self {
+        if let Content::TextInput { placeholder, .. } = &mut self.content {
+            *placeholder = Some(text.into());
+        }
+        self
+    }
+
+    /// Set whether the text input is focused (shows cursor).
+    pub fn input_focused(mut self, is_focused: bool) -> Self {
+        if let Content::TextInput { focused, .. } = &mut self.content {
+            *focused = is_focused;
+        }
+        self
+    }
+
+    /// Set all text input state from TextInputData.
+    pub fn input_state(mut self, data: &crate::text_input::TextInputData, is_focused: bool) -> Self {
+        if let Content::TextInput {
+            value,
+            cursor,
+            selection,
+            focused,
+            ..
+        } = &mut self.content
+        {
+            *value = data.text.clone();
+            *cursor = data.cursor;
+            *selection = data.selection();
+            *focused = is_focused;
+        }
         self
     }
 

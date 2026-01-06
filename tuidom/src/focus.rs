@@ -1,6 +1,6 @@
 use crossterm::event::{Event as CrosstermEvent, KeyEventKind, MouseEventKind};
 
-use crate::element::{Content, Element};
+use crate::element::{find_element, Content, Element};
 use crate::event::{Event, Key, Modifiers, NavDirection};
 use crate::hit::hit_test_focusable;
 use crate::layout::{LayoutResult, Rect};
@@ -177,7 +177,15 @@ impl FocusState {
                     }
 
                     // Handle arrow keys for spatial navigation (only without modifiers)
-                    if modifiers.none() {
+                    // Skip if focused element captures input (for text cursor movement)
+                    let focused_captures_input = self
+                        .focused
+                        .as_ref()
+                        .and_then(|id| find_element(root, id))
+                        .map(|el| el.captures_input)
+                        .unwrap_or(false);
+
+                    if modifiers.none() && !focused_captures_input {
                         let direction = match key {
                             Key::Up => Some(NavDirection::Up),
                             Key::Down => Some(NavDirection::Down),

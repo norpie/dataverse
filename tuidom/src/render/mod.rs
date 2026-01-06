@@ -286,6 +286,27 @@ fn render_single_element_timed(
         Content::Text(text) => {
             render_text(text, element, rect, buf, clip, animation, oklch_cache);
         }
+        Content::TextInput {
+            value,
+            cursor,
+            selection,
+            placeholder,
+            focused,
+        } => {
+            render_text_input(
+                value,
+                *cursor,
+                *selection,
+                placeholder.as_deref(),
+                *focused,
+                element,
+                rect,
+                buf,
+                clip,
+                animation,
+                oklch_cache,
+            );
+        }
         Content::Custom(custom) => {
             // Custom content gets the full rect; it should handle clipping internally
             custom.render(rect, buf);
@@ -537,6 +558,166 @@ fn render_text(
             }
 
             x += ch_w as u16;
+        }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn render_text_input(
+    value: &str,
+    cursor: usize,
+    selection: Option<(usize, usize)>,
+    placeholder: Option<&str>,
+    focused: bool,
+    element: &Element,
+    rect: Rect,
+    buf: &mut Buffer,
+    clip: Option<Rect>,
+    animation: &AnimationState,
+    oklch_cache: &mut OklchCache,
+) {
+    // Get foreground color (potentially interpolated)
+    let foreground = get_interpolated_color(
+        animation,
+        &element.id,
+        TransitionProperty::Foreground,
+        element.style.foreground.as_ref(),
+    );
+    let fg = foreground
+        .as_ref()
+        .map(|c| oklch_cache.get(c))
+        .unwrap_or(Oklch::new(1.0, 0.0, 0.0)); // white
+
+    // Get background color (potentially interpolated)
+    let background = get_interpolated_color(
+        animation,
+        &element.id,
+        TransitionProperty::Background,
+        element.style.background.as_ref(),
+    );
+    let bg = background
+        .as_ref()
+        .map(|c| oklch_cache.get(c))
+        .unwrap_or(Oklch::new(0.0, 0.0, 0.0)); // black
+
+    // Cursor style: bright background, dark foreground
+    let cursor_fg = Oklch::new(0.15, 0.0, 0.0);
+    let cursor_bg = Oklch::new(0.85, 0.0, 0.0);
+
+    // Selection style: medium contrast
+    let selection_fg = Oklch::new(0.95, 0.0, 0.0);
+    let selection_bg = Oklch::new(0.4, 0.1, 220.0);
+
+    // Placeholder style: dimmed
+    let placeholder_fg = Oklch::new(0.5, 0.0, 0.0);
+
+    let border_size = if element.style.border == crate::types::Border::None {
+        0
+    } else {
+        1
+    };
+
+    let inner = rect.shrink(
+        element.padding.top + border_size,
+        element.padding.right + border_size,
+        element.padding.bottom + border_size,
+        element.padding.left + border_size,
+    );
+
+    if inner.width == 0 || inner.height == 0 {
+        return;
+    }
+
+    // Determine what text to display
+    // Show placeholder only when empty AND not focused
+    let is_placeholder = value.is_empty() && !focused;
+    let display_text = if is_placeholder {
+        placeholder.unwrap_or("")
+    } else {
+        value
+    };
+
+    let chars: Vec<char> = display_text.chars().collect();
+    let y = inner.y;
+
+    // Check vertical clip
+    if let Some(c) = clip {
+        if y < c.y || y >= c.bottom() {
+            return;
+        }
+    }
+
+    let mut x = inner.x;
+
+    for (i, &ch) in chars.iter().enumerate() {
+        if x >= inner.right() {
+            break;
+        }
+
+        // Check horizontal clip
+        if let Some(c) = clip {
+            if x < c.x {
+                x += char_width(ch) as u16;
+                continue;
+            }
+            if x >= c.right() {
+                break;
+            }
+        }
+
+        // Determine style for this character
+        let (char_fg, char_bg) = if is_placeholder {
+            (placeholder_fg, bg)
+        } else if focused {
+            let in_selection = selection
+                .map(|(start, end)| i >= start && i < end)
+                .unwrap_or(false);
+            let is_cursor = i == cursor;
+
+            if is_cursor {
+                (cursor_fg, cursor_bg)
+            } else if in_selection {
+                (selection_fg, selection_bg)
+            } else {
+                (fg, bg)
+            }
+        } else {
+            (fg, bg)
+        };
+
+        buf.set(
+            x,
+            y,
+            Cell::new(ch)
+                .with_fg(char_fg)
+                .with_bg(char_bg)
+                .with_style(element.style.text_style),
+        );
+
+        let ch_w = char_width(ch);
+        if ch_w == 2 && x + 1 < inner.right() {
+            let cont_x = x + 1;
+            if clip.is_none_or(|c| cont_x >= c.x && cont_x < c.right()) {
+                let mut continuation = Cell::new(' ')
+                    .with_fg(char_fg)
+                    .with_bg(char_bg)
+                    .with_style(element.style.text_style);
+                continuation.wide_continuation = true;
+                buf.set(cont_x, y, continuation);
+            }
+        }
+
+        x += ch_w as u16;
+    }
+
+    // If cursor is at end and focused, render cursor block
+    if focused && cursor >= chars.len() && x < inner.right() {
+        if clip.is_none_or(|c| x >= c.x && x < c.right()) {
+            buf.set(
+                x,
+                y,
+                Cell::new(' ').with_fg(cursor_fg).with_bg(cursor_bg),
+            );
         }
     }
 }
