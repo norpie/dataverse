@@ -42,7 +42,11 @@ fn generate_default_impl(name: &Ident, fields: Option<&FieldsNamed>) -> TokenStr
     let Some(fields) = fields else {
         return quote! {
             impl Default for #name {
-                fn default() -> Self { Self }
+                fn default() -> Self {
+                    Self {
+                        __handler_registry: rafter::HandlerRegistry::new(),
+                    }
+                }
             }
         };
     };
@@ -72,7 +76,8 @@ fn generate_default_impl(name: &Ident, fields: Option<&FieldsNamed>) -> TokenStr
         impl Default for #name {
             fn default() -> Self {
                 Self {
-                    #(#field_defaults),*
+                    #(#field_defaults),*,
+                    __handler_registry: rafter::HandlerRegistry::new(),
                 }
             }
         }
@@ -84,7 +89,11 @@ fn generate_clone_impl(name: &Ident, fields: Option<&FieldsNamed>) -> TokenStrea
     let Some(fields) = fields else {
         return quote! {
             impl Clone for #name {
-                fn clone(&self) -> Self { Self }
+                fn clone(&self) -> Self {
+                    Self {
+                        __handler_registry: self.__handler_registry.clone(),
+                    }
+                }
             }
         };
     };
@@ -102,7 +111,8 @@ fn generate_clone_impl(name: &Ident, fields: Option<&FieldsNamed>) -> TokenStrea
         impl Clone for #name {
             fn clone(&self) -> Self {
                 Self {
-                    #(#field_clones),*
+                    #(#field_clones),*,
+                    __handler_registry: self.__handler_registry.clone(),
                 }
             }
         }
@@ -183,7 +193,9 @@ pub fn expand(_attr: TokenStream, item: TokenStream) -> TokenStream {
         quote! {
             #(#other_attrs)*
             #vis struct #name {
-                #(#transformed_fields),*
+                #(#transformed_fields),*,
+                #[doc(hidden)]
+                __handler_registry: rafter::HandlerRegistry,
             }
 
             #default_impl
@@ -191,9 +203,13 @@ pub fn expand(_attr: TokenStream, item: TokenStream) -> TokenStream {
             #metadata
         }
     } else {
+        // Unit struct becomes struct with just __handler_registry
         quote! {
             #(#other_attrs)*
-            #vis struct #name;
+            #vis struct #name {
+                #[doc(hidden)]
+                __handler_registry: rafter::HandlerRegistry,
+            }
 
             #default_impl
             #clone_impl
