@@ -4,6 +4,7 @@ mod app;
 mod app_context;
 mod event;
 mod global_context;
+mod handler_context;
 mod instance;
 pub mod keybinds;
 mod modal;
@@ -25,6 +26,7 @@ pub use app_context::{
     ErrorSender,
 };
 pub use event::Event;
+pub use handler_context::HandlerContext;
 pub use global_context::{
     ArcEvent, DataStore, GlobalContext, GlobalModalRequest, InstanceCommand, InstanceQuery,
     RequestTarget,
