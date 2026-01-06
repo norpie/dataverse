@@ -176,6 +176,15 @@ impl FocusState {
                         continue;
                     }
 
+                    // Escape blurs focused element; only emits key event if nothing focused
+                    if key == Key::Escape {
+                        if let Some(old) = self.focused.take() {
+                            events.push(Event::Blur { target: old });
+                            continue;
+                        }
+                        // Fall through to emit key event
+                    }
+
                     // Handle arrow keys for spatial navigation (only without modifiers)
                     // Skip if focused element captures input (for text cursor movement)
                     let focused_captures_input = self
