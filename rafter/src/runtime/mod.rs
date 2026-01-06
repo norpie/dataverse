@@ -296,7 +296,7 @@ impl Runtime {
 
             // 12. Dispatch events to keybinds and apps
             for event in &events {
-                dispatch::dispatch_event(event, global_modals, systems, registry, gx, layout);
+                dispatch::dispatch_event(event, global_modals, systems, registry, gx, layout, &root);
             }
 
             // 13. Check wakeups (state changes from async tasks)

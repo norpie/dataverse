@@ -201,8 +201,8 @@ pub trait AnyAppInstance: Send + Sync {
 
     // Dispatch
 
-    /// Dispatch a handler by ID.
-    fn dispatch(&self, handler_id: &HandlerId, cx: &AppContext, gx: &GlobalContext);
+    /// Dispatch a handler by ID with optional arguments.
+    fn dispatch(&self, handler_id: &HandlerId, args: &[String], cx: &AppContext, gx: &GlobalContext);
 
     /// Check if this instance has a handler for the given event type.
     fn has_event_handler(&self, event_type: TypeId) -> bool;
@@ -325,8 +325,8 @@ impl<A: App> AnyAppInstance for AppInstance<A> {
         self.app.install_wakeup(sender);
     }
 
-    fn dispatch(&self, handler_id: &HandlerId, cx: &AppContext, gx: &GlobalContext) {
-        self.app.dispatch(handler_id, cx, gx);
+    fn dispatch(&self, handler_id: &HandlerId, args: &[String], cx: &AppContext, gx: &GlobalContext) {
+        self.app.dispatch(handler_id, args, cx, gx);
     }
 
     fn has_event_handler(&self, event_type: TypeId) -> bool {

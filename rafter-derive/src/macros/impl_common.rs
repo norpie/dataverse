@@ -4,14 +4,25 @@ use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 use syn::{Ident, ImplItem, ImplItemFn, ItemImpl, Type};
 
+/// A context parameter type in a handler signature.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ContextParam {
+    App,
+    Global,
+    Modal,
+}
+
 /// Handler parameter requirements for the new context architecture.
 ///
 /// Handlers declare what contexts they need via their signature (varargs pattern).
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+/// This tracks both which contexts are needed AND their order in the signature.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct HandlerContexts {
     pub app_context: bool,
     pub global_context: bool,
     pub modal_context: bool,
+    /// Order of context parameters in the handler signature
+    pub param_order: Vec<ContextParam>,
 }
 
 impl HandlerContexts {
@@ -70,6 +81,20 @@ pub struct RequestHandlerMethod {
     pub request_type: String,
     /// Handler context requirements
     pub contexts: HandlerContexts,
+}
+
+/// Information about a page method marked with #[page] or #[page(Name)]
+///
+/// Note: Fields are collected but not currently used. Reserved for future
+/// multi-page routing support.
+#[allow(dead_code)]
+pub struct PageMethod {
+    /// Method name
+    pub name: Ident,
+    /// Optional page name (None for #[page], Some("Name") for #[page(Name)])
+    pub page_name: Option<String>,
+    /// The method body tokens (to be parsed as DSL)
+    pub body: TokenStream,
 }
 
 /// Check if a method has the #[keybinds] attribute
@@ -138,6 +163,38 @@ pub fn parse_request_handler_metadata(method: &ImplItemFn) -> Option<RequestHand
     })
 }
 
+/// Check if method has #[page] or #[page(Name)] attribute and extract metadata.
+/// Returns the page method info including the body tokens for DSL parsing.
+pub fn parse_page_metadata(method: &ImplItemFn) -> Option<PageMethod> {
+    for attr in &method.attrs {
+        if attr.path().is_ident("page") {
+            // Extract optional page name from #[page(Name)]
+            let page_name = match &attr.meta {
+                syn::Meta::Path(_) => None, // #[page]
+                syn::Meta::List(list) => {
+                    // #[page(Name)] - parse the name
+                    let tokens = &list.tokens;
+                    let name: Option<Ident> = syn::parse2(tokens.clone()).ok();
+                    name.map(|n| n.to_string())
+                }
+                syn::Meta::NameValue(_) => None, // Not supported
+            };
+
+            // Extract the method body tokens for DSL parsing
+            // The block contains the DSL, not regular Rust code
+            let block = &method.block;
+            let body: TokenStream = quote!(#block);
+
+            return Some(PageMethod {
+                name: method.sig.ident.clone(),
+                page_name,
+                body,
+            });
+        }
+    }
+    None
+}
+
 /// Extract the message type (event/request) from a method's parameters.
 /// Returns the first non-self, non-context parameter type as a string.
 fn extract_message_type(method: &ImplItemFn) -> Option<String> {
@@ -168,6 +225,7 @@ fn extract_message_type(method: &ImplItemFn) -> Option<String> {
 }
 
 /// Detect which contexts a handler method needs from its signature.
+/// Also tracks the ORDER of context parameters.
 pub fn detect_handler_contexts(method: &ImplItemFn) -> HandlerContexts {
     let mut contexts = HandlerContexts::default();
 
@@ -178,12 +236,13 @@ pub fn detect_handler_contexts(method: &ImplItemFn) -> HandlerContexts {
 
             if ty_str.contains("AppContext") {
                 contexts.app_context = true;
-            }
-            if ty_str.contains("GlobalContext") {
+                contexts.param_order.push(ContextParam::App);
+            } else if ty_str.contains("GlobalContext") {
                 contexts.global_context = true;
-            }
-            if ty_str.contains("ModalContext") {
+                contexts.param_order.push(ContextParam::Global);
+            } else if ty_str.contains("ModalContext") {
                 contexts.modal_context = true;
+                contexts.param_order.push(ContextParam::Modal);
             }
         }
     }
@@ -238,6 +297,7 @@ pub fn strip_custom_attrs(impl_block: &mut ItemImpl) {
                     && !a.path().is_ident("handler")
                     && !a.path().is_ident("event_handler")
                     && !a.path().is_ident("request_handler")
+                    && !a.path().is_ident("page")
             });
             // Remove metadata doc attributes
             method.attrs.retain(|a| {

@@ -96,6 +96,7 @@ fn generate_widget(elem: &ElementNode) -> TokenStream {
     // Generate handler calls (on_click, on_change, etc.)
     let handler_calls = handler::generate_handler_calls(&elem.handlers);
 
+    // Widget must be in scope - users import rafter widgets or define their own
     quote! {
         {
             #name::new()

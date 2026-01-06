@@ -81,7 +81,11 @@ pub struct HandlerAttr {
 }
 
 /// An argument to a handler
+///
+/// Note: Handler arguments are parsed but not currently supported.
+/// Reserved for future handler argument passing support.
 #[derive(Debug)]
+#[allow(dead_code)]
 pub enum HandlerArg {
     /// A regular expression to capture (cloned at render time)
     Expr(Expr),

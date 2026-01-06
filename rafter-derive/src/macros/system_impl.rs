@@ -5,10 +5,10 @@ use quote::quote;
 use syn::{ImplItem, ImplItemFn, ItemImpl, parse2};
 
 use super::impl_common::{
-    EventHandlerMethod, HandlerMethod, KeybindScope, KeybindsMethod, RequestHandlerMethod,
-    get_type_name, is_element_method, is_keybinds_method, parse_event_handler_metadata,
-    parse_handler_metadata, parse_request_handler_metadata, strip_custom_attrs, system_metadata_mod,
-    to_snake_case,
+    EventHandlerMethod, HandlerMethod, KeybindScope, KeybindsMethod, PageMethod,
+    RequestHandlerMethod, get_type_name, is_element_method, is_keybinds_method,
+    parse_event_handler_metadata, parse_handler_metadata, parse_page_metadata,
+    parse_request_handler_metadata, strip_custom_attrs, system_metadata_mod, to_snake_case,
 };
 
 /// Check if method is named "on_init"
@@ -48,6 +48,7 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
     let mut handlers = Vec::new();
     let mut event_handlers = Vec::new();
     let mut request_handlers = Vec::new();
+    let mut page_methods: Vec<PageMethod> = Vec::new();
     let mut has_element = false;
     let mut has_on_init = false;
     let mut has_overlay = false;
@@ -63,6 +64,22 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
             }
 
             if let Some(handler) = parse_handler_metadata(method) {
+                // Check for ModalContext usage - systems cannot use modal context
+                if handler.contexts.modal_context {
+                    return syn::Error::new_spanned(
+                        &method.sig,
+                        "System handlers cannot use ModalContext. ModalContext is only available in modal handlers.",
+                    )
+                    .to_compile_error();
+                }
+                // Check for AppContext usage - systems only get GlobalContext
+                if handler.contexts.app_context {
+                    return syn::Error::new_spanned(
+                        &method.sig,
+                        "System handlers cannot use AppContext. Systems only have access to GlobalContext.",
+                    )
+                    .to_compile_error();
+                }
                 handlers.push(handler);
             }
 
@@ -72,6 +89,10 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
 
             if let Some(request_handler) = parse_request_handler_metadata(method) {
                 request_handlers.push(request_handler);
+            }
+
+            if let Some(page) = parse_page_metadata(method) {
+                page_methods.push(page);
             }
 
             if is_element_method(method) {
@@ -86,6 +107,15 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
                 has_overlay = true;
             }
         }
+    }
+
+    // Systems don't support #[page] - they use overlays instead
+    if !page_methods.is_empty() {
+        return syn::Error::new_spanned(
+            &impl_block.self_ty,
+            "Systems don't support #[page]. Use overlay() method instead.",
+        )
+        .to_compile_error();
     }
 
     // Strip our custom attributes from methods

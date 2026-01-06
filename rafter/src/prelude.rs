@@ -23,3 +23,6 @@ pub use rafter_derive::{
 
 // Re-export tuidom Element for page! macro
 pub use tuidom::Element;
+
+// Built-in widgets
+pub use crate::widgets::button;

@@ -19,6 +19,7 @@ mod toast;
 pub mod validation;
 mod wakeup;
 mod widget;
+pub mod widgets;
 
 pub use app::{App, AppConfig, PanicBehavior};
 pub use app_context::{

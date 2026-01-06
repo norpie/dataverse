@@ -5,11 +5,11 @@ use quote::quote;
 use syn::{Attribute, ImplItem, ImplItemFn, ItemImpl, parse2};
 
 use super::impl_common::{
-    EventHandlerMethod, HandlerContexts, HandlerMethod, KeybindScope, KeybindsMethod,
+    EventHandlerMethod, HandlerContexts, HandlerMethod, KeybindScope, KeybindsMethod, PageMethod,
     RequestHandlerMethod, app_metadata_mod, generate_config_impl, generate_element_impl,
     generate_keybinds_impl, get_type_name, is_element_method, is_keybinds_method,
-    parse_event_handler_metadata, parse_handler_metadata, parse_request_handler_metadata,
-    strip_custom_attrs,
+    parse_event_handler_metadata, parse_handler_metadata, parse_page_metadata,
+    parse_request_handler_metadata, strip_custom_attrs,
 };
 
 /// Parse keybinds scope from attributes
@@ -90,6 +90,7 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
     let mut handlers = Vec::new();
     let mut event_handlers = Vec::new();
     let mut request_handlers = Vec::new();
+    let mut page_methods: Vec<PageMethod> = Vec::new();
     let mut has_element = false;
     let mut has_on_start = false;
     let mut has_on_foreground = false;
@@ -108,6 +109,14 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
             }
 
             if let Some(handler) = parse_handler_metadata(method) {
+                // Check for ModalContext usage - apps cannot use modal context
+                if handler.contexts.modal_context {
+                    return syn::Error::new_spanned(
+                        &method.sig,
+                        "App handlers cannot use ModalContext. ModalContext is only available in modal handlers.",
+                    )
+                    .to_compile_error();
+                }
                 handlers.push(handler);
             }
 
@@ -117,6 +126,10 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
 
             if let Some(request_handler) = parse_request_handler_metadata(method) {
                 request_handlers.push(request_handler);
+            }
+
+            if let Some(page) = parse_page_metadata(method) {
+                page_methods.push(page);
             }
 
             if is_element_method(method) {
@@ -144,6 +157,29 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
             }
         }
     }
+
+    // Validate page methods for apps
+    // Apps can have multiple named page methods, but unnamed #[page] is also allowed for single-page apps
+    // We'll validate that named pages are unique
+    let mut seen_pages = std::collections::HashSet::new();
+    for page in &page_methods {
+        if let Some(ref name) = page.page_name {
+            if !seen_pages.insert(name.clone()) {
+                return syn::Error::new_spanned(
+                    &impl_block.self_ty,
+                    format!("Duplicate page name: {}", name),
+                )
+                .to_compile_error();
+            }
+        }
+    }
+
+    // TODO: In later chunks, we'll process page_methods to:
+    // 1. Parse the DSL in the method body
+    // 2. Generate handler closures with proper context extraction
+    // 3. Replace the method body with generated code
+    // 4. Generate element() that switches based on current_page() for multi-page apps
+    let _ = &page_methods; // Suppress unused warning for now
 
     // Strip our custom attributes from methods
     strip_custom_attrs(&mut impl_block);

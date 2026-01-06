@@ -3,7 +3,7 @@
 //! Similar to #[app] but simpler - no registration, no wakeup.
 
 use proc_macro2::TokenStream;
-use quote::quote;
+use quote::{format_ident, quote};
 use syn::{DeriveInput, Field, Fields, FieldsNamed, Ident, parse2};
 
 use super::fields::{has_state_skip, has_widget_attribute, is_resource_type};
@@ -109,8 +109,13 @@ fn generate_clone_impl(name: &Ident, fields: Option<&FieldsNamed>) -> TokenStrea
     }
 }
 
-/// Generate metadata for #[modal_impl].
+/// Generate metadata module for #[modal_impl].
 fn generate_metadata(name: &Ident, fields: Option<&FieldsNamed>) -> TokenStream {
+    let metadata_name = format_ident!(
+        "__rafter_modal_metadata_{}",
+        name.to_string().to_lowercase()
+    );
+
     let dirty_fields: Vec<_> = fields
         .map(|f| {
             f.named
@@ -121,19 +126,18 @@ fn generate_metadata(name: &Ident, fields: Option<&FieldsNamed>) -> TokenStream 
         })
         .unwrap_or_default();
 
-    let is_dirty_checks = dirty_fields.iter().map(|f| quote! { self.#f.is_dirty() });
-    let clear_dirty_calls = dirty_fields.iter().map(|f| quote! { self.#f.clear_dirty(); });
-
     quote! {
-        impl #name {
-            #[doc(hidden)]
-            pub fn __is_dirty(&self) -> bool {
-                false #(|| #is_dirty_checks)*
+        #[doc(hidden)]
+        #[allow(non_snake_case)]
+        pub mod #metadata_name {
+            use super::*;
+
+            pub fn is_dirty(modal: &#name) -> bool {
+                false #(|| modal.#dirty_fields.is_dirty())*
             }
 
-            #[doc(hidden)]
-            pub fn __clear_dirty(&self) {
-                #(#clear_dirty_calls)*
+            pub fn clear_dirty(modal: &#name) {
+                #(modal.#dirty_fields.clear_dirty();)*
             }
         }
     }

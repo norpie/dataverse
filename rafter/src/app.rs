@@ -144,9 +144,10 @@ pub trait App: Clone + Send + Sync + 'static {
     /// Dispatch a handler by ID.
     ///
     /// Generated code detects which contexts the handler needs from its signature
-    /// and passes them accordingly.
-    fn dispatch(&self, handler_id: &HandlerId, cx: &AppContext, gx: &GlobalContext) {
-        let _ = (cx, gx);
+    /// and passes them accordingly. Args are string-serialized values from
+    /// element data (e.g., from `on_click: delete(item.id)`).
+    fn dispatch(&self, handler_id: &HandlerId, args: &[String], cx: &AppContext, gx: &GlobalContext) {
+        let _ = (args, cx, gx);
         log::warn!("No dispatch implementation for handler '{}'", handler_id.0);
     }
 

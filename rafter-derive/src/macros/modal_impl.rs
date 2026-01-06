@@ -8,9 +8,10 @@ use syn::{
 };
 
 use super::impl_common::{
-    HandlerContexts, HandlerMethod, KeybindScope, KeybindsMethod, generate_element_impl,
-    generate_keybinds_impl, generate_name_impl, get_type_name, is_element_method,
-    is_keybinds_method, modal_metadata_mod, parse_handler_metadata, strip_custom_attrs,
+    ContextParam, HandlerMethod, KeybindScope, KeybindsMethod, PageMethod,
+    generate_element_impl, generate_keybinds_impl, generate_name_impl, get_type_name,
+    is_element_method, is_keybinds_method, modal_metadata_mod, parse_handler_metadata,
+    parse_page_metadata, strip_custom_attrs,
 };
 
 /// Attributes for the #[modal_impl] macro
@@ -104,6 +105,7 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
     // Collect method information
     let mut keybinds_methods = Vec::new();
     let mut handlers = Vec::new();
+    let mut page_methods: Vec<PageMethod> = Vec::new();
     let mut has_element = false;
     let mut has_position = false;
     let mut has_size = false;
@@ -144,6 +146,18 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
                 handlers.push(handler);
             }
 
+            if let Some(page) = parse_page_metadata(method) {
+                // For modals, we only support a single unnamed #[page] method
+                if page.page_name.is_some() {
+                    return syn::Error::new_spanned(
+                        &method.sig.ident,
+                        "Modals only support #[page], not #[page(Name)]. Use #[page] instead.",
+                    )
+                    .to_compile_error();
+                }
+                page_methods.push(page);
+            }
+
             if is_element_method(method) {
                 has_element = true;
             }
@@ -157,6 +171,21 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
             }
         }
     }
+
+    // Validate page methods for modals
+    if page_methods.len() > 1 {
+        return syn::Error::new_spanned(
+            &impl_block.self_ty,
+            "Modals can only have one #[page] method",
+        )
+        .to_compile_error();
+    }
+
+    // TODO: In later chunks, we'll process page_methods to:
+    // 1. Parse the DSL in the method body
+    // 2. Generate handler closures with proper context extraction
+    // 3. Replace the method body with generated code
+    let _ = &page_methods; // Suppress unused warning for now
 
     // Strip our custom attributes from methods
     strip_custom_attrs(&mut impl_block);
@@ -244,7 +273,7 @@ fn generate_modal_dispatch(handlers: &[HandlerMethod]) -> TokenStream {
         .map(|h| {
             let name = &h.name;
             let name_str = name.to_string();
-            let call = generate_modal_handler_call(name, &h.contexts, h.is_async);
+            let call = generate_modal_handler_call(name, h, h.is_async);
 
             // Determine what to clone based on what the handler needs
             let mut clones = vec![quote! { let this = self.clone(); }];
@@ -290,23 +319,23 @@ fn generate_modal_dispatch(handlers: &[HandlerMethod]) -> TokenStream {
 
 /// Generate the modal handler call with appropriate context parameters (varargs pattern).
 /// For modals: can use ModalContext, AppContext, and/or GlobalContext in any combination.
+/// Arguments are generated in the same order as they appear in the handler signature.
 fn generate_modal_handler_call(
     name: &syn::Ident,
-    contexts: &HandlerContexts,
+    handler: &HandlerMethod,
     is_async: bool,
 ) -> TokenStream {
-    // Build args based on what contexts are needed
-    // Order: mx, cx, gx (matching the trait dispatch signature order)
-    let mut args = Vec::new();
-    if contexts.modal_context {
-        args.push(quote! { &mx });
-    }
-    if contexts.app_context {
-        args.push(quote! { &cx });
-    }
-    if contexts.global_context {
-        args.push(quote! { &gx });
-    }
+    // Build args in the same order as they appear in the handler signature
+    let args: Vec<TokenStream> = handler
+        .contexts
+        .param_order
+        .iter()
+        .map(|param| match param {
+            ContextParam::App => quote! { &cx },
+            ContextParam::Global => quote! { &gx },
+            ContextParam::Modal => quote! { &mx },
+        })
+        .collect();
 
     let call = if args.is_empty() {
         quote! { this.#name() }

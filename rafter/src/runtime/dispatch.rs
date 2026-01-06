@@ -10,7 +10,7 @@
 
 use std::sync::{Arc, RwLock};
 
-use tuidom::{Event, Key, LayoutResult, Modifiers};
+use tuidom::{Content, Element, Event, Key, LayoutResult, Modifiers};
 
 use crate::instance::{AnyAppInstance, InstanceRegistry};
 use crate::modal::ModalEntry;
@@ -56,6 +56,8 @@ pub struct EventDispatcher<'a> {
     gx: &'a GlobalContext,
     /// Layout result for widget dispatch.
     layout: &'a LayoutResult,
+    /// Element tree for looking up handler IDs.
+    root: &'a Element,
 }
 
 impl<'a> EventDispatcher<'a> {
@@ -66,6 +68,7 @@ impl<'a> EventDispatcher<'a> {
         registry: &'a Arc<RwLock<InstanceRegistry>>,
         gx: &'a GlobalContext,
         layout: &'a LayoutResult,
+        root: &'a Element,
     ) -> Self {
         Self {
             global_modals,
@@ -73,6 +76,7 @@ impl<'a> EventDispatcher<'a> {
             registry,
             gx,
             layout,
+            root,
         }
     }
 
@@ -130,7 +134,8 @@ impl<'a> EventDispatcher<'a> {
             if let Some(handler_id) = keybinds.match_key(*key, *modifiers) {
                 // Create a default AppContext for global modals
                 let cx = AppContext::default();
-                modal.dispatch(&handler_id, &cx, self.gx);
+                // Keybinds don't have args
+                modal.dispatch(&handler_id, &[], &cx, self.gx);
                 return Some(DispatchResult::HandledByModal);
             }
         }
@@ -213,12 +218,12 @@ impl<'a> EventDispatcher<'a> {
                 }
             }
 
-            Event::Click { target, x, y, button: _ } => {
-                if let Some(_target_id) = target {
-                    let result = dispatch_click_to_instance(instance, *x, *y, self.layout);
-                    if result.is_handled() {
-                        dispatch_widget_result(instance, &result, &cx, self.gx);
-                        return Some(DispatchResult::HandledByWidget(result));
+            Event::Click { target, x: _, y: _, button: _ } => {
+                if let Some(target_id) = target {
+                    // Look up the element and check for on_click handler ID
+                    if let Some(info) = find_handler_in_tree(self.root, target_id, "on_click") {
+                        instance.dispatch(&info.handler_id, &info.args, &cx, self.gx);
+                        return Some(DispatchResult::HandledByWidget(WidgetResult::Activated));
                     }
                 }
             }
@@ -265,6 +270,55 @@ impl<'a> EventDispatcher<'a> {
 }
 
 // =============================================================================
+// Element Tree Helpers
+// =============================================================================
+
+/// Handler info extracted from an element's data.
+pub struct HandlerInfo {
+    pub handler_id: HandlerId,
+    pub args: Vec<String>,
+}
+
+/// Find an element by ID in the tree and extract handler info from its data.
+fn find_handler_in_tree(root: &Element, target_id: &str, handler_key: &str) -> Option<HandlerInfo> {
+    let elem = find_element_by_id(root, target_id)?;
+    let handler_id = elem.get_data(handler_key).map(|s| HandlerId::new(s.clone()))?;
+
+    // Extract arguments: on_click_arg_0, on_click_arg_1, etc.
+    let mut args = Vec::new();
+    let mut i = 0;
+    loop {
+        let arg_key = format!("{}_arg_{}", handler_key, i);
+        if let Some(arg_val) = elem.get_data(&arg_key) {
+            args.push(arg_val.clone());
+            i += 1;
+        } else {
+            break;
+        }
+    }
+
+    Some(HandlerInfo { handler_id, args })
+}
+
+/// Recursively find an element by ID in the tree.
+fn find_element_by_id<'a>(elem: &'a Element, target_id: &str) -> Option<&'a Element> {
+    if elem.id == target_id {
+        return Some(elem);
+    }
+
+    // Check children
+    if let Content::Children(children) = &elem.content {
+        for child in children {
+            if let Some(found) = find_element_by_id(child, target_id) {
+                return Some(found);
+            }
+        }
+    }
+
+    None
+}
+
+// =============================================================================
 // Widget Dispatch Helpers
 // =============================================================================
 
@@ -279,17 +333,6 @@ fn dispatch_key_to_instance(
     _layout: &LayoutResult,
 ) -> WidgetResult {
     // TODO: Call instance.dispatch_widget_key() when macros generate it
-    WidgetResult::Ignored
-}
-
-/// Dispatch a click event to an instance's target widget.
-fn dispatch_click_to_instance(
-    _instance: &dyn AnyAppInstance,
-    _x: u16,
-    _y: u16,
-    _layout: &LayoutResult,
-) -> WidgetResult {
-    // TODO: Call instance.dispatch_widget_click() when macros generate it
     WidgetResult::Ignored
 }
 
@@ -356,7 +399,7 @@ pub trait AnyModal: Send + Sync {
     /// Get the modal's keybinds.
     fn keybinds(&self) -> crate::Keybinds;
     /// Dispatch a handler.
-    fn dispatch(&self, handler_id: &HandlerId, cx: &AppContext, gx: &GlobalContext);
+    fn dispatch(&self, handler_id: &HandlerId, args: &[String], cx: &AppContext, gx: &GlobalContext);
 }
 
 impl<M: Modal> AnyModal for ModalEntry<M> {
@@ -368,8 +411,8 @@ impl<M: Modal> AnyModal for ModalEntry<M> {
         ModalEntry::keybinds(self)
     }
 
-    fn dispatch(&self, handler_id: &HandlerId, cx: &AppContext, gx: &GlobalContext) {
-        ModalEntry::dispatch(self, handler_id, cx, gx)
+    fn dispatch(&self, handler_id: &HandlerId, args: &[String], cx: &AppContext, gx: &GlobalContext) {
+        ModalEntry::dispatch(self, handler_id, args, cx, gx)
     }
 }
 
@@ -387,7 +430,8 @@ pub fn dispatch_event(
     registry: &Arc<RwLock<InstanceRegistry>>,
     gx: &GlobalContext,
     layout: &LayoutResult,
+    root: &Element,
 ) -> DispatchResult {
-    let mut dispatcher = EventDispatcher::new(global_modals, systems, registry, gx, layout);
+    let mut dispatcher = EventDispatcher::new(global_modals, systems, registry, gx, layout, root);
     dispatcher.dispatch(event)
 }

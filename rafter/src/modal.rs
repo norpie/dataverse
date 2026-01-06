@@ -121,14 +121,16 @@ pub trait Modal: Clone + Send + Sync + 'static {
     ///
     /// For app-scoped modals, cx provides access to the parent app's context.
     /// For global modals, cx may be a default/empty context.
+    /// Args are string-serialized values from element data.
     fn dispatch(
         &self,
         handler_id: &HandlerId,
+        args: &[String],
         mx: &ModalContext<Self::Result>,
         cx: &AppContext,
         gx: &GlobalContext,
     ) {
-        let _ = (handler_id, mx, cx, gx);
+        let _ = (handler_id, args, mx, cx, gx);
     }
 
     /// Check if the modal needs re-rendering.
@@ -172,8 +174,8 @@ impl<M: Modal> ModalEntry<M> {
     }
 
     /// Dispatch a handler.
-    pub fn dispatch(&self, handler_id: &HandlerId, cx: &AppContext, gx: &GlobalContext) {
-        self.modal.dispatch(handler_id, &self.context, cx, gx);
+    pub fn dispatch(&self, handler_id: &HandlerId, args: &[String], cx: &AppContext, gx: &GlobalContext) {
+        self.modal.dispatch(handler_id, args, &self.context, cx, gx);
     }
 
     /// Get the modal's keybinds.
