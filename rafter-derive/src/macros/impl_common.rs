@@ -2,7 +2,244 @@
 
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
-use syn::{Ident, ImplItem, ImplItemFn, ItemImpl, Type};
+use syn::{
+    Attribute, Generics, Ident, ImplItem, ImplItemFn, ItemImpl, Path, Signature, Token, Type,
+    Visibility,
+    parse::{Parse, ParseStream},
+    token::Brace,
+};
+
+// =============================================================================
+// Partial Parsing Types
+// =============================================================================
+
+/// Partially parsed impl block - signatures parsed, bodies kept as raw TokenStream.
+///
+/// This allows us to parse method signatures (for context detection) while keeping
+/// method bodies as raw tokens that can be parsed as DSL instead of Rust code.
+pub struct PartialImplBlock {
+    pub attrs: Vec<Attribute>,
+    pub generics: Generics,
+    pub trait_: Option<(Option<Token![!]>, Path, Token![for])>,
+    pub self_ty: Box<Type>,
+    pub methods: Vec<PartialMethod>,
+}
+
+impl Parse for PartialImplBlock {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        let attrs = input.call(Attribute::parse_outer)?;
+        input.parse::<Token![impl]>()?;
+
+        // Parse generics (before trait/type)
+        let mut generics: Generics = input.parse()?;
+
+        // Parse optional trait: `!Trait for` or `Trait for`
+        let trait_ = if input.peek(Token![!]) || {
+            // Look ahead to see if there's a `for` after a path
+            let fork = input.fork();
+            fork.parse::<Path>().is_ok() && fork.peek(Token![for])
+        } {
+            let polarity: Option<Token![!]> = input.parse()?;
+            let path: Path = input.parse()?;
+            let for_token: Token![for] = input.parse()?;
+            Some((polarity, path, for_token))
+        } else {
+            None
+        };
+
+        let self_ty: Type = input.parse()?;
+
+        // Parse where clause if present
+        generics.where_clause = input.parse()?;
+
+        let content;
+        syn::braced!(content in input);
+
+        let mut methods = Vec::new();
+        while !content.is_empty() {
+            methods.push(content.parse()?);
+        }
+
+        Ok(Self {
+            attrs,
+            generics,
+            trait_,
+            self_ty: Box::new(self_ty),
+            methods,
+        })
+    }
+}
+
+/// Partially parsed method - signature fully parsed, body kept as raw TokenStream.
+pub struct PartialMethod {
+    pub attrs: Vec<Attribute>,
+    pub vis: Visibility,
+    pub sig: Signature,
+    pub body: TokenStream,
+    pub _brace: Brace,
+}
+
+impl Parse for PartialMethod {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        let attrs = input.call(Attribute::parse_outer)?;
+        let vis: Visibility = input.parse()?;
+        let sig: Signature = input.parse()?;
+
+        // Collect body tokens WITHOUT parsing as Rust statements
+        let content;
+        let brace = syn::braced!(content in input);
+        let body: TokenStream = content.parse()?;
+
+        Ok(Self {
+            attrs,
+            vis,
+            sig,
+            body,
+            _brace: brace,
+        })
+    }
+}
+
+impl PartialMethod {
+    /// Check if this method has a specific attribute
+    pub fn has_attr(&self, name: &str) -> bool {
+        self.attrs.iter().any(|a| a.path().is_ident(name))
+    }
+}
+
+// =============================================================================
+// Keybinds DSL Parser
+// =============================================================================
+
+/// A parsed keybind entry from the DSL: `"key" | "alt" => handler(args)`
+#[derive(Clone, Debug)]
+pub struct KeybindDslEntry {
+    /// Key strings (alternatives separated by |)
+    pub keys: Vec<syn::LitStr>,
+    /// Handler name
+    pub handler: Ident,
+    /// Handler arguments (expressions captured as TokenStream for later processing)
+    pub args: Vec<TokenStream>,
+}
+
+impl Parse for KeybindDslEntry {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        let mut keys = Vec::new();
+
+        // Parse first key
+        let first: syn::LitStr = input.parse()?;
+        keys.push(first);
+
+        // Parse alternatives: | "key2" | "key3"
+        while input.peek(Token![|]) {
+            input.parse::<Token![|]>()?;
+            let alt: syn::LitStr = input.parse()?;
+            keys.push(alt);
+        }
+
+        // Parse =>
+        input.parse::<Token![=>]>()?;
+
+        // Parse handler name
+        let handler: Ident = input.parse()?;
+
+        // Parse optional arguments: (arg1, arg2)
+        let args = if input.peek(syn::token::Paren) {
+            let content;
+            syn::parenthesized!(content in input);
+            let args_punctuated =
+                content.parse_terminated(parse_arg_expr, Token![,])?;
+            args_punctuated.into_iter().collect()
+        } else {
+            Vec::new()
+        };
+
+        Ok(Self {
+            keys,
+            handler,
+            args,
+        })
+    }
+}
+
+/// Parse a single argument expression as TokenStream.
+/// We don't parse as syn::Expr because we want to preserve the tokens exactly
+/// (they may reference self.foo which needs to be captured in closures).
+fn parse_arg_expr(input: ParseStream) -> syn::Result<TokenStream> {
+    let mut tokens = TokenStream::new();
+    let mut depth = 0;
+
+    while !input.is_empty() {
+        // Stop at comma (unless nested in parens/brackets/braces)
+        if depth == 0 && input.peek(Token![,]) {
+            break;
+        }
+
+        if input.peek(syn::token::Paren) {
+            let content;
+            let paren = syn::parenthesized!(content in input);
+            let inner: TokenStream = content.parse()?;
+            tokens.extend(quote::quote_spanned!(paren.span.join()=> (#inner)));
+            continue;
+        }
+        if input.peek(syn::token::Bracket) {
+            let content;
+            let bracket = syn::bracketed!(content in input);
+            let inner: TokenStream = content.parse()?;
+            tokens.extend(quote::quote_spanned!(bracket.span.join()=> [#inner]));
+            continue;
+        }
+        if input.peek(syn::token::Brace) {
+            let content;
+            let brace = syn::braced!(content in input);
+            let inner: TokenStream = content.parse()?;
+            tokens.extend(quote::quote_spanned!(brace.span.join()=> {#inner}));
+            continue;
+        }
+
+        // Parse other tokens
+        let tt: proc_macro2::TokenTree = input.parse()?;
+        match &tt {
+            proc_macro2::TokenTree::Group(g) => {
+                match g.delimiter() {
+                    proc_macro2::Delimiter::Parenthesis
+                    | proc_macro2::Delimiter::Bracket
+                    | proc_macro2::Delimiter::Brace => {
+                        depth += 1;
+                    }
+                    _ => {}
+                }
+            }
+            _ => {}
+        }
+        tokens.extend(std::iter::once(tt));
+    }
+
+    Ok(tokens)
+}
+
+/// Parsed keybinds DSL - all entries in a keybinds method body
+#[derive(Clone, Debug)]
+pub struct KeybindsDsl {
+    pub entries: Vec<KeybindDslEntry>,
+}
+
+impl Parse for KeybindsDsl {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        let mut entries = Vec::new();
+
+        while !input.is_empty() {
+            entries.push(input.parse()?);
+
+            // Optional trailing comma or newline separator
+            if input.peek(Token![,]) {
+                input.parse::<Token![,]>()?;
+            }
+        }
+
+        Ok(Self { entries })
+    }
+}
 
 /// A context parameter type in a handler signature.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

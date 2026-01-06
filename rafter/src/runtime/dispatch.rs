@@ -189,7 +189,7 @@ impl<'a> EventDispatcher<'a> {
         // Use page-scoped keybind matching
         if let Some(handler_id) = keybinds.match_key_for_page(*key, *modifiers, current_page.as_deref()) {
             let cx = AppContext::new(instance.id(), self.gx.clone(), instance.config().name);
-            instance.dispatch(&handler_id, &cx, self.gx);
+            instance.dispatch(&handler_id, &[], &cx, self.gx);
             return Some(DispatchResult::HandledByKeybind);
         }
 
@@ -385,7 +385,7 @@ fn dispatch_widget_result(
         WidgetResult::Submitted => HandlerId::new("on_submit"),
     };
 
-    instance.dispatch(&handler_id, cx, gx);
+    instance.dispatch(&handler_id, &[], cx, gx);
 }
 
 // =============================================================================

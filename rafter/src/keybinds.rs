@@ -2,6 +2,8 @@
 
 use tuidom::{Key, Modifiers};
 
+use crate::handler_context::{Handler, HandlerContext};
+
 /// Error when parsing a key string.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ParseKeyError {
@@ -485,4 +487,219 @@ fn is_special_key(s: &str) -> bool {
             | "f11"
             | "f12"
     )
+}
+
+// =============================================================================
+// Closure-Based Keybind Types
+// =============================================================================
+
+/// A keybind entry with a closure handler.
+///
+/// Used by the new closure-based handler system. The handler closure
+/// captures `self` and any arguments at creation time.
+pub struct KeybindEntry {
+    /// Unique identifier for configuration (e.g., "my_app.record_view.delete").
+    pub id: String,
+    /// Original key string from macro (e.g., "ctrl+d", "gg").
+    pub default_keys: String,
+    /// Current key sequence (None = disabled).
+    pub keys: Option<Vec<KeyCombo>>,
+    /// Handler closure.
+    pub handler: Handler,
+    /// Page scope.
+    pub scope: KeybindScope,
+}
+
+impl KeybindEntry {
+    /// Create a new keybind entry.
+    pub fn new(
+        id: impl Into<String>,
+        default_keys: impl Into<String>,
+        keys: Vec<KeyCombo>,
+        handler: Handler,
+    ) -> Self {
+        Self {
+            id: id.into(),
+            default_keys: default_keys.into(),
+            keys: Some(keys),
+            handler,
+            scope: KeybindScope::Global,
+        }
+    }
+
+    /// Set the scope.
+    pub fn with_scope(mut self, scope: KeybindScope) -> Self {
+        self.scope = scope;
+        self
+    }
+
+    /// Add an ID prefix.
+    pub fn with_id_prefix(mut self, prefix: &str) -> Self {
+        self.id = format!("{}.{}", prefix, self.id);
+        self
+    }
+
+    /// Check if enabled.
+    pub fn is_enabled(&self) -> bool {
+        self.keys.is_some()
+    }
+
+    /// Check if active for the given page.
+    pub fn is_active_for(&self, current_page: Option<&str>) -> bool {
+        if !self.is_enabled() {
+            return false;
+        }
+        match &self.scope {
+            KeybindScope::Global => true,
+            KeybindScope::Page(page) => current_page == Some(page.as_str()),
+        }
+    }
+}
+
+/// Collection of closure-based keybinds.
+///
+/// Unlike `Keybinds`, this stores handlers as closures rather than `HandlerId`.
+#[derive(Default)]
+pub struct KeybindClosures {
+    binds: Vec<KeybindEntry>,
+}
+
+impl KeybindClosures {
+    /// Create a new empty collection.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Add a keybind entry.
+    pub fn add_entry(&mut self, entry: KeybindEntry) {
+        self.binds.push(entry);
+    }
+
+    /// Add a keybind from key string, ID, and handler.
+    ///
+    /// Returns false and logs if parsing fails.
+    pub fn add(&mut self, key_string: &str, id: &str, handler: Handler) -> bool {
+        match parse_key_string(key_string) {
+            Ok(keys) => {
+                self.binds.push(KeybindEntry::new(id, key_string, keys, handler));
+                true
+            }
+            Err(e) => {
+                log::error!(
+                    "Failed to parse keybind '{}' for handler '{}': {}",
+                    key_string,
+                    id,
+                    e
+                );
+                false
+            }
+        }
+    }
+
+    /// Match a key event against keybinds.
+    ///
+    /// Returns a reference to the handler if a keybind matches.
+    pub fn match_key(&self, key: Key, modifiers: Modifiers) -> Option<&Handler> {
+        self.match_key_for_page(key, modifiers, None)
+    }
+
+    /// Match a key event against keybinds, respecting page scope.
+    pub fn match_key_for_page(
+        &self,
+        key: Key,
+        modifiers: Modifiers,
+        current_page: Option<&str>,
+    ) -> Option<&Handler> {
+        let combo = KeyCombo::new(key, modifiers);
+
+        // Page-scoped keybinds take priority
+        for bind in &self.binds {
+            if let Some(keys) = &bind.keys
+                && keys.len() == 1
+                && keys[0] == combo
+                && let KeybindScope::Page(page) = &bind.scope
+                && current_page == Some(page.as_str())
+            {
+                return Some(&bind.handler);
+            }
+        }
+
+        // Then global keybinds
+        for bind in &self.binds {
+            if let Some(keys) = &bind.keys
+                && keys.len() == 1
+                && keys[0] == combo
+                && bind.scope == KeybindScope::Global
+            {
+                return Some(&bind.handler);
+            }
+        }
+
+        None
+    }
+
+    /// Get all keybind entries.
+    pub fn all(&self) -> &[KeybindEntry] {
+        &self.binds
+    }
+
+    /// Merge another collection into this one.
+    pub fn merge(&mut self, other: KeybindClosures) {
+        for bind in other.binds {
+            self.binds.push(bind);
+        }
+    }
+
+    /// Set scope for all keybinds.
+    pub fn with_scope(mut self, scope: KeybindScope) -> Self {
+        for bind in &mut self.binds {
+            bind.scope = scope.clone();
+        }
+        self
+    }
+
+    /// Add ID prefix for all keybinds.
+    pub fn with_id_prefix(mut self, prefix: &str) -> Self {
+        for bind in &mut self.binds {
+            bind.id = format!("{}.{}", prefix, bind.id);
+        }
+        self
+    }
+
+    /// Check if empty.
+    pub fn is_empty(&self) -> bool {
+        self.binds.is_empty()
+    }
+
+    /// Get count.
+    pub fn len(&self) -> usize {
+        self.binds.len()
+    }
+
+    /// Call a handler with the given context.
+    pub fn call_handler(handler: &Handler, hx: &HandlerContext) {
+        handler(hx);
+    }
+}
+
+impl std::fmt::Debug for KeybindClosures {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("KeybindClosures")
+            .field("count", &self.binds.len())
+            .finish()
+    }
+}
+
+impl Clone for KeybindClosures {
+    fn clone(&self) -> Self {
+        Self {
+            binds: self.binds.iter().map(|b| KeybindEntry {
+                id: b.id.clone(),
+                default_keys: b.default_keys.clone(),
+                keys: b.keys.clone(),
+                handler: b.handler.clone(),
+                scope: b.scope.clone(),
+            }).collect(),
+        }
+    }
 }

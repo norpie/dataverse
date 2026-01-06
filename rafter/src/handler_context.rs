@@ -1,22 +1,107 @@
 //! Handler context bundle for unified context passing to handlers.
 //!
-//! This module provides `HandlerContext`, a single struct that bundles all
-//! available contexts (AppContext, GlobalContext, and optionally ModalContext)
-//! for passing to widget handlers.
+//! This module provides:
+//! - `HandlerContext`: bundles all available contexts for passing to handlers
+//! - `Handler`: closure type for handlers
+//! - `HandlerRegistry`: stores widget event handlers keyed by (element_id, event_type)
 //!
 //! Handlers declare what contexts they need in their signature, and the
-//! `page!` macro generates code to extract the appropriate contexts from
+//! `#[app_impl]` macro generates code to extract the appropriate contexts from
 //! the HandlerContext bundle.
 
 use std::any::Any;
+use std::collections::HashMap;
+use std::sync::{Arc, RwLock};
 
 use crate::{AppContext, GlobalContext, ModalContext};
 
+// =============================================================================
+// Handler Type
+// =============================================================================
+
+/// A handler closure that receives a HandlerContext.
+///
+/// This is the unified handler type used for both keybinds and widget events.
+/// The closure captures `self` and any arguments at creation time.
+pub type Handler = Arc<dyn Fn(&HandlerContext) + Send + Sync>;
+
+// =============================================================================
+// HandlerRegistry
+// =============================================================================
+
+/// Registry for widget event handlers.
+///
+/// Maps (element_id, event_type) to handler closures. Cleared at the start
+/// of each `element()` call to ensure handlers from previous renders don't persist.
+#[derive(Default, Clone)]
+pub struct HandlerRegistry {
+    handlers: Arc<RwLock<HashMap<(String, String), Handler>>>,
+}
+
+impl HandlerRegistry {
+    /// Create a new empty registry.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Register a handler for an element event.
+    ///
+    /// # Arguments
+    /// - `element_id`: The element's unique ID (from Element.id)
+    /// - `event`: The event type (e.g., "on_click", "on_change")
+    /// - `handler`: The handler closure
+    pub fn register(&self, element_id: &str, event: &str, handler: Handler) {
+        if let Ok(mut handlers) = self.handlers.write() {
+            handlers.insert((element_id.to_string(), event.to_string()), handler);
+        }
+    }
+
+    /// Get a handler for an element event.
+    pub fn get(&self, element_id: &str, event: &str) -> Option<Handler> {
+        self.handlers
+            .read()
+            .ok()?
+            .get(&(element_id.to_string(), event.to_string()))
+            .cloned()
+    }
+
+    /// Clear all handlers.
+    ///
+    /// Called at the start of `element()` to remove handlers from previous renders.
+    pub fn clear(&self) {
+        if let Ok(mut handlers) = self.handlers.write() {
+            handlers.clear();
+        }
+    }
+
+    /// Check if the registry is empty.
+    pub fn is_empty(&self) -> bool {
+        self.handlers
+            .read()
+            .map(|h| h.is_empty())
+            .unwrap_or(true)
+    }
+
+    /// Get the number of registered handlers.
+    pub fn len(&self) -> usize {
+        self.handlers.read().map(|h| h.len()).unwrap_or(0)
+    }
+}
+
+impl std::fmt::Debug for HandlerRegistry {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let count = self.len();
+        f.debug_struct("HandlerRegistry")
+            .field("handler_count", &count)
+            .finish()
+    }
+}
+
 /// Context bundle passed to all widget handlers (inline and keybind).
 ///
-/// This struct provides unified access to all available contexts. The `page!`
-/// macro generates closures that accept `&HandlerContext` and extract the
-/// specific contexts each handler needs.
+/// This struct provides unified access to all available contexts. The
+/// `#[app_impl]` macro generates closures that accept `&HandlerContext`
+/// and extract the specific contexts each handler needs.
 ///
 /// # For Apps
 ///
@@ -26,8 +111,14 @@ use crate::{AppContext, GlobalContext, ModalContext};
 /// # For Modals
 ///
 /// Modal handlers have access to `cx()`, `gx()`, and `mx()`.
+///
+/// # For Systems
+///
+/// System handlers only have access to `gx()`. Attempting to use `cx()`
+/// will panic (but compile-time checks in `#[system_impl]` prevent this).
 pub struct HandlerContext<'a> {
-    cx: &'a AppContext,
+    /// App context (None for systems)
+    cx: Option<&'a AppContext>,
     gx: &'a GlobalContext,
     /// Type-erased modal context (None for apps/systems)
     modal_context: Option<&'a (dyn Any + Send + Sync)>,
@@ -37,7 +128,7 @@ impl<'a> HandlerContext<'a> {
     /// Create a HandlerContext for app handlers (no modal context).
     pub fn for_app(cx: &'a AppContext, gx: &'a GlobalContext) -> Self {
         Self {
-            cx,
+            cx: Some(cx),
             gx,
             modal_context: None,
         }
@@ -50,14 +141,33 @@ impl<'a> HandlerContext<'a> {
         mx: &'a ModalContext<R>,
     ) -> Self {
         Self {
-            cx,
+            cx: Some(cx),
             gx,
             modal_context: Some(mx),
         }
     }
 
+    /// Create a HandlerContext for system handlers (no app context).
+    pub fn for_system(gx: &'a GlobalContext) -> Self {
+        Self {
+            cx: None,
+            gx,
+            modal_context: None,
+        }
+    }
+
     /// Get the app context.
+    ///
+    /// # Panics
+    ///
+    /// Panics if called from a system handler. With compile-time checks
+    /// in `#[system_impl]`, this should never happen in correctly written code.
     pub fn cx(&self) -> &AppContext {
+        self.cx.expect("cx() called in system context (no AppContext available)")
+    }
+
+    /// Try to get the app context (returns None for systems).
+    pub fn try_cx(&self) -> Option<&AppContext> {
         self.cx
     }
 
@@ -83,6 +193,11 @@ impl<'a> HandlerContext<'a> {
     /// Try to get the modal context (returns None if not in a modal).
     pub fn try_mx<R: Send + Sync + 'static>(&self) -> Option<&ModalContext<R>> {
         self.modal_context?.downcast_ref()
+    }
+
+    /// Check if this context has an app context.
+    pub fn has_app_context(&self) -> bool {
+        self.cx.is_some()
     }
 
     /// Check if this context is for a modal.

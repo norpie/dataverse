@@ -27,7 +27,7 @@ pub use app_context::{
     ErrorSender,
 };
 pub use event::Event;
-pub use handler_context::HandlerContext;
+pub use handler_context::{Handler, HandlerContext, HandlerRegistry};
 pub use global_context::{
     ArcEvent, DataStore, GlobalContext, GlobalModalRequest, InstanceCommand, InstanceQuery,
     RequestTarget,
@@ -37,8 +37,8 @@ pub use instance::{
     SpawnError,
 };
 pub use keybinds::{
-    parse_key_string, HandlerId, KeyCombo, Keybind, KeybindError, KeybindInfo, KeybindScope,
-    Keybinds, ParseKeyError,
+    parse_key_string, HandlerId, KeyCombo, Keybind, KeybindClosures, KeybindEntry, KeybindError,
+    KeybindInfo, KeybindScope, Keybinds, ParseKeyError,
 };
 pub use modal::{Modal, ModalContext, ModalEntry, ModalPosition, ModalSize};
 pub use registration::{
