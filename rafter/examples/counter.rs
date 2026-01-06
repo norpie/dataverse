@@ -24,11 +24,9 @@ struct ReallySureModal;
 #[modal_impl]
 impl ReallySureModal {
     #[keybinds]
-    fn keys() -> Keybinds {
-        keybinds! {
-            "y" | "enter" => confirm,
-            "n" | "escape" => cancel,
-        }
+    fn keys() {
+        bind("y", "enter", confirm);
+        bind("n", "escape", cancel);
     }
 
     #[handler]
@@ -68,17 +66,15 @@ struct ConfirmModal {
 #[modal_impl]
 impl ConfirmModal {
     #[keybinds]
-    fn keys() -> Keybinds {
-        keybinds! {
-            "y" | "enter" => confirm,
-            "n" | "escape" => cancel,
-        }
+    fn keys() {
+        bind("y", "enter", confirm);
+        bind("n", "escape", cancel);
     }
 
     #[handler]
     async fn confirm(&self, cx: &AppContext, mx: &ModalContext<bool>) {
         // Show nested confirmation modal
-        let really_sure = cx.modal(ReallySureModal).await;
+        let really_sure = cx.modal(ReallySureModal::default()).await;
         if really_sure {
             mx.close(true);
         }
@@ -123,29 +119,27 @@ impl Counter {
     }
 
     #[keybinds]
-    fn keys() -> Keybinds {
-        keybinds! {
-            "k" | "up" => increment,
-            "j" | "down" => decrement,
-            "+" => increment,
-            "-" => decrement,
-            "r" => reset,
-            "l" => load_data,
-            "1" => set_step_1,
-            "5" => set_step_5,
-            "0" => set_step_10,
-            "q" => quit,
-        }
+    fn keys() {
+        bind("k", "up", increment);
+        bind("j", "down", decrement);
+        bind("+", increment);
+        bind("-", decrement);
+        bind("r", reset);
+        bind("l", load_data);
+        bind("1", set_step_1);
+        bind("5", set_step_5);
+        bind("0", set_step_10);
+        bind("q", quit);
     }
 
     #[handler]
-    fn increment(&self) {
+    async fn increment(&self) {
         let step = self.step.get();
         self.value.update(|v| *v += step);
     }
 
     #[handler]
-    fn decrement(&self) {
+    async fn decrement(&self) {
         let step = self.step.get();
         self.value.update(|v| *v -= step);
     }
@@ -156,6 +150,7 @@ impl Counter {
         let confirmed = cx
             .modal(ConfirmModal {
                 message: "Reset the counter to zero?".to_string(),
+                ..Default::default()
             })
             .await;
 
@@ -168,17 +163,17 @@ impl Counter {
     }
 
     #[handler]
-    fn set_step_1(&self) {
+    async fn set_step_1(&self) {
         self.step.set(1);
     }
 
     #[handler]
-    fn set_step_5(&self) {
+    async fn set_step_5(&self) {
         self.step.set(5);
     }
 
     #[handler]
-    fn set_step_10(&self) {
+    async fn set_step_10(&self) {
         self.step.set(10);
     }
 
@@ -217,7 +212,7 @@ impl Counter {
     }
 
     #[handler]
-    fn quit(&self, gx: &GlobalContext) {
+    async fn quit(&self, gx: &GlobalContext) {
         gx.shutdown();
     }
 

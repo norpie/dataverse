@@ -107,16 +107,145 @@ impl PartialMethod {
     pub fn has_attr(&self, name: &str) -> bool {
         self.attrs.iter().any(|a| a.path().is_ident(name))
     }
+
+    /// Check if this method is named a specific name
+    pub fn is_named(&self, name: &str) -> bool {
+        self.sig.ident == name
+    }
+}
+
+// =============================================================================
+// Method Reconstruction
+// =============================================================================
+
+/// Reconstruct a method from PartialMethod back to valid TokenStream
+pub fn reconstruct_method(method: &PartialMethod) -> TokenStream {
+    let attrs = &method.attrs;
+    let vis = &method.vis;
+    let sig = &method.sig;
+    let body = &method.body;
+
+    quote! {
+        #(#attrs)*
+        #vis #sig {
+            #body
+        }
+    }
+}
+
+/// Custom attributes to strip from methods
+const CUSTOM_ATTRS: &[&str] = &[
+    "keybinds",
+    "handler",
+    "event_handler",
+    "request_handler",
+    "page",
+];
+
+/// Strip custom attributes from a PartialMethod and return as TokenStream
+pub fn reconstruct_method_stripped(method: &PartialMethod) -> TokenStream {
+    let attrs: Vec<_> = method
+        .attrs
+        .iter()
+        .filter(|a| !CUSTOM_ATTRS.iter().any(|name| a.path().is_ident(name)))
+        .collect();
+
+    let vis = &method.vis;
+    let sig = &method.sig;
+    let body = &method.body;
+
+    quote! {
+        #(#attrs)*
+        #vis #sig {
+            #body
+        }
+    }
+}
+
+/// Detect which contexts a handler method needs from its signature.
+/// Works with PartialMethod's Signature.
+///
+/// Note: All handlers are assumed to be async. The asyncness of the signature
+/// is not checked here - handlers that aren't async will fail at compile time.
+pub fn detect_handler_contexts_from_sig(sig: &Signature) -> HandlerContexts {
+    let mut contexts = HandlerContexts::default();
+
+    for arg in &sig.inputs {
+        if let syn::FnArg::Typed(pat_type) = arg {
+            let ty = &pat_type.ty;
+            let ty_str = quote!(#ty).to_string();
+
+            if ty_str.contains("AppContext") {
+                contexts.app_context = true;
+                contexts.param_order.push(ContextParam::App);
+            } else if ty_str.contains("GlobalContext") {
+                contexts.global_context = true;
+                contexts.param_order.push(ContextParam::Global);
+            } else if ty_str.contains("ModalContext") {
+                contexts.modal_context = true;
+                contexts.param_order.push(ContextParam::Modal);
+            }
+        }
+    }
+
+    contexts
+}
+
+/// Extract full handler information from a signature.
+///
+/// Returns HandlerInfo containing:
+/// - Context requirements (which contexts the handler needs)
+/// - Non-context arguments (for wrapper signature generation)
+pub fn extract_handler_info(name: &Ident, sig: &Signature) -> HandlerInfo {
+    let mut contexts = HandlerContexts::default();
+    let mut args = Vec::new();
+
+    for arg in &sig.inputs {
+        if let syn::FnArg::Typed(pat_type) = arg {
+            let ty = &pat_type.ty;
+            let ty_str = quote!(#ty).to_string();
+
+            // Check if this is a context parameter
+            if ty_str.contains("AppContext") {
+                contexts.app_context = true;
+                contexts.param_order.push(ContextParam::App);
+            } else if ty_str.contains("GlobalContext") {
+                contexts.global_context = true;
+                contexts.param_order.push(ContextParam::Global);
+            } else if ty_str.contains("ModalContext") {
+                contexts.modal_context = true;
+                contexts.param_order.push(ContextParam::Modal);
+            } else {
+                // Non-context argument - capture for wrapper generation
+                let pat = &pat_type.pat;
+                args.push(HandlerArg {
+                    pattern: quote!(#pat),
+                    ty: quote!(#ty),
+                });
+            }
+        }
+    }
+
+    HandlerInfo {
+        name: name.clone(),
+        contexts,
+        args,
+    }
 }
 
 // =============================================================================
 // Keybinds DSL Parser
 // =============================================================================
 
-/// A parsed keybind entry from the DSL: `"key" | "alt" => handler(args)`
+/// A parsed keybind entry from the DSL.
+///
+/// Supports two formats (both valid Rust syntax):
+/// - `bind("key1", "key2", handler)` - multiple keys
+/// - `bind("key", handler)` - single key
+/// - `bind("key", handler(arg1, arg2))` - with arguments
 #[derive(Clone, Debug)]
 pub struct KeybindDslEntry {
-    /// Key strings (alternatives separated by |)
+    /// Key strings
     pub keys: Vec<syn::LitStr>,
     /// Handler name
     pub handler: Ident,
@@ -126,35 +255,58 @@ pub struct KeybindDslEntry {
 
 impl Parse for KeybindDslEntry {
     fn parse(input: ParseStream) -> syn::Result<Self> {
-        let mut keys = Vec::new();
-
-        // Parse first key
-        let first: syn::LitStr = input.parse()?;
-        keys.push(first);
-
-        // Parse alternatives: | "key2" | "key3"
-        while input.peek(Token![|]) {
-            input.parse::<Token![|]>()?;
-            let alt: syn::LitStr = input.parse()?;
-            keys.push(alt);
+        // Expect: bind("key1", "key2", handler) or bind("key", handler(args))
+        let bind_ident: Ident = input.parse()?;
+        if bind_ident != "bind" {
+            return Err(syn::Error::new(
+                bind_ident.span(),
+                "expected `bind`",
+            ));
         }
 
-        // Parse =>
-        input.parse::<Token![=>]>()?;
+        let content;
+        syn::parenthesized!(content in input);
+
+        // Parse keys (string literals) until we hit an identifier (handler name)
+        let mut keys = Vec::new();
+        loop {
+            if content.peek(syn::LitStr) {
+                let key: syn::LitStr = content.parse()?;
+                keys.push(key);
+                // Consume comma if present
+                if content.peek(Token![,]) {
+                    content.parse::<Token![,]>()?;
+                }
+            } else {
+                break;
+            }
+        }
+
+        if keys.is_empty() {
+            return Err(syn::Error::new(
+                content.span(),
+                "expected at least one key string",
+            ));
+        }
 
         // Parse handler name
-        let handler: Ident = input.parse()?;
+        let handler: Ident = content.parse()?;
 
-        // Parse optional arguments: (arg1, arg2)
-        let args = if input.peek(syn::token::Paren) {
-            let content;
-            syn::parenthesized!(content in input);
+        // Parse optional arguments: handler(arg1, arg2)
+        let args = if content.peek(syn::token::Paren) {
+            let args_content;
+            syn::parenthesized!(args_content in content);
             let args_punctuated =
-                content.parse_terminated(parse_arg_expr, Token![,])?;
+                args_content.parse_terminated(parse_arg_expr, Token![,])?;
             args_punctuated.into_iter().collect()
         } else {
             Vec::new()
         };
+
+        // Consume trailing comma if present (for the last arg in bind())
+        if content.peek(Token![,]) {
+            content.parse::<Token![,]>()?;
+        }
 
         Ok(Self {
             keys,
@@ -232,10 +384,9 @@ impl Parse for KeybindsDsl {
 
         while !input.is_empty() {
             entries.push(input.parse()?);
-
-            // Optional trailing comma or newline separator
-            if input.peek(Token![,]) {
-                input.parse::<Token![,]>()?;
+            // Consume trailing semicolon if present
+            if input.peek(Token![;]) {
+                input.parse::<Token![;]>()?;
             }
         }
 
@@ -255,6 +406,8 @@ pub enum ContextParam {
 ///
 /// Handlers declare what contexts they need via their signature (varargs pattern).
 /// This tracks both which contexts are needed AND their order in the signature.
+///
+/// Note: All handlers are assumed to be async. Sync handlers are not supported.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct HandlerContexts {
     pub app_context: bool,
@@ -292,7 +445,7 @@ pub struct KeybindsMethod {
     pub scope: KeybindScope,
 }
 
-/// Information about a handler method
+/// Information about a handler method (legacy - unused)
 pub struct HandlerMethod {
     /// Method name
     pub name: Ident,
@@ -300,6 +453,26 @@ pub struct HandlerMethod {
     pub contexts: HandlerContexts,
     /// Handler is async
     pub is_async: bool,
+}
+
+/// A non-context argument in a handler signature.
+#[derive(Clone, Debug)]
+pub struct HandlerArg {
+    /// The argument pattern (e.g., `id` or `_`)
+    pub pattern: TokenStream,
+    /// The argument type (e.g., `u64`)
+    pub ty: TokenStream,
+}
+
+/// Full information about a handler method needed for wrapper generation.
+#[derive(Clone, Debug)]
+pub struct HandlerInfo {
+    /// Handler name
+    pub name: Ident,
+    /// Context requirements
+    pub contexts: HandlerContexts,
+    /// Non-context arguments (excluding self and context params)
+    pub args: Vec<HandlerArg>,
 }
 
 /// Information about an event handler method
@@ -714,17 +887,6 @@ pub fn generate_closure_for_keybind(
         })
         .collect();
 
-    // Generate context injections based on handler signature order
-    let context_injections: Vec<TokenStream> = contexts
-        .param_order
-        .iter()
-        .map(|param| match param {
-            ContextParam::App => quote! { __hx.cx() },
-            ContextParam::Global => quote! { __hx.gx() },
-            ContextParam::Modal => quote! { __hx.mx() },
-        })
-        .collect();
-
     // Argument names for closure capture
     let arg_names: Vec<Ident> = (0..entry.args.len())
         .map(|i| format_ident!("__arg{}", i))
@@ -738,21 +900,51 @@ pub fn generate_closure_for_keybind(
                 .iter()
                 .map(|name| quote! { let #name = #name.clone(); })
                 .collect();
-            let arg_usages: Vec<TokenStream> = arg_names
+
+            // Clone contexts for the async spawn
+            let context_clones: Vec<TokenStream> = contexts
+                .param_order
+                .iter()
+                .enumerate()
+                .map(|(i, param)| {
+                    let ctx_name = format_ident!("__ctx{}", i);
+                    match param {
+                        ContextParam::App => quote! { let #ctx_name = __hx.cx().clone(); },
+                        ContextParam::Global => quote! { let #ctx_name = __hx.gx().clone(); },
+                        ContextParam::Modal => quote! { let #ctx_name = __hx.mx().clone(); },
+                    }
+                })
+                .collect();
+
+            let context_refs: Vec<TokenStream> = (0..contexts.param_order.len())
+                .map(|i| {
+                    let ctx_name = format_ident!("__ctx{}", i);
+                    quote! { &#ctx_name }
+                })
+                .collect();
+
+            let call_params: Vec<TokenStream> = arg_names
                 .iter()
                 .map(|name| quote! { #name.clone() })
+                .chain(context_refs)
                 .collect();
-            let all_call_params: Vec<TokenStream> = arg_usages
-                .into_iter()
-                .chain(context_injections.clone())
-                .collect();
+
+            // All handlers are async - spawn them
+            let handler_call = quote! {
+                #(#context_clones)*
+                let __self = __self.clone();
+                #(#cloned_args)*
+                tokio::spawn(async move {
+                    __self.#handler_name(#(#call_params),*).await;
+                });
+            };
 
             quote! {
                 __keybinds.add(#key, #keybind_id, std::sync::Arc::new({
                     let __self = __self.clone();
                     #(#cloned_args)*
                     move |__hx: &rafter::HandlerContext| {
-                        __self.#handler_name(#(#all_call_params),*);
+                        #handler_call
                     }
                 }));
             }
@@ -821,6 +1013,376 @@ pub fn generate_keybinds_closures_impl(
             let mut __keybinds = rafter::KeybindClosures::new();
             #(#all_closure_code)*
             __keybinds
+        }
+    }
+}
+
+// =============================================================================
+// Event/Request Dispatch Generation
+// =============================================================================
+
+/// Context type for dispatch generation - determines which contexts are available.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DispatchContextType {
+    /// App dispatch: has AppContext + GlobalContext
+    App,
+    /// System dispatch: only GlobalContext
+    System,
+}
+
+/// Generate event dispatch methods.
+///
+/// For App: `dispatch_event(&self, event_type, event, cx, gx)`
+/// For System: `dispatch_event(&self, event_type, event, gx)`
+pub fn generate_event_dispatch(
+    event_handlers: &[EventHandlerMethod],
+    context_type: DispatchContextType,
+) -> TokenStream {
+    if event_handlers.is_empty() {
+        return quote! {};
+    }
+
+    let dispatch_arms: Vec<_> = event_handlers
+        .iter()
+        .map(|h| {
+            let name = &h.name;
+            let event_type: syn::Type = syn::parse_str(&h.event_type).unwrap();
+            let (call, clones) = generate_event_handler_call_and_clones(name, &h.contexts, context_type);
+
+            quote! {
+                t if t == std::any::TypeId::of::<#event_type>() => {
+                    if let Ok(event) = event.downcast::<#event_type>() {
+                        #clones
+                        tokio::spawn(async move {
+                            #call
+                        });
+                        return true;
+                    }
+                    false
+                }
+            }
+        })
+        .collect();
+
+    let has_handler_arms: Vec<_> = event_handlers
+        .iter()
+        .map(|h| {
+            let event_type: syn::Type = syn::parse_str(&h.event_type).unwrap();
+            quote! {
+                t if t == std::any::TypeId::of::<#event_type>() => true,
+            }
+        })
+        .collect();
+
+    let sig = match context_type {
+        DispatchContextType::App => quote! {
+            fn dispatch_event(
+                &self,
+                event_type: std::any::TypeId,
+                event: Box<dyn std::any::Any + Send + Sync>,
+                cx: &rafter::AppContext,
+                gx: &rafter::GlobalContext,
+            ) -> bool
+        },
+        DispatchContextType::System => quote! {
+            fn dispatch_event(
+                &self,
+                event_type: std::any::TypeId,
+                event: Box<dyn std::any::Any + Send + Sync>,
+                gx: &rafter::GlobalContext,
+            ) -> bool
+        },
+    };
+
+    quote! {
+        #sig {
+            match event_type {
+                #(#dispatch_arms)*
+                _ => false,
+            }
+        }
+
+        fn has_event_handler(&self, event_type: std::any::TypeId) -> bool {
+            match event_type {
+                #(#has_handler_arms)*
+                _ => false,
+            }
+        }
+    }
+}
+
+/// Generate request dispatch methods.
+///
+/// For App: `dispatch_request(&self, request_type, request, cx, gx)`
+/// For System: `dispatch_request(&self, request_type, request, gx)`
+pub fn generate_request_dispatch(
+    request_handlers: &[RequestHandlerMethod],
+    context_type: DispatchContextType,
+) -> TokenStream {
+    if request_handlers.is_empty() {
+        return quote! {};
+    }
+
+    let dispatch_arms: Vec<_> = request_handlers
+        .iter()
+        .map(|h| {
+            let name = &h.name;
+            let request_type: syn::Type = syn::parse_str(&h.request_type).unwrap();
+            let (call, clones) = generate_request_handler_call_and_clones(name, &h.contexts, context_type);
+
+            quote! {
+                t if t == std::any::TypeId::of::<#request_type>() => {
+                    if let Ok(request) = request.downcast::<#request_type>() {
+                        #clones
+                        return Some(Box::pin(async move {
+                            let response = #call;
+                            Box::new(response) as Box<dyn std::any::Any + Send + Sync>
+                        }));
+                    }
+                    None
+                }
+            }
+        })
+        .collect();
+
+    let has_handler_arms: Vec<_> = request_handlers
+        .iter()
+        .map(|h| {
+            let request_type: syn::Type = syn::parse_str(&h.request_type).unwrap();
+            quote! {
+                t if t == std::any::TypeId::of::<#request_type>() => true,
+            }
+        })
+        .collect();
+
+    let sig = match context_type {
+        DispatchContextType::App => quote! {
+            fn dispatch_request(
+                &self,
+                request_type: std::any::TypeId,
+                request: Box<dyn std::any::Any + Send + Sync>,
+                cx: &rafter::AppContext,
+                gx: &rafter::GlobalContext,
+            ) -> Option<std::pin::Pin<Box<dyn std::future::Future<Output = Box<dyn std::any::Any + Send + Sync>> + Send>>>
+        },
+        DispatchContextType::System => quote! {
+            fn dispatch_request(
+                &self,
+                request_type: std::any::TypeId,
+                request: Box<dyn std::any::Any + Send + Sync>,
+                gx: &rafter::GlobalContext,
+            ) -> Option<std::pin::Pin<Box<dyn std::future::Future<Output = Box<dyn std::any::Any + Send + Sync>> + Send>>>
+        },
+    };
+
+    quote! {
+        #sig {
+            match request_type {
+                #(#dispatch_arms)*
+                _ => None,
+            }
+        }
+
+        fn has_request_handler(&self, request_type: std::any::TypeId) -> bool {
+            match request_type {
+                #(#has_handler_arms)*
+                _ => false,
+            }
+        }
+    }
+}
+
+/// Generate event handler call expression and clone statements.
+fn generate_event_handler_call_and_clones(
+    name: &Ident,
+    contexts: &HandlerContexts,
+    context_type: DispatchContextType,
+) -> (TokenStream, TokenStream) {
+    match context_type {
+        DispatchContextType::App => {
+            let call = match (contexts.app_context, contexts.global_context) {
+                (false, false) => quote! { this.#name(*event).await; },
+                (true, false) => quote! { this.#name(*event, &cx).await; },
+                (false, true) => quote! { this.#name(*event, &gx).await; },
+                (true, true) => quote! { this.#name(*event, &cx, &gx).await; },
+            };
+            let clones = match (contexts.app_context, contexts.global_context) {
+                (false, false) => quote! { let this = self.clone(); },
+                (true, false) => quote! { let this = self.clone(); let cx = cx.clone(); },
+                (false, true) => quote! { let this = self.clone(); let gx = gx.clone(); },
+                (true, true) => quote! { let this = self.clone(); let cx = cx.clone(); let gx = gx.clone(); },
+            };
+            (call, clones)
+        }
+        DispatchContextType::System => {
+            // Systems only have GlobalContext
+            let call = if contexts.global_context {
+                quote! { this.#name(*event, &gx).await; }
+            } else {
+                quote! { this.#name(*event).await; }
+            };
+            let clones = if contexts.global_context {
+                quote! { let this = self.clone(); let gx = gx.clone(); }
+            } else {
+                quote! { let this = self.clone(); }
+            };
+            (call, clones)
+        }
+    }
+}
+
+/// Generate request handler call expression and clone statements.
+fn generate_request_handler_call_and_clones(
+    name: &Ident,
+    contexts: &HandlerContexts,
+    context_type: DispatchContextType,
+) -> (TokenStream, TokenStream) {
+    match context_type {
+        DispatchContextType::App => {
+            let call = match (contexts.app_context, contexts.global_context) {
+                (false, false) => quote! { this.#name(*request).await },
+                (true, false) => quote! { this.#name(*request, &cx).await },
+                (false, true) => quote! { this.#name(*request, &gx).await },
+                (true, true) => quote! { this.#name(*request, &cx, &gx).await },
+            };
+            let clones = match (contexts.app_context, contexts.global_context) {
+                (false, false) => quote! { let this = self.clone(); },
+                (true, false) => quote! { let this = self.clone(); let cx = cx.clone(); },
+                (false, true) => quote! { let this = self.clone(); let gx = gx.clone(); },
+                (true, true) => quote! { let this = self.clone(); let cx = cx.clone(); let gx = gx.clone(); },
+            };
+            (call, clones)
+        }
+        DispatchContextType::System => {
+            // Systems only have GlobalContext
+            let call = if contexts.global_context {
+                quote! { this.#name(*request, &gx).await }
+            } else {
+                quote! { this.#name(*request).await }
+            };
+            let clones = if contexts.global_context {
+                quote! { let this = self.clone(); let gx = gx.clone(); }
+            } else {
+                quote! { let this = self.clone(); }
+            };
+            (call, clones)
+        }
+    }
+}
+
+// =============================================================================
+// Handler Wrapper Generation
+// =============================================================================
+
+/// Generate dispatch wrapper methods for all handlers.
+///
+/// For each handler, generates a `__wrap_{name}` method that:
+/// - Takes the handler's non-context arguments + `&HandlerContext`
+/// - Clones everything needed for the async spawn
+/// - Spawns the async handler with proper context injection
+///
+/// Example:
+/// ```ignore
+/// // User writes:
+/// #[handler]
+/// async fn delete(&self, id: u64, cx: &AppContext) { ... }
+///
+/// // Macro generates:
+/// fn __wrap_delete(&self, id: u64, __hx: &rafter::HandlerContext) {
+///     let __self = self.clone();
+///     let __arg0 = id.clone();
+///     let __ctx0 = __hx.cx().clone();
+///     tokio::spawn(async move {
+///         __self.delete(__arg0, &__ctx0).await;
+///     });
+/// }
+/// ```
+pub fn generate_handler_wrappers(handlers: &[HandlerInfo]) -> TokenStream {
+    let wrappers: Vec<TokenStream> = handlers
+        .iter()
+        .map(|handler| generate_single_wrapper(handler))
+        .collect();
+
+    quote! {
+        #(#wrappers)*
+    }
+}
+
+/// Generate a single dispatch wrapper method for a handler.
+fn generate_single_wrapper(handler: &HandlerInfo) -> TokenStream {
+    let handler_name = &handler.name;
+    let wrapper_name = format_ident!("__wrap_{}", handler_name);
+
+    // Generate wrapper parameters: non-context args + HandlerContext
+    let wrapper_params: Vec<TokenStream> = handler
+        .args
+        .iter()
+        .map(|arg| {
+            let pat = &arg.pattern;
+            let ty = &arg.ty;
+            quote! { #pat: #ty }
+        })
+        .collect();
+
+    // Generate argument clones
+    let arg_clones: Vec<TokenStream> = handler
+        .args
+        .iter()
+        .enumerate()
+        .map(|(i, arg)| {
+            let arg_name = format_ident!("__arg{}", i);
+            let pat = &arg.pattern;
+            quote! { let #arg_name = #pat.clone(); }
+        })
+        .collect();
+
+    // Generate context clones based on handler's context requirements
+    let context_clones: Vec<TokenStream> = handler
+        .contexts
+        .param_order
+        .iter()
+        .enumerate()
+        .map(|(i, param)| {
+            let ctx_name = format_ident!("__ctx{}", i);
+            match param {
+                ContextParam::App => quote! { let #ctx_name = __hx.cx().clone(); },
+                ContextParam::Global => quote! { let #ctx_name = __hx.gx().clone(); },
+                ContextParam::Modal => quote! { let #ctx_name = __hx.mx().clone(); },
+            }
+        })
+        .collect();
+
+    // Generate context references for the handler call
+    let context_refs: Vec<TokenStream> = (0..handler.contexts.param_order.len())
+        .map(|i| {
+            let ctx_name = format_ident!("__ctx{}", i);
+            quote! { &#ctx_name }
+        })
+        .collect();
+
+    // Generate argument usages for the handler call
+    let arg_usages: Vec<TokenStream> = (0..handler.args.len())
+        .map(|i| {
+            let arg_name = format_ident!("__arg{}", i);
+            quote! { #arg_name }
+        })
+        .collect();
+
+    // Combine args and contexts for the handler call
+    let call_params: Vec<TokenStream> = arg_usages
+        .into_iter()
+        .chain(context_refs)
+        .collect();
+
+    quote! {
+        #[doc(hidden)]
+        fn #wrapper_name(&self, #(#wrapper_params,)* __hx: &rafter::HandlerContext) {
+            let __self = self.clone();
+            #(#arg_clones)*
+            #(#context_clones)*
+            tokio::spawn(async move {
+                __self.#handler_name(#(#call_params),*).await;
+            });
         }
     }
 }

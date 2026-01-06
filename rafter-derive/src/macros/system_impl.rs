@@ -1,37 +1,32 @@
 //! The `#[system_impl]` attribute macro for implementing the System trait.
 
+use std::collections::HashMap;
+
 use proc_macro2::TokenStream;
 use quote::quote;
-use syn::{ImplItem, ImplItemFn, ItemImpl, parse2};
+use syn::parse2;
 
 use super::impl_common::{
-    EventHandlerMethod, HandlerMethod, KeybindScope, KeybindsMethod, PageMethod,
-    RequestHandlerMethod, get_type_name, is_element_method, is_keybinds_method,
-    parse_event_handler_metadata, parse_handler_metadata, parse_page_metadata,
-    parse_request_handler_metadata, strip_custom_attrs, system_metadata_mod, to_snake_case,
+    DispatchContextType, EventHandlerMethod, HandlerContexts, HandlerInfo, KeybindScope,
+    KeybindsMethod, PageMethod, PartialImplBlock, RequestHandlerMethod,
+    extract_handler_info, generate_event_dispatch, generate_handler_wrappers,
+    generate_keybinds_closures_impl, generate_request_dispatch, get_type_name,
+    parse_event_handler_metadata, parse_request_handler_metadata, reconstruct_method,
+    reconstruct_method_stripped, system_metadata_mod,
 };
-
-/// Check if method is named "on_init"
-fn is_on_init_method(method: &ImplItemFn) -> bool {
-    method.sig.ident == "on_init"
-}
-
-/// Check if method is named "overlay"
-fn is_overlay_method(method: &ImplItemFn) -> bool {
-    method.sig.ident == "overlay"
-}
 
 pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
     // No attributes currently supported for system_impl
     let _ = attr;
 
-    let mut impl_block: ItemImpl = match parse2(item) {
+    // Parse as PartialImplBlock to keep method bodies as raw tokens
+    let partial_impl: PartialImplBlock = match parse2(item) {
         Ok(i) => i,
         Err(e) => return e.to_compile_error(),
     };
 
     // Get the type we're implementing for
-    let self_ty = impl_block.self_ty.clone();
+    let self_ty = partial_impl.self_ty.clone();
     let type_name = match get_type_name(&self_ty) {
         Some(n) => n,
         None => {
@@ -41,88 +36,112 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
     };
 
     let metadata_mod = system_metadata_mod(&type_name);
-    let system_name_snake = to_snake_case(&type_name.to_string());
 
     // Collect method information
-    let mut keybinds_methods = Vec::new();
-    let mut handlers = Vec::new();
-    let mut event_handlers = Vec::new();
-    let mut request_handlers = Vec::new();
+    let mut keybinds_methods: Vec<(KeybindsMethod, TokenStream)> = Vec::new();
+    let mut handler_contexts: HashMap<String, HandlerContexts> = HashMap::new();
+    let mut handler_infos: Vec<HandlerInfo> = Vec::new();
+    let mut event_handlers: Vec<EventHandlerMethod> = Vec::new();
+    let mut request_handlers: Vec<RequestHandlerMethod> = Vec::new();
     let mut page_methods: Vec<PageMethod> = Vec::new();
     let mut has_element = false;
     let mut has_on_init = false;
     let mut has_overlay = false;
 
-    for item in &impl_block.items {
-        if let ImplItem::Fn(method) = item {
-            if is_keybinds_method(method) {
-                // Systems don't support page scope - always global
-                keybinds_methods.push(KeybindsMethod {
+    // Reconstructed methods for the impl block
+    let mut reconstructed_methods: Vec<TokenStream> = Vec::new();
+
+    for method in &partial_impl.methods {
+        // Check for keybinds method
+        if method.has_attr("keybinds") {
+            keybinds_methods.push((
+                KeybindsMethod {
                     name: method.sig.ident.clone(),
-                    scope: KeybindScope::Global,
-                });
+                    scope: KeybindScope::Global, // Systems don't support page scope
+                },
+                method.body.clone(),
+            ));
+            // Don't add keybinds methods to reconstructed output - they're consumed
+            continue;
+        }
+
+        // Check for handler method
+        if method.has_attr("handler") {
+            let handler_info = extract_handler_info(&method.sig.ident, &method.sig);
+
+            // Check for ModalContext usage - systems cannot use modal context
+            if handler_info.contexts.modal_context {
+                return syn::Error::new_spanned(
+                    &method.sig,
+                    "System handlers cannot use ModalContext. ModalContext is only available in modal handlers.",
+                )
+                .to_compile_error();
             }
 
-            if let Some(handler) = parse_handler_metadata(method) {
-                // Check for ModalContext usage - systems cannot use modal context
-                if handler.contexts.modal_context {
-                    return syn::Error::new_spanned(
-                        &method.sig,
-                        "System handlers cannot use ModalContext. ModalContext is only available in modal handlers.",
-                    )
-                    .to_compile_error();
+            // Check for AppContext usage - systems only get GlobalContext
+            if handler_info.contexts.app_context {
+                return syn::Error::new_spanned(
+                    &method.sig,
+                    "System handlers cannot use AppContext. Systems only have access to GlobalContext.",
+                )
+                .to_compile_error();
+            }
+
+            handler_contexts.insert(method.sig.ident.to_string(), handler_info.contexts.clone());
+            handler_infos.push(handler_info);
+        }
+
+        // For event/request handlers, we need to convert to ImplItemFn temporarily
+        let reconstructed = reconstruct_method(method);
+        if let Ok(impl_item) = syn::parse2::<syn::ImplItemFn>(reconstructed.clone()) {
+            if method.has_attr("event_handler") {
+                if let Some(event_handler) = parse_event_handler_metadata(&impl_item) {
+                    event_handlers.push(event_handler);
                 }
-                // Check for AppContext usage - systems only get GlobalContext
-                if handler.contexts.app_context {
-                    return syn::Error::new_spanned(
-                        &method.sig,
-                        "System handlers cannot use AppContext. Systems only have access to GlobalContext.",
-                    )
-                    .to_compile_error();
+            }
+            if method.has_attr("request_handler") {
+                if let Some(request_handler) = parse_request_handler_metadata(&impl_item) {
+                    request_handlers.push(request_handler);
                 }
-                handlers.push(handler);
-            }
-
-            if let Some(event_handler) = parse_event_handler_metadata(method) {
-                event_handlers.push(event_handler);
-            }
-
-            if let Some(request_handler) = parse_request_handler_metadata(method) {
-                request_handlers.push(request_handler);
-            }
-
-            if let Some(page) = parse_page_metadata(method) {
-                page_methods.push(page);
-            }
-
-            if is_element_method(method) {
-                has_element = true;
-            }
-
-            if is_on_init_method(method) {
-                has_on_init = true;
-            }
-
-            if is_overlay_method(method) {
-                has_overlay = true;
             }
         }
+
+        // Check for page method - systems don't support #[page]
+        if method.has_attr("page") {
+            page_methods.push(PageMethod {
+                name: method.sig.ident.clone(),
+                page_name: None,
+                body: method.body.clone(),
+            });
+        }
+
+        // Check special methods using is_named()
+        if method.is_named("element") {
+            has_element = true;
+        }
+        if method.is_named("on_init") {
+            has_on_init = true;
+        }
+        if method.is_named("overlay") {
+            has_overlay = true;
+        }
+
+        // Add to reconstructed methods (with custom attrs stripped)
+        reconstructed_methods.push(reconstruct_method_stripped(method));
     }
 
     // Systems don't support #[page] - they use overlays instead
     if !page_methods.is_empty() {
         return syn::Error::new_spanned(
-            &impl_block.self_ty,
+            &partial_impl.self_ty,
             "Systems don't support #[page]. Use overlay() method instead.",
         )
         .to_compile_error();
     }
 
-    // Strip our custom attributes from methods
-    strip_custom_attrs(&mut impl_block);
-
     // Generate trait method implementations
-    let keybinds_impl = generate_system_keybinds(&keybinds_methods, &system_name_snake);
+    let keybinds_impl =
+        generate_keybinds_closures_impl(&keybinds_methods, &handler_contexts, &type_name);
 
     // Generate name method
     let type_name_str = type_name.to_string();
@@ -132,7 +151,14 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
         }
     };
 
-    // Generate overlay method (uses element() if defined)
+    // Generate handlers() method
+    let handlers_impl = quote! {
+        fn handlers(&self) -> &rafter::HandlerRegistry {
+            &self.__handler_registry
+        }
+    };
+
+    // Generate overlay method
     let overlay_impl = if has_overlay {
         quote! {
             fn overlay(&self) -> Option<rafter::Overlay> {
@@ -140,8 +166,6 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
             }
         }
     } else if has_element {
-        // If element() is defined but overlay() is not, we can't automatically
-        // create an overlay since we don't know the position. User must define overlay().
         quote! {}
     } else {
         quote! {}
@@ -173,262 +197,38 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
         }
     };
 
-    // Generate dispatch methods - systems only get GlobalContext
-    let dispatch_impl = generate_system_dispatch(&handlers);
-    let event_dispatch_impl = generate_system_event_dispatch(&event_handlers);
-    let request_dispatch_impl = generate_system_request_dispatch(&request_handlers);
+    // Generate event/request dispatch methods
+    let event_dispatch_impl = generate_event_dispatch(&event_handlers, DispatchContextType::System);
+    let request_dispatch_impl = generate_request_dispatch(&request_handlers, DispatchContextType::System);
+
+    // Generate handler wrapper methods
+    let handler_wrappers = generate_handler_wrappers(&handler_infos);
 
     // Output the impl block plus System trait implementation
-    let impl_generics = &impl_block.generics;
+    let impl_generics = &partial_impl.generics;
+    let impl_attrs = &partial_impl.attrs;
 
     // Suppress unused variable warning for has_element
     let _ = has_element;
 
     quote! {
-        #impl_block
+        #(#impl_attrs)*
+        impl #impl_generics #self_ty {
+            #(#reconstructed_methods)*
+
+            // Handler wrappers for overlay page! macro integration
+            #handler_wrappers
+        }
 
         impl #impl_generics rafter::System for #self_ty {
             #name_impl
             #keybinds_impl
+            #handlers_impl
             #overlay_impl
             #on_init_impl
             #dirty_impl
-            #dispatch_impl
             #event_dispatch_impl
             #request_dispatch_impl
-        }
-    }
-}
-
-/// Generate keybinds method for system
-fn generate_system_keybinds(keybinds_methods: &[KeybindsMethod], system_name: &str) -> TokenStream {
-    if keybinds_methods.is_empty() {
-        return quote! {
-            fn keybinds(&self) -> rafter::Keybinds {
-                rafter::Keybinds::new()
-            }
-        };
-    }
-
-    let merge_calls: Vec<_> = keybinds_methods
-        .iter()
-        .map(|m| {
-            let name = &m.name;
-            quote! {
-                __keybinds.merge(
-                    Self::#name().with_id_prefix(#system_name)
-                );
-            }
-        })
-        .collect();
-
-    quote! {
-        fn keybinds(&self) -> rafter::Keybinds {
-            let mut __keybinds = rafter::Keybinds::new();
-            #(#merge_calls)*
-            __keybinds
-        }
-    }
-}
-
-/// Generate dispatch method for system handlers.
-/// Systems only receive GlobalContext (no AppContext).
-fn generate_system_dispatch(handlers: &[HandlerMethod]) -> TokenStream {
-    if handlers.is_empty() {
-        return quote! {};
-    }
-
-    let dispatch_arms: Vec<_> = handlers
-        .iter()
-        .map(|h| {
-            let name = &h.name;
-            let name_str = name.to_string();
-
-            // Systems only get GlobalContext
-            let call = if h.contexts.global_context {
-                if h.is_async {
-                    quote! { this.#name(&gx).await; }
-                } else {
-                    quote! { this.#name(&gx); }
-                }
-            } else {
-                if h.is_async {
-                    quote! { this.#name().await; }
-                } else {
-                    quote! { this.#name(); }
-                }
-            };
-
-            let clones = if h.contexts.global_context {
-                quote! { let this = self.clone(); let gx = gx.clone(); }
-            } else {
-                quote! { let this = self.clone(); }
-            };
-
-            quote! {
-                #name_str => {
-                    #clones
-                    tokio::spawn(async move {
-                        #call
-                    });
-                }
-            }
-        })
-        .collect();
-
-    quote! {
-        fn dispatch(&self, handler_id: &rafter::HandlerId, gx: &rafter::GlobalContext) {
-            log::debug!("System dispatching handler: {}", handler_id.0);
-            match handler_id.0.as_str() {
-                #(#dispatch_arms)*
-                other => {
-                    log::warn!("Unknown system handler: {}", other);
-                }
-            }
-        }
-    }
-}
-
-/// Generate event dispatch methods for system event handlers.
-/// Systems only receive GlobalContext.
-fn generate_system_event_dispatch(event_handlers: &[EventHandlerMethod]) -> TokenStream {
-    if event_handlers.is_empty() {
-        return quote! {};
-    }
-
-    let dispatch_arms: Vec<_> = event_handlers
-        .iter()
-        .map(|h| {
-            let name = &h.name;
-            let event_type: syn::Type = syn::parse_str(&h.event_type).unwrap();
-
-            let call = if h.contexts.global_context {
-                quote! { this.#name(*event, &gx).await; }
-            } else {
-                quote! { this.#name(*event).await; }
-            };
-
-            let clones = if h.contexts.global_context {
-                quote! { let this = self.clone(); let gx = gx.clone(); }
-            } else {
-                quote! { let this = self.clone(); }
-            };
-
-            quote! {
-                t if t == std::any::TypeId::of::<#event_type>() => {
-                    if let Ok(event) = event.downcast::<#event_type>() {
-                        #clones
-                        tokio::spawn(async move {
-                            #call
-                        });
-                        return true;
-                    }
-                    false
-                }
-            }
-        })
-        .collect();
-
-    let has_handler_arms: Vec<_> = event_handlers
-        .iter()
-        .map(|h| {
-            let event_type: syn::Type = syn::parse_str(&h.event_type).unwrap();
-            quote! {
-                t if t == std::any::TypeId::of::<#event_type>() => true,
-            }
-        })
-        .collect();
-
-    quote! {
-        fn dispatch_event(
-            &self,
-            event_type: std::any::TypeId,
-            event: Box<dyn std::any::Any + Send + Sync>,
-            gx: &rafter::GlobalContext,
-        ) -> bool {
-            match event_type {
-                #(#dispatch_arms)*
-                _ => false,
-            }
-        }
-
-        fn has_event_handler(&self, event_type: std::any::TypeId) -> bool {
-            match event_type {
-                #(#has_handler_arms)*
-                _ => false,
-            }
-        }
-    }
-}
-
-/// Generate request dispatch methods for system request handlers.
-/// Systems only receive GlobalContext.
-fn generate_system_request_dispatch(request_handlers: &[RequestHandlerMethod]) -> TokenStream {
-    if request_handlers.is_empty() {
-        return quote! {};
-    }
-
-    let dispatch_arms: Vec<_> = request_handlers
-        .iter()
-        .map(|h| {
-            let name = &h.name;
-            let request_type: syn::Type = syn::parse_str(&h.request_type).unwrap();
-
-            let call = if h.contexts.global_context {
-                quote! { this.#name(*request, &gx).await }
-            } else {
-                quote! { this.#name(*request).await }
-            };
-
-            let clones = if h.contexts.global_context {
-                quote! { let this = self.clone(); let gx = gx.clone(); }
-            } else {
-                quote! { let this = self.clone(); }
-            };
-
-            quote! {
-                t if t == std::any::TypeId::of::<#request_type>() => {
-                    if let Ok(request) = request.downcast::<#request_type>() {
-                        #clones
-                        return Some(Box::pin(async move {
-                            let response = #call;
-                            Box::new(response) as Box<dyn std::any::Any + Send + Sync>
-                        }));
-                    }
-                    None
-                }
-            }
-        })
-        .collect();
-
-    let has_handler_arms: Vec<_> = request_handlers
-        .iter()
-        .map(|h| {
-            let request_type: syn::Type = syn::parse_str(&h.request_type).unwrap();
-            quote! {
-                t if t == std::any::TypeId::of::<#request_type>() => true,
-            }
-        })
-        .collect();
-
-    quote! {
-        fn dispatch_request(
-            &self,
-            request_type: std::any::TypeId,
-            request: Box<dyn std::any::Any + Send + Sync>,
-            gx: &rafter::GlobalContext,
-        ) -> Option<std::pin::Pin<Box<dyn std::future::Future<Output = Box<dyn std::any::Any + Send + Sync>> + Send>>> {
-            match request_type {
-                #(#dispatch_arms)*
-                _ => None,
-            }
-        }
-
-        fn has_request_handler(&self, request_type: std::any::TypeId) -> bool {
-            match request_type {
-                #(#has_handler_arms)*
-                _ => false,
-            }
         }
     }
 }

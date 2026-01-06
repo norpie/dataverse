@@ -93,19 +93,27 @@ fn generate_widget(elem: &ElementNode) -> TokenStream {
         .collect();
     let widget_attr_calls = generate_widget_attr_calls(&widget_attrs);
 
-    // Generate handler calls (on_click, on_change, etc.)
-    let handler_calls = handler::generate_handler_calls(&elem.handlers);
+    // Build the element
+    let element_build = quote! {
+        #name::new()
+            #(#widget_attr_calls)*
+            .element()
+            #(#layout_calls)*
+            #style_call
+            #transition_call
+    };
 
-    // Widget must be in scope - users import rafter widgets or define their own
-    quote! {
-        {
-            #name::new()
-                #(#widget_attr_calls)*
-                #(#handler_calls)*
-                .element()
-                #(#layout_calls)*
-                #style_call
-                #transition_call
+    // If there are handlers, wrap in a block that registers them
+    if elem.handlers.is_empty() {
+        quote! { { #element_build } }
+    } else {
+        let handler_registrations = handler::generate_handler_registrations(&elem.handlers);
+        quote! {
+            {
+                let __elem = #element_build;
+                #handler_registrations
+                __elem
+            }
         }
     }
 }
