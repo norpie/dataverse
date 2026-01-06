@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use crate::element::{Content, Element};
-use crate::event::Event;
+use crate::event::{Event, Key};
 use crate::layout::{LayoutResult, Rect};
 use crate::types::Overflow;
 
@@ -25,6 +25,8 @@ pub struct ScrollState {
     offsets: HashMap<String, ScrollOffset>,
     /// Content sizes computed during layout (element_id -> (content_width, content_height))
     content_sizes: HashMap<String, (u16, u16)>,
+    /// Last known mouse position for keyboard scroll fallback
+    last_mouse_pos: Option<(u16, u16)>,
 }
 
 impl ScrollState {
@@ -52,6 +54,87 @@ impl ScrollState {
         if new_x != current.x || new_y != current.y {
             self.offsets
                 .insert(id.to_string(), ScrollOffset::new(new_x, new_y));
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Scroll up by one viewport height.
+    /// Returns true if scroll position changed.
+    pub fn page_up(&mut self, id: &str, layout: &LayoutResult) -> bool {
+        let Some((_, viewport_height)) = layout.viewport_size(id) else {
+            return false;
+        };
+        let Some((_, content_height)) = layout.content_size(id) else {
+            return false;
+        };
+
+        let current = self.get(id);
+        let max_y = content_height.saturating_sub(viewport_height);
+        let new_y = current.y.saturating_sub(viewport_height).min(max_y);
+
+        if new_y != current.y {
+            self.offsets
+                .insert(id.to_string(), ScrollOffset::new(current.x, new_y));
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Scroll down by one viewport height.
+    /// Returns true if scroll position changed.
+    pub fn page_down(&mut self, id: &str, layout: &LayoutResult) -> bool {
+        let Some((_, viewport_height)) = layout.viewport_size(id) else {
+            return false;
+        };
+        let Some((_, content_height)) = layout.content_size(id) else {
+            return false;
+        };
+
+        let current = self.get(id);
+        let max_y = content_height.saturating_sub(viewport_height);
+        let new_y = current.y.saturating_add(viewport_height).min(max_y);
+
+        if new_y != current.y {
+            self.offsets
+                .insert(id.to_string(), ScrollOffset::new(current.x, new_y));
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Scroll to the top.
+    /// Returns true if scroll position changed.
+    pub fn scroll_home(&mut self, id: &str) -> bool {
+        let current = self.get(id);
+        if current.y != 0 {
+            self.offsets
+                .insert(id.to_string(), ScrollOffset::new(current.x, 0));
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Scroll to the bottom.
+    /// Returns true if scroll position changed.
+    pub fn scroll_end(&mut self, id: &str, layout: &LayoutResult) -> bool {
+        let Some((_, viewport_height)) = layout.viewport_size(id) else {
+            return false;
+        };
+        let Some((_, content_height)) = layout.content_size(id) else {
+            return false;
+        };
+
+        let current = self.get(id);
+        let max_y = content_height.saturating_sub(viewport_height);
+
+        if current.y != max_y {
+            self.offsets
+                .insert(id.to_string(), ScrollOffset::new(current.x, max_y));
             true
         } else {
             false
@@ -89,58 +172,104 @@ impl ScrollState {
         let mut consumed = Vec::new();
 
         for event in events {
-            if let Event::Scroll {
-                target: _,
-                delta_x,
-                delta_y,
-                x,
-                y,
-            } = event
-            {
-                // Find the scrollable element at this position
-                if let Some(scrollable_id) = find_scrollable_at(root, layout, *x, *y) {
-                    // Get content and viewport sizes from layout (computed during layout pass)
-                    let Some((content_width, content_height)) = layout.content_size(&scrollable_id)
-                    else {
+            match event {
+                // Track mouse position for keyboard scroll fallback
+                Event::MouseMove { x, y } => {
+                    self.last_mouse_pos = Some((*x, *y));
+                }
+
+                Event::Scroll {
+                    target: _,
+                    delta_x,
+                    delta_y,
+                    x,
+                    y,
+                } => {
+                    // Update last mouse position from scroll events too
+                    self.last_mouse_pos = Some((*x, *y));
+
+                    // Find the scrollable element at this position
+                    if let Some(scrollable_id) = find_scrollable_at(root, layout, *x, *y) {
+                        // Get content and viewport sizes from layout (computed during layout pass)
+                        let Some((content_width, content_height)) =
+                            layout.content_size(&scrollable_id)
+                        else {
+                            continue;
+                        };
+                        let Some((inner_width, inner_height)) =
+                            layout.viewport_size(&scrollable_id)
+                        else {
+                            continue;
+                        };
+
+                        // Check if content actually overflows
+                        let can_scroll_vertical = content_height > inner_height;
+                        let can_scroll_horizontal = content_width > inner_width;
+
+                        let current = self.get(&scrollable_id);
+                        let mut new_x = current.x;
+                        let mut new_y = current.y;
+
+                        // Handle vertical scrolling
+                        if *delta_y != 0 && can_scroll_vertical {
+                            let max_scroll_y = content_height.saturating_sub(inner_height);
+                            new_y = (current.y as i32 + *delta_y as i32)
+                                .clamp(0, max_scroll_y as i32)
+                                as u16;
+                        }
+
+                        // Handle horizontal scrolling
+                        if *delta_x != 0 && can_scroll_horizontal {
+                            let max_scroll_x = content_width.saturating_sub(inner_width);
+                            new_x = (current.x as i32 + *delta_x as i32)
+                                .clamp(0, max_scroll_x as i32)
+                                as u16;
+                        }
+
+                        if new_x != current.x || new_y != current.y {
+                            self.offsets
+                                .insert(scrollable_id.clone(), ScrollOffset::new(new_x, new_y));
+                            consumed.push(event.clone());
+                        }
+
+                        // Store content size for reference
+                        self.content_sizes
+                            .insert(scrollable_id, (content_width, content_height));
+                    }
+                }
+
+                Event::Key { target, key, .. } => {
+                    // Only handle scroll keys
+                    if !matches!(key, Key::PageUp | Key::PageDown | Key::Home | Key::End) {
                         continue;
-                    };
-                    let Some((inner_width, inner_height)) = layout.viewport_size(&scrollable_id)
-                    else {
-                        continue;
-                    };
-
-                    // Check if content actually overflows
-                    let can_scroll_vertical = content_height > inner_height;
-                    let can_scroll_horizontal = content_width > inner_width;
-
-                    let current = self.get(&scrollable_id);
-                    let mut new_x = current.x;
-                    let mut new_y = current.y;
-
-                    // Handle vertical scrolling
-                    if *delta_y != 0 && can_scroll_vertical {
-                        let max_scroll_y = content_height.saturating_sub(inner_height);
-                        new_y = (current.y as i32 + *delta_y as i32).clamp(0, max_scroll_y as i32)
-                            as u16;
                     }
 
-                    // Handle horizontal scrolling
-                    if *delta_x != 0 && can_scroll_horizontal {
-                        let max_scroll_x = content_width.saturating_sub(inner_width);
-                        new_x = (current.x as i32 + *delta_x as i32).clamp(0, max_scroll_x as i32)
-                            as u16;
-                    }
+                    // Find scrollable element: from focused element's ancestor, or under mouse
+                    let scrollable_id = match target {
+                        Some(target_id) => find_scrollable_ancestor(root, target_id),
+                        None => self
+                            .last_mouse_pos
+                            .and_then(|(x, y)| find_scrollable_at(root, layout, x, y)),
+                    };
 
-                    if new_x != current.x || new_y != current.y {
-                        self.offsets
-                            .insert(scrollable_id.clone(), ScrollOffset::new(new_x, new_y));
+                    let Some(scrollable_id) = scrollable_id else {
+                        continue;
+                    };
+
+                    let scrolled = match key {
+                        Key::PageUp => self.page_up(&scrollable_id, layout),
+                        Key::PageDown => self.page_down(&scrollable_id, layout),
+                        Key::Home => self.scroll_home(&scrollable_id),
+                        Key::End => self.scroll_end(&scrollable_id, layout),
+                        _ => false,
+                    };
+
+                    if scrolled {
                         consumed.push(event.clone());
                     }
-
-                    // Store content size for reference
-                    self.content_sizes
-                        .insert(scrollable_id, (content_width, content_height));
                 }
+
+                _ => {}
             }
         }
 
@@ -151,6 +280,41 @@ impl ScrollState {
 /// Find the innermost scrollable element at the given coordinates.
 fn find_scrollable_at(root: &Element, layout: &LayoutResult, x: u16, y: u16) -> Option<String> {
     find_scrollable_recursive(root, layout, x, y)
+}
+
+/// Find the nearest scrollable ancestor of a target element (or the element itself if scrollable).
+/// Returns None if no scrollable ancestor exists.
+fn find_scrollable_ancestor(root: &Element, target_id: &str) -> Option<String> {
+    find_scrollable_ancestor_recursive(root, target_id, None)
+}
+
+fn find_scrollable_ancestor_recursive(
+    element: &Element,
+    target_id: &str,
+    current_scrollable: Option<&str>,
+) -> Option<String> {
+    // Update current scrollable ancestor if this element is scrollable
+    let scrollable = if element.overflow == Overflow::Scroll || element.overflow == Overflow::Auto {
+        Some(element.id.as_str())
+    } else {
+        current_scrollable
+    };
+
+    // If this is the target, return the current scrollable ancestor
+    if element.id == target_id {
+        return scrollable.map(|s| s.to_string());
+    }
+
+    // Search children
+    if let Content::Children(children) = &element.content {
+        for child in children {
+            if let Some(result) = find_scrollable_ancestor_recursive(child, target_id, scrollable) {
+                return Some(result);
+            }
+        }
+    }
+
+    None
 }
 
 fn find_scrollable_recursive(
