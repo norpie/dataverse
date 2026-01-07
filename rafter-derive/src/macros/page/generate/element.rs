@@ -279,6 +279,7 @@ fn generate_widget_attr_calls(attrs: &[&Attr]) -> Vec<TokenStream> {
         .iter()
         .map(|attr| {
             let name = &attr.name;
+            let name_str = name.to_string();
             match &attr.value {
                 AttrValue::BareFlag => {
                     // Bare flag: generate `.flag()` with no arguments
@@ -286,7 +287,12 @@ fn generate_widget_attr_calls(attrs: &[&Attr]) -> Vec<TokenStream> {
                 }
                 _ => {
                     let value = generate_attr_value(&attr.value);
-                    quote! { .#name(#value) }
+                    // Auto-add `&` for `state` prop (stateful widgets expect &State<T>)
+                    if name_str == "state" {
+                        quote! { .#name(&#value) }
+                    } else {
+                        quote! { .#name(#value) }
+                    }
                 }
             }
         })

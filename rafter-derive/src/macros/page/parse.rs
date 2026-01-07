@@ -207,8 +207,27 @@ fn parse_attr_value(input: ParseStream) -> syn::Result<AttrValue> {
         return Ok(AttrValue::Lit(lit));
     }
 
-    // Otherwise, identifier
+    // Check for `self` keyword (start of path like `self.foo`)
+    if input.peek(Token![self]) {
+        let expr: Expr = input.parse()?;
+        return Ok(AttrValue::Expr(expr));
+    }
+
+    // Try to parse as identifier, then check if it's a path (foo.bar)
     let ident: Ident = input.parse()?;
+
+    // Check if this is a path expression (ident.something)
+    if input.peek(Token![.]) {
+        // Build a path expression: start with the ident, then parse the rest
+        let mut expr: Expr = syn::parse_quote!(#ident);
+        while input.peek(Token![.]) {
+            input.parse::<Token![.]>()?;
+            let field: Ident = input.parse()?;
+            expr = syn::parse_quote!(#expr.#field);
+        }
+        return Ok(AttrValue::Expr(expr));
+    }
+
     Ok(AttrValue::Ident(ident))
 }
 
