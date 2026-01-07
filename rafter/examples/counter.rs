@@ -44,7 +44,7 @@ impl ReallySureModal {
 
     fn element(&self) -> Element {
         page! {
-            column (padding: 2, gap: 1) style (bg: surface) {
+            column (padding: 2, gap: 1) style (bg: background) {
                 text (content: "Are you REALLY sure?") style (bold: true, fg: error)
                 text (content: "This action cannot be undone!") style (fg: muted)
                 row (gap: 2) {
@@ -92,7 +92,7 @@ impl ConfirmModal {
     fn element(&self) -> Element {
         let message = self.message.clone();
         page! {
-            column (padding: 2, gap: 1) style (bg: surface) {
+            column (padding: 2, gap: 1) style (bg: background) {
                 text (content: "Confirm") style (bold: true, fg: warning)
                 text (content: {message})
                 row (gap: 2) {
@@ -272,9 +272,6 @@ async fn main() {
     let log_file = File::create("counter.log").expect("Failed to create log file");
     WriteLogger::init(LevelFilter::Debug, Config::default(), log_file)
         .expect("Failed to initialize logger");
-
-    // TODO: Theme support - uncomment when Runtime::theme() is added
-    // .theme(CounterTheme::new())
 
     if let Err(e) = Runtime::new()
         .expect("Failed to create runtime")

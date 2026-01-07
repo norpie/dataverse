@@ -135,6 +135,9 @@ impl Runtime {
         // Initialize terminal
         let mut terminal = Terminal::new()?;
 
+        // Set default theme
+        terminal.set_theme(Arc::new(crate::theme::default_theme()));
+
         // Create focus and scroll state
         let mut focus = FocusState::new();
         let mut scroll = ScrollState::new();
@@ -262,11 +265,7 @@ impl Runtime {
 
             // 4. Apply theme changes
             if let Some(theme) = gx.take_theme_request() {
-                // We need to extract the theme from Arc<dyn Theme>
-                // Terminal::set_theme takes impl Theme + 'static
-                // We'll need a different approach - store theme in runtime state
-                // For now, skip theme changes (TODO: fix this)
-                let _ = theme;
+                terminal.set_theme(theme);
             }
 
             // 5. Build UI
@@ -379,14 +378,14 @@ impl Runtime {
             root = root.child(overlay);
         }
 
-        // Add app modals (centered overlay)
+        // Add app modals (centered overlay with dim backdrop)
         {
             let reg = registry.read().unwrap();
             if let Some(instance) = reg.focused_instance() {
                 let modals = instance.modals().read().unwrap();
                 if let Some(modal) = modals.last() {
-                    use tuidom::{Align, Justify, Position, Size};
-                    // Center the modal on screen
+                    use tuidom::{Align, Backdrop, Justify, Position, Size};
+                    // Center the modal on screen with dimmed backdrop
                     let modal_wrapper = Element::col()
                         .id("__modal__")
                         .position(Position::Absolute)
@@ -394,6 +393,7 @@ impl Runtime {
                         .top(0)
                         .width(Size::Fill)
                         .height(Size::Fill)
+                        .backdrop(Backdrop::Dim(0.5))
                         .justify(Justify::Center)
                         .align(Align::Center)
                         .child(modal.element());

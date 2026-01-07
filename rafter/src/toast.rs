@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use tuidom::{Border, Color, Edges, Element, Size, Style};
+use tuidom::{Color, Edges, Element, Size, Style};
 
 /// Default duration for toast notifications.
 pub const DEFAULT_TOAST_DURATION: Duration = Duration::from_secs(4);
@@ -37,7 +37,7 @@ impl Toast {
     pub fn info(message: impl Into<String>) -> Self {
         Self {
             content: Element::text(message.into())
-                .style(Style::new().foreground(Color::oklch(0.8, 0.0, 0.0))),
+                .style(Style::new().foreground(Color::var("primary"))),
             duration: DEFAULT_TOAST_DURATION,
         }
     }
@@ -46,7 +46,7 @@ impl Toast {
     pub fn success(message: impl Into<String>) -> Self {
         Self {
             content: Element::text(message.into())
-                .style(Style::new().foreground(Color::oklch(0.7, 0.15, 145.0))),
+                .style(Style::new().foreground(Color::var("success"))),
             duration: DEFAULT_TOAST_DURATION,
         }
     }
@@ -55,7 +55,7 @@ impl Toast {
     pub fn warning(message: impl Into<String>) -> Self {
         Self {
             content: Element::text(message.into())
-                .style(Style::new().foreground(Color::oklch(0.75, 0.15, 85.0))),
+                .style(Style::new().foreground(Color::var("warning"))),
             duration: DEFAULT_TOAST_DURATION,
         }
     }
@@ -64,7 +64,7 @@ impl Toast {
     pub fn error(message: impl Into<String>) -> Self {
         Self {
             content: Element::text(message.into())
-                .style(Style::new().foreground(Color::oklch(0.65, 0.2, 25.0))),
+                .style(Style::new().foreground(Color::var("error"))),
             duration: DEFAULT_TOAST_DURATION,
         }
     }
@@ -89,11 +89,7 @@ impl Toast {
     pub fn element(&self) -> Element {
         Element::box_()
             .width(Size::Fill)
-            .style(
-                Style::new()
-                    .background(Color::oklch(0.2, 0.02, 250.0))
-                    .border(Border::Rounded),
-            )
+            .style(Style::new().background(Color::var("surface")))
             .padding(Edges::symmetric(1, 1))
             .child(self.content.clone())
     }
