@@ -13,6 +13,7 @@ use std::time::Duration;
 
 use rafter::page;
 use rafter::prelude::*;
+use rafter::widgets::{Button, Text};
 
 // ============================================================================
 // Really Sure Modal (nested confirmation)

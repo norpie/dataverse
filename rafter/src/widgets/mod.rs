@@ -1,32 +1,33 @@
 //! Built-in widgets for rafter.
 //!
-//! Widgets are interactive UI components that can respond to user input.
-//! Each widget is a builder that produces a tuidom Element.
+//! Widgets are UI components that produce tuidom Elements. All widgets follow
+//! the same builder pattern with a `build(registry, handlers)` method.
 //!
-//! Widgets store `Option<HandlerId>` for event handlers. When an event occurs,
-//! the runtime extracts the HandlerId and dispatches through the app/modal's
-//! `dispatch` method.
+//! # Widget Categories
 //!
-//! # Handler ID Pattern
+//! - **Stateless**: `Text`, `Button`, `Card` - no internal state
+//! - **Stateful**: `Checkbox`, `Select`, `RadioGroup`, `Input` - use typestate
+//!   pattern to enforce `state()` is called before `build()`
 //!
-//! Instead of storing closures, widgets store handler IDs:
+//! # Usage
+//!
+//! Import widgets and use them in the `page!` macro:
 //!
 //! ```ignore
-//! // page! macro emits:
-//! button::new()
-//!     .label("Click")
-//!     .on_click_id(HandlerId::new("my_handler"))
-//!     .element()
+//! use rafter::widgets::{Text, Button};
 //!
-//! // The element stores the handler ID as data
-//! // When clicked, runtime calls app.dispatch("my_handler", cx, gx)
+//! page! {
+//!     text (content: "Hello", id: "greeting")
+//!     button (label: "Click me", id: "btn")
+//!         on_activate: handle_click()
+//! }
 //! ```
 //!
-//! This pattern:
-//! - Keeps widgets simple (no complex closure types)
-//! - Allows impl macros to generate dispatch with full context knowledge
-//! - Works consistently for apps and modals
+//! The macro converts widget names from snake_case to PascalCase and generates
+//! builder method calls for each prop.
 
 pub mod button;
+pub mod text;
 
 pub use button::Button;
+pub use text::Text;

@@ -1,7 +1,7 @@
 //! Element generation for col/row/box/text and widgets.
 
 use proc_macro2::TokenStream;
-use quote::quote;
+use quote::{format_ident, quote};
 
 use crate::macros::page::ast::{Attr, AttrValue, ElementNode};
 
@@ -50,75 +50,114 @@ fn generate_container(elem: &ElementNode, constructor: TokenStream) -> TokenStre
     }
 }
 
-/// Generate a text element
+/// Generate a text element using the Text widget
 fn generate_text(elem: &ElementNode) -> TokenStream {
-    // Find content attribute in layout attrs (content is a special text attr)
-    let content = elem
+    // Separate widget attrs from layout attrs
+    // For widgets, id should be a widget prop, not a layout attr
+    let widget_attrs: Vec<_> = elem
         .layout_attrs
         .iter()
-        .find(|a| a.name == "content")
-        .map(|a| generate_attr_value(&a.value))
-        .unwrap_or_else(|| quote! { "" });
+        .filter(|a| !is_widget_layout_attr(&a.name.to_string()))
+        .collect();
+    let layout_attrs: Vec<_> = elem
+        .layout_attrs
+        .iter()
+        .filter(|a| is_widget_layout_attr(&a.name.to_string()))
+        .collect();
 
-    let layout_refs: Vec<_> = elem.layout_attrs.iter().collect();
+    // Generate widget property calls (content, id, etc.)
+    let widget_attr_calls = generate_widget_attr_calls(&widget_attrs);
+
+    // Generate style if present
     let style_refs: Vec<_> = elem.style_attrs.iter().collect();
-    let layout_calls = generate_layout_calls(&layout_refs);
-    let style_call = style::generate_merged_style(&style_refs);
+    let style_call = style::generate_merged_style(&style_refs).unwrap_or_else(|| quote! {});
+
+    // Generate transitions if present
     let transition_call = transition::generate_transitions(&elem.transition_attrs);
 
+    // Layout calls applied after build()
+    let layout_calls = generate_layout_calls(&layout_attrs);
+
+    // Text widget: Text::new().content(...).style(...).build(registry, handlers)
+    // Then apply layout calls to the resulting Element
     quote! {
-        tuidom::Element::text(#content)
-            #(#layout_calls)*
-            #style_call
-            #transition_call
+        {
+            let __handlers = rafter::WidgetHandlers::new();
+            Text::new()
+                #(#widget_attr_calls)*
+                #style_call
+                #transition_call
+                .build(&self.__handler_registry, &__handlers)
+                #(#layout_calls)*
+        }
     }
 }
 
 /// Generate a widget element (unknown element name = widget)
 fn generate_widget(elem: &ElementNode) -> TokenStream {
-    let name = &elem.name;
+    // Convert snake_case widget name to PascalCase type name
+    let widget_type = snake_to_pascal(&elem.name.to_string());
+    let widget_type_ident = format_ident!("{}", widget_type);
 
-    // Layout and style attrs are now separate from widget attrs
-    let layout_refs: Vec<_> = elem.layout_attrs.iter().collect();
-    let style_refs: Vec<_> = elem.style_attrs.iter().collect();
-    let layout_calls = generate_layout_calls(&layout_refs);
-    let style_call = style::generate_merged_style(&style_refs);
-    let transition_call = transition::generate_transitions(&elem.transition_attrs);
-
-    // Widget attrs are everything in layout_attrs that isn't a layout attr
+    // Separate layout attrs from widget attrs
+    // For widgets, id/focusable/clickable/draggable should be widget props, not layout attrs
+    // (they're needed before build() for handler registration)
+    let layout_attrs: Vec<_> = elem
+        .layout_attrs
+        .iter()
+        .filter(|a| is_widget_layout_attr(&a.name.to_string()))
+        .collect();
     let widget_attrs: Vec<_> = elem
         .layout_attrs
         .iter()
-        .filter(|a| !is_layout_attr(&a.name.to_string()))
+        .filter(|a| !is_widget_layout_attr(&a.name.to_string()))
         .collect();
+
+    // Generate widget property calls
     let widget_attr_calls = generate_widget_attr_calls(&widget_attrs);
 
-    // Build the element
-    let element_build = quote! {
-        #name::new()
-            #(#widget_attr_calls)*
-            .element()
-            #(#layout_calls)*
-            #style_call
-            #transition_call
-    };
+    // Generate style if present (passed to widget's style() method)
+    let style_refs: Vec<_> = elem.style_attrs.iter().collect();
+    let style_call = style::generate_merged_style(&style_refs).unwrap_or_else(|| quote! {});
 
-    // If there are handlers, wrap in a block that registers them
-    if elem.handlers.is_empty() {
-        quote! { { #element_build } }
-    } else {
-        let handler_registrations = handler::generate_handler_registrations(&elem.handlers);
-        quote! {
-            {
-                let __elem = #element_build;
-                #handler_registrations
-                __elem
-            }
+    // Generate transitions if present
+    let transition_call = transition::generate_transitions(&elem.transition_attrs);
+
+    // Layout calls applied after build()
+    let layout_calls = generate_layout_calls(&layout_attrs);
+
+    // Generate handler insertions into WidgetHandlers map
+    let handler_insertions = handler::generate_handler_insertions(&elem.handlers);
+
+    // Build the widget: Widget::new().props().style().build(registry, handlers)
+    quote! {
+        {
+            let mut __handlers = rafter::WidgetHandlers::new();
+            #handler_insertions
+            #widget_type_ident::new()
+                #(#widget_attr_calls)*
+                #style_call
+                #transition_call
+                .build(&self.__handler_registry, &__handlers)
+                #(#layout_calls)*
         }
     }
 }
 
-/// Check if an attribute is a layout attribute
+/// Convert snake_case to PascalCase
+fn snake_to_pascal(s: &str) -> String {
+    s.split('_')
+        .map(|word| {
+            let mut chars = word.chars();
+            match chars.next() {
+                Some(c) => c.to_uppercase().chain(chars).collect(),
+                None => String::new(),
+            }
+        })
+        .collect()
+}
+
+/// Check if an attribute is a layout attribute (for containers like col/row/box)
 fn is_layout_attr(name: &str) -> bool {
     matches!(
         name,
@@ -149,6 +188,38 @@ fn is_layout_attr(name: &str) -> bool {
             | "focusable"
             | "clickable"
             | "draggable"
+    )
+}
+
+/// Check if an attribute is a layout attribute for widgets.
+/// Unlike containers, widgets handle id/focusable/clickable/draggable themselves
+/// (needed before build() for handler registration).
+fn is_widget_layout_attr(name: &str) -> bool {
+    matches!(
+        name,
+        "padding"
+            | "margin"
+            | "gap"
+            | "width"
+            | "height"
+            | "min_width"
+            | "max_width"
+            | "min_height"
+            | "max_height"
+            | "direction"
+            | "justify"
+            | "align"
+            | "wrap"
+            | "flex_grow"
+            | "flex_shrink"
+            | "align_self"
+            | "overflow"
+            | "position"
+            | "top"
+            | "left"
+            | "right"
+            | "bottom"
+            | "z_index"
     )
 }
 

@@ -1,31 +1,32 @@
 //! Button widget.
-//!
-//! A clickable button that stores a HandlerId for its click event.
 
-use tuidom::Element;
+use tuidom::{Element, Style, Transitions};
 
-use crate::HandlerId;
+use crate::{HandlerRegistry, WidgetHandlers};
 
 /// A button widget builder.
+///
+/// This is a stateless widget that creates a clickable button element.
 ///
 /// # Example
 ///
 /// ```ignore
 /// // In page! macro:
-/// button (label: "Click me", id: "my-btn") on_click: my_handler()
+/// button (label: "Click me", id: "my-btn")
+///     style (bg: primary)
+///     on_activate: my_handler()
 ///
-/// // Generates:
-/// button::new()
-///     .label("Click me")
-///     .id("my-btn")
-///     .on_click_id(HandlerId::new("my_handler"))
-///     .element()
+/// // Disabled button:
+/// button (label: "Loading...", id: "btn", disabled)
+///     style (bg: muted)
 /// ```
 #[derive(Clone, Debug, Default)]
 pub struct Button {
-    label: String,
+    label: Option<String>,
     id: Option<String>,
-    on_click: Option<HandlerId>,
+    disabled: bool,
+    style: Option<Style>,
+    transitions: Option<Transitions>,
 }
 
 impl Button {
@@ -36,7 +37,7 @@ impl Button {
 
     /// Set the button label.
     pub fn label(mut self, label: impl Into<String>) -> Self {
-        self.label = label.into();
+        self.label = Some(label.into());
         self
     }
 
@@ -46,45 +47,52 @@ impl Button {
         self
     }
 
-    /// Set the click handler ID.
+    /// Mark the button as disabled.
     ///
-    /// When the button is clicked, the runtime will dispatch to the handler
-    /// with this ID through the app/modal's dispatch method.
-    pub fn on_click_id(mut self, handler: HandlerId) -> Self {
-        self.on_click = Some(handler);
+    /// Disabled buttons are not focusable, not clickable, and don't register handlers.
+    pub fn disabled(mut self) -> Self {
+        self.disabled = true;
         self
     }
 
-    /// Get the click handler ID if set.
-    pub fn click_handler(&self) -> Option<&HandlerId> {
-        self.on_click.as_ref()
+    /// Set the button style.
+    pub fn style(mut self, style: Style) -> Self {
+        self.style = Some(style);
+        self
+    }
+
+    /// Set the button transitions.
+    pub fn transitions(mut self, transitions: Transitions) -> Self {
+        self.transitions = Some(transitions);
+        self
     }
 
     /// Build the button element.
     ///
-    /// Returns a tuidom Element that represents this button.
-    pub fn element(self) -> Element {
-        let mut elem = Element::text(&self.label);
+    /// Registers the `on_activate` handler if provided and not disabled.
+    pub fn build(self, registry: &HandlerRegistry, handlers: &WidgetHandlers) -> Element {
+        let label = self.label.unwrap_or_default();
+        let id = self.id.unwrap_or_else(|| "button".into());
 
-        if let Some(id) = &self.id {
-            elem = elem.id(id);
+        let mut elem = Element::text(&label)
+            .id(&id)
+            .focusable(!self.disabled)
+            .clickable(!self.disabled);
+
+        if let Some(style) = self.style {
+            elem = elem.style(style);
+        }
+        if let Some(transitions) = self.transitions {
+            elem = elem.transitions(transitions);
         }
 
-        // Mark as focusable and clickable
-        elem = elem.focusable(true).clickable(true);
-
-        // Store the handler ID as data on the element for runtime dispatch
-        if let Some(handler) = &self.on_click {
-            elem = elem.data("on_click", handler.0.clone());
+        // Only register handler if not disabled
+        if !self.disabled {
+            if let Some(handler) = handlers.get("on_activate") {
+                registry.register(&id, "on_activate", handler.clone());
+            }
         }
 
         elem
     }
-}
-
-/// Create a new button builder.
-///
-/// This is a convenience function for `Button::new()`.
-pub fn new() -> Button {
-    Button::new()
 }

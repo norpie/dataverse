@@ -25,6 +25,16 @@ use crate::{AppContext, GlobalContext, ModalContext};
 /// The closure captures `self` and any arguments at creation time.
 pub type Handler = Arc<dyn Fn(&HandlerContext) + Send + Sync>;
 
+/// Map of handler names to handlers, used for passing callbacks to widgets.
+///
+/// Standard handler names:
+/// - `"on_activate"` - button click, enter key, selection confirm
+/// - `"on_change"` - value changed (select, checkbox, input)
+/// - `"on_submit"` - form submission, enter in input
+/// - `"on_focus"` - element gained focus
+/// - `"on_blur"` - element lost focus
+pub type WidgetHandlers = HashMap<&'static str, Handler>;
+
 // =============================================================================
 // HandlerRegistry
 // =============================================================================
