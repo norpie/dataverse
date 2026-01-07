@@ -67,6 +67,9 @@ pub enum AttrValue {
     Lit(syn::Lit),
     /// Expression in braces (e.g., `{some_var}`)
     Expr(Expr),
+    /// Bare flag with no value (e.g., `disabled`, `small`)
+    /// Generates `.flag()` method call with no arguments
+    BareFlag,
 }
 
 /// An inline handler attribute (e.g., `on_click: handler(arg1, cx)`)

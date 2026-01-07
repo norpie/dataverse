@@ -160,14 +160,24 @@ fn parse_transition_attr_list(input: ParseStream) -> syn::Result<Vec<TransitionA
     Ok(attrs)
 }
 
-/// Parse attributes: `key: value, key2: value2`
+/// Parse attributes: `key: value, key2: value2, bare_flag`
+///
+/// Supports both key-value pairs and bare flags (identifiers without values).
+/// Bare flags generate `.flag()` method calls with no arguments.
 fn parse_attrs(input: ParseStream) -> syn::Result<Vec<Attr>> {
     let mut attrs = Vec::new();
 
     while !input.is_empty() {
         let name: Ident = input.parse()?;
-        input.parse::<Token![:]>()?;
-        let value = parse_attr_value(input)?;
+
+        // Check if this is a key: value pair or a bare flag
+        let value = if input.peek(Token![:]) {
+            input.parse::<Token![:]>()?;
+            parse_attr_value(input)?
+        } else {
+            // Bare flag (e.g., `disabled`, `small`)
+            AttrValue::BareFlag
+        };
 
         attrs.push(Attr { name, value });
 

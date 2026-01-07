@@ -231,6 +231,12 @@ fn generate_layout_calls(attrs: &[&Attr]) -> Vec<TokenStream> {
         let name_str = attr.name.to_string();
         let value = generate_attr_value(&attr.value);
 
+        // Handle bare flags for boolean properties
+        let bool_value = match &attr.value {
+            AttrValue::BareFlag => quote! { true },
+            _ => value.clone(),
+        };
+
         match name_str.as_str() {
             "padding" => calls.push(generate_edges_call("padding", &attr.value)),
             "margin" => calls.push(generate_edges_call("margin", &attr.value)),
@@ -256,9 +262,10 @@ fn generate_layout_calls(attrs: &[&Attr]) -> Vec<TokenStream> {
             "bottom" => calls.push(quote! { .bottom(#value as i16) }),
             "z_index" => calls.push(quote! { .z_index(#value as i16) }),
             "id" => calls.push(quote! { .id(#value) }),
-            "focusable" => calls.push(quote! { .focusable(#value) }),
-            "clickable" => calls.push(quote! { .clickable(#value) }),
-            "draggable" => calls.push(quote! { .draggable(#value) }),
+            // Boolean properties: use bare flag value (true) if no value provided
+            "focusable" => calls.push(quote! { .focusable(#bool_value) }),
+            "clickable" => calls.push(quote! { .clickable(#bool_value) }),
+            "draggable" => calls.push(quote! { .draggable(#bool_value) }),
             _ => {}
         }
     }
@@ -272,8 +279,16 @@ fn generate_widget_attr_calls(attrs: &[&Attr]) -> Vec<TokenStream> {
         .iter()
         .map(|attr| {
             let name = &attr.name;
-            let value = generate_attr_value(&attr.value);
-            quote! { .#name(#value) }
+            match &attr.value {
+                AttrValue::BareFlag => {
+                    // Bare flag: generate `.flag()` with no arguments
+                    quote! { .#name() }
+                }
+                _ => {
+                    let value = generate_attr_value(&attr.value);
+                    quote! { .#name(#value) }
+                }
+            }
         })
         .collect()
 }
@@ -284,6 +299,7 @@ fn generate_attr_value(value: &AttrValue) -> TokenStream {
         AttrValue::Ident(ident) => quote! { #ident },
         AttrValue::Lit(lit) => quote! { #lit },
         AttrValue::Expr(expr) => quote! { #expr },
+        AttrValue::BareFlag => quote! {}, // Should not be called for bare flags
     }
 }
 
