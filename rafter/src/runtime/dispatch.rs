@@ -145,6 +145,14 @@ impl<'a> EventDispatcher<'a> {
         let instance = reg.focused_instance()?;
 
         let mut modals = instance.modals().write().ok()?;
+        log::debug!("dispatch_to_app_modals: modals_count={}", modals.len());
+
+        // Pop any closed modals first
+        while modals.last().map(|m| m.is_closed()).unwrap_or(false) {
+            log::debug!("dispatch_to_app_modals: popping closed modal");
+            modals.pop();
+        }
+
         if modals.is_empty() {
             return None;
         }
@@ -152,22 +160,23 @@ impl<'a> EventDispatcher<'a> {
         // Get the topmost modal
         let modal = modals.last_mut()?;
 
-        // Check if modal is closed
-        if modal.is_closed() {
-            modals.pop();
-            return None;
-        }
-
         // Dispatch to modal's keybinds
         if let Event::Key { key, modifiers, .. } = event {
             let keybinds = modal.keybinds();
+            log::debug!(
+                "dispatch_to_app_modals: key={:?}, keybinds_count={}",
+                key,
+                keybinds.len()
+            );
             if let Some(handler) = keybinds.match_key(*key, *modifiers) {
+                log::debug!("dispatch_to_app_modals: matched, calling handler");
                 let cx = instance.app_context();
                 let mx = modal.modal_context();
                 let hx = HandlerContext::for_modal_any(&cx, self.gx, mx);
                 handler(&hx);
                 return Some(DispatchResult::HandledByModal);
             }
+            log::debug!("dispatch_to_app_modals: no keybind matched");
         }
 
         // Modal captures all input even if not handled

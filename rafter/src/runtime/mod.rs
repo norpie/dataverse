@@ -229,13 +229,20 @@ impl Runtime {
             // 2. Process pending commands
             self.process_commands(registry, gx)?;
 
-            // 3. Process modal requests from focused app
+            // 3. Process modal requests from focused app and clean up closed modals
             {
                 let reg = registry.read().unwrap();
                 if let Some(instance) = reg.focused_instance() {
+                    // Push any new modal requests
                     let cx = instance.app_context();
                     if let Some(request) = cx.take_modal_request() {
                         instance.push_modal(request.entry);
+                    }
+                    // Pop closed modals so they don't render
+                    if let Ok(mut modals) = instance.modals().write() {
+                        while modals.last().map(|m| m.is_closed()).unwrap_or(false) {
+                            modals.pop();
+                        }
                     }
                 }
             }
