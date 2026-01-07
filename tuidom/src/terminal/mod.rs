@@ -207,7 +207,7 @@ impl Terminal {
         let mut last_y = u16::MAX;
         let mut last_char_width: u16 = 1;
         let mut last_fg = Oklch::new(1.0, 0.0, 0.0); // white
-        let mut last_bg = Oklch::new(0.0, 0.0, 0.0); // black
+        let mut last_bg: Option<Oklch> = None;      // transparent (terminal default)
         let mut last_style = crate::types::TextStyle::new();
 
         // Reset to known state at start
@@ -239,15 +239,23 @@ impl Terminal {
             }
 
             if cell.bg != last_bg {
-                let rgb = rgb_cache.get(cell.bg);
-                execute!(
-                    self.stdout,
-                    SetBackgroundColor(CtColor::Rgb {
-                        r: rgb.r,
-                        g: rgb.g,
-                        b: rgb.b,
-                    })
-                )?;
+                match cell.bg {
+                    Some(bg) => {
+                        let rgb = rgb_cache.get(bg);
+                        execute!(
+                            self.stdout,
+                            SetBackgroundColor(CtColor::Rgb {
+                                r: rgb.r,
+                                g: rgb.g,
+                                b: rgb.b,
+                            })
+                        )?;
+                    }
+                    None => {
+                        // Transparent - reset to terminal default
+                        execute!(self.stdout, SetBackgroundColor(CtColor::Reset))?;
+                    }
+                }
                 last_bg = cell.bg;
             }
 

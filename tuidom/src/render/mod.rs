@@ -270,7 +270,7 @@ fn render_single_element_timed(
     // Render background if set (only within visible area)
     if let Some(bg) = background {
         let oklch = oklch_cache.get(&bg);
-        fill_rect(buf, visible_rect, oklch);
+        fill_rect(buf, visible_rect, Some(oklch));
     }
     let t2 = Instant::now();
     stats.background_us += t2.duration_since(t1).as_secs_f64() * 1_000_000.0;
@@ -400,16 +400,17 @@ fn adjust_rect_for_position(element: &Element, rect: Rect, animation: &Animation
     )
 }
 
-fn fill_rect(buf: &mut Buffer, rect: Rect, bg: Oklch) {
+fn fill_rect(buf: &mut Buffer, rect: Rect, bg: Option<Oklch>) {
+    let Some(bg_color) = bg else { return }; // Skip if transparent
     for y in rect.y..rect.bottom().min(buf.height()) {
         for x in rect.x..rect.right().min(buf.width()) {
             if let Some(cell) = buf.get_mut(x, y) {
                 // Skip if cell already has correct state
-                if cell.bg == bg && cell.char == ' ' && !cell.wide_continuation {
+                if cell.bg == Some(bg_color) && cell.char == ' ' && !cell.wide_continuation {
                     continue;
                 }
                 cell.char = ' ';
-                cell.bg = bg;
+                cell.bg = Some(bg_color);
                 cell.wide_continuation = false;
             }
         }
@@ -528,11 +529,7 @@ fn render_text(
             }
 
             // Preserve existing background if no explicit background set
-            let bg = explicit_bg.unwrap_or_else(|| {
-                buf.get(x, y)
-                    .map(|c| c.bg)
-                    .unwrap_or(Oklch::new(0.0, 0.0, 0.0))
-            });
+            let bg = explicit_bg.or_else(|| buf.get(x, y).and_then(|c| c.bg));
 
             buf.set(
                 x,
@@ -595,18 +592,15 @@ fn render_text_input(
         TransitionProperty::Background,
         element.style.background.as_ref(),
     );
-    let bg = background
-        .as_ref()
-        .map(|c| oklch_cache.get(c))
-        .unwrap_or(Oklch::new(0.0, 0.0, 0.0)); // black
+    let bg = background.as_ref().map(|c| oklch_cache.get(c));
 
     // Cursor style: bright background, dark foreground
     let cursor_fg = Oklch::new(0.15, 0.0, 0.0);
-    let cursor_bg = Oklch::new(0.85, 0.0, 0.0);
+    let cursor_bg = Some(Oklch::new(0.85, 0.0, 0.0));
 
     // Selection style: medium contrast
     let selection_fg = Oklch::new(0.95, 0.0, 0.0);
-    let selection_bg = Oklch::new(0.4, 0.1, 220.0);
+    let selection_bg = Some(Oklch::new(0.4, 0.1, 220.0));
 
     // Placeholder style: dimmed
     let placeholder_fg = Oklch::new(0.5, 0.0, 0.0);
@@ -951,7 +945,7 @@ fn apply_backdrop(buf: &mut Buffer, backdrop: &Backdrop) {
                 for x in 0..buf.width() {
                     if let Some(cell) = buf.get_mut(x, y) {
                         cell.fg = cell.fg.darken(*amount);
-                        cell.bg = cell.bg.darken(*amount);
+                        cell.bg = cell.bg.map(|bg| bg.darken(*amount));
                     }
                 }
             }
@@ -961,7 +955,7 @@ fn apply_backdrop(buf: &mut Buffer, backdrop: &Backdrop) {
                 for x in 0..buf.width() {
                     if let Some(cell) = buf.get_mut(x, y) {
                         cell.fg = cell.fg.desaturate(*amount);
-                        cell.bg = cell.bg.desaturate(*amount);
+                        cell.bg = cell.bg.map(|bg| bg.desaturate(*amount));
                     }
                 }
             }

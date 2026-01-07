@@ -4,7 +4,8 @@ use crate::types::{Oklch, TextStyle};
 pub struct Cell {
     pub char: char,
     pub fg: Oklch,
-    pub bg: Oklch,
+    /// Background color. `None` means transparent (use terminal default).
+    pub bg: Option<Oklch>,
     pub style: TextStyle,
     pub wide_continuation: bool,
 }
@@ -14,7 +15,7 @@ impl Default for Cell {
         Self {
             char: ' ',
             fg: Oklch::new(1.0, 0.0, 0.0), // white
-            bg: Oklch::new(0.0, 0.0, 0.0), // black
+            bg: None,                       // transparent
             style: TextStyle::new(),
             wide_continuation: false,
         }
@@ -34,7 +35,7 @@ impl Cell {
         self
     }
 
-    pub fn with_bg(mut self, bg: Oklch) -> Self {
+    pub fn with_bg(mut self, bg: Option<Oklch>) -> Self {
         self.bg = bg;
         self
     }

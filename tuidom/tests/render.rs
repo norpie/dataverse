@@ -57,7 +57,7 @@ fn test_higher_z_index_renders_on_top() {
 
     // At position (7, 3) - overlap area - should be green (top element)
     let cell = buf.get(7, 3).unwrap();
-    let bg = to_rgb(cell.bg);
+    let bg = to_rgb(cell.bg.expect("cell should have explicit background"));
     assert_eq!(bg.g, 255, "Green (higher z_index) should be on top");
     assert_eq!(bg.r, 0, "Red should not show through");
 }
@@ -96,7 +96,7 @@ fn test_lower_z_index_renders_underneath() {
 
     // At position (2, 1) - only bottom element - should be red
     let cell = buf.get(2, 1).unwrap();
-    let bg = to_rgb(cell.bg);
+    let bg = to_rgb(cell.bg.expect("cell should have explicit background"));
     assert_eq!(
         bg.r, 255,
         "Red (lower z_index) should be visible where not overlapped"
@@ -137,7 +137,7 @@ fn test_equal_z_index_preserves_tree_order() {
 
     // At overlap position - second (green) should be on top due to tree order
     let cell = buf.get(7, 3).unwrap();
-    let bg = to_rgb(cell.bg);
+    let bg = to_rgb(cell.bg.expect("cell should have explicit background"));
     assert_eq!(
         bg.g, 255,
         "Later in tree should render on top when z_index equal"
@@ -187,7 +187,7 @@ fn test_z_index_works_across_siblings() {
 
     // At overlap position - blue (z=10) should be on top of yellow (z=5)
     let cell = buf.get(6, 3).unwrap();
-    let bg = to_rgb(cell.bg);
+    let bg = to_rgb(cell.bg.expect("cell should have explicit background"));
     assert_eq!(
         bg.b, 255,
         "Higher z_index child should render on top of lower z_index sibling"
@@ -229,7 +229,7 @@ fn test_negative_z_index() {
 
     // At overlap - green (z=0) should be on top of red (z=-1)
     let cell = buf.get(7, 3).unwrap();
-    let bg = to_rgb(cell.bg);
+    let bg = to_rgb(cell.bg.expect("cell should have explicit background"));
     assert_eq!(bg.g, 255, "z_index 0 should be on top of z_index -1");
 }
 
@@ -258,14 +258,14 @@ fn test_overflow_hidden_clips_children() {
 
     // Inside container (x=5, y=1) - should show red child
     let inside = buf.get(5, 1).unwrap();
-    let inside_bg = to_rgb(inside.bg);
+    let inside_bg = to_rgb(inside.bg.expect("cell should have explicit background"));
     assert_eq!(inside_bg.r, 255, "Child should be visible inside container");
 
-    // Outside container (x=12, y=1) - should NOT show red
+    // Outside container (x=12, y=1) - should NOT show red (transparent or different color)
     let outside = buf.get(12, 1).unwrap();
-    let outside_bg = to_rgb(outside.bg);
-    assert_ne!(
-        outside_bg.r, 255,
+    let outside_bg_is_red = outside.bg.map(|bg| to_rgb(bg).r == 255).unwrap_or(false);
+    assert!(
+        !outside_bg_is_red,
         "Child should be clipped outside container"
     );
 }
@@ -295,7 +295,7 @@ fn test_overflow_visible_does_not_clip() {
 
     // Outside container - child should still be visible (not clipped)
     let outside = buf.get(12, 1).unwrap();
-    let outside_bg = to_rgb(outside.bg);
+    let outside_bg = to_rgb(outside.bg.expect("cell should have explicit background"));
     assert_eq!(
         outside_bg.r, 255,
         "Child should extend beyond container with overflow: visible"
@@ -321,10 +321,10 @@ fn test_overflow_scroll_clips_children() {
 
     let buf = render_to_buffer(&root, 20, 10);
 
-    // Outside container - should be clipped
+    // Outside container - should be clipped (transparent or different color)
     let outside = buf.get(12, 1).unwrap();
-    let outside_bg = to_rgb(outside.bg);
-    assert_ne!(outside_bg.r, 255, "Scroll overflow should clip like Hidden");
+    let outside_bg_is_red = outside.bg.map(|bg| to_rgb(bg).r == 255).unwrap_or(false);
+    assert!(!outside_bg_is_red, "Scroll overflow should clip like Hidden");
 }
 
 #[test]
@@ -404,7 +404,7 @@ fn test_nested_overflow_hidden() {
 
     // Inside inner container - should show red
     let inside_inner = buf.get(10, 1).unwrap();
-    let inside_inner_bg = to_rgb(inside_inner.bg);
+    let inside_inner_bg = to_rgb(inside_inner.bg.expect("cell should have explicit background"));
     assert_eq!(
         inside_inner_bg.r, 255,
         "Content visible inside inner container"
@@ -412,17 +412,17 @@ fn test_nested_overflow_hidden() {
 
     // Outside inner but inside outer - should NOT show red (clipped by inner)
     let outside_inner = buf.get(17, 1).unwrap();
-    let outside_inner_bg = to_rgb(outside_inner.bg);
-    assert_ne!(
-        outside_inner_bg.r, 255,
+    let outside_inner_is_red = outside_inner.bg.map(|bg| to_rgb(bg).r == 255).unwrap_or(false);
+    assert!(
+        !outside_inner_is_red,
         "Content clipped by inner container"
     );
 
-    // Outside outer - should also not show red
+    // Outside outer - should also not show red (transparent or different)
     let outside_outer = buf.get(22, 1).unwrap();
-    let outside_outer_bg = to_rgb(outside_outer.bg);
-    assert_ne!(
-        outside_outer_bg.r, 255,
+    let outside_outer_is_red = outside_outer.bg.map(|bg| to_rgb(bg).r == 255).unwrap_or(false);
+    assert!(
+        !outside_outer_is_red,
         "Content clipped by outer container"
     );
 }
