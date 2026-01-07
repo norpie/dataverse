@@ -11,4 +11,4 @@ pub use enums::{
     TextWrap, Wrap,
 };
 pub use style::Style;
-pub use theme::{ColorContext, EmptyTheme, Theme};
+pub use theme::{ColorContext, DefaultTheme, EmptyTheme, Theme};

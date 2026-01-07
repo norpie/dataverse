@@ -16,6 +16,47 @@ impl Theme for EmptyTheme {
     }
 }
 
+/// Minimal default theme providing basic readable colors.
+/// Like bare HTML defaults - ensures content is visible.
+pub struct DefaultTheme {
+    pub background: Color,
+    pub foreground: Color,
+    pub surface: Color,
+    pub border: Color,
+    pub primary: Color,
+}
+
+impl DefaultTheme {
+    pub const fn new() -> Self {
+        Self {
+            background: Color::Oklch { l: 0.0, c: 0.0, h: 0.0, a: 1.0 },  // black
+            foreground: Color::Oklch { l: 1.0, c: 0.0, h: 0.0, a: 1.0 }, // white
+            surface: Color::Oklch { l: 0.15, c: 0.0, h: 0.0, a: 1.0 },   // dark gray
+            border: Color::Oklch { l: 0.4, c: 0.0, h: 0.0, a: 1.0 },     // gray
+            primary: Color::Oklch { l: 0.9, c: 0.0, h: 0.0, a: 1.0 },    // light gray
+        }
+    }
+}
+
+impl Default for DefaultTheme {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Theme for DefaultTheme {
+    fn resolve(&self, name: &str) -> Option<&Color> {
+        match name {
+            "background" => Some(&self.background),
+            "foreground" => Some(&self.foreground),
+            "surface" => Some(&self.surface),
+            "border" => Some(&self.border),
+            "primary" => Some(&self.primary),
+            _ => None,
+        }
+    }
+}
+
 /// Context for resolving color variables and derived colors.
 pub struct ColorContext<'a> {
     theme: &'a dyn Theme,

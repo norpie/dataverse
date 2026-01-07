@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::io::{self, Write};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use crossterm::{
@@ -48,7 +49,7 @@ pub struct Terminal {
     previous_buffer: Buffer,
     last_layout: LayoutResult,
     animation: AnimationState,
-    theme: Box<dyn Theme>,
+    theme: Arc<dyn Theme>,
 }
 
 impl Terminal {
@@ -73,7 +74,7 @@ impl Terminal {
             previous_buffer,
             last_layout: LayoutResult::new(),
             animation: AnimationState::new(),
-            theme: Box::new(EmptyTheme),
+            theme: Arc::new(EmptyTheme),
         })
     }
 
@@ -117,8 +118,8 @@ impl Terminal {
     }
 
     /// Set the theme for color variable resolution.
-    pub fn set_theme(&mut self, theme: impl Theme + 'static) {
-        self.theme = Box::new(theme);
+    pub fn set_theme(&mut self, theme: Arc<dyn Theme>) {
+        self.theme = theme;
     }
 
     /// Returns true if any animations (transitions or frame animations) are currently active.
