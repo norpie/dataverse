@@ -14,12 +14,14 @@
 //! Import widgets and use them in the `page!` macro:
 //!
 //! ```ignore
-//! use rafter::widgets::{Text, Button};
+//! use rafter::widgets::{Text, Button, Checkbox};
 //!
 //! page! {
 //!     text (content: "Hello", id: "greeting")
 //!     button (label: "Click me", id: "btn")
 //!         on_activate: handle_click()
+//!     checkbox (state: self.agree, id: "agree", label: "I agree")
+//!         on_change: agreement_changed()
 //! }
 //! ```
 //!
@@ -27,7 +29,9 @@
 //! builder method calls for each prop.
 
 pub mod button;
+pub mod checkbox;
 pub mod text;
 
 pub use button::Button;
+pub use checkbox::{Checkbox, CheckboxVariant};
 pub use text::Text;

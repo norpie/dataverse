@@ -14,7 +14,7 @@ use std::time::Duration;
 
 use rafter::page;
 use rafter::prelude::*;
-use rafter::widgets::{Button, Text};
+use rafter::widgets::{Button, Checkbox, Text};
 use simplelog::{Config, LevelFilter, WriteLogger};
 
 // ============================================================================
@@ -45,7 +45,7 @@ impl ReallySureModal {
     fn element(&self) -> Element {
         page! {
             column (padding: 2, gap: 1) style (bg: background) {
-                text (content: "Are you REALLY sure?") style (bold: true, fg: error)
+                text (content: "Are you REALLY sure?") style (bold, fg: error)
                 text (content: "This action cannot be undone!") style (fg: muted)
                 row (gap: 2) {
                     button (label: "No [n]", id: "no") on_activate: cancel()
@@ -93,7 +93,7 @@ impl ConfirmModal {
         let message = self.message.clone();
         page! {
             column (padding: 2, gap: 1) style (bg: background) {
-                text (content: "Confirm") style (bold: true, fg: warning)
+                text (content: "Confirm") style (bold, fg: warning)
                 text (content: {message})
                 row (gap: 2) {
                     button (label: "No [n]", id: "no") on_activate: cancel()
@@ -113,6 +113,7 @@ struct Counter {
     value: i32,
     step: i32,
     data: Resource<String>,
+    show_data: bool,
 }
 
 #[app_impl]
@@ -227,14 +228,14 @@ impl Counter {
         page! {
             column (padding: 1, gap: 1) style (bg: background) {
                 column {
-                    text (content: "Counter") style (bold: true, fg: primary)
+                    text (content: "Counter") style (bold, fg: primary)
                     text (content: "A rafter demo with smooth animations") style (fg: muted)
                 }
 
                 column (id: "value-display", padding: 1) style (bg: surface) {
                     row (gap: 2) {
                         text (content: "Value:") style (fg: muted)
-                        text (content: {value_str}) style (bold: true, fg: primary)
+                        text (content: {value_str}) style (bold, fg: primary)
                     }
                     row (gap: 2) {
                         text (content: "Step:") style (fg: muted)
@@ -249,14 +250,21 @@ impl Counter {
                     button (label: "Load", id: "load") on_activate: load_data()
                 }
 
-                row (gap: 1) {
-                    text (content: "Data:") style (fg: muted)
-                    match data_state {
-                        ResourceState::Idle => text (content: "Press 'l' to load") style (fg: muted),
-                        ResourceState::Loading => text (content: "Loading...") style (fg: warning),
-                        ResourceState::Progress(p) => text (content: {p.message.clone().unwrap_or_default()}) style (fg: warning),
-                        ResourceState::Ready(s) => text (content: {s}) style (fg: success),
-                        ResourceState::Error(e) => text (content: {e.to_string()}) style (fg: error),
+                row (gap: 2) {
+                    checkbox (state: self.show_data, id: "show-data", label: "Show data", small)
+                    checkbox (state: self.show_data, id: "show-data-big", label: "Big variant", big)
+                }
+
+                if self.show_data.get() {
+                    row (gap: 1) {
+                        text (content: "Data:") style (fg: muted)
+                        match data_state {
+                            ResourceState::Idle => text (content: "Press 'l' to load") style (fg: muted),
+                            ResourceState::Loading => text (content: "Loading...") style (fg: warning),
+                            ResourceState::Progress(p) => text (content: {p.message.clone().unwrap_or_default()}) style (fg: warning),
+                            ResourceState::Ready(s) => text (content: {s}) style (fg: success),
+                            ResourceState::Error(e) => text (content: {e.to_string()}) style (fg: error),
+                        }
                     }
                 }
 
