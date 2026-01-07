@@ -69,7 +69,7 @@ pub fn extract_panic_message(panic: &Box<dyn Any + Send>) -> String {
 /// A request to open an app-scoped modal.
 pub struct AppModalRequest {
     /// The type-erased modal entry.
-    pub entry: Box<dyn Any + Send + Sync>,
+    pub entry: Box<dyn crate::runtime::dispatch::AnyModal>,
 }
 
 // =============================================================================
@@ -128,8 +128,13 @@ impl AppContext {
     // =========================================================================
 
     /// Set the wakeup sender (called by runtime).
-    pub(crate) fn set_wakeup_sender(&mut self, sender: WakeupSender) {
+    pub fn set_wakeup_sender(&mut self, sender: WakeupSender) {
         self.wakeup_sender = Some(sender);
+    }
+
+    /// Set the global context reference (called by runtime).
+    pub fn set_global(&mut self, global: GlobalContext) {
+        self.global = global;
     }
 
     /// Set the error sender (called by runtime).

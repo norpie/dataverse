@@ -9,11 +9,13 @@
 //! - Toast notifications
 //! - Modal dialogs
 
+use std::fs::File;
 use std::time::Duration;
 
 use rafter::page;
 use rafter::prelude::*;
 use rafter::widgets::{Button, Text};
+use simplelog::{Config, LevelFilter, WriteLogger};
 
 // ============================================================================
 // Really Sure Modal (nested confirmation)
@@ -266,6 +268,11 @@ impl Counter {
 
 #[tokio::main]
 async fn main() {
+    // Set up file logging
+    let log_file = File::create("counter.log").expect("Failed to create log file");
+    WriteLogger::init(LevelFilter::Debug, Config::default(), log_file)
+        .expect("Failed to initialize logger");
+
     // TODO: Theme support - uncomment when Runtime::theme() is added
     // .theme(CounterTheme::new())
 

@@ -162,9 +162,9 @@ impl Runtime {
         }
 
         // Spawn initial app
-        let instance = AppInstance::new(app);
+        let instance = AppInstance::new(app, gx.clone());
         let instance_id = instance.id();
-        instance.install_wakeup(wakeup_tx.clone());
+        instance.install_wakeup(wakeup_tx.clone(), &gx);
 
         {
             let mut reg = registry.write().unwrap();
@@ -229,7 +229,18 @@ impl Runtime {
             // 2. Process pending commands
             self.process_commands(registry, gx)?;
 
-            // 3. Collect new toasts
+            // 3. Process modal requests from focused app
+            {
+                let reg = registry.read().unwrap();
+                if let Some(instance) = reg.focused_instance() {
+                    let cx = instance.app_context();
+                    if let Some(request) = cx.take_modal_request() {
+                        instance.push_modal(request.entry);
+                    }
+                }
+            }
+
+            // 4. Collect new toasts
             for toast in gx.take_toasts() {
                 let duration = toast.duration;
                 active_toasts.push(ActiveToast {
@@ -361,6 +372,29 @@ impl Runtime {
             root = root.child(overlay);
         }
 
+        // Add app modals (centered overlay)
+        {
+            let reg = registry.read().unwrap();
+            if let Some(instance) = reg.focused_instance() {
+                let modals = instance.modals().read().unwrap();
+                if let Some(modal) = modals.last() {
+                    use tuidom::{Align, Justify, Position, Size};
+                    // Center the modal on screen
+                    let modal_wrapper = Element::col()
+                        .id("__modal__")
+                        .position(Position::Absolute)
+                        .left(0)
+                        .top(0)
+                        .width(Size::Fill)
+                        .height(Size::Fill)
+                        .justify(Justify::Center)
+                        .align(Align::Center)
+                        .child(modal.element());
+                    root = root.child(modal_wrapper);
+                }
+            }
+        }
+
         // Add toasts (absolute positioned, stacked from bottom-right)
         if !active_toasts.is_empty() {
             let toast_container = self.build_toast_container(active_toasts);
@@ -401,12 +435,12 @@ impl Runtime {
         for command in commands {
             match command {
                 InstanceCommand::Spawn { app, focus } => {
-                    let instance = app.into_instance();
+                    let instance = app.into_instance(gx.clone());
                     let id = instance.id();
 
                     // Install wakeup sender
                     if let Some(sender) = gx.wakeup_sender() {
-                        instance.install_wakeup(sender);
+                        instance.install_wakeup(sender, gx);
                     }
 
                     let mut reg = registry.write().unwrap();

@@ -188,6 +188,17 @@ pub trait AnyAppInstance: Send + Sync {
     /// Get the current page identifier for keybind scoping.
     fn current_page(&self) -> Option<String>;
 
+    /// Get the app context for this instance.
+    ///
+    /// Returns a properly configured AppContext with wakeup sender installed.
+    fn app_context(&self) -> AppContext;
+
+    /// Push a modal onto this instance's modal stack.
+    fn push_modal(&self, modal: Box<dyn crate::runtime::dispatch::AnyModal>);
+
+    /// Get the instance's modal stack for dispatch.
+    fn modals(&self) -> &RwLock<Vec<Box<dyn crate::runtime::dispatch::AnyModal>>>;
+
     // Rendering
 
     /// Render the app's element tree.
@@ -199,8 +210,8 @@ pub trait AnyAppInstance: Send + Sync {
     /// Clear dirty flags after render.
     fn clear_dirty(&self);
 
-    /// Install wakeup sender on all State fields.
-    fn install_wakeup(&self, sender: WakeupSender);
+    /// Install wakeup sender on all State fields and AppContext.
+    fn install_wakeup(&self, sender: WakeupSender, gx: &GlobalContext);
 
     // Event/Request Dispatch
 
@@ -258,20 +269,27 @@ pub struct AppInstance<A: App> {
     id: InstanceId,
     /// Instance info (interior mutability for focused/sleeping state).
     info: RwLock<InstanceInfo>,
+    /// App context for this instance (interior mutability for wakeup sender).
+    context: RwLock<AppContext>,
+    /// Modal stack for this instance.
+    modals: RwLock<Vec<Box<dyn crate::runtime::dispatch::AnyModal>>>,
 }
 
 impl<A: App> AppInstance<A> {
     /// Create a new app instance.
-    pub fn new(app: A) -> Self {
+    pub fn new(app: A, gx: GlobalContext) -> Self {
         let id = InstanceId::new();
         let config = A::config();
         let title = app.title();
         let info = InstanceInfo::new(id, TypeId::of::<A>(), config.name, title);
+        let context = AppContext::new(id, gx, config.name);
 
         Self {
             app,
             id,
             info: RwLock::new(info),
+            context: RwLock::new(context),
+            modals: RwLock::new(Vec::new()),
         }
     }
 
@@ -313,6 +331,20 @@ impl<A: App> AnyAppInstance for AppInstance<A> {
         self.app.current_page()
     }
 
+    fn app_context(&self) -> AppContext {
+        self.context.read().unwrap_or_else(|e| e.into_inner()).clone()
+    }
+
+    fn push_modal(&self, modal: Box<dyn crate::runtime::dispatch::AnyModal>) {
+        if let Ok(mut modals) = self.modals.write() {
+            modals.push(modal);
+        }
+    }
+
+    fn modals(&self) -> &RwLock<Vec<Box<dyn crate::runtime::dispatch::AnyModal>>> {
+        &self.modals
+    }
+
     fn element(&self) -> Element {
         self.app.element()
     }
@@ -325,8 +357,15 @@ impl<A: App> AnyAppInstance for AppInstance<A> {
         self.app.clear_dirty();
     }
 
-    fn install_wakeup(&self, sender: WakeupSender) {
-        self.app.install_wakeup(sender);
+    fn install_wakeup(&self, sender: WakeupSender, gx: &GlobalContext) {
+        // Install on State fields
+        self.app.install_wakeup(sender.clone());
+        // Install on AppContext
+        if let Ok(mut ctx) = self.context.write() {
+            ctx.set_wakeup_sender(sender);
+            // Update GlobalContext reference in case it changed
+            ctx.set_global(gx.clone());
+        }
     }
 
     fn has_event_handler(&self, event_type: TypeId) -> bool {
@@ -365,6 +404,8 @@ impl<A: App> AnyAppInstance for AppInstance<A> {
             app: self.app.clone(),
             id: self.id,
             info: RwLock::new(self.info.read().unwrap_or_else(|e| e.into_inner()).clone()),
+            context: RwLock::new(self.context.read().unwrap_or_else(|e| e.into_inner()).clone()),
+            modals: RwLock::new(Vec::new()), // Modals don't transfer on clone
         })
     }
 

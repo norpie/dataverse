@@ -157,6 +157,19 @@ impl<'a> HandlerContext<'a> {
         }
     }
 
+    /// Create a HandlerContext for modal handlers with type-erased modal context.
+    pub fn for_modal_any(
+        cx: &'a AppContext,
+        gx: &'a GlobalContext,
+        mx: &'a (dyn std::any::Any + Send + Sync),
+    ) -> Self {
+        Self {
+            cx: Some(cx),
+            gx,
+            modal_context: Some(mx),
+        }
+    }
+
     /// Create a HandlerContext for system handlers (no app context).
     pub fn for_system(gx: &'a GlobalContext) -> Self {
         Self {

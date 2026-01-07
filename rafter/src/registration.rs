@@ -5,6 +5,7 @@ use crate::instance::{AnyAppInstance, AppInstance};
 use crate::keybinds::KeybindClosures;
 use crate::system::{Overlay, System};
 use crate::wakeup::WakeupSender;
+use crate::GlobalContext;
 
 /// App registration entry for inventory.
 pub struct AppRegistration {
@@ -35,7 +36,7 @@ pub trait CloneableApp: Send + Sync {
     /// Get the app's display name.
     fn name(&self) -> &'static str;
     /// Convert into a type-erased instance.
-    fn into_instance(self: Box<Self>) -> Box<dyn AnyAppInstance>;
+    fn into_instance(self: Box<Self>, gx: GlobalContext) -> Box<dyn AnyAppInstance>;
 }
 
 impl<T: App> CloneableApp for T {
@@ -47,8 +48,8 @@ impl<T: App> CloneableApp for T {
         App::name(self)
     }
 
-    fn into_instance(self: Box<Self>) -> Box<dyn AnyAppInstance> {
-        Box::new(AppInstance::new(*self))
+    fn into_instance(self: Box<Self>, gx: GlobalContext) -> Box<dyn AnyAppInstance> {
+        Box::new(AppInstance::new(*self, gx))
     }
 }
 

@@ -141,10 +141,37 @@ impl<'a> EventDispatcher<'a> {
     }
 
     fn dispatch_to_app_modals(&mut self, event: &Event) -> Option<DispatchResult> {
-        // TODO: Implement app-scoped modal dispatch
-        // This requires tracking app-scoped modals in the registry or instance
-        let _ = event;
-        None
+        let reg = self.registry.read().ok()?;
+        let instance = reg.focused_instance()?;
+
+        let mut modals = instance.modals().write().ok()?;
+        if modals.is_empty() {
+            return None;
+        }
+
+        // Get the topmost modal
+        let modal = modals.last_mut()?;
+
+        // Check if modal is closed
+        if modal.is_closed() {
+            modals.pop();
+            return None;
+        }
+
+        // Dispatch to modal's keybinds
+        if let Event::Key { key, modifiers, .. } = event {
+            let keybinds = modal.keybinds();
+            if let Some(handler) = keybinds.match_key(*key, *modifiers) {
+                let cx = instance.app_context();
+                let mx = modal.modal_context();
+                let hx = HandlerContext::for_modal_any(&cx, self.gx, mx);
+                handler(&hx);
+                return Some(DispatchResult::HandledByModal);
+            }
+        }
+
+        // Modal captures all input even if not handled
+        Some(DispatchResult::HandledByModal)
     }
 
     // =========================================================================
@@ -183,14 +210,24 @@ impl<'a> EventDispatcher<'a> {
         let keybinds = instance.keybinds();
         let current_page = instance.current_page();
 
+        log::debug!(
+            "dispatch_to_app_keybinds: key={:?}, modifiers={:?}, keybinds_count={}",
+            key,
+            modifiers,
+            keybinds.len()
+        );
+
         // Use page-scoped keybind matching
         if let Some(handler) = keybinds.match_key_for_page(*key, *modifiers, current_page.as_deref()) {
-            let cx = AppContext::new(instance.id(), self.gx.clone(), instance.config().name);
+            log::debug!("dispatch_to_app_keybinds: matched keybind, calling handler");
+            let cx = instance.app_context();
             let hx = HandlerContext::for_app(&cx, self.gx);
             handler(&hx);
+            log::debug!("dispatch_to_app_keybinds: handler returned");
             return Some(DispatchResult::HandledByKeybind);
         }
 
+        log::debug!("dispatch_to_app_keybinds: no keybind matched");
         None
     }
 
@@ -201,7 +238,7 @@ impl<'a> EventDispatcher<'a> {
     fn dispatch_to_widgets(&self, event: &Event) -> Option<DispatchResult> {
         let reg = self.registry.read().ok()?;
         let instance = reg.focused_instance()?;
-        let cx = AppContext::new(instance.id(), self.gx.clone(), instance.config().name);
+        let cx = instance.app_context();
         let hx = HandlerContext::for_app(&cx, self.gx);
         let handlers = instance.handlers();
 
@@ -218,12 +255,20 @@ impl<'a> EventDispatcher<'a> {
             }
 
             Event::Click { target, x: _, y: _, button: _ } => {
+                log::debug!("dispatch_to_widgets: Click event, target={:?}", target);
                 if let Some(target_id) = target {
                     // Click is an activation - look up on_activate handler
+                    log::debug!(
+                        "dispatch_to_widgets: looking up handler for target={}, event=on_activate",
+                        target_id
+                    );
                     if let Some(handler) = handlers.get(target_id, "on_activate") {
+                        log::debug!("dispatch_to_widgets: found handler, calling");
                         handler(&hx);
+                        log::debug!("dispatch_to_widgets: handler returned");
                         return Some(DispatchResult::HandledByWidget(WidgetResult::Activated));
                     }
+                    log::debug!("dispatch_to_widgets: no handler found");
                 }
             }
 
@@ -357,6 +402,10 @@ pub trait AnyModal: Send + Sync {
     fn keybinds(&self) -> crate::KeybindClosures;
     /// Get the handler registry for widget events.
     fn handlers(&self) -> &crate::HandlerRegistry;
+    /// Get the modal's element for rendering.
+    fn element(&self) -> tuidom::Element;
+    /// Get the modal context as a type-erased reference.
+    fn modal_context(&self) -> &(dyn std::any::Any + Send + Sync);
 }
 
 impl<M: Modal> AnyModal for ModalEntry<M> {
@@ -370,6 +419,14 @@ impl<M: Modal> AnyModal for ModalEntry<M> {
 
     fn handlers(&self) -> &crate::HandlerRegistry {
         ModalEntry::handlers(self)
+    }
+
+    fn element(&self) -> tuidom::Element {
+        ModalEntry::element(self)
+    }
+
+    fn modal_context(&self) -> &(dyn std::any::Any + Send + Sync) {
+        ModalEntry::context(self)
     }
 }
 
