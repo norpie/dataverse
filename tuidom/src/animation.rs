@@ -2,16 +2,13 @@ use std::collections::{HashMap, HashSet};
 use std::time::{Duration, Instant};
 
 use crate::element::{Content, Element};
+use crate::layout::LayoutResult;
 use crate::transitions::{Easing, TransitionConfig};
 use crate::types::{Color, Size};
 
 /// Which property is being transitioned.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum TransitionProperty {
-    Left,
-    Top,
-    Right,
-    Bottom,
     Width,
     Height,
     Background,
@@ -21,18 +18,13 @@ pub enum TransitionProperty {
 /// A property value that can be interpolated.
 #[derive(Debug, Clone)]
 pub enum PropertyValue {
-    I16(i16),
     U16(u16),
     Color(Color),
 }
 
-/// Snapshot of an element's transitionable properties.
+/// Snapshot of an element's transitionable properties (excluding position).
 #[derive(Debug, Clone, Default)]
 struct ElementSnapshot {
-    left: Option<i16>,
-    top: Option<i16>,
-    right: Option<i16>,
-    bottom: Option<i16>,
     width: Option<u16>,
     height: Option<u16>,
     background: Option<Color>,
@@ -62,17 +54,60 @@ struct FrameState {
     count: usize,
 }
 
+/// Active position transition for an element (x and/or y).
+#[derive(Debug, Clone)]
+struct PositionTransition {
+    // X transition (if active)
+    from_x: Option<u16>,
+    to_x: Option<u16>,
+    x_start: Option<Instant>,
+    x_duration: Duration,
+    x_easing: Easing,
+    // Y transition (if active)
+    from_y: Option<u16>,
+    to_y: Option<u16>,
+    y_start: Option<Instant>,
+    y_duration: Duration,
+    y_easing: Easing,
+}
+
+impl PositionTransition {
+    fn has_active_x(&self, now: Instant) -> bool {
+        if let (Some(start), Some(_)) = (self.x_start, self.from_x) {
+            now.duration_since(start) < self.x_duration
+        } else {
+            false
+        }
+    }
+
+    fn has_active_y(&self, now: Instant) -> bool {
+        if let (Some(start), Some(_)) = (self.y_start, self.from_y) {
+            now.duration_since(start) < self.y_duration
+        } else {
+            false
+        }
+    }
+
+    fn has_any_active(&self, now: Instant) -> bool {
+        self.has_active_x(now) || self.has_active_y(now)
+    }
+}
+
 /// Manages animation state across frames.
 #[derive(Debug, Default)]
 pub struct AnimationState {
     /// Previous frame's property values per element.
     snapshots: HashMap<String, ElementSnapshot>,
-    /// Currently active transitions: (element_id, property) -> transition.
+    /// Currently active property transitions: (element_id, property) -> transition.
     active: HashMap<(String, TransitionProperty), ActiveTransition>,
     /// Frame animation state per element.
     frame_states: HashMap<String, FrameState>,
     /// Reduced motion flag - when true, transitions complete instantly.
     reduced_motion: bool,
+    /// Previous frame's computed positions per element.
+    positions: HashMap<String, (u16, u16)>,
+    /// Active position transitions per element.
+    position_transitions: HashMap<String, PositionTransition>,
 }
 
 impl AnimationState {
@@ -88,25 +123,194 @@ impl AnimationState {
 
     /// Returns true if any animation (transition or frame) is currently active.
     pub fn has_active_animations(&self) -> bool {
-        !self.active.is_empty() || !self.frame_states.is_empty()
+        let now = Instant::now();
+        !self.active.is_empty()
+            || !self.frame_states.is_empty()
+            || self.position_transitions.values().any(|t| t.has_any_active(now))
     }
 
-    /// Returns true if any transition is currently active.
-    /// Deprecated: use has_active_animations() instead.
-    pub fn has_active_transitions(&self) -> bool {
-        !self.active.is_empty()
+    /// Capture current layout positions for next frame comparison.
+    /// Call this BEFORE running new layout.
+    pub fn capture_layout(&mut self, layout: &LayoutResult) {
+        self.positions.clear();
+        for (id, rect) in layout.iter_rects() {
+            self.positions.insert(id.clone(), (rect.x, rect.y));
+        }
+        log::trace!(
+            "[anim] capture_layout: captured {} positions",
+            self.positions.len()
+        );
+    }
+
+    /// Compare new layout with captured positions, start transitions for changes.
+    /// Call this AFTER running new layout.
+    pub fn update_layout(&mut self, layout: &LayoutResult, root: &Element) {
+        let now = Instant::now();
+
+        // Prune completed position transitions
+        self.position_transitions.retain(|_, t| t.has_any_active(now));
+
+        // Check each element for position changes
+        self.check_position_changes(root, layout, now);
+    }
+
+    fn check_position_changes(&mut self, element: &Element, layout: &LayoutResult, now: Instant) {
+        let x_config = element.transitions.x;
+        let y_config = element.transitions.y;
+
+        if x_config.is_some() || y_config.is_some() {
+            if let Some(new_rect) = layout.get(&element.id) {
+                let new_pos = (new_rect.x, new_rect.y);
+                let old_pos = self.positions.get(&element.id).copied();
+
+                if let Some(old_pos) = old_pos {
+                    let x_changed = old_pos.0 != new_pos.0;
+                    let y_changed = old_pos.1 != new_pos.1;
+
+                    if (x_changed || y_changed) && !self.reduced_motion {
+                        // Get current interpolated positions BEFORE mutating (for interrupt handling)
+                        let current_interp_x = self.get_interpolated_x(&element.id, now);
+                        let current_interp_y = self.get_interpolated_y(&element.id, now);
+
+                        // Get or create position transition for this element
+                        let transition = self
+                            .position_transitions
+                            .entry(element.id.clone())
+                            .or_insert(PositionTransition {
+                                from_x: None,
+                                to_x: None,
+                                x_start: None,
+                                x_duration: Duration::ZERO,
+                                x_easing: Easing::Linear,
+                                from_y: None,
+                                to_y: None,
+                                y_start: None,
+                                y_duration: Duration::ZERO,
+                                y_easing: Easing::Linear,
+                            });
+
+                        // Handle X change
+                        if x_changed {
+                            if let Some(config) = x_config {
+                                let from_x = if transition.has_active_x(now) {
+                                    // Interrupt: start from current interpolated position
+                                    current_interp_x.unwrap_or(old_pos.0)
+                                } else {
+                                    old_pos.0
+                                };
+
+                                log::debug!(
+                                    "[anim] {} x: starting transition {} -> {}",
+                                    element.id,
+                                    from_x,
+                                    new_pos.0
+                                );
+
+                                transition.from_x = Some(from_x);
+                                transition.to_x = Some(new_pos.0);
+                                transition.x_start = Some(now);
+                                transition.x_duration = config.duration;
+                                transition.x_easing = config.easing;
+                            }
+                        }
+
+                        // Handle Y change
+                        if y_changed {
+                            if let Some(config) = y_config {
+                                let from_y = if transition.has_active_y(now) {
+                                    // Interrupt: start from current interpolated position
+                                    current_interp_y.unwrap_or(old_pos.1)
+                                } else {
+                                    old_pos.1
+                                };
+
+                                log::debug!(
+                                    "[anim] {} y: starting transition {} -> {}",
+                                    element.id,
+                                    from_y,
+                                    new_pos.1
+                                );
+
+                                transition.from_y = Some(from_y);
+                                transition.to_y = Some(new_pos.1);
+                                transition.y_start = Some(now);
+                                transition.y_duration = config.duration;
+                                transition.y_easing = config.easing;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Recurse into children
+        match &element.content {
+            Content::Children(children) => {
+                for child in children {
+                    self.check_position_changes(child, layout, now);
+                }
+            }
+            Content::Frames { children, .. } => {
+                for child in children {
+                    self.check_position_changes(child, layout, now);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// Get interpolated X position for an element.
+    fn get_interpolated_x(&self, id: &str, now: Instant) -> Option<u16> {
+        let transition = self.position_transitions.get(id)?;
+        let start = transition.x_start?;
+        let from = transition.from_x?;
+        let to = transition.to_x?;
+
+        let elapsed = now.duration_since(start);
+        if elapsed >= transition.x_duration {
+            return None; // Transition complete
+        }
+
+        let progress = elapsed.as_secs_f32() / transition.x_duration.as_secs_f32();
+        let eased = transition.x_easing.apply(progress);
+        Some(lerp_u16(from, to, eased))
+    }
+
+    /// Get interpolated Y position for an element.
+    fn get_interpolated_y(&self, id: &str, now: Instant) -> Option<u16> {
+        let transition = self.position_transitions.get(id)?;
+        let start = transition.y_start?;
+        let from = transition.from_y?;
+        let to = transition.to_y?;
+
+        let elapsed = now.duration_since(start);
+        if elapsed >= transition.y_duration {
+            return None; // Transition complete
+        }
+
+        let progress = elapsed.as_secs_f32() / transition.y_duration.as_secs_f32();
+        let eased = transition.y_easing.apply(progress);
+        Some(lerp_u16(from, to, eased))
+    }
+
+    /// Get interpolated position for an element.
+    /// Returns (interpolated_x, interpolated_y) where each is Some if active, None if not.
+    pub fn get_interpolated_position(&self, id: &str, now: Instant) -> (Option<u16>, Option<u16>) {
+        (self.get_interpolated_x(id, now), self.get_interpolated_y(id, now))
     }
 
     /// Returns when the next animation tick is due.
-    /// This considers both property transitions (which need ~16ms polling)
-    /// and frame animations (which have explicit intervals).
-    /// Returns None if no animations are active.
     pub fn next_tick_due(&self) -> Option<Duration> {
         let now = Instant::now();
         let mut min_due: Option<Duration> = None;
 
-        // Check transitions - need 16ms polling for smooth animation
-        if !self.active.is_empty() {
+        // Check property transitions and position transitions
+        if !self.active.is_empty()
+            || self
+                .position_transitions
+                .values()
+                .any(|t| t.has_any_active(now))
+        {
             min_due = Some(Duration::from_millis(16));
         }
 
@@ -121,7 +325,6 @@ impl AnimationState {
     }
 
     /// Get the current frame index for an element with frame animation.
-    /// Returns 0 if the element has no frame state.
     pub fn current_frame(&self, element_id: &str) -> usize {
         self.frame_states
             .get(element_id)
@@ -134,7 +337,7 @@ impl AnimationState {
     pub fn update(&mut self, root: &Element) {
         let now = Instant::now();
 
-        // Prune completed transitions
+        // Prune completed property transitions
         self.active
             .retain(|_, transition| now.duration_since(transition.start) < transition.duration);
 
@@ -147,40 +350,8 @@ impl AnimationState {
         let current = Self::snapshot_element(element);
         let transitions = &element.transitions;
 
-        // Compare with previous snapshot and start transitions
+        // Compare with previous snapshot and start transitions for non-position properties
         if let Some(prev) = self.snapshots.get(id).cloned() {
-            self.check_and_start_i16_transition(
-                id,
-                TransitionProperty::Left,
-                prev.left,
-                current.left,
-                transitions.left,
-                now,
-            );
-            self.check_and_start_i16_transition(
-                id,
-                TransitionProperty::Top,
-                prev.top,
-                current.top,
-                transitions.top,
-                now,
-            );
-            self.check_and_start_i16_transition(
-                id,
-                TransitionProperty::Right,
-                prev.right,
-                current.right,
-                transitions.right,
-                now,
-            );
-            self.check_and_start_i16_transition(
-                id,
-                TransitionProperty::Bottom,
-                prev.bottom,
-                current.bottom,
-                transitions.bottom,
-                now,
-            );
             self.check_and_start_u16_transition(
                 id,
                 TransitionProperty::Width,
@@ -226,10 +397,7 @@ impl AnimationState {
                 }
             }
             Content::Frames { children, interval } => {
-                // Update frame state
                 self.update_frame_state(id, children.len(), *interval, now);
-
-                // Recurse into the current frame only
                 let frame_idx = self.current_frame(id);
                 if let Some(child) = children.get(frame_idx) {
                     self.update_element(child, now);
@@ -239,7 +407,6 @@ impl AnimationState {
         }
     }
 
-    /// Update frame animation state for an element.
     fn update_frame_state(&mut self, id: &str, count: usize, interval: Duration, now: Instant) {
         if count == 0 {
             self.frame_states.remove(id);
@@ -256,69 +423,15 @@ impl AnimationState {
                 count,
             });
 
-        // Update interval and count in case they changed
         state.interval = interval;
         state.count = count;
 
-        // Advance frame if interval has elapsed
         let elapsed = now.duration_since(state.started);
         if elapsed >= interval {
-            // Calculate how many frames to advance (handles case where multiple intervals passed)
             let frames_to_advance = (elapsed.as_millis() / interval.as_millis()) as usize;
             state.index = (state.index + frames_to_advance) % count;
             state.started = now;
         }
-    }
-
-    fn check_and_start_i16_transition(
-        &mut self,
-        id: &str,
-        property: TransitionProperty,
-        prev: Option<i16>,
-        current: Option<i16>,
-        config: Option<TransitionConfig>,
-        now: Instant,
-    ) {
-        let Some(config) = config else { return };
-        let Some(prev_val) = prev else { return };
-        let Some(curr_val) = current else { return };
-
-        if prev_val == curr_val {
-            return;
-        }
-
-        // Skip if reduced motion is enabled
-        if self.reduced_motion {
-            return;
-        }
-
-        let key = (id.to_string(), property);
-
-        // Check if there's already an active transition for this property
-        let from = if let Some(existing) = self.active.get(&key) {
-            // Transition from current interpolated value
-            self.interpolate_value(
-                &existing.from,
-                &existing.to,
-                existing.start,
-                existing.duration,
-                existing.easing,
-                now,
-            )
-        } else {
-            PropertyValue::I16(prev_val)
-        };
-
-        self.active.insert(
-            key,
-            ActiveTransition {
-                from,
-                to: PropertyValue::I16(curr_val),
-                start: now,
-                duration: config.duration,
-                easing: config.easing,
-            },
-        );
     }
 
     fn check_and_start_u16_transition(
@@ -334,20 +447,12 @@ impl AnimationState {
         let Some(prev_val) = prev else { return };
         let Some(curr_val) = current else { return };
 
-        if prev_val == curr_val {
-            return;
-        }
-
-        // Skip if reduced motion is enabled
-        if self.reduced_motion {
+        if prev_val == curr_val || self.reduced_motion {
             return;
         }
 
         let key = (id.to_string(), property);
-
-        // Check if there's already an active transition for this property
         let from = if let Some(existing) = self.active.get(&key) {
-            // Transition from current interpolated value
             self.interpolate_value(
                 &existing.from,
                 &existing.to,
@@ -385,20 +490,12 @@ impl AnimationState {
         let Some(prev_color) = prev else { return };
         let Some(curr_color) = current else { return };
 
-        if prev_color == curr_color {
-            return;
-        }
-
-        // Skip if reduced motion is enabled
-        if self.reduced_motion {
+        if prev_color == curr_color || self.reduced_motion {
             return;
         }
 
         let key = (id.to_string(), property);
-
-        // Check if there's already an active transition for this property
         let from = if let Some(existing) = self.active.get(&key) {
-            // Transition from current interpolated value
             self.interpolate_value(
                 &existing.from,
                 &existing.to,
@@ -425,10 +522,6 @@ impl AnimationState {
 
     fn snapshot_element(element: &Element) -> ElementSnapshot {
         ElementSnapshot {
-            left: element.left,
-            top: element.top,
-            right: element.right,
-            bottom: element.bottom,
             width: match element.width {
                 Size::Fixed(w) => Some(w),
                 _ => None,
@@ -443,7 +536,6 @@ impl AnimationState {
     }
 
     /// Get interpolated value for a property.
-    /// Returns None if no active transition for this property.
     pub fn get_interpolated(
         &self,
         element_id: &str,
@@ -481,16 +573,13 @@ impl AnimationState {
         let eased = easing.apply(progress);
 
         match (from, to) {
-            (PropertyValue::I16(from_val), PropertyValue::I16(to_val)) => {
-                PropertyValue::I16(lerp_i16(*from_val, *to_val, eased))
-            }
             (PropertyValue::U16(from_val), PropertyValue::U16(to_val)) => {
                 PropertyValue::U16(lerp_u16(*from_val, *to_val, eased))
             }
             (PropertyValue::Color(from_color), PropertyValue::Color(to_color)) => {
                 PropertyValue::Color(lerp_color(from_color, to_color, eased))
             }
-            _ => to.clone(), // Mismatched types, just use target
+            _ => to.clone(),
         }
     }
 
@@ -499,14 +588,10 @@ impl AnimationState {
         self.snapshots.retain(|id, _| current_ids.contains(id));
         self.active.retain(|(id, _), _| current_ids.contains(id));
         self.frame_states.retain(|id, _| current_ids.contains(id));
+        self.positions.retain(|id, _| current_ids.contains(id));
+        self.position_transitions
+            .retain(|id, _| current_ids.contains(id));
     }
-}
-
-/// Linear interpolation for i16 values.
-fn lerp_i16(from: i16, to: i16, t: f32) -> i16 {
-    let from = from as f32;
-    let to = to as f32;
-    (from + (to - from) * t).round() as i16
 }
 
 /// Linear interpolation for u16 values.
@@ -518,15 +603,12 @@ fn lerp_u16(from: u16, to: u16, t: f32) -> u16 {
 
 /// Interpolate colors in OKLCH space.
 fn lerp_color(from: &Color, to: &Color, t: f32) -> Color {
-    // Extract OKLCH values, converting if necessary
     let (from_l, from_c, from_h) = color_to_oklch(from);
     let (to_l, to_c, to_h) = color_to_oklch(to);
 
-    // Interpolate L and C linearly
     let l = from_l + (to_l - from_l) * t;
     let c = from_c + (to_c - from_c) * t;
 
-    // Hue interpolation (shortest path around the circle)
     let mut dh = to_h - from_h;
     if dh > 180.0 {
         dh -= 360.0;
@@ -538,19 +620,15 @@ fn lerp_color(from: &Color, to: &Color, t: f32) -> Color {
     Color::oklch(l, c, h)
 }
 
-/// Extract OKLCH values from a color.
 fn color_to_oklch(color: &Color) -> (f32, f32, f32) {
     match color {
         Color::Oklch { l, c, h, .. } => (*l, *c, *h),
         Color::Rgb { r, g, b } => {
-            // Convert RGB to OKLCH using palette crate
             use palette::{IntoColor, Oklch, Srgb};
             let srgb = Srgb::new(*r as f32 / 255.0, *g as f32 / 255.0, *b as f32 / 255.0);
             let oklch: Oklch = srgb.into_color();
             (oklch.l, oklch.chroma, oklch.hue.into_positive_degrees())
         }
-        // For Var and Derived, we can't interpolate without resolving them first
-        // Return neutral values that won't cause issues
         Color::Var(_) | Color::Derived { .. } => (0.5, 0.0, 0.0),
     }
 }

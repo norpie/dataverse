@@ -45,10 +45,10 @@ impl Easing {
 /// Similar to Style, this is a builder for configuring property transitions.
 #[derive(Debug, Clone, Default)]
 pub struct Transitions {
-    pub left: Option<TransitionConfig>,
-    pub top: Option<TransitionConfig>,
-    pub right: Option<TransitionConfig>,
-    pub bottom: Option<TransitionConfig>,
+    /// Transition for X position changes (from left, right, or layout reflow).
+    pub x: Option<TransitionConfig>,
+    /// Transition for Y position changes (from top, bottom, or layout reflow).
+    pub y: Option<TransitionConfig>,
     pub width: Option<TransitionConfig>,
     pub height: Option<TransitionConfig>,
     pub background: Option<TransitionConfig>,
@@ -60,26 +60,23 @@ impl Transitions {
         Self::default()
     }
 
-    // Individual property setters
-
-    pub fn left(mut self, duration: Duration, easing: Easing) -> Self {
-        self.left = Some(TransitionConfig::new(duration, easing));
+    /// Set transition for X position changes.
+    /// This animates horizontal position changes from any source (left, right, or layout reflow).
+    pub fn x(mut self, duration: Duration, easing: Easing) -> Self {
+        self.x = Some(TransitionConfig::new(duration, easing));
         self
     }
 
-    pub fn top(mut self, duration: Duration, easing: Easing) -> Self {
-        self.top = Some(TransitionConfig::new(duration, easing));
+    /// Set transition for Y position changes.
+    /// This animates vertical position changes from any source (top, bottom, or layout reflow).
+    pub fn y(mut self, duration: Duration, easing: Easing) -> Self {
+        self.y = Some(TransitionConfig::new(duration, easing));
         self
     }
 
-    pub fn right(mut self, duration: Duration, easing: Easing) -> Self {
-        self.right = Some(TransitionConfig::new(duration, easing));
-        self
-    }
-
-    pub fn bottom(mut self, duration: Duration, easing: Easing) -> Self {
-        self.bottom = Some(TransitionConfig::new(duration, easing));
-        self
+    /// Set transition for both X and Y position changes.
+    pub fn position(self, duration: Duration, easing: Easing) -> Self {
+        self.x(duration, easing).y(duration, easing)
     }
 
     pub fn width(mut self, duration: Duration, easing: Easing) -> Self {
@@ -92,6 +89,11 @@ impl Transitions {
         self
     }
 
+    /// Set transition for size (width, height).
+    pub fn size(self, duration: Duration, easing: Easing) -> Self {
+        self.width(duration, easing).height(duration, easing)
+    }
+
     pub fn background(mut self, duration: Duration, easing: Easing) -> Self {
         self.background = Some(TransitionConfig::new(duration, easing));
         self
@@ -100,21 +102,6 @@ impl Transitions {
     pub fn foreground(mut self, duration: Duration, easing: Easing) -> Self {
         self.foreground = Some(TransitionConfig::new(duration, easing));
         self
-    }
-
-    // Convenience group setters
-
-    /// Set transition for all position offsets (left, top, right, bottom).
-    pub fn position(self, duration: Duration, easing: Easing) -> Self {
-        self.left(duration, easing)
-            .top(duration, easing)
-            .right(duration, easing)
-            .bottom(duration, easing)
-    }
-
-    /// Set transition for size (width, height).
-    pub fn size(self, duration: Duration, easing: Easing) -> Self {
-        self.width(duration, easing).height(duration, easing)
     }
 
     /// Set transition for colors (background, foreground).
@@ -132,10 +119,8 @@ impl Transitions {
 
     /// Returns true if any transition is configured.
     pub fn has_any(&self) -> bool {
-        self.left.is_some()
-            || self.top.is_some()
-            || self.right.is_some()
-            || self.bottom.is_some()
+        self.x.is_some()
+            || self.y.is_some()
             || self.width.is_some()
             || self.height.is_some()
             || self.background.is_some()

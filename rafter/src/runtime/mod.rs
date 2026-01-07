@@ -67,13 +67,44 @@ impl From<io::Error> for RuntimeError {
 }
 
 // =============================================================================
+// Toast Animation Constants
+// =============================================================================
+
+const SLIDE_DURATION: Duration = Duration::from_millis(400);
+const TOAST_WIDTH: u16 = 40;
+const TOP_OFFSET: u16 = 1;
+const RIGHT_MARGIN: u16 = 1;
+const TOAST_GAP: u16 = 1;
+const MAX_VISIBLE_TOASTS: usize = 5;
+
+// =============================================================================
+// Toast Phase
+// =============================================================================
+
+/// Animation phase for a toast.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ToastPhase {
+    /// First frame: render off-screen to establish animation snapshot
+    PendingSlideIn,
+    /// Animating from off-screen to on-screen
+    SlidingIn,
+    /// Static display
+    Visible,
+    /// Animating from on-screen to off-screen
+    SlidingOut,
+}
+
+// =============================================================================
 // ActiveToast
 // =============================================================================
 
-/// A toast with its expiration time.
+/// A toast with its animation state.
 struct ActiveToast {
     toast: Toast,
-    expires_at: Instant,
+    id: usize,
+    phase: ToastPhase,
+    phase_started: Instant,
+    duration: Duration,
 }
 
 // =============================================================================
@@ -177,6 +208,7 @@ impl Runtime {
 
         // Active toasts
         let mut active_toasts: Vec<ActiveToast> = Vec::new();
+        let mut next_toast_id: usize = 0;
 
         // Global modals
         let mut global_modals: Vec<Box<dyn AnyModal>> = Vec::new();
@@ -192,6 +224,7 @@ impl Runtime {
             &gx,
             &mut wakeup_rx,
             &mut active_toasts,
+            &mut next_toast_id,
             &mut global_modals,
         )
         .await
@@ -209,6 +242,7 @@ impl Runtime {
         gx: &GlobalContext,
         wakeup_rx: &mut WakeupReceiver,
         active_toasts: &mut Vec<ActiveToast>,
+        next_toast_id: &mut usize,
         global_modals: &mut Vec<Box<dyn AnyModal>>,
     ) -> Result<(), RuntimeError> {
         // Default poll timeout (16ms for ~60fps when animations active)
@@ -255,60 +289,129 @@ impl Runtime {
                 let duration = toast.duration;
                 active_toasts.push(ActiveToast {
                     toast,
-                    expires_at: Instant::now() + duration,
+                    id: *next_toast_id,
+                    phase: ToastPhase::PendingSlideIn,
+                    phase_started: Instant::now(),
+                    duration,
                 });
+                *next_toast_id += 1;
             }
 
-            // Remove expired toasts
-            let now = Instant::now();
-            active_toasts.retain(|t| t.expires_at > now);
-
-            // 4. Apply theme changes
+            // 5. Apply theme changes
             if let Some(theme) = gx.take_theme_request() {
                 terminal.set_theme(theme);
             }
 
-            // 5. Build UI
+            // 6. Build UI
             let root = self.build_root_element(registry, systems, active_toasts);
 
-            // 6. Render (stores layout internally)
+            // 7. Render (stores layout internally)
+            log::trace!("[runtime] === FRAME START ===");
             terminal.render(&root)?;
 
-            // 7. Determine poll timeout
-            let timeout = if terminal.has_active_animations() {
+            // 8. Update toast phases (AFTER render so animation captures off-screen position first)
+            let now = Instant::now();
+            for toast in active_toasts.iter_mut() {
+                let elapsed = now.duration_since(toast.phase_started);
+
+                match toast.phase {
+                    ToastPhase::PendingSlideIn => {
+                        // Transition to SlidingIn now that off-screen position is captured
+                        log::debug!("Toast {} transitioning PendingSlideIn -> SlidingIn", toast.id);
+                        toast.phase = ToastPhase::SlidingIn;
+                        toast.phase_started = now;
+                    }
+                    ToastPhase::SlidingIn if elapsed >= SLIDE_DURATION => {
+                        toast.phase = ToastPhase::Visible;
+                        toast.phase_started = now;
+                    }
+                    ToastPhase::Visible if elapsed >= toast.duration => {
+                        toast.phase = ToastPhase::SlidingOut;
+                        toast.phase_started = now;
+                    }
+                    _ => {}
+                }
+            }
+
+            // Remove toasts that have finished sliding out
+            active_toasts.retain(|t| {
+                if t.phase == ToastPhase::SlidingOut {
+                    now.duration_since(t.phase_started) < SLIDE_DURATION
+                } else {
+                    true
+                }
+            });
+
+            // 9. Determine poll timeout
+            let toast_animating = active_toasts.iter().any(|t| {
+                matches!(
+                    t.phase,
+                    ToastPhase::PendingSlideIn | ToastPhase::SlidingIn | ToastPhase::SlidingOut
+                )
+            });
+
+            let has_tuidom_anims = terminal.has_active_animations();
+            let timeout = if has_tuidom_anims || toast_animating {
+                log::trace!(
+                    "[runtime] using animation_timeout: tuidom_anims={}, toast_animating={}",
+                    has_tuidom_anims,
+                    toast_animating
+                );
                 animation_timeout
             } else {
-                // Check if any toast will expire soon
-                let next_toast_expiry = active_toasts
+                // Check when the next toast phase change is due
+                let next_phase_change = active_toasts
                     .iter()
-                    .map(|t| t.expires_at)
-                    .min()
-                    .map(|exp| exp.saturating_duration_since(now));
+                    .filter_map(|t| {
+                        match t.phase {
+                            ToastPhase::PendingSlideIn => Some(Duration::ZERO), // Immediate
+                            ToastPhase::SlidingIn => {
+                                Some(SLIDE_DURATION.saturating_sub(now.duration_since(t.phase_started)))
+                            }
+                            ToastPhase::Visible => {
+                                Some(t.duration.saturating_sub(now.duration_since(t.phase_started)))
+                            }
+                            ToastPhase::SlidingOut => {
+                                Some(SLIDE_DURATION.saturating_sub(now.duration_since(t.phase_started)))
+                            }
+                        }
+                    })
+                    .min();
 
-                match next_toast_expiry {
+                match next_phase_change {
                     Some(dur) if dur < idle_timeout => dur,
                     _ => idle_timeout,
                 }
             };
 
-            // 8. Poll events
+            // 10. Poll events
+            let poll_start = Instant::now();
             let raw_events = terminal.poll(Some(timeout))?;
+            let poll_duration = poll_start.elapsed();
+            if has_tuidom_anims || toast_animating {
+                log::trace!(
+                    "[runtime] poll returned {} events after {:?} (timeout was {:?})",
+                    raw_events.len(),
+                    poll_duration,
+                    timeout
+                );
+            }
 
-            // 9. Get layout for event processing (stored from render)
+            // 11. Get layout for event processing (stored from render)
             let layout = terminal.layout();
 
-            // 10. Process focus events (Tab navigation, focus-follows-mouse)
+            // 12. Process focus events (Tab navigation, focus-follows-mouse)
             let events = focus.process_events(&raw_events, &root, layout);
 
-            // 11. Process scroll events
+            // 13. Process scroll events
             let _consumed_scroll = scroll.process_events(&events, &root, layout);
 
-            // 12. Dispatch events to keybinds and apps
+            // 14. Dispatch events to keybinds and apps
             for event in &events {
                 dispatch::dispatch_event(event, global_modals, systems, registry, gx, layout);
             }
 
-            // 13. Check wakeups (state changes from async tasks)
+            // 15. Check wakeups (state changes from async tasks)
             while wakeup_rx.try_recv() {
                 // Just drain the wakeup queue - we'll re-render on next iteration
             }
@@ -413,19 +516,46 @@ impl Runtime {
 
     /// Build the toast container element.
     fn build_toast_container(&self, active_toasts: &[ActiveToast]) -> Element {
-        use tuidom::{Align, Position, Size};
+        use tuidom::{Easing, Position, Size, Transitions};
 
         let mut container = Element::col()
             .id("__toasts__")
             .position(Position::Absolute)
-            .right(1)
-            .bottom(1)
-            .width(Size::Fixed(40))
-            .gap(1)
-            .align(Align::End);
+            .right(RIGHT_MARGIN as i16)
+            .top(TOP_OFFSET as i16)
+            .width(Size::Fixed(TOAST_WIDTH))
+            .gap(TOAST_GAP);
 
-        for active in active_toasts.iter().rev().take(5) {
-            container = container.child(active.toast.element());
+        // Oldest toasts first (at top), newest at bottom, limit to MAX_VISIBLE_TOASTS
+        for active in active_toasts.iter().take(MAX_VISIBLE_TOASTS) {
+            // Right position based on phase
+            let right: i16 = match active.phase {
+                ToastPhase::PendingSlideIn | ToastPhase::SlidingOut => {
+                    -(TOAST_WIDTH as i16 + 2)
+                }
+                ToastPhase::SlidingIn | ToastPhase::Visible => 0,
+            };
+
+            log::debug!(
+                "Building toast {} with phase {:?}, right={}",
+                active.id,
+                active.phase,
+                right
+            );
+
+            let toast_element = Element::box_()
+                .id(format!("__toast_{}__", active.id))
+                .position(Position::Relative)
+                .right(right)
+                .width(Size::Fill)
+                .child(active.toast.element())
+                .transitions(
+                    Transitions::new()
+                        .x(SLIDE_DURATION, Easing::EaseOut)
+                        .y(SLIDE_DURATION, Easing::EaseOut),
+                );
+
+            container = container.child(toast_element);
         }
 
         container

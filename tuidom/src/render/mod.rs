@@ -45,6 +45,9 @@ struct RenderItem<'a> {
     z_index: i16,
     tree_order: usize,
     clip: Option<Rect>,
+    /// Cumulative layout_position offset from ancestors (dx, dy).
+    /// Children inherit their parent's animation offset.
+    layout_offset: (i16, i16),
 }
 
 /// Timing stats for render operations (in microseconds).
@@ -78,6 +81,7 @@ pub fn render_to_buffer(
         0,
         element.z_index,
         None,
+        (0, 0), // Initial layout offset
         animation,
     );
     let t1 = Instant::now();
@@ -104,6 +108,7 @@ pub fn render_to_buffer(
             layout,
             buf,
             item.clip,
+            item.layout_offset,
             animation,
             &mut stats,
             &mut oklch_cache,
@@ -133,11 +138,30 @@ fn collect_elements<'a>(
     tree_order: usize,
     parent_z_index: i16,
     parent_clip: Option<Rect>,
+    parent_layout_offset: (i16, i16),
     animation: &AnimationState,
 ) -> usize {
     let mut order = tree_order;
     // Effective z_index: use element's z_index if explicitly higher, otherwise inherit parent's
     let effective_z = element.z_index.max(parent_z_index);
+
+    // Calculate this element's position animation offset (if any)
+    // The unified animation system tracks all position changes (from layout reflow, left/right/top/bottom)
+    let now = Instant::now();
+    let position_offset = if let Some(layout_rect) = layout.get(&element.id) {
+        let (interp_x, interp_y) = animation.get_interpolated_position(&element.id, now);
+        let dx = interp_x.map(|x| x as i16 - layout_rect.x as i16).unwrap_or(0);
+        let dy = interp_y.map(|y| y as i16 - layout_rect.y as i16).unwrap_or(0);
+        (dx, dy)
+    } else {
+        (0, 0)
+    };
+
+    // Cumulative offset: parent's offset + this element's position offset
+    let cumulative_offset = (
+        parent_layout_offset.0 + position_offset.0,
+        parent_layout_offset.1 + position_offset.1,
+    );
 
     // Compute this element's clip rect for its children
     let child_clip = if element.overflow != Overflow::Visible {
@@ -168,6 +192,7 @@ fn collect_elements<'a>(
         z_index: effective_z,
         tree_order: order,
         clip: parent_clip, // This element is clipped by parent's clip
+        layout_offset: cumulative_offset,
     });
     order += 1;
 
@@ -181,6 +206,7 @@ fn collect_elements<'a>(
                     order,
                     effective_z,
                     child_clip,
+                    cumulative_offset,
                     animation,
                 );
             }
@@ -196,6 +222,7 @@ fn collect_elements<'a>(
                     order,
                     effective_z,
                     child_clip,
+                    cumulative_offset,
                     animation,
                 );
             }
@@ -227,6 +254,7 @@ fn render_single_element_timed(
     layout: &LayoutResult,
     buf: &mut Buffer,
     clip: Option<Rect>,
+    layout_offset: (i16, i16),
     animation: &AnimationState,
     stats: &mut RenderStats,
     oklch_cache: &mut OklchCache,
@@ -240,8 +268,23 @@ fn render_single_element_timed(
         return;
     };
 
-    // Adjust rect for interpolated position (for Relative/Absolute elements)
-    let rect = adjust_rect_for_position(element, *layout_rect, animation);
+    // Apply cumulative position offset (includes this element's animation + ancestors')
+    let rect = if layout_offset != (0, 0) {
+        if element.id.starts_with("__toast") {
+            log::debug!(
+                "[render] {} applying layout_offset ({}, {}) to layout pos ({}, {})",
+                element.id, layout_offset.0, layout_offset.1, layout_rect.x, layout_rect.y
+            );
+        }
+        Rect::new(
+            (layout_rect.x as i16 + layout_offset.0).max(0) as u16,
+            (layout_rect.y as i16 + layout_offset.1).max(0) as u16,
+            layout_rect.width,
+            layout_rect.height,
+        )
+    } else {
+        *layout_rect
+    };
 
     // If we have a clip rect, intersect with element rect
     let visible_rect = match clip {
@@ -336,68 +379,6 @@ fn get_interpolated_color(
     }
     // No transition, use current value
     current.cloned()
-}
-
-/// Get interpolated i16 value if there's an active transition, otherwise return the current value.
-fn get_interpolated_i16(
-    animation: &AnimationState,
-    element_id: &str,
-    property: TransitionProperty,
-    current: Option<i16>,
-) -> Option<i16> {
-    // Check for active transition
-    if let Some(PropertyValue::I16(val)) = animation.get_interpolated(element_id, property) {
-        return Some(val);
-    }
-    // No transition, use current value
-    current
-}
-
-/// Adjust rect based on interpolated position offsets for Relative/Absolute positioned elements.
-fn adjust_rect_for_position(element: &Element, rect: Rect, animation: &AnimationState) -> Rect {
-    use crate::types::Position;
-
-    // Only adjust for Relative or Absolute positioned elements
-    if element.position != Position::Relative && element.position != Position::Absolute {
-        return rect;
-    }
-
-    // Get interpolated offsets (or current if no transition)
-    let left = get_interpolated_i16(
-        animation,
-        &element.id,
-        TransitionProperty::Left,
-        element.left,
-    );
-    let top = get_interpolated_i16(animation, &element.id, TransitionProperty::Top, element.top);
-    let right = get_interpolated_i16(
-        animation,
-        &element.id,
-        TransitionProperty::Right,
-        element.right,
-    );
-    let bottom = get_interpolated_i16(
-        animation,
-        &element.id,
-        TransitionProperty::Bottom,
-        element.bottom,
-    );
-
-    // Calculate offset from current element values vs interpolated
-    let dx = left.unwrap_or(0) - element.left.unwrap_or(0);
-    let dy = top.unwrap_or(0) - element.top.unwrap_or(0);
-
-    // For right/bottom, the offset is inverted
-    let dx = dx - (right.unwrap_or(0) - element.right.unwrap_or(0));
-    let dy = dy - (bottom.unwrap_or(0) - element.bottom.unwrap_or(0));
-
-    // Apply offset to rect
-    Rect::new(
-        (rect.x as i32 + dx as i32).max(0) as u16,
-        (rect.y as i32 + dy as i32).max(0) as u16,
-        rect.width,
-        rect.height,
-    )
 }
 
 fn fill_rect(buf: &mut Buffer, rect: Rect, bg: Option<Oklch>) {

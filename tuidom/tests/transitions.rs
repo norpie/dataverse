@@ -101,35 +101,33 @@ fn test_transition_config_new() {
 fn test_transitions_default_empty() {
     let t = Transitions::new();
     assert!(!t.has_any());
-    assert!(t.left.is_none());
+    assert!(t.x.is_none());
     assert!(t.background.is_none());
 }
 
 #[test]
 fn test_transitions_individual_properties() {
     let t = Transitions::new()
-        .left(Duration::from_millis(100), Easing::Linear)
+        .x(Duration::from_millis(100), Easing::Linear)
         .background(Duration::from_millis(200), Easing::EaseIn);
 
     assert!(t.has_any());
-    assert!(t.left.is_some());
+    assert!(t.x.is_some());
     assert!(t.background.is_some());
-    assert!(t.right.is_none());
+    assert!(t.y.is_none());
     assert!(t.foreground.is_none());
 
-    let left = t.left.unwrap();
-    assert_eq!(left.duration, Duration::from_millis(100));
-    assert_eq!(left.easing, Easing::Linear);
+    let x = t.x.unwrap();
+    assert_eq!(x.duration, Duration::from_millis(100));
+    assert_eq!(x.easing, Easing::Linear);
 }
 
 #[test]
 fn test_transitions_position_group() {
     let t = Transitions::new().position(Duration::from_millis(300), Easing::EaseOut);
 
-    assert!(t.left.is_some());
-    assert!(t.top.is_some());
-    assert!(t.right.is_some());
-    assert!(t.bottom.is_some());
+    assert!(t.x.is_some());
+    assert!(t.y.is_some());
     assert!(t.width.is_none());
     assert!(t.background.is_none());
 }
@@ -140,7 +138,7 @@ fn test_transitions_size_group() {
 
     assert!(t.width.is_some());
     assert!(t.height.is_some());
-    assert!(t.left.is_none());
+    assert!(t.x.is_none());
 }
 
 #[test]
@@ -149,17 +147,15 @@ fn test_transitions_colors_group() {
 
     assert!(t.background.is_some());
     assert!(t.foreground.is_some());
-    assert!(t.left.is_none());
+    assert!(t.x.is_none());
 }
 
 #[test]
 fn test_transitions_all_group() {
     let t = Transitions::new().all(Duration::from_millis(400), Easing::Linear);
 
-    assert!(t.left.is_some());
-    assert!(t.top.is_some());
-    assert!(t.right.is_some());
-    assert!(t.bottom.is_some());
+    assert!(t.x.is_some());
+    assert!(t.y.is_some());
     assert!(t.width.is_some());
     assert!(t.height.is_some());
     assert!(t.background.is_some());
@@ -182,7 +178,7 @@ fn test_transitions_clone() {
 #[test]
 fn test_animation_state_new() {
     let state = AnimationState::new();
-    assert!(!state.has_active_transitions());
+    assert!(!state.has_active_animations());
 }
 
 #[test]
@@ -193,7 +189,7 @@ fn test_animation_state_no_transitions_without_config() {
     let element = Element::text("test").id("test");
 
     state.update(&element);
-    assert!(!state.has_active_transitions());
+    assert!(!state.has_active_animations());
 }
 
 #[test]
@@ -208,7 +204,7 @@ fn test_animation_state_no_transition_on_first_frame() {
 
     state.update(&element);
     // First frame just captures snapshot, no transition
-    assert!(!state.has_active_transitions());
+    assert!(!state.has_active_animations());
 }
 
 #[test]
@@ -222,7 +218,7 @@ fn test_animation_state_transition_on_change() {
         .transitions(Transitions::new().background(Duration::from_millis(300), Easing::Linear));
 
     state.update(&element1);
-    assert!(!state.has_active_transitions());
+    assert!(!state.has_active_animations());
 
     // Second frame - change the background color
     let element2 = Element::text("test")
@@ -232,7 +228,7 @@ fn test_animation_state_transition_on_change() {
 
     state.update(&element2);
     // Should now have an active transition
-    assert!(state.has_active_transitions());
+    assert!(state.has_active_animations());
 }
 
 #[test]
@@ -250,7 +246,7 @@ fn test_animation_state_no_transition_without_change() {
     state.update(&element);
 
     // No change, no transition
-    assert!(!state.has_active_transitions());
+    assert!(!state.has_active_animations());
 }
 
 #[test]
@@ -275,7 +271,7 @@ fn test_animation_state_reduced_motion() {
     state.update(&element2);
 
     // With reduced motion, transitions are skipped
-    assert!(!state.has_active_transitions());
+    assert!(!state.has_active_animations());
 }
 
 #[test]
@@ -297,14 +293,14 @@ fn test_animation_state_cleanup_removes_old_elements() {
         .transitions(Transitions::new().background(Duration::from_millis(300), Easing::Linear));
 
     state.update(&element2);
-    assert!(state.has_active_transitions());
+    assert!(state.has_active_animations());
 
     // Cleanup with empty set (element removed)
     let empty_ids: HashSet<String> = HashSet::new();
     state.cleanup(&empty_ids);
 
     // Transitions for removed element should be gone
-    assert!(!state.has_active_transitions());
+    assert!(!state.has_active_animations());
 }
 
 #[test]

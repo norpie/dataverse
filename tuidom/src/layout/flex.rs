@@ -62,6 +62,11 @@ impl LayoutResult {
             ),
         );
     }
+
+    /// Iterate over all element rects.
+    pub fn iter_rects(&self) -> impl Iterator<Item = (&String, &Rect)> {
+        self.rects.iter()
+    }
 }
 
 pub fn layout(element: &Element, available: Rect, animation: &AnimationState) -> LayoutResult {

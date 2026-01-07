@@ -130,7 +130,7 @@ impl Terminal {
     /// Returns true if any transitions are currently active.
     /// Deprecated: use has_active_animations() instead.
     pub fn has_active_transitions(&self) -> bool {
-        self.animation.has_active_transitions()
+        self.animation.has_active_animations()
     }
 
     pub fn render(&mut self, root: &Element) -> io::Result<&LayoutResult> {
@@ -152,9 +152,15 @@ impl Terminal {
         self.current_buffer.clear();
         let t_clear = Instant::now();
 
+        // Capture layout positions before new layout (for layout position transitions)
+        self.animation.capture_layout(&self.last_layout);
+
         // Layout
         let available = Rect::from_size(width, height);
         self.last_layout = layout(root, available, &self.animation);
+
+        // Detect layout position changes and start transitions
+        self.animation.update_layout(&self.last_layout, root);
         let t_layout = Instant::now();
 
         // Create color context for theme resolution

@@ -10,7 +10,7 @@ use tuidom::{
 fn main() -> std::io::Result<()> {
     // Set up file logging
     let log_file = File::create("transitions.log")?;
-    WriteLogger::init(LevelFilter::Debug, Config::default(), log_file)
+    WriteLogger::init(LevelFilter::Trace, Config::default(), log_file)
         .expect("Failed to initialize logger");
 
     let mut term = Terminal::new()?;
@@ -230,7 +230,7 @@ fn moving_box(id: &str, base_left: i16, base_top: i16, focused: Option<&str>) ->
         )
         .transitions(
             Transitions::new()
-                .left(Duration::from_millis(400), Easing::EaseOut)
+                .x(Duration::from_millis(400), Easing::EaseOut)
                 .background(Duration::from_millis(300), Easing::EaseOut),
         )
         .child(Element::text(if is_focused {
