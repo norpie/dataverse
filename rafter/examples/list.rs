@@ -27,7 +27,8 @@ impl ListItem for FileItem {
 
     fn render(&self) -> Element {
         Element::row()
-            .gap(2)
+            .width(tuidom::Size::Fill)
+            .justify(tuidom::Justify::SpaceBetween)
             .children(vec![
                 Element::text(&self.name),
                 Element::text(&format!("{}KB", self.size / 1024)),
@@ -38,6 +39,7 @@ impl ListItem for FileItem {
 #[app]
 struct ListExample {
     files: ListState<FileItem>,
+    files2: ListState<FileItem>,
     message: String,
 }
 
@@ -54,6 +56,8 @@ impl ListExample {
             .collect();
 
         self.files
+            .set(ListState::new(files.clone()).with_selection(SelectionMode::Multi));
+        self.files2
             .set(ListState::new(files).with_selection(SelectionMode::Multi));
         self.message.set("Select files from the list".into());
     }
@@ -90,7 +94,7 @@ impl ListExample {
         let message = self.message.get();
 
         page! {
-            column (padding: 2, gap: 1, height: fill) style (bg: background) {
+            column (padding: 2, gap: 1, height: fill, width: fill) style (bg: background) {
                 // Header - testing derived colors
                 text (content: "List Widget Demo") style (bold, fg: accent | lighten(0.1))
                 text (content: "Use Tab/arrows to navigate, Enter/Space to select") style (fg: primary | darken(0.3))
@@ -101,14 +105,18 @@ impl ListExample {
                     text (content: {message}) style (fg: accent | darken(0.1))
                 }
 
-                // File list in scrollable container
+                // Top list - shrink to content width
                 box_ (id: "file-scroll", height: fill, overflow: auto) style (bg: surface) {
-                    column (padding: 1) {
-                        text (content: "Files:") style (bold)
-                        list (state: self.files, id: "file-list")
-                            on_select: file_selected()
-                            on_activate: file_activated()
-                    }
+                    list (state: self.files, id: "file-list")
+                        on_select: file_selected()
+                        on_activate: file_activated()
+                }
+
+                // Bottom list - fill entire width
+                box_ (id: "file-scroll-2", height: fill, width: fill, overflow: auto) style (bg: surface) {
+                    list (state: self.files2, id: "file-list-2")
+                        on_select: file_selected()
+                        on_activate: file_activated()
                 }
 
                 // Footer
