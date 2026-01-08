@@ -7,12 +7,13 @@
 //! - Input: Text input fields with on_change and on_submit
 //! - Select: Dropdown selection with on_change
 //! - RadioGroup: Mutually exclusive radio buttons with on_change
+//! - Card: Container widget for grouping content
 
 use std::fs::File;
 
 use rafter::page;
 use rafter::prelude::*;
-use rafter::widgets::{Button, Checkbox, Input, RadioGroup, RadioState, Select, SelectState, Text};
+use rafter::widgets::{Button, Card, Checkbox, Input, RadioGroup, RadioState, Select, SelectState, Text};
 use simplelog::{Config, LevelFilter, WriteLogger};
 
 #[app]
@@ -205,6 +206,16 @@ impl WidgetShowcase {
                         text (content: "Priority:") style (fg: muted)
                         radio_group (state: self.priority, id: "priority")
                             on_change: priority_changed()
+                    }
+                }
+
+                // Card widgets section
+                column (gap: 1) {
+                    text (content: "Card") style (bold, fg: primary)
+                    card (id: "info-card") style (bg: surface, padding: 1) {
+                        text (content: "Card Container") style (bold)
+                        text (content: "Cards group related content together.")
+                        text (content: "They support styling and children.")
                     }
                 }
 
