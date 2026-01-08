@@ -631,9 +631,46 @@ fn render_text_input(
         }
     }
 
+    // Calculate horizontal scroll offset to keep cursor visible with margin
+    // Always keep cursor at least 5 chars from the right edge for smooth scrolling
+    let visible_width = inner.width as usize;
+    let cursor_margin = visible_width.min(5);
+
+    let scroll_offset = if focused && !is_placeholder && visible_width > cursor_margin {
+        // Calculate the display width up to the cursor (including cursor position)
+        let width_to_cursor: usize = chars
+            .iter()
+            .take(cursor)
+            .map(|&c| char_width(c))
+            .sum::<usize>()
+            + 1; // +1 for cursor itself
+
+        // Scroll when cursor would be within margin of right edge
+        let usable_width = visible_width - cursor_margin;
+        if width_to_cursor > usable_width {
+            let target_scroll_width = width_to_cursor - usable_width;
+
+            // Convert target scroll width to character offset
+            let mut offset = 0;
+            let mut skipped_width = 0;
+            for &ch in &chars {
+                if skipped_width >= target_scroll_width {
+                    break;
+                }
+                skipped_width += char_width(ch);
+                offset += 1;
+            }
+            offset
+        } else {
+            0
+        }
+    } else {
+        0
+    };
+
     let mut x = inner.x;
 
-    for (i, &ch) in chars.iter().enumerate() {
+    for (i, &ch) in chars.iter().enumerate().skip(scroll_offset) {
         if x >= inner.right() {
             break;
         }
@@ -695,13 +732,22 @@ fn render_text_input(
     }
 
     // If cursor is at end and focused, render cursor block
-    if focused && cursor >= chars.len() && x < inner.right() {
-        if clip.is_none_or(|c| x >= c.x && x < c.right()) {
-            buf.set(
-                x,
-                y,
-                Cell::new(' ').with_fg(cursor_fg).with_bg(cursor_bg),
-            );
+    // Account for scroll offset when determining if cursor is visible
+    if focused && cursor >= chars.len() {
+        let width_to_cursor: usize = chars
+            .iter()
+            .skip(scroll_offset)
+            .map(|&c| char_width(c))
+            .sum();
+        let cursor_x = inner.x + width_to_cursor as u16;
+        if cursor_x < inner.right() {
+            if clip.is_none_or(|c| cursor_x >= c.x && cursor_x < c.right()) {
+                buf.set(
+                    cursor_x,
+                    y,
+                    Cell::new(' ').with_fg(cursor_fg).with_bg(cursor_bg),
+                );
+            }
         }
     }
 }
