@@ -52,4 +52,22 @@ impl Style {
         self.text_style.dim = true;
         self
     }
+
+    /// Merge another style on top of this one.
+    /// Values from `other` override values from `self` when present.
+    pub fn merge(&self, other: &Option<Style>) -> Style {
+        let Some(other) = other else {
+            return self.clone();
+        };
+        Style {
+            background: other.background.clone().or(self.background.clone()),
+            foreground: other.foreground.clone().or(self.foreground.clone()),
+            border: if other.border != Border::default() {
+                other.border
+            } else {
+                self.border
+            },
+            text_style: self.text_style.merge(&other.text_style),
+        }
+    }
 }

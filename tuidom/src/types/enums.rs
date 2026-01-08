@@ -139,4 +139,16 @@ impl TextStyle {
         self.strikethrough = true;
         self
     }
+
+    /// Merge another text style on top of this one.
+    /// Boolean fields use OR logic (if either is true, result is true).
+    pub fn merge(&self, other: &TextStyle) -> TextStyle {
+        TextStyle {
+            bold: other.bold || self.bold,
+            italic: other.italic || self.italic,
+            underline: other.underline || self.underline,
+            dim: other.dim || self.dim,
+            strikethrough: other.strikethrough || self.strikethrough,
+        }
+    }
 }

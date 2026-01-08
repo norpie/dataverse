@@ -75,6 +75,16 @@ pub struct Element {
     /// Arrow keys will move cursor instead of focus, etc.
     pub captures_input: bool,
 
+    // State (focused is set by runtime enrichment, disabled is set by user/widgets)
+    /// Whether this element is currently focused. Set by runtime enrichment, not by user.
+    pub focused: bool,
+    /// Whether this element is disabled. Disabled elements don't receive input.
+    pub disabled: bool,
+
+    // State-dependent styles (set by user/widgets, applied by runtime enrichment)
+    pub style_focused: Option<Style>,
+    pub style_disabled: Option<Style>,
+
     // Custom data storage (for handler IDs, etc.)
     pub data: HashMap<String, String>,
 }
@@ -117,6 +127,10 @@ impl Default for Element {
             clickable: false,
             draggable: false,
             captures_input: false,
+            focused: false,
+            disabled: false,
+            style_focused: None,
+            style_disabled: None,
             data: HashMap::new(),
         }
     }
@@ -365,6 +379,22 @@ impl Element {
 
     pub fn captures_input(mut self, captures: bool) -> Self {
         self.captures_input = captures;
+        self
+    }
+
+    // State
+    pub fn disabled(mut self, disabled: bool) -> Self {
+        self.disabled = disabled;
+        self
+    }
+
+    pub fn style_focused(mut self, style: Style) -> Self {
+        self.style_focused = Some(style);
+        self
+    }
+
+    pub fn style_disabled(mut self, style: Style) -> Self {
+        self.style_disabled = Some(style);
         self
     }
 
