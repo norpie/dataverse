@@ -300,9 +300,16 @@ fn layout_children(
         }
     }
 
-    // Layout absolute children (they position themselves, not affected by scroll)
-    for child in absolute_children {
+    // Layout absolute children (they position themselves relative to container)
+    for child in &absolute_children {
         layout_element(child, rect, result, animation);
+    }
+
+    // Apply scroll offset to absolute children too (so dropdowns follow their anchors)
+    if scroll_x > 0 || scroll_y > 0 {
+        for child in &absolute_children {
+            apply_scroll_offset_recursive(child, scroll_x, scroll_y, result);
+        }
     }
 }
 
@@ -370,10 +377,7 @@ fn apply_scroll_offset_recursive(
 
     if let Content::Children(children) = &element.content {
         for child in children {
-            // Don't scroll absolute children
-            if child.position != Position::Absolute {
-                apply_scroll_offset_recursive(child, scroll_x, scroll_y, result);
-            }
+            apply_scroll_offset_recursive(child, scroll_x, scroll_y, result);
         }
     }
 }
