@@ -26,6 +26,8 @@ pub struct Button {
     id: Option<String>,
     disabled: bool,
     style: Option<Style>,
+    style_focused: Option<Style>,
+    style_disabled: Option<Style>,
     transitions: Option<Transitions>,
 }
 
@@ -61,6 +63,18 @@ impl Button {
         self
     }
 
+    /// Set the style when focused.
+    pub fn style_focused(mut self, style: Style) -> Self {
+        self.style_focused = Some(style);
+        self
+    }
+
+    /// Set the style when disabled.
+    pub fn style_disabled(mut self, style: Style) -> Self {
+        self.style_disabled = Some(style);
+        self
+    }
+
     /// Set the button transitions.
     pub fn transitions(mut self, transitions: Transitions) -> Self {
         self.transitions = Some(transitions);
@@ -77,10 +91,17 @@ impl Button {
         let mut elem = Element::text(&label)
             .id(&id)
             .focusable(!self.disabled)
-            .clickable(!self.disabled);
+            .clickable(!self.disabled)
+            .disabled(self.disabled);
 
         if let Some(style) = self.style {
             elem = elem.style(style);
+        }
+        if let Some(style) = self.style_focused {
+            elem = elem.style_focused(style);
+        }
+        if let Some(style) = self.style_disabled {
+            elem = elem.style_disabled(style);
         }
         if let Some(transitions) = self.transitions {
             elem = elem.transitions(transitions);

@@ -10,6 +10,7 @@
 //! - Event loop
 
 pub mod dispatch;
+mod enrich;
 
 use std::any::{Any, TypeId};
 use std::collections::HashMap;
@@ -17,7 +18,9 @@ use std::io;
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant};
 
-use tuidom::{Element, FocusState, ScrollState, Terminal};
+use tuidom::{scroll::find_scrollable_ancestor, Content, Element, FocusState, LayoutResult, ScrollState, Terminal, TextInputState};
+
+use enrich::enrich_elements;
 
 use crate::global_context::{DataStore, InstanceCommand, InstanceQuery, RequestTarget};
 use crate::instance::{AnyAppInstance, AppInstance, InstanceId, InstanceRegistry, RequestError};
@@ -169,9 +172,10 @@ impl Runtime {
         // Set default theme
         terminal.set_theme(Arc::new(crate::theme::default_theme()));
 
-        // Create focus and scroll state
+        // Create focus, scroll, and text input state
         let mut focus = FocusState::new();
         let mut scroll = ScrollState::new();
+        let mut text_inputs = TextInputState::new();
 
         // Create instance registry (wrapped in Arc for GlobalContext access)
         let registry = Arc::new(RwLock::new(InstanceRegistry::new()));
@@ -219,6 +223,7 @@ impl Runtime {
             &mut terminal,
             &mut focus,
             &mut scroll,
+            &mut text_inputs,
             &registry,
             &mut systems,
             &gx,
@@ -237,6 +242,7 @@ impl Runtime {
         terminal: &mut Terminal,
         focus: &mut FocusState,
         scroll: &mut ScrollState,
+        text_inputs: &mut TextInputState,
         registry: &Arc<RwLock<InstanceRegistry>>,
         systems: &mut Vec<Box<dyn AnySystem>>,
         gx: &GlobalContext,
@@ -303,13 +309,32 @@ impl Runtime {
             }
 
             // 6. Build UI
-            let root = self.build_root_element(registry, systems, active_toasts);
+            let mut root = self.build_root_element(registry, systems, active_toasts);
 
-            // 7. Render (stores layout internally)
+            // 7. Process cursor position requests (before enrichment uses TextInputState)
+            {
+                let reg = registry.read().unwrap();
+                if let Some(instance) = reg.focused_instance() {
+                    let cx = instance.app_context();
+                    for (element_id, position) in cx.take_cursor_requests() {
+                        // get_data_mut creates entry if not exists, so check if input exists first
+                        if text_inputs.get_data(&element_id).is_some() {
+                            let data = text_inputs.get_data_mut(&element_id);
+                            data.cursor = position.min(data.text.chars().count());
+                            data.clear_selection();
+                        }
+                    }
+                }
+            }
+
+            // 8. Enrich elements with runtime state (BEFORE render)
+            enrich_elements(&mut root, focus, text_inputs);
+
+            // 9. Render (stores layout internally)
             log::trace!("[runtime] === FRAME START ===");
             terminal.render(&root)?;
 
-            // 8. Update toast phases (AFTER render so animation captures off-screen position first)
+            // 10. Update toast phases (AFTER render so animation captures off-screen position first)
             let now = Instant::now();
             for toast in active_toasts.iter_mut() {
                 let elapsed = now.duration_since(toast.phase_started);
@@ -342,7 +367,7 @@ impl Runtime {
                 }
             });
 
-            // 9. Determine poll timeout
+            // 11. Determine poll timeout
             let toast_animating = active_toasts.iter().any(|t| {
                 matches!(
                     t.phase,
@@ -384,7 +409,7 @@ impl Runtime {
                 }
             };
 
-            // 10. Poll events
+            // 12. Poll events
             let poll_start = Instant::now();
             let raw_events = terminal.poll(Some(timeout))?;
             let poll_duration = poll_start.elapsed();
@@ -397,21 +422,38 @@ impl Runtime {
                 );
             }
 
-            // 11. Get layout for event processing (stored from render)
+            // 13. Get layout for event processing (stored from render)
             let layout = terminal.layout();
 
-            // 12. Process focus events (Tab navigation, focus-follows-mouse)
+            // 14. Process scroll requests (needs layout)
+            {
+                let reg = registry.read().unwrap();
+                if let Some(instance) = reg.focused_instance() {
+                    let cx = instance.app_context();
+                    for target_id in cx.take_scroll_requests() {
+                        scroll_to_element(&root, layout, scroll, &target_id);
+                    }
+                }
+            }
+
+            // 15. Sync text input values to TextInputState
+            sync_text_inputs(&root, text_inputs);
+
+            // 16. Process focus events (Tab navigation, focus-follows-mouse)
             let events = focus.process_events(&raw_events, &root, layout);
 
-            // 13. Process scroll events
+            // 17. Process text input events (keyboard → Change/Submit events)
+            let events = text_inputs.process_events(&events, &root, layout);
+
+            // 18. Process scroll events
             let _consumed_scroll = scroll.process_events(&events, &root, layout);
 
-            // 14. Dispatch events to keybinds and apps
+            // 19. Dispatch events to keybinds and apps
             for event in &events {
                 dispatch::dispatch_event(event, global_modals, systems, registry, gx, layout);
             }
 
-            // 15. Check wakeups (state changes from async tasks)
+            // 20. Check wakeups (state changes from async tasks)
             while wakeup_rx.try_recv() {
                 // Just drain the wakeup queue - we'll re-render on next iteration
             }
@@ -718,5 +760,95 @@ impl InstanceQuery for RegistryQuery {
 
     fn focused_instance_id(&self) -> Option<InstanceId> {
         self.0.read().ok().and_then(|r| r.focused_instance_id())
+    }
+}
+
+// =============================================================================
+// Text Input Sync
+// =============================================================================
+
+/// Sync text input values from element tree to TextInputState.
+///
+/// Only initializes or updates TextInputState when:
+/// - The input doesn't exist yet (new element)
+/// - The value changed externally (app set different value via State<String>)
+///
+/// This preserves cursor position when user is typing.
+fn sync_text_inputs(element: &Element, text_inputs: &mut TextInputState) {
+    // Check if this element is a text input
+    if let Content::TextInput { value, .. } = &element.content {
+        let should_init = match text_inputs.get_data(&element.id) {
+            None => true,                        // New input
+            Some(data) => data.text != *value,   // Value changed externally
+        };
+
+        if should_init {
+            text_inputs.set(&element.id, value);
+        }
+    }
+
+    // Recurse into children
+    match &element.content {
+        Content::Children(children) => {
+            for child in children {
+                sync_text_inputs(child, text_inputs);
+            }
+        }
+        Content::Frames { children, .. } => {
+            for child in children {
+                sync_text_inputs(child, text_inputs);
+            }
+        }
+        _ => {}
+    }
+}
+
+// =============================================================================
+// Scroll To Element
+// =============================================================================
+
+/// Scroll to bring an element into view.
+fn scroll_to_element(
+    root: &Element,
+    layout: &LayoutResult,
+    scroll: &mut ScrollState,
+    target_id: &str,
+) {
+    // Find scrollable ancestor
+    let Some(scrollable_id) = find_scrollable_ancestor(root, target_id) else {
+        return;
+    };
+
+    // Get target rect and scrollable viewport
+    let Some(target_rect) = layout.get(target_id) else {
+        return;
+    };
+    let Some(viewport_rect) = layout.get(&scrollable_id) else {
+        return;
+    };
+    let Some((_, viewport_height)) = layout.viewport_size(&scrollable_id) else {
+        return;
+    };
+
+    let current = scroll.get(&scrollable_id);
+
+    // Calculate target position relative to scrollable content
+    let target_top = target_rect.y.saturating_sub(viewport_rect.y) + current.y;
+    let target_bottom = target_top + target_rect.height;
+
+    // Compute new scroll offset to bring target into view
+    let new_y = if target_top < current.y {
+        // Target is above viewport - scroll up
+        target_top
+    } else if target_bottom > current.y + viewport_height {
+        // Target is below viewport - scroll down
+        target_bottom.saturating_sub(viewport_height)
+    } else {
+        // Already visible
+        current.y
+    };
+
+    if new_y != current.y {
+        scroll.set(&scrollable_id, current.x, new_y);
     }
 }

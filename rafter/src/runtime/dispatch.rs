@@ -12,6 +12,7 @@ use std::sync::{Arc, RwLock};
 
 use tuidom::{Event, Key, LayoutResult, Modifiers};
 
+use crate::handler_context::EventData;
 use crate::instance::{AnyAppInstance, InstanceRegistry};
 use crate::modal::ModalEntry;
 use crate::registration::AnySystem;
@@ -317,8 +318,34 @@ impl<'a> EventDispatcher<'a> {
             // MouseMove and Resize are not dispatched to widgets
             Event::MouseMove { .. } | Event::Resize { .. } => {}
 
-            // Change and Submit are emitted by TextInputState, handled by app handlers
-            Event::Change { .. } | Event::Submit { .. } => {}
+            // Change events: pass text via EventData to handler
+            Event::Change { target, text } => {
+                if let Some(handler) = handlers.get(target, "on_change") {
+                    // Create HandlerContext with event data containing the new text
+                    let hx_with_event = HandlerContext::for_app_with_event(
+                        &cx,
+                        self.gx,
+                        EventData::Change {
+                            text: text.clone(),
+                        },
+                    );
+                    handler(&hx_with_event);
+                    return Some(DispatchResult::HandledByWidget(WidgetResult::Changed));
+                }
+            }
+
+            // Submit events: pass EventData::Submit to handler
+            Event::Submit { target } => {
+                if let Some(handler) = handlers.get(target, "on_submit") {
+                    let hx_with_event = HandlerContext::for_app_with_event(
+                        &cx,
+                        self.gx,
+                        EventData::Submit,
+                    );
+                    handler(&hx_with_event);
+                    return Some(DispatchResult::HandledByWidget(WidgetResult::Submitted));
+                }
+            }
         }
 
         None

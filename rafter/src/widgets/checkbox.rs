@@ -40,6 +40,8 @@ pub struct Checkbox<S = NeedsState> {
     variant: CheckboxVariant,
     disabled: bool,
     style: Option<Style>,
+    style_focused: Option<Style>,
+    style_disabled: Option<Style>,
     label_style: Option<Style>,
     transitions: Option<Transitions>,
 }
@@ -60,6 +62,8 @@ impl Checkbox<NeedsState> {
             variant: CheckboxVariant::default(),
             disabled: false,
             style: None,
+            style_focused: None,
+            style_disabled: None,
             label_style: None,
             transitions: None,
         }
@@ -74,6 +78,8 @@ impl Checkbox<NeedsState> {
             variant: self.variant,
             disabled: self.disabled,
             style: self.style,
+            style_focused: self.style_focused,
+            style_disabled: self.style_disabled,
             label_style: self.label_style,
             transitions: self.transitions,
         }
@@ -120,6 +126,18 @@ impl<S> Checkbox<S> {
     /// Set the checkbox style (applies to the checkbox indicator).
     pub fn style(mut self, s: Style) -> Self {
         self.style = Some(s);
+        self
+    }
+
+    /// Set the style when focused.
+    pub fn style_focused(mut self, s: Style) -> Self {
+        self.style_focused = Some(s);
+        self
+    }
+
+    /// Set the style when disabled.
+    pub fn style_disabled(mut self, s: Style) -> Self {
+        self.style_disabled = Some(s);
         self
     }
 
@@ -186,8 +204,15 @@ impl<'a> Checkbox<HasState<'a>> {
         elem = elem
             .id(&id)
             .focusable(!self.disabled)
-            .clickable(!self.disabled);
+            .clickable(!self.disabled)
+            .disabled(self.disabled);
 
+        if let Some(style) = self.style_focused {
+            elem = elem.style_focused(style);
+        }
+        if let Some(style) = self.style_disabled {
+            elem = elem.style_disabled(style);
+        }
         if let Some(transitions) = self.transitions {
             elem = elem.transitions(transitions);
         }

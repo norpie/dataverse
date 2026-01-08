@@ -30,8 +30,10 @@
 
 pub mod button;
 pub mod checkbox;
+pub mod input;
 pub mod text;
 
 pub use button::Button;
 pub use checkbox::{Checkbox, CheckboxVariant};
+pub use input::Input;
 pub use text::Text;

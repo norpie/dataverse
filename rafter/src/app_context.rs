@@ -84,6 +84,10 @@ struct AppContextInner {
     focus_request: Option<String>,
     /// Pending app-scoped modal.
     modal_request: Option<AppModalRequest>,
+    /// Requests to scroll elements into view.
+    scroll_requests: Vec<String>,
+    /// Requests to set cursor position for text inputs.
+    cursor_requests: Vec<(String, usize)>,
 }
 
 // =============================================================================
@@ -115,6 +119,8 @@ impl AppContext {
                 instance_id,
                 focus_request: None,
                 modal_request: None,
+                scroll_requests: Vec::new(),
+                cursor_requests: Vec::new(),
             })),
             global,
             wakeup_sender: None,
@@ -190,6 +196,36 @@ impl AppContext {
     pub fn focus(&self, element_id: impl Into<String>) {
         if let Ok(mut inner) = self.inner.write() {
             inner.focus_request = Some(element_id.into());
+            self.send_wakeup();
+        }
+    }
+
+    // =========================================================================
+    // Scroll
+    // =========================================================================
+
+    /// Scroll to bring an element into view.
+    ///
+    /// Finds the element's nearest scrollable ancestor and adjusts
+    /// the scroll offset to make the element visible.
+    pub fn scroll_to(&self, element_id: impl Into<String>) {
+        if let Ok(mut inner) = self.inner.write() {
+            inner.scroll_requests.push(element_id.into());
+            self.send_wakeup();
+        }
+    }
+
+    // =========================================================================
+    // Text Input Cursor
+    // =========================================================================
+
+    /// Set the cursor position for a text input element.
+    ///
+    /// The position is clamped to the text length.
+    /// Clears any active selection.
+    pub fn set_input_cursor(&self, element_id: impl Into<String>, position: usize) {
+        if let Ok(mut inner) = self.inner.write() {
+            inner.cursor_requests.push((element_id.into(), position));
             self.send_wakeup();
         }
     }
@@ -298,6 +334,24 @@ impl AppContext {
             .ok()
             .and_then(|mut inner| inner.modal_request.take())
     }
+
+    /// Take scroll requests (runtime use).
+    pub(crate) fn take_scroll_requests(&self) -> Vec<String> {
+        self.inner
+            .write()
+            .ok()
+            .map(|mut inner| std::mem::take(&mut inner.scroll_requests))
+            .unwrap_or_default()
+    }
+
+    /// Take cursor requests (runtime use).
+    pub(crate) fn take_cursor_requests(&self) -> Vec<(String, usize)> {
+        self.inner
+            .write()
+            .ok()
+            .map(|mut inner| std::mem::take(&mut inner.cursor_requests))
+            .unwrap_or_default()
+    }
 }
 
 impl Default for AppContext {
@@ -307,6 +361,8 @@ impl Default for AppContext {
                 instance_id: InstanceId::default(),
                 focus_request: None,
                 modal_request: None,
+                scroll_requests: Vec::new(),
+                cursor_requests: Vec::new(),
             })),
             global: GlobalContext::default(),
             wakeup_sender: None,

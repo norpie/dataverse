@@ -36,6 +36,25 @@ pub type Handler = Arc<dyn Fn(&HandlerContext) + Send + Sync>;
 pub type WidgetHandlers = HashMap<&'static str, Handler>;
 
 // =============================================================================
+// Event Data
+// =============================================================================
+
+/// Event-specific data passed to handlers via HandlerContext.
+///
+/// This allows handlers to access data from the event that triggered them,
+/// such as the new text value for input change events.
+#[derive(Debug, Clone)]
+pub enum EventData {
+    /// Text input value changed.
+    Change {
+        /// The new text value.
+        text: String,
+    },
+    /// Text input submitted (Enter pressed).
+    Submit,
+}
+
+// =============================================================================
 // HandlerRegistry
 // =============================================================================
 
@@ -132,6 +151,8 @@ pub struct HandlerContext<'a> {
     gx: &'a GlobalContext,
     /// Type-erased modal context (None for apps/systems)
     modal_context: Option<&'a (dyn Any + Send + Sync)>,
+    /// Event-specific data (for widget event handlers)
+    event_data: Option<EventData>,
 }
 
 impl<'a> HandlerContext<'a> {
@@ -141,6 +162,21 @@ impl<'a> HandlerContext<'a> {
             cx: Some(cx),
             gx,
             modal_context: None,
+            event_data: None,
+        }
+    }
+
+    /// Create a HandlerContext for app handlers with event data.
+    pub fn for_app_with_event(
+        cx: &'a AppContext,
+        gx: &'a GlobalContext,
+        event_data: EventData,
+    ) -> Self {
+        Self {
+            cx: Some(cx),
+            gx,
+            modal_context: None,
+            event_data: Some(event_data),
         }
     }
 
@@ -154,6 +190,7 @@ impl<'a> HandlerContext<'a> {
             cx: Some(cx),
             gx,
             modal_context: Some(mx),
+            event_data: None,
         }
     }
 
@@ -167,6 +204,7 @@ impl<'a> HandlerContext<'a> {
             cx: Some(cx),
             gx,
             modal_context: Some(mx),
+            event_data: None,
         }
     }
 
@@ -176,6 +214,7 @@ impl<'a> HandlerContext<'a> {
             cx: None,
             gx,
             modal_context: None,
+            event_data: None,
         }
     }
 
@@ -226,5 +265,24 @@ impl<'a> HandlerContext<'a> {
     /// Check if this context is for a modal.
     pub fn is_modal(&self) -> bool {
         self.modal_context.is_some()
+    }
+
+    /// Get the event data (if any).
+    ///
+    /// Returns the event-specific data passed when the handler was invoked.
+    /// For example, `EventData::Change { text }` for input change handlers.
+    pub fn event_data(&self) -> Option<&EventData> {
+        self.event_data.as_ref()
+    }
+
+    /// Get the changed text from an input change event.
+    ///
+    /// Convenience method that extracts the text from `EventData::Change`.
+    /// Returns `None` if the event data is not a Change event.
+    pub fn changed_text(&self) -> Option<&str> {
+        match &self.event_data {
+            Some(EventData::Change { text }) => Some(text),
+            _ => None,
+        }
     }
 }
