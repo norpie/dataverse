@@ -575,11 +575,6 @@ fn layout_line(
             }
         }
 
-        log::debug!(
-            "[layout] id={} rect=({},{} {}x{}) width={:?}",
-            child.id, child_rect.x, child_rect.y, child_rect.width, child_rect.height,
-            child.width
-        );
         result.insert(child.id.clone(), child_rect);
         layout_children(child, child_rect, result, animation);
 
