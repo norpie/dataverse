@@ -153,7 +153,7 @@ impl WidgetShowcase {
         let message = self.message.get();
 
         page! {
-            box_ (height: fill, width: fill, overflow: scroll) style (bg: background) {
+            box_ (height: fill, width: fill, overflow: auto) style (bg: background) {
                 column (padding: 2, gap: 1) {
                     // Header
                     text (content: "Widget Showcase") style (bold, fg: primary)
