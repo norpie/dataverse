@@ -32,6 +32,7 @@ pub struct Input<S = NeedsState> {
     id: Option<String>,
     placeholder: Option<String>,
     disabled: bool,
+    width: Option<u16>,
     style: Option<Style>,
     style_focused: Option<Style>,
     style_disabled: Option<Style>,
@@ -52,6 +53,7 @@ impl Input<NeedsState> {
             id: None,
             placeholder: None,
             disabled: false,
+            width: None,
             style: None,
             style_focused: None,
             style_disabled: None,
@@ -66,6 +68,7 @@ impl Input<NeedsState> {
             id: self.id,
             placeholder: self.placeholder,
             disabled: self.disabled,
+            width: self.width,
             style: self.style,
             style_focused: self.style_focused,
             style_disabled: self.style_disabled,
@@ -90,6 +93,12 @@ impl<S> Input<S> {
     /// Mark the input as disabled.
     pub fn disabled(mut self) -> Self {
         self.disabled = true;
+        self
+    }
+
+    /// Set the input width in characters.
+    pub fn width(mut self, width: u16) -> Self {
+        self.width = Some(width);
         self
     }
 
@@ -133,6 +142,12 @@ impl<'a> Input<HasState<'a>> {
             .focusable(!self.disabled)
             .captures_input(!self.disabled)
             .disabled(self.disabled);
+
+        // Set width - use Fixed if specified, otherwise Fill
+        elem = match self.width {
+            Some(w) => elem.width(tuidom::Size::Fixed(w)),
+            None => elem.width(tuidom::Size::Fill),
+        };
 
         if let Some(placeholder) = &self.placeholder {
             elem = elem.placeholder(placeholder);

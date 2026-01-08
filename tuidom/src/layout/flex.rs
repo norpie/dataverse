@@ -575,6 +575,11 @@ fn layout_line(
             }
         }
 
+        log::debug!(
+            "[layout] id={} rect=({},{} {}x{}) width={:?}",
+            child.id, child_rect.x, child_rect.y, child_rect.width, child_rect.height,
+            child.width
+        );
         result.insert(child.id.clone(), child_rect);
         layout_children(child, child_rect, result, animation);
 
@@ -643,6 +648,16 @@ fn resolve_size(size: Size, available: u16, element: &Element, is_width: bool) -
 }
 
 fn estimate_size(element: &Element, is_width: bool) -> u16 {
+    // Check for explicit Fixed size first - this takes precedence over content estimation
+    let explicit_size = if is_width {
+        element.width
+    } else {
+        element.height
+    };
+    if let Size::Fixed(n) = explicit_size {
+        return n;
+    }
+
     let border_size = if element.style.border == crate::types::Border::None {
         0
     } else {

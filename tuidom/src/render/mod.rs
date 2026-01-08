@@ -407,6 +407,10 @@ fn render_text(
     animation: &AnimationState,
     oklch_cache: &mut OklchCache,
 ) {
+    log::debug!(
+        "[text] id={} rect=({},{} {}x{}) text={:?}",
+        element.id, rect.x, rect.y, rect.width, rect.height, text
+    );
     // Get foreground color (potentially interpolated)
     let foreground = get_interpolated_color(
         animation,
@@ -554,6 +558,11 @@ fn render_text_input(
     animation: &AnimationState,
     oklch_cache: &mut OklchCache,
 ) {
+    log::debug!(
+        "[text_input] id={} rect=({},{} {}x{}) value={:?} placeholder={:?}",
+        element.id, rect.x, rect.y, rect.width, rect.height,
+        value, placeholder
+    );
     // Get foreground color (potentially interpolated)
     let foreground = get_interpolated_color(
         animation,

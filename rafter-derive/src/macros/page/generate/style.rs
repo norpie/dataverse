@@ -69,6 +69,10 @@ fn generate_style_method(attr: &Attr) -> Option<TokenStream> {
                 None
             }
         }
+        "border" => {
+            let border = generate_border(&attr.value);
+            Some(quote! { .border(#border) })
+        }
         _ => None,
     }
 }
@@ -109,6 +113,25 @@ pub fn generate_color(value: &AttrValue) -> TokenStream {
             quote! { #expr }
         }
         _ => quote! { tuidom::Color::default() },
+    }
+}
+
+/// Generate border value from attribute
+fn generate_border(value: &AttrValue) -> TokenStream {
+    match value {
+        AttrValue::Ident(ident) => {
+            let ident_str = ident.to_string();
+            match ident_str.as_str() {
+                "none" => quote! { tuidom::Border::None },
+                "single" => quote! { tuidom::Border::Single },
+                "double" => quote! { tuidom::Border::Double },
+                "rounded" => quote! { tuidom::Border::Rounded },
+                "thick" => quote! { tuidom::Border::Thick },
+                _ => quote! { tuidom::Border::None },
+            }
+        }
+        AttrValue::Expr(expr) => quote! { #expr },
+        _ => quote! { tuidom::Border::None },
     }
 }
 
