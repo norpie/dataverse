@@ -245,10 +245,11 @@ fn layout_children(
         cross_offset += line_cross_size + element.gap;
     }
 
-    // Store content size for scrollable elements by measuring actual laid out children
+    // Store content size for scrollable elements using natural/unconstrained child sizes
     if element.overflow == Overflow::Scroll || element.overflow == Overflow::Auto {
-        // Calculate actual content bounds from laid out child rects
-        let (content_width, content_height) = compute_content_size(&flow_children, inner, result);
+        // Calculate natural content size (what children would take if unconstrained)
+        let (content_width, content_height) =
+            compute_content_size(&flow_children, inner, is_row, element.gap);
         result.set_content_size(
             element.id.clone(),
             content_width,
@@ -272,28 +273,54 @@ fn layout_children(
     }
 }
 
-/// Compute the actual content size from laid out child rects.
-/// Returns (width, height) of the bounding box of all children relative to the container.
-fn compute_content_size(children: &[&Element], inner: Rect, result: &LayoutResult) -> (u16, u16) {
+/// Compute the natural content size from children's intrinsic sizes.
+/// This calculates what size the content WOULD be if unconstrained,
+/// which is needed for scroll containers to know the scrollable extent.
+fn compute_content_size(
+    children: &[&Element],
+    inner: Rect,
+    is_row: bool,
+    gap: u16,
+) -> (u16, u16) {
     if children.is_empty() {
         return (inner.width, inner.height);
     }
 
-    let mut max_right = inner.x;
-    let mut max_bottom = inner.y;
+    // For scrollable content, we need the natural/unconstrained size
+    // Sum up children sizes along main axis, max along cross axis
+    let mut main_total = 0u16;
+    let mut cross_max = 0u16;
 
-    for child in children {
-        if let Some(child_rect) = result.get(&child.id) {
-            max_right = max_right.max(child_rect.right());
-            max_bottom = max_bottom.max(child_rect.bottom());
+    for (i, child) in children.iter().enumerate() {
+        let child_main = estimate_size(child, is_row);
+        let child_cross = estimate_size(child, !is_row);
+
+        // Add margins
+        let (main_margin, cross_margin) = if is_row {
+            (
+                child.margin.left + child.margin.right,
+                child.margin.top + child.margin.bottom,
+            )
+        } else {
+            (
+                child.margin.top + child.margin.bottom,
+                child.margin.left + child.margin.right,
+            )
+        };
+
+        main_total += child_main + main_margin;
+        if i > 0 {
+            main_total += gap;
         }
+        cross_max = cross_max.max(child_cross + cross_margin);
     }
 
-    // Content size is the extent from inner origin to the furthest child edge
-    let content_width = max_right.saturating_sub(inner.x).max(inner.width);
-    let content_height = max_bottom.saturating_sub(inner.y).max(inner.height);
-
-    (content_width, content_height)
+    // Return (width, height) based on direction
+    if is_row {
+        (main_total.max(inner.width), cross_max.max(inner.height))
+    } else {
+        (cross_max.max(inner.width), main_total.max(inner.height))
+    }
 }
 
 /// Apply scroll offset to an element and all its descendants
