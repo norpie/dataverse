@@ -112,12 +112,14 @@ impl WidgetShowcase {
                     row (gap: 2) {
                         text (content: "Username:") style (fg: muted)
                         input (state: self.username, id: "username", placeholder: "Enter username...", width: 30)
+                            style (bg: surface)
                             on_change: username_changed()
                             on_submit: submit_form()
                     }
                     row (gap: 2) {
                         text (content: "Password:") style (fg: muted)
                         input (state: self.password, id: "password", placeholder: "Enter password...", width: 30)
+                            style (bg: surface)
                     }
                 }
 
