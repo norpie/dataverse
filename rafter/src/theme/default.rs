@@ -65,13 +65,13 @@ pub struct RafterTheme {
 pub fn default_theme() -> RafterTheme {
     RafterTheme {
         // Core: dark purple-gray bg, black surface, purple accent
-        background: Color::oklch(0.15, 0.01, 280.0),
-        surface: Color::oklch(0.0, 0.0, 0.0),
+        background: Color::oklch(0.1684, 0.0, 0.0),
+        surface: Color::oklch(0.1957, 0.014, 291.6),
         border: Color::oklch(0.3, 0.02, 280.0),
         primary: Color::oklch(0.9, 0.0, 0.0),
         secondary: Color::oklch(0.75, 0.02, 280.0),
         muted: Color::oklch(0.5, 0.02, 280.0),
-        accent: Color::oklch(0.6, 0.15, 280.0),
+        accent: Color::oklch(0.8044, 0.1774, 323.99),
 
         // Semantic colors
         success: Color::oklch(0.7, 0.15, 145.0), // green
