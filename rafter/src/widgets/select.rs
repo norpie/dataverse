@@ -191,22 +191,34 @@ impl<'a, T: Clone + PartialEq + Send + Sync + 'static> Select<HasState<'a, T>> {
         );
 
         // Display text: selected label or placeholder
+        let placeholder = self
+            .placeholder
+            .clone()
+            .unwrap_or_else(|| "Select...".into());
         let display_text = current
             .value
             .as_ref()
             .and_then(|v| current.options.iter().find(|(ov, _)| ov == v))
             .map(|(_, label)| label.clone())
-            .unwrap_or_else(|| {
-                self.placeholder
-                    .clone()
-                    .unwrap_or_else(|| "Select...".into())
-            });
+            .unwrap_or_else(|| placeholder.clone());
+
+        // Calculate min width: max of all option labels and placeholder + arrow + gap
+        let max_label_width = current
+            .options
+            .iter()
+            .map(|(_, label)| label.chars().count())
+            .max()
+            .unwrap_or(0)
+            .max(placeholder.chars().count());
+        // +2 for arrow and gap
+        let min_width = (max_label_width + 2) as u16;
 
         // Build toggle row
         let arrow = if current.open { "▲" } else { "▼" };
         let mut toggle = Element::row()
             .id(&id)
-            .gap(1)
+            .min_width(min_width)
+            .justify(tuidom::Justify::SpaceBetween)
             .focusable(!self.disabled)
             .clickable(!self.disabled)
             .disabled(self.disabled)
@@ -318,16 +330,19 @@ impl<'a, T: Clone + PartialEq + Send + Sync + 'static> Select<HasState<'a, T>> {
             let dropdown = options_col
                 .position(Position::Absolute)
                 .top(1) // Below the toggle
-                .left(0)
+                .left(-1) // Extend background left for visual separation
+                .padding(tuidom::Edges::left(1)) // Keep content aligned with toggle
+                .width(Size::Fixed(min_width + 1)) // Account for extra padding
                 .z_index(100) // Render above other content
                 .style(Style::new().background(tuidom::Color::var("surface")));
 
             Element::box_()
+                .width(Size::Fixed(min_width))
                 .height(Size::Fixed(1)) // Only take toggle's height
                 .child(toggle)
                 .child(dropdown)
         } else {
-            toggle
+            toggle.width(tuidom::Size::Fixed(min_width))
         }
     }
 }
