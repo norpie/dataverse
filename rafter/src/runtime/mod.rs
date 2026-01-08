@@ -204,6 +204,9 @@ impl Runtime {
         let instance_id = instance.id();
         instance.install_wakeup(wakeup_tx.clone(), &gx);
 
+        // Call on_start lifecycle method
+        instance.on_start().await;
+
         {
             let mut reg = registry.write().unwrap();
             reg.insert(Box::new(instance));
@@ -270,7 +273,7 @@ impl Runtime {
             }
 
             // 2. Process pending commands
-            self.process_commands(registry, gx)?;
+            self.process_commands(registry, gx).await?;
 
             // 3. Process modal requests from focused app and clean up closed modals
             {
@@ -604,7 +607,7 @@ impl Runtime {
     }
 
     /// Process pending commands from GlobalContext.
-    fn process_commands(
+    async fn process_commands(
         &self,
         registry: &Arc<RwLock<InstanceRegistry>>,
         gx: &GlobalContext,
@@ -621,6 +624,9 @@ impl Runtime {
                     if let Some(sender) = gx.wakeup_sender() {
                         instance.install_wakeup(sender, gx);
                     }
+
+                    // Call on_start lifecycle method
+                    instance.on_start().await;
 
                     let mut reg = registry.write().unwrap();
                     reg.insert(instance);

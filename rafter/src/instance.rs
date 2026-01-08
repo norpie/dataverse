@@ -213,6 +213,9 @@ pub trait AnyAppInstance: Send + Sync {
     /// Install wakeup sender on all State fields and AppContext.
     fn install_wakeup(&self, sender: WakeupSender, gx: &GlobalContext);
 
+    /// Call the app's on_start lifecycle method.
+    fn on_start(&self) -> Pin<Box<dyn Future<Output = ()> + Send + '_>>;
+
     // Event/Request Dispatch
 
     /// Check if this instance has a handler for the given event type.
@@ -366,6 +369,10 @@ impl<A: App> AnyAppInstance for AppInstance<A> {
             // Update GlobalContext reference in case it changed
             ctx.set_global(gx.clone());
         }
+    }
+
+    fn on_start(&self) -> Pin<Box<dyn Future<Output = ()> + Send + '_>> {
+        Box::pin(self.app.on_start())
     }
 
     fn has_event_handler(&self, event_type: TypeId) -> bool {
