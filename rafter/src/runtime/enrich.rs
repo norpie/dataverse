@@ -5,8 +5,9 @@
 //! - Sets `focused` flag based on FocusState
 //! - Computes effective style (merging base + focused/disabled styles)
 //! - Populates text input cursor/selection from TextInputState
+//! - Sets scroll_offset from ScrollState
 
-use tuidom::{Content, Element, FocusState, TextInputState};
+use tuidom::{Content, Element, FocusState, ScrollState, TextInputState};
 
 /// Enrich elements with runtime state before rendering.
 ///
@@ -14,7 +15,13 @@ use tuidom::{Content, Element, FocusState, TextInputState};
 /// 1. Sets `focused` flag based on FocusState
 /// 2. Computes effective style (merging base + focused/disabled styles)
 /// 3. Populates text input cursor/selection from TextInputState
-pub fn enrich_elements(element: &mut Element, focus: &FocusState, text_inputs: &TextInputState) {
+/// 4. Sets scroll_offset from ScrollState
+pub fn enrich_elements(
+    element: &mut Element,
+    focus: &FocusState,
+    text_inputs: &TextInputState,
+    scroll: &ScrollState,
+) {
     // 1. Set focused flag for all elements
     element.focused = focus.focused() == Some(element.id.as_str());
 
@@ -41,16 +48,20 @@ pub fn enrich_elements(element: &mut Element, focus: &FocusState, text_inputs: &
         *focused = element.focused;
     }
 
-    // 4. Recurse into children
+    // 4. Set scroll_offset from ScrollState
+    let offset = scroll.get(&element.id);
+    element.scroll_offset = (offset.x, offset.y);
+
+    // 5. Recurse into children
     match &mut element.content {
         Content::Children(children) => {
             for child in children {
-                enrich_elements(child, focus, text_inputs);
+                enrich_elements(child, focus, text_inputs, scroll);
             }
         }
         Content::Frames { children, .. } => {
             for child in children {
-                enrich_elements(child, focus, text_inputs);
+                enrich_elements(child, focus, text_inputs, scroll);
             }
         }
         _ => {}

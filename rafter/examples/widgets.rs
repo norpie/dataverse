@@ -153,97 +153,99 @@ impl WidgetShowcase {
         let message = self.message.get();
 
         page! {
-            column (padding: 2, gap: 1) style (bg: background) {
-                // Header
-                text (content: "Widget Showcase") style (bold, fg: primary)
-                text (content: "Demonstrating rafter's built-in widgets") style (fg: muted)
+            box_ (height: fill, width: fill, overflow: scroll) style (bg: background) {
+                column (padding: 2, gap: 1) {
+                    // Header
+                    text (content: "Widget Showcase") style (bold, fg: primary)
+                    text (content: "Demonstrating rafter's built-in widgets") style (fg: muted)
 
-                // Status message
-                column (padding: 1) style (bg: surface) {
-                    row (gap: 1) {
-                        text (content: "Status:") style (fg: muted)
-                        text (content: {message}) style (fg: secondary)
+                    // Status message
+                    column (padding: 1) style (bg: surface) {
+                        row (gap: 1) {
+                            text (content: "Status:") style (fg: muted)
+                            text (content: {message}) style (fg: secondary)
+                        }
                     }
-                }
 
-                // Input widgets section
-                column (gap: 1) {
-                    text (content: "Text Inputs") style (bold, fg: primary)
-                    row (gap: 2) {
-                        text (content: "Username:") style (fg: muted)
-                        input (state: self.username, id: "username", placeholder: "Enter username...", width: 30)
-                            style (bg: surface)
-                            on_change: username_changed()
-                            on_submit: submit_form()
+                    // Input widgets section
+                    column (gap: 1) {
+                        text (content: "Text Inputs") style (bold, fg: primary)
+                        row (gap: 2) {
+                            text (content: "Username:") style (fg: muted)
+                            input (state: self.username, id: "username", placeholder: "Enter username...", width: 30)
+                                style (bg: surface)
+                                on_change: username_changed()
+                                on_submit: submit_form()
+                        }
+                        row (gap: 2) {
+                            text (content: "Password:") style (fg: muted)
+                            input (state: self.password, id: "password", placeholder: "Enter password...", width: 30)
+                                style (bg: surface)
+                        }
                     }
-                    row (gap: 2) {
-                        text (content: "Password:") style (fg: muted)
-                        input (state: self.password, id: "password", placeholder: "Enter password...", width: 30)
-                            style (bg: surface)
+
+                    // Checkbox widgets section
+                    column (gap: 1) {
+                        text (content: "Checkboxes") style (bold, fg: primary)
+                        checkbox (state: self.agree, id: "agree", label: "I accept the terms", big)
+                            on_change: toggle_agree()
+                        checkbox (state: self.notifications, id: "notify", label: "Enable notifications", small)
+                            on_change: toggle_notifications()
                     }
-                }
 
-                // Checkbox widgets section
-                column (gap: 1) {
-                    text (content: "Checkboxes") style (bold, fg: primary)
-                    checkbox (state: self.agree, id: "agree", label: "I accept the terms", big)
-                        on_change: toggle_agree()
-                    checkbox (state: self.notifications, id: "notify", label: "Enable notifications", small)
-                        on_change: toggle_notifications()
-                }
-
-                // Select widgets section
-                column (gap: 1) {
-                    text (content: "Select") style (bold, fg: primary)
-                    row (gap: 2) {
-                        text (content: "Country:") style (fg: muted)
-                        select (state: self.country, id: "country", placeholder: "Choose country...")
-                            style (bg: surface)
-                            on_change: country_changed()
+                    // Select widgets section
+                    column (gap: 1) {
+                        text (content: "Select") style (bold, fg: primary)
+                        row (gap: 2) {
+                            text (content: "Country:") style (fg: muted)
+                            select (state: self.country, id: "country", placeholder: "Choose country...")
+                                style (bg: surface)
+                                on_change: country_changed()
+                        }
                     }
-                }
 
-                // RadioGroup widgets section
-                column (gap: 1) {
-                    text (content: "RadioGroup") style (bold, fg: primary)
-                    row (gap: 2) {
-                        text (content: "Priority:") style (fg: muted)
-                        radio_group (state: self.priority, id: "priority")
-                            on_change: priority_changed()
+                    // RadioGroup widgets section
+                    column (gap: 1) {
+                        text (content: "RadioGroup") style (bold, fg: primary)
+                        row (gap: 2) {
+                            text (content: "Priority:") style (fg: muted)
+                            radio_group (state: self.priority, id: "priority")
+                                on_change: priority_changed()
+                        }
                     }
-                }
 
-                // Card widgets section
-                column (gap: 1) {
-                    text (content: "Card") style (bold, fg: primary)
-                    card (id: "info-card") style (bg: surface, padding: 1) {
-                        text (content: "Card Container") style (bold)
-                        text (content: "Cards group related content together.")
-                        text (content: "They support styling and children.")
+                    // Card widgets section
+                    column (gap: 1) {
+                        text (content: "Card") style (bold, fg: primary)
+                        card (id: "info-card") style (bg: surface, padding: 1) {
+                            text (content: "Card Container") style (bold)
+                            text (content: "Cards group related content together.")
+                            text (content: "They support styling and children.")
+                        }
                     }
-                }
 
-                // Collapsible widgets section
-                column (gap: 1) {
-                    text (content: "Collapsible") style (bold, fg: primary)
-                    collapsible (state: self.details_open, id: "details", header: "Show Details") {
-                        text (content: "This content is hidden by default.")
-                        text (content: "Click the header to toggle visibility.")
-                        text (content: "Useful for progressive disclosure.")
+                    // Collapsible widgets section
+                    column (gap: 1) {
+                        text (content: "Collapsible") style (bold, fg: primary)
+                        collapsible (state: self.details_open, id: "details", header: "Show Details") {
+                            text (content: "This content is hidden by default.")
+                            text (content: "Click the header to toggle visibility.")
+                            text (content: "Useful for progressive disclosure.")
+                        }
                     }
-                }
 
-                // Button widgets section
-                column (gap: 1) {
-                    text (content: "Buttons") style (bold, fg: primary)
-                    row (gap: 2) {
-                        button (label: "Submit", id: "submit") on_activate: submit_form()
-                        button (label: "Clear", id: "clear") on_activate: clear_form()
+                    // Button widgets section
+                    column (gap: 1) {
+                        text (content: "Buttons") style (bold, fg: primary)
+                        row (gap: 2) {
+                            button (label: "Submit", id: "submit") on_activate: submit_form()
+                            button (label: "Clear", id: "clear") on_activate: clear_form()
+                        }
                     }
-                }
 
-                // Footer
-                text (content: "Press 'q' to quit") style (fg: muted)
+                    // Footer
+                    text (content: "Press 'q' to quit") style (fg: muted)
+                }
             }
         }
     }

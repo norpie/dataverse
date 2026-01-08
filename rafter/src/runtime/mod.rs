@@ -331,7 +331,7 @@ impl Runtime {
             }
 
             // 8. Enrich elements with runtime state (BEFORE render)
-            enrich_elements(&mut root, focus, text_inputs);
+            enrich_elements(&mut root, focus, text_inputs, scroll);
 
             // 9. Render (stores layout internally)
             log::trace!("[runtime] === FRAME START ===");

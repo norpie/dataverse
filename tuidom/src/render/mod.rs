@@ -864,6 +864,11 @@ fn render_scrollbar(
     let (scroll_x, scroll_y) = element.scroll_offset;
     let (content_width, content_height) = content_size.unwrap_or((inner_width, inner_height));
 
+    log::debug!(
+        "render_scrollbar id={} content=({}, {}) viewport=({}, {}) scroll=({}, {})",
+        element.id, content_width, content_height, inner_width, inner_height, scroll_x, scroll_y
+    );
+
     // Determine if content overflows
     let overflows_vertical = content_height > inner_height;
     let overflows_horizontal = content_width > inner_width;
@@ -872,6 +877,11 @@ fn render_scrollbar(
     // For Scroll, always show the scrollbar
     let show_vertical = element.overflow == Overflow::Scroll || overflows_vertical;
     let show_horizontal = element.overflow == Overflow::Scroll || overflows_horizontal;
+
+    log::debug!(
+        "  overflows_v={} overflows_h={} show_v={} show_h={}",
+        overflows_vertical, overflows_horizontal, show_vertical, show_horizontal
+    );
 
     // Scrollbar colors in OKLCH (gray tones)
     let track_color = Oklch::from_rgb(crate::types::Rgb::new(60, 60, 60));
