@@ -480,6 +480,7 @@ fn generate_overflow_call(value: &AttrValue) -> TokenStream {
                 "visible" => quote! { .overflow(tuidom::Overflow::Visible) },
                 "hidden" => quote! { .overflow(tuidom::Overflow::Hidden) },
                 "scroll" => quote! { .overflow(tuidom::Overflow::Scroll) },
+                "auto" => quote! { .overflow(tuidom::Overflow::Auto) },
                 _ => quote! { .overflow(#ident) },
             }
         }
