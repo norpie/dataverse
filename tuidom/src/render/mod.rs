@@ -172,11 +172,45 @@ fn collect_elements<'a>(
             } else {
                 1
             };
+            // Reserve space for scrollbars so children don't render over them
+            let (scrollbar_right, scrollbar_bottom) = match element.overflow {
+                Overflow::Scroll => (1, 1), // Always reserve for scroll
+                Overflow::Auto => {
+                    // Only reserve if content actually overflows
+                    if let Some((cw, ch)) = layout.content_size(&element.id) {
+                        // Compare content size to viewport (inner area after padding/border)
+                        let viewport_w = rect.width.saturating_sub(
+                            element.padding.left + element.padding.right + border_size * 2,
+                        );
+                        let viewport_h = rect.height.saturating_sub(
+                            element.padding.top + element.padding.bottom + border_size * 2,
+                        );
+                        let has_v_overflow = ch > viewport_h;
+                        let has_h_overflow = cw > viewport_w;
+                        log::debug!(
+                            "[clip] id={} content=({},{}) viewport=({},{}) overflow=({},{})",
+                            element.id, cw, ch, viewport_w, viewport_h, has_h_overflow, has_v_overflow
+                        );
+                        (
+                            if has_v_overflow { 1 } else { 0 },
+                            if has_h_overflow { 1 } else { 0 },
+                        )
+                    } else {
+                        log::debug!("[clip] id={} no content_size", element.id);
+                        (0, 0)
+                    }
+                }
+                _ => (0, 0),
+            };
             let inner = rect.shrink(
                 element.padding.top + border_size,
-                element.padding.right + border_size,
-                element.padding.bottom + border_size,
+                element.padding.right + border_size + scrollbar_right,
+                element.padding.bottom + border_size + scrollbar_bottom,
                 element.padding.left + border_size,
+            );
+            log::debug!(
+                "[clip] id={} rect=({},{},{},{}) inner=({},{},{},{}) scrollbar_reserve=({},{})",
+                element.id, rect.x, rect.y, rect.width, rect.height, inner.x, inner.y, inner.width, inner.height, scrollbar_right, scrollbar_bottom
             );
             // Intersect with parent's clip (if any)
             Some(intersect_rects(inner, parent_clip))

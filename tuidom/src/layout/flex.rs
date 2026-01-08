@@ -209,14 +209,47 @@ fn layout_children(
         1
     };
 
-    let inner = rect.shrink(
+    // Compute inner rect without scrollbar reservation first
+    let inner_no_scroll = rect.shrink(
         element.padding.top + border_size,
         element.padding.right + border_size,
         element.padding.bottom + border_size,
         element.padding.left + border_size,
     );
 
+    // Determine scrollbar reservations based on overflow mode
     let is_row = element.direction == Direction::Row;
+    let (scrollbar_right, scrollbar_bottom) = match element.overflow {
+        Overflow::Scroll => (1, 1), // Always show both scrollbars
+        Overflow::Auto => {
+            // Smart reservation: only reserve space for scrollbars that are needed
+            let (content_width, content_height) =
+                compute_content_size(&flow_children, inner_no_scroll, is_row, element.gap);
+
+            let needs_vertical = content_height > inner_no_scroll.height;
+            // Check horizontal need accounting for vertical scrollbar taking 1 char
+            let available_width_after_vscroll = if needs_vertical {
+                inner_no_scroll.width.saturating_sub(1)
+            } else {
+                inner_no_scroll.width
+            };
+            let needs_horizontal = content_width > available_width_after_vscroll;
+
+            (
+                if needs_vertical { 1 } else { 0 },
+                if needs_horizontal { 1 } else { 0 },
+            )
+        }
+        _ => (0, 0),
+    };
+
+    let inner = rect.shrink(
+        element.padding.top + border_size,
+        element.padding.right + border_size + scrollbar_right,
+        element.padding.bottom + border_size + scrollbar_bottom,
+        element.padding.left + border_size,
+    );
+
     let main_size = if is_row { inner.width } else { inner.height };
     let cross_size = if is_row { inner.height } else { inner.width };
 
@@ -317,9 +350,9 @@ fn compute_content_size(
 
     // Return (width, height) based on direction
     if is_row {
-        (main_total.max(inner.width), cross_max.max(inner.height))
+        (main_total, cross_max)
     } else {
-        (cross_max.max(inner.width), main_total.max(inner.height))
+        (cross_max, main_total)
     }
 }
 
@@ -691,6 +724,12 @@ fn estimate_size(element: &Element, is_width: bool) -> u16 {
         element.padding.vertical_total()
     };
 
+    // Reserve space for scrollbars in scrollable containers
+    let scrollbar_size = match element.overflow {
+        Overflow::Scroll | Overflow::Auto => 1,
+        _ => 0,
+    };
+
     let content_size = match &element.content {
         Content::Text(text) => {
             if is_width {
@@ -749,5 +788,5 @@ fn estimate_size(element: &Element, is_width: bool) -> u16 {
         }
     };
 
-    content_size + padding + border_size
+    content_size + padding + border_size + scrollbar_size
 }
