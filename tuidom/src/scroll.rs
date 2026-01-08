@@ -284,7 +284,7 @@ fn find_scrollable_at(root: &Element, layout: &LayoutResult, x: u16, y: u16) -> 
 
 /// Find the nearest scrollable ancestor of a target element (or the element itself if scrollable).
 /// Returns None if no scrollable ancestor exists.
-fn find_scrollable_ancestor(root: &Element, target_id: &str) -> Option<String> {
+pub fn find_scrollable_ancestor(root: &Element, target_id: &str) -> Option<String> {
     find_scrollable_ancestor_recursive(root, target_id, None)
 }
 
