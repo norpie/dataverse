@@ -632,8 +632,27 @@ fn calculate_scroll_from_position(
 }
 
 /// Find the innermost scrollable element at the given coordinates.
+/// This traverses the entire tree to find all scrollables, then checks which ones
+/// contain the mouse position. Returns the deepest/innermost one.
 fn find_scrollable_at(root: &Element, layout: &LayoutResult, x: u16, y: u16) -> Option<String> {
-    find_scrollable_recursive(root, layout, x, y)
+    // Collect all scrollable elements (this traverses the entire tree including absolute children)
+    let scrollables = collect_scrollable(root);
+    log::debug!("[scroll] find_scrollable_at ({}, {}) scrollables={:?}", x, y, scrollables);
+
+    // Find all scrollables that contain the mouse position
+    // Later elements in the list are deeper in the tree, so we iterate in reverse
+    // to find the deepest/innermost one first
+    for id in scrollables.iter().rev() {
+        if let Some(rect) = layout.get(id) {
+            let contains = x >= rect.x && x < rect.right() && y >= rect.y && y < rect.bottom();
+            log::debug!("[scroll] checking {} rect={:?} contains={}", id, rect, contains);
+            if contains {
+                return Some(id.clone());
+            }
+        }
+    }
+
+    None
 }
 
 /// Find the nearest scrollable ancestor of a target element (or the element itself if scrollable).
@@ -666,36 +685,6 @@ fn find_scrollable_ancestor_recursive(
                 return Some(result);
             }
         }
-    }
-
-    None
-}
-
-fn find_scrollable_recursive(
-    element: &Element,
-    layout: &LayoutResult,
-    x: u16,
-    y: u16,
-) -> Option<String> {
-    let rect = layout.get(&element.id)?;
-
-    // Check if point is within bounds
-    if x < rect.x || x >= rect.right() || y < rect.y || y >= rect.bottom() {
-        return None;
-    }
-
-    // Check children first (innermost takes priority)
-    if let Content::Children(children) = &element.content {
-        for child in children.iter().rev() {
-            if let Some(id) = find_scrollable_recursive(child, layout, x, y) {
-                return Some(id);
-            }
-        }
-    }
-
-    // Check if this element is scrollable
-    if element.overflow == Overflow::Scroll || element.overflow == Overflow::Auto {
-        return Some(element.id.clone());
     }
 
     None
