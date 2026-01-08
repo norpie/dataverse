@@ -5,12 +5,13 @@
 //! - Button: Clickable buttons with on_activate
 //! - Checkbox: Toggleable checkboxes with on_change
 //! - Input: Text input fields with on_change and on_submit
+//! - Select: Dropdown selection with on_change
 
 use std::fs::File;
 
 use rafter::page;
 use rafter::prelude::*;
-use rafter::widgets::{Button, Checkbox, Input, Text};
+use rafter::widgets::{Button, Checkbox, Input, Select, SelectState, Text};
 use simplelog::{Config, LevelFilter, WriteLogger};
 
 #[app]
@@ -23,6 +24,9 @@ struct WidgetShowcase {
     username: String,
     password: String,
 
+    // Select state
+    country: SelectState<String>,
+
     // Display state
     message: String,
 }
@@ -31,6 +35,17 @@ struct WidgetShowcase {
 impl WidgetShowcase {
     async fn on_start(&self) {
         self.message.set("Welcome! Try the widgets below.".into());
+
+        // Initialize select options
+        let state = SelectState::new([
+            ("us".to_string(), "United States"),
+            ("uk".to_string(), "United Kingdom"),
+            ("de".to_string(), "Germany"),
+            ("fr".to_string(), "France"),
+        ]);
+        log::debug!("on_start: setting country with {} options", state.options.len());
+        self.country.set(state);
+        log::debug!("on_start: country now has {} options", self.country.get().options.len());
     }
 
     #[keybinds]
@@ -60,6 +75,20 @@ impl WidgetShowcase {
     }
 
     #[handler]
+    async fn country_changed(&self) {
+        let state = self.country.get();
+        if let Some(code) = &state.value {
+            let label = state
+                .options
+                .iter()
+                .find(|(v, _)| v == code)
+                .map(|(_, l)| l.as_str())
+                .unwrap_or("Unknown");
+            self.message.set(format!("Country: {}", label));
+        }
+    }
+
+    #[handler]
     async fn username_changed(&self) {
         let username = self.username.get();
         self.message.set(format!("Username: {}", username));
@@ -86,6 +115,7 @@ impl WidgetShowcase {
         self.password.set(String::new());
         self.agree.set(false);
         self.notifications.set(false);
+        self.country.update(|s| s.value = None);
         self.message.set("Form cleared.".into());
     }
 
@@ -130,6 +160,17 @@ impl WidgetShowcase {
                         on_change: toggle_agree()
                     checkbox (state: self.notifications, id: "notify", label: "Enable notifications", small)
                         on_change: toggle_notifications()
+                }
+
+                // Select widgets section
+                column (gap: 1) {
+                    text (content: "Select") style (bold, fg: primary)
+                    row (gap: 2) {
+                        text (content: "Country:") style (fg: muted)
+                        select (state: self.country, id: "country", placeholder: "Choose country...")
+                            style (bg: surface)
+                            on_change: country_changed()
+                    }
                 }
 
                 // Button widgets section

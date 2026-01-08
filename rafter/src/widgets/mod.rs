@@ -31,9 +31,11 @@
 pub mod button;
 pub mod checkbox;
 pub mod input;
+pub mod select;
 pub mod text;
 
 pub use button::Button;
 pub use checkbox::{Checkbox, CheckboxVariant};
 pub use input::Input;
+pub use select::{Select, SelectState};
 pub use text::Text;
