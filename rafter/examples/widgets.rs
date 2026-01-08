@@ -6,12 +6,13 @@
 //! - Checkbox: Toggleable checkboxes with on_change
 //! - Input: Text input fields with on_change and on_submit
 //! - Select: Dropdown selection with on_change
+//! - RadioGroup: Mutually exclusive radio buttons with on_change
 
 use std::fs::File;
 
 use rafter::page;
 use rafter::prelude::*;
-use rafter::widgets::{Button, Checkbox, Input, Select, SelectState, Text};
+use rafter::widgets::{Button, Checkbox, Input, RadioGroup, RadioState, Select, SelectState, Text};
 use simplelog::{Config, LevelFilter, WriteLogger};
 
 #[app]
@@ -26,6 +27,9 @@ struct WidgetShowcase {
 
     // Select state
     country: SelectState<String>,
+
+    // RadioGroup state
+    priority: RadioState<String>,
 
     // Display state
     message: String,
@@ -46,6 +50,13 @@ impl WidgetShowcase {
         log::debug!("on_start: setting country with {} options", state.options.len());
         self.country.set(state);
         log::debug!("on_start: country now has {} options", self.country.get().options.len());
+
+        // Initialize radio group options
+        self.priority.set(RadioState::new([
+            ("low".to_string(), "Low"),
+            ("medium".to_string(), "Medium"),
+            ("high".to_string(), "High"),
+        ]));
     }
 
     #[keybinds]
@@ -85,6 +96,20 @@ impl WidgetShowcase {
                 .map(|(_, l)| l.as_str())
                 .unwrap_or("Unknown");
             self.message.set(format!("Country: {}", label));
+        }
+    }
+
+    #[handler]
+    async fn priority_changed(&self) {
+        let state = self.priority.get();
+        if let Some(value) = &state.value {
+            let label = state
+                .options
+                .iter()
+                .find(|(v, _)| v == value)
+                .map(|(_, l)| l.as_str())
+                .unwrap_or("Unknown");
+            self.message.set(format!("Priority: {}", label));
         }
     }
 
@@ -170,6 +195,16 @@ impl WidgetShowcase {
                         select (state: self.country, id: "country", placeholder: "Choose country...")
                             style (bg: surface)
                             on_change: country_changed()
+                    }
+                }
+
+                // RadioGroup widgets section
+                column (gap: 1) {
+                    text (content: "RadioGroup") style (bold, fg: primary)
+                    row (gap: 2) {
+                        text (content: "Priority:") style (fg: muted)
+                        radio_group (state: self.priority, id: "priority")
+                            on_change: priority_changed()
                     }
                 }
 
