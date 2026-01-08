@@ -193,7 +193,7 @@ impl WidgetShowcase {
 async fn main() {
     // Set up file logging
     let log_file = File::create("widgets.log").expect("Failed to create log file");
-    WriteLogger::init(LevelFilter::Debug, Config::default(), log_file)
+    WriteLogger::init(LevelFilter::Trace, Config::default(), log_file)
         .expect("Failed to initialize logger");
 
     if let Err(e) = Runtime::new()
