@@ -322,14 +322,24 @@ impl ScrollState {
                             // Check if click is on any scrollbar
                             let hit = self.check_any_scrollbar_hit(root, layout, x, y);
                             log::debug!("[scroll-drag] MouseDown at ({}, {}), hit={:?}", x, y, hit);
-                            if let Some((element_id, is_vertical, thumb_offset, thumb_size, on_thumb, border_size)) = hit
+                            if let Some((element_id, is_vertical, thumb_offset, thumb_size, on_thumb, border_size, track_start, track_length)) = hit
                             {
                                 // Start drag
                                 let offset = if on_thumb {
                                     thumb_offset
                                 } else {
-                                    // Clicked on track - center thumb on click position
-                                    thumb_size / 2
+                                    // Clicked on track - calculate proportional offset (like browsers)
+                                    let click_pos = if is_vertical { y } else { x };
+                                    let track_ratio = (click_pos.saturating_sub(track_start) as f32) / (track_length.max(1) as f32);
+                                    // Use rounding to reduce precision loss with small thumbs
+                                    let offset = (track_ratio * thumb_size as f32).round() as u16;
+                                    // Clamp to valid range (0 to thumb_size-1)
+                                    let offset = offset.min(thumb_size.saturating_sub(1));
+                                    log::debug!(
+                                        "[scroll-drag] track click: click_pos={} track_start={} track_length={} track_ratio={:.3} thumb_size={} offset={}",
+                                        click_pos, track_start, track_length, track_ratio, thumb_size, offset
+                                    );
+                                    offset
                                 };
 
                                 self.drag = Some(ScrollbarDrag {
@@ -401,14 +411,14 @@ impl ScrollState {
     }
 
     /// Check if a point hits any scrollbar in the element tree.
-    /// Returns (element_id, is_vertical, thumb_offset, thumb_size, on_thumb, border_size) if hit.
+    /// Returns (element_id, is_vertical, thumb_offset, thumb_size, on_thumb, border_size, track_start, track_length) if hit.
     fn check_any_scrollbar_hit(
         &self,
         root: &Element,
         layout: &LayoutResult,
         x: u16,
         y: u16,
-    ) -> Option<(String, bool, u16, u16, bool, u16)> {
+    ) -> Option<(String, bool, u16, u16, bool, u16, u16, u16)> {
         let scrollables = collect_scrollable_with_elements(root);
         log::debug!("[scroll-drag] scrollables={:?}", scrollables.iter().map(|(id, _)| id).collect::<Vec<_>>());
         for (id, element) in scrollables {
@@ -417,7 +427,7 @@ impl ScrollState {
             let viewport = layout.viewport_size(&id);
             log::debug!("[scroll-drag] checking {} rect={:?} content={:?} viewport={:?}", id, rect, content, viewport);
             if let Some(hit) = check_scrollbar_hit(&id, x, y, layout, self, element) {
-                return Some((id, hit.0, hit.1, hit.2, hit.3, hit.4));
+                return Some((id, hit.0, hit.1, hit.2, hit.3, hit.4, hit.5, hit.6));
             }
         }
         None
@@ -443,7 +453,7 @@ fn collect_scrollable_with_elements_recursive<'a>(element: &'a Element, result: 
 }
 
 /// Check if a click is on a scrollbar.
-/// Returns (is_vertical, thumb_offset, thumb_size, on_thumb, border_size) if hit.
+/// Returns (is_vertical, thumb_offset, thumb_size, on_thumb, border_size, track_start, track_length) if hit.
 fn check_scrollbar_hit(
     id: &str,
     x: u16,
@@ -451,7 +461,7 @@ fn check_scrollbar_hit(
     layout: &LayoutResult,
     scroll: &ScrollState,
     element: &Element,
-) -> Option<(bool, u16, u16, bool, u16)> {
+) -> Option<(bool, u16, u16, bool, u16, u16, u16)> {
     let rect = layout.get(id)?;
     let (content_width, content_height) = layout.content_size(id)?;
     let (inner_width, inner_height) = layout.viewport_size(id)?;
@@ -482,8 +492,9 @@ fn check_scrollbar_hit(
                 track_height
             };
             let scroll_range = track_height.saturating_sub(thumb_size);
+            // Use rounding to match render calculation
             let thumb_pos = if max_scroll > 0 && scroll_range > 0 {
-                ((current.y as u32 * scroll_range as u32) / max_scroll as u32)
+                ((current.y as u32 * scroll_range as u32 + max_scroll as u32 / 2) / max_scroll as u32)
                     .min(scroll_range as u32) as u16
             } else {
                 0
@@ -496,7 +507,7 @@ fn check_scrollbar_hit(
             let on_thumb = y >= thumb_start && y < thumb_end;
             let thumb_offset = if on_thumb { y - thumb_start } else { 0 };
 
-            return Some((true, thumb_offset, thumb_size, on_thumb, border_size));
+            return Some((true, thumb_offset, thumb_size, on_thumb, border_size, track_start, track_height));
         }
     }
 
@@ -523,8 +534,9 @@ fn check_scrollbar_hit(
                 track_width
             };
             let scroll_range = track_width.saturating_sub(thumb_size);
+            // Use rounding to match render calculation
             let thumb_pos = if max_scroll > 0 && scroll_range > 0 {
-                ((current.x as u32 * scroll_range as u32) / max_scroll as u32)
+                ((current.x as u32 * scroll_range as u32 + max_scroll as u32 / 2) / max_scroll as u32)
                     .min(scroll_range as u32) as u16
             } else {
                 0
@@ -537,7 +549,7 @@ fn check_scrollbar_hit(
             let on_thumb = x >= thumb_start && x < thumb_end;
             let thumb_offset = if on_thumb { x - thumb_start } else { 0 };
 
-            return Some((false, thumb_offset, thumb_size, on_thumb, border_size));
+            return Some((false, thumb_offset, thumb_size, on_thumb, border_size, track_start, track_width));
         }
     }
 
@@ -588,8 +600,13 @@ fn calculate_scroll_from_position(
         let clamped_thumb_start = thumb_start_y.clamp(track_start, track_start + scroll_range);
         let thumb_offset_in_track = clamped_thumb_start.saturating_sub(track_start);
 
-        let scroll_pos =
-            (thumb_offset_in_track as u32 * max_scroll as u32 / scroll_range as u32) as u16;
+        // Use rounding to reduce precision loss in scroll ↔ thumb position conversion
+        let scroll_pos = ((thumb_offset_in_track as u32 * max_scroll as u32 + scroll_range as u32 / 2)
+            / scroll_range as u32) as u16;
+        log::debug!(
+            "[scroll-drag] calc_scroll: y={} thumb_offset={} thumb_start_y={} clamped={} offset_in_track={} scroll_range={} max_scroll={} scroll_pos={}",
+            y, thumb_offset, thumb_start_y, clamped_thumb_start, thumb_offset_in_track, scroll_range, max_scroll, scroll_pos
+        );
         Some(scroll_pos.min(max_scroll))
     } else {
         let track_start = rect.x + border_size;
@@ -625,8 +642,9 @@ fn calculate_scroll_from_position(
         let clamped_thumb_start = thumb_start_x.clamp(track_start, track_start + scroll_range);
         let thumb_offset_in_track = clamped_thumb_start.saturating_sub(track_start);
 
-        let scroll_pos =
-            (thumb_offset_in_track as u32 * max_scroll as u32 / scroll_range as u32) as u16;
+        // Use rounding to reduce precision loss in scroll ↔ thumb position conversion
+        let scroll_pos = ((thumb_offset_in_track as u32 * max_scroll as u32 + scroll_range as u32 / 2)
+            / scroll_range as u32) as u16;
         Some(scroll_pos.min(max_scroll))
     }
 }

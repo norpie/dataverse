@@ -934,11 +934,11 @@ fn render_scrollbar(
                 track_height
             };
 
-            // Calculate thumb position based on scroll offset
+            // Calculate thumb position based on scroll offset (use rounding for precision)
             let max_scroll = content_height.saturating_sub(inner_height);
             let scroll_range = track_height.saturating_sub(thumb_size);
             let thumb_pos = if max_scroll > 0 && scroll_range > 0 {
-                ((scroll_y as u32 * scroll_range as u32) / max_scroll as u32)
+                ((scroll_y as u32 * scroll_range as u32 + max_scroll as u32 / 2) / max_scroll as u32)
                     .min(scroll_range as u32) as u16
             } else {
                 0
@@ -981,11 +981,11 @@ fn render_scrollbar(
                 track_width
             };
 
-            // Calculate thumb position based on scroll offset
+            // Calculate thumb position based on scroll offset (use rounding for precision)
             let max_scroll = content_width.saturating_sub(inner_width);
             let scroll_range = track_width.saturating_sub(thumb_size);
             let thumb_pos = if max_scroll > 0 && scroll_range > 0 {
-                ((scroll_x as u32 * scroll_range as u32) / max_scroll as u32)
+                ((scroll_x as u32 * scroll_range as u32 + max_scroll as u32 / 2) / max_scroll as u32)
                     .min(scroll_range as u32) as u16
             } else {
                 0
