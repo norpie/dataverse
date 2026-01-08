@@ -448,6 +448,13 @@ impl Runtime {
             // 17. Process focus events (Tab navigation, focus-follows-mouse)
             let events = focus.process_events(&raw_events, &root, layout);
 
+            // 17b. Scroll focused element into view
+            for event in &events {
+                if let tuidom::Event::Focus { target } = event {
+                    scroll_to_element(&root, layout, scroll, target);
+                }
+            }
+
             // 18. Process text input events (keyboard → Change/Submit events)
             let events = text_inputs.process_events(&events, &root, layout);
 
