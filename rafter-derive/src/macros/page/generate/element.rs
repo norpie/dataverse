@@ -129,13 +129,22 @@ fn generate_widget(elem: &ElementNode) -> TokenStream {
     // Generate handler insertions into WidgetHandlers map
     let handler_insertions = handler::generate_handler_insertions(&elem.handlers);
 
-    // Build the widget: Widget::new().props().style().build(registry, handlers)
+    // Generate children if present (for container widgets like Card)
+    let children: Vec<_> = elem.children.iter().map(generate_view_node).collect();
+    let children_call = if children.is_empty() {
+        quote! {}
+    } else {
+        quote! { .children(vec![#(#children),*]) }
+    };
+
+    // Build the widget: Widget::new().props().children().style().build(registry, handlers)
     quote! {
         {
             let mut __handlers = rafter::WidgetHandlers::new();
             #handler_insertions
             #widget_type_ident::new()
                 #(#widget_attr_calls)*
+                #children_call
                 #style_call
                 #transition_call
                 .build(&self.__handler_registry, &__handlers)
