@@ -235,8 +235,10 @@ impl<'a, T: ListItem> List<HasListState<'a, T>> {
                 if let Some(ref style) = self.item_style_selected {
                     row = row.style(style.clone());
                 } else {
-                    // Default selected style: secondary background
-                    row = row.style(Style::new().background(tuidom::Color::var("secondary")));
+                    // Default selected style: dimmed accent background
+                    row = row.style(
+                        Style::new().background(tuidom::Color::var("accent").darken(0.3)),
+                    );
                 }
             }
 

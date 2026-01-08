@@ -213,8 +213,13 @@ fn parse_attr_value(input: ParseStream) -> syn::Result<AttrValue> {
         return Ok(AttrValue::Expr(expr));
     }
 
-    // Try to parse as identifier, then check if it's a path (foo.bar)
+    // Try to parse as identifier, then check if it's a path (foo.bar) or pipe (foo | op())
     let ident: Ident = input.parse()?;
+
+    // Check for pipe operator (color operations like `primary | darken(0.2)`)
+    if input.peek(Token![|]) {
+        return parse_color_with_ops(ident, input);
+    }
 
     // Check if this is a path expression (ident.something)
     if input.peek(Token![.]) {
@@ -229,6 +234,47 @@ fn parse_attr_value(input: ParseStream) -> syn::Result<AttrValue> {
     }
 
     Ok(AttrValue::Ident(ident))
+}
+
+/// Parse color operations: `| op(arg) | op(arg)`
+///
+/// Supports: lighten, darken, saturate, desaturate, hue_shift, alpha
+fn parse_color_with_ops(base: Ident, input: ParseStream) -> syn::Result<AttrValue> {
+    let base_str = base.to_string();
+
+    // Start building: Color::var("base")
+    let mut expr: Expr = syn::parse_quote!(tuidom::Color::var(#base_str));
+
+    // Parse operations
+    while input.peek(Token![|]) {
+        input.parse::<Token![|]>()?;
+
+        let op: Ident = input.parse()?;
+        let op_str = op.to_string();
+
+        // Parse argument in parentheses
+        let content;
+        parenthesized!(content in input);
+        let arg: syn::Lit = content.parse()?;
+
+        // Build method call
+        expr = match op_str.as_str() {
+            "lighten" | "darken" | "saturate" | "desaturate" | "alpha" | "hue_shift" => {
+                syn::parse_quote!(#expr.#op(#arg))
+            }
+            _ => {
+                return Err(syn::Error::new(
+                    op.span(),
+                    format!(
+                        "Unknown color operation: '{}'. Valid: lighten, darken, saturate, desaturate, hue_shift, alpha",
+                        op_str
+                    ),
+                ));
+            }
+        };
+    }
+
+    Ok(AttrValue::Expr(expr))
 }
 
 /// Parse handlers after attributes: `on_click: handler(args) on_change: other()`

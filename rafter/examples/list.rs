@@ -91,14 +91,14 @@ impl ListExample {
 
         page! {
             column (padding: 2, gap: 1, height: fill) style (bg: background) {
-                // Header
-                text (content: "List Widget Demo") style (bold, fg: primary)
-                text (content: "Use Tab/arrows to navigate, Enter/Space to select") style (fg: muted)
+                // Header - testing derived colors
+                text (content: "List Widget Demo") style (bold, fg: accent | lighten(0.1))
+                text (content: "Use Tab/arrows to navigate, Enter/Space to select") style (fg: primary | darken(0.3))
 
                 // Status
                 row (gap: 1) {
                     text (content: "Status:") style (fg: muted)
-                    text (content: {message}) style (fg: secondary)
+                    text (content: {message}) style (fg: accent | darken(0.1))
                 }
 
                 // File list in scrollable container
@@ -112,7 +112,7 @@ impl ListExample {
                 }
 
                 // Footer
-                text (content: "Press 'q' to quit") style (fg: muted)
+                text (content: "Press 'q' to quit") style (fg: primary | darken(0.4))
             }
         }
     }
