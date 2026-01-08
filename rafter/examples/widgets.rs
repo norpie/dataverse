@@ -8,12 +8,13 @@
 //! - Select: Dropdown selection with on_change
 //! - RadioGroup: Mutually exclusive radio buttons with on_change
 //! - Card: Container widget for grouping content
+//! - Collapsible: Expandable/collapsible content section
 
 use std::fs::File;
 
 use rafter::page;
 use rafter::prelude::*;
-use rafter::widgets::{Button, Card, Checkbox, Input, RadioGroup, RadioState, Select, SelectState, Text};
+use rafter::widgets::{Button, Card, Checkbox, Collapsible, Input, RadioGroup, RadioState, Select, SelectState, Text};
 use simplelog::{Config, LevelFilter, WriteLogger};
 
 #[app]
@@ -31,6 +32,9 @@ struct WidgetShowcase {
 
     // RadioGroup state
     priority: RadioState<String>,
+
+    // Collapsible state
+    details_open: bool,
 
     // Display state
     message: String,
@@ -216,6 +220,16 @@ impl WidgetShowcase {
                         text (content: "Card Container") style (bold)
                         text (content: "Cards group related content together.")
                         text (content: "They support styling and children.")
+                    }
+                }
+
+                // Collapsible widgets section
+                column (gap: 1) {
+                    text (content: "Collapsible") style (bold, fg: primary)
+                    collapsible (state: self.details_open, id: "details", header: "Show Details") {
+                        text (content: "This content is hidden by default.")
+                        text (content: "Click the header to toggle visibility.")
+                        text (content: "Useful for progressive disclosure.")
                     }
                 }
 

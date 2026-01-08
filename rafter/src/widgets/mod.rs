@@ -31,6 +31,7 @@
 pub mod button;
 pub mod card;
 pub mod checkbox;
+pub mod collapsible;
 pub mod input;
 pub mod radio;
 pub mod select;
@@ -39,6 +40,7 @@ pub mod text;
 pub use button::Button;
 pub use card::Card;
 pub use checkbox::{Checkbox, CheckboxVariant};
+pub use collapsible::Collapsible;
 pub use input::Input;
 pub use radio::{RadioGroup, RadioState};
 pub use select::{Select, SelectState};
