@@ -442,16 +442,19 @@ impl Runtime {
             // 15. Sync text input values to TextInputState
             sync_text_inputs(&root, text_inputs);
 
-            // 16. Process focus events (Tab navigation, focus-follows-mouse)
+            // 16. Process scrollbar drag events (before focus so clicks on scrollbar don't propagate)
+            let raw_events = scroll.process_raw_events(&raw_events, &root, layout);
+
+            // 17. Process focus events (Tab navigation, focus-follows-mouse)
             let events = focus.process_events(&raw_events, &root, layout);
 
-            // 17. Process text input events (keyboard → Change/Submit events)
+            // 18. Process text input events (keyboard → Change/Submit events)
             let events = text_inputs.process_events(&events, &root, layout);
 
-            // 18. Process scroll events
+            // 19. Process scroll events (wheel scrolling)
             let _consumed_scroll = scroll.process_events(&events, &root, layout);
 
-            // 19. Dispatch events to keybinds and apps
+            // 20. Dispatch events to keybinds and apps
             for event in &events {
                 dispatch::dispatch_event(event, global_modals, systems, registry, gx, layout);
             }

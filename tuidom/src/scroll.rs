@@ -1,5 +1,7 @@
 use std::collections::HashMap;
 
+use crossterm::event::{Event as CrosstermEvent, MouseButton, MouseEventKind};
+
 use crate::element::{Content, Element};
 use crate::event::{Event, Key};
 use crate::layout::{LayoutResult, Rect};
@@ -18,6 +20,19 @@ impl ScrollOffset {
     }
 }
 
+/// Tracks scrollbar drag state.
+#[derive(Debug, Clone)]
+struct ScrollbarDrag {
+    /// Element ID of the scrollable container being dragged
+    element_id: String,
+    /// True if dragging vertical scrollbar, false for horizontal
+    is_vertical: bool,
+    /// Offset within thumb where drag started (for smooth dragging)
+    thumb_offset: u16,
+    /// Border size of the element (for track position calculation)
+    border_size: u16,
+}
+
 /// Tracks scroll offsets for scrollable elements.
 /// Similar to FocusState, this is user-managed state that persists across frames.
 #[derive(Debug, Default)]
@@ -27,6 +42,8 @@ pub struct ScrollState {
     content_sizes: HashMap<String, (u16, u16)>,
     /// Last known mouse position for keyboard scroll fallback
     last_mouse_pos: Option<(u16, u16)>,
+    /// Current scrollbar drag state
+    drag: Option<ScrollbarDrag>,
 }
 
 impl ScrollState {
@@ -280,6 +297,337 @@ impl ScrollState {
         }
 
         consumed
+    }
+
+    /// Process raw crossterm events for scrollbar dragging.
+    /// This should be called BEFORE FocusState::process_events so that
+    /// scrollbar interactions don't propagate as click events.
+    /// Returns events that were NOT consumed by scrollbar interaction.
+    pub fn process_raw_events(
+        &mut self,
+        events: &[CrosstermEvent],
+        root: &Element,
+        layout: &LayoutResult,
+    ) -> Vec<CrosstermEvent> {
+        let mut unconsumed = Vec::new();
+
+        for event in events {
+            match event {
+                CrosstermEvent::Mouse(mouse) => {
+                    let x = mouse.column;
+                    let y = mouse.row;
+
+                    match mouse.kind {
+                        MouseEventKind::Down(MouseButton::Left) => {
+                            // Check if click is on any scrollbar
+                            let hit = self.check_any_scrollbar_hit(root, layout, x, y);
+                            log::debug!("[scroll-drag] MouseDown at ({}, {}), hit={:?}", x, y, hit);
+                            if let Some((element_id, is_vertical, thumb_offset, thumb_size, on_thumb, border_size)) = hit
+                            {
+                                // Start drag
+                                let offset = if on_thumb {
+                                    thumb_offset
+                                } else {
+                                    // Clicked on track - center thumb on click position
+                                    thumb_size / 2
+                                };
+
+                                self.drag = Some(ScrollbarDrag {
+                                    element_id: element_id.clone(),
+                                    is_vertical,
+                                    thumb_offset: offset,
+                                    border_size,
+                                });
+
+                                // If clicked on track (not thumb), immediately scroll to that position
+                                if !on_thumb {
+                                    if let Some(scroll_pos) = calculate_scroll_from_position(
+                                        &element_id, x, y, is_vertical, offset, border_size, layout,
+                                    ) {
+                                        let current = self.get(&element_id);
+                                        if is_vertical {
+                                            self.set(&element_id, current.x, scroll_pos);
+                                        } else {
+                                            self.set(&element_id, scroll_pos, current.y);
+                                        }
+                                    }
+                                }
+                                // Consume this event - don't let it become a click
+                                continue;
+                            }
+                        }
+
+                        MouseEventKind::Up(MouseButton::Left) => {
+                            if self.drag.is_some() {
+                                self.drag = None;
+                                // Consume this event
+                                continue;
+                            }
+                        }
+
+                        MouseEventKind::Drag(MouseButton::Left) => {
+                            if let Some(drag) = self.drag.clone() {
+                                if let Some(scroll_pos) = calculate_scroll_from_position(
+                                    &drag.element_id,
+                                    x,
+                                    y,
+                                    drag.is_vertical,
+                                    drag.thumb_offset,
+                                    drag.border_size,
+                                    layout,
+                                ) {
+                                    let current = self.get(&drag.element_id);
+                                    if drag.is_vertical {
+                                        self.set(&drag.element_id, current.x, scroll_pos);
+                                    } else {
+                                        self.set(&drag.element_id, scroll_pos, current.y);
+                                    }
+                                }
+                                // Consume this event
+                                continue;
+                            }
+                        }
+
+                        _ => {}
+                    }
+                }
+                _ => {}
+            }
+
+            unconsumed.push(event.clone());
+        }
+
+        unconsumed
+    }
+
+    /// Check if a point hits any scrollbar in the element tree.
+    /// Returns (element_id, is_vertical, thumb_offset, thumb_size, on_thumb, border_size) if hit.
+    fn check_any_scrollbar_hit(
+        &self,
+        root: &Element,
+        layout: &LayoutResult,
+        x: u16,
+        y: u16,
+    ) -> Option<(String, bool, u16, u16, bool, u16)> {
+        let scrollables = collect_scrollable_with_elements(root);
+        log::debug!("[scroll-drag] scrollables={:?}", scrollables.iter().map(|(id, _)| id).collect::<Vec<_>>());
+        for (id, element) in scrollables {
+            let rect = layout.get(&id);
+            let content = layout.content_size(&id);
+            let viewport = layout.viewport_size(&id);
+            log::debug!("[scroll-drag] checking {} rect={:?} content={:?} viewport={:?}", id, rect, content, viewport);
+            if let Some(hit) = check_scrollbar_hit(&id, x, y, layout, self, element) {
+                return Some((id, hit.0, hit.1, hit.2, hit.3, hit.4));
+            }
+        }
+        None
+    }
+}
+
+/// Collect all scrollable elements with their Element references.
+fn collect_scrollable_with_elements(element: &Element) -> Vec<(String, &Element)> {
+    let mut result = Vec::new();
+    collect_scrollable_with_elements_recursive(element, &mut result);
+    result
+}
+
+fn collect_scrollable_with_elements_recursive<'a>(element: &'a Element, result: &mut Vec<(String, &'a Element)>) {
+    if element.overflow == Overflow::Scroll || element.overflow == Overflow::Auto {
+        result.push((element.id.clone(), element));
+    }
+    if let Content::Children(children) = &element.content {
+        for child in children {
+            collect_scrollable_with_elements_recursive(child, result);
+        }
+    }
+}
+
+/// Check if a click is on a scrollbar.
+/// Returns (is_vertical, thumb_offset, thumb_size, on_thumb, border_size) if hit.
+fn check_scrollbar_hit(
+    id: &str,
+    x: u16,
+    y: u16,
+    layout: &LayoutResult,
+    scroll: &ScrollState,
+    element: &Element,
+) -> Option<(bool, u16, u16, bool, u16)> {
+    let rect = layout.get(id)?;
+    let (content_width, content_height) = layout.content_size(id)?;
+    let (inner_width, inner_height) = layout.viewport_size(id)?;
+    let current = scroll.get(id);
+
+    let border_size = if element.style.border == crate::types::Border::None {
+        0
+    } else {
+        1
+    };
+
+    // Check vertical scrollbar (right edge)
+    if content_height > inner_height {
+        let scrollbar_x = rect.right().saturating_sub(1).saturating_sub(border_size);
+        let track_start = rect.y + border_size;
+        let track_end = rect.bottom().saturating_sub(border_size);
+
+        if x == scrollbar_x && y >= track_start && y < track_end {
+            let track_height = track_end.saturating_sub(track_start);
+            let max_scroll = content_height.saturating_sub(inner_height);
+
+            // Calculate thumb size and position
+            let thumb_size = if content_height > 0 {
+                ((inner_height as u32 * track_height as u32) / content_height as u32)
+                    .max(1)
+                    .min(track_height as u32) as u16
+            } else {
+                track_height
+            };
+            let scroll_range = track_height.saturating_sub(thumb_size);
+            let thumb_pos = if max_scroll > 0 && scroll_range > 0 {
+                ((current.y as u32 * scroll_range as u32) / max_scroll as u32)
+                    .min(scroll_range as u32) as u16
+            } else {
+                0
+            };
+
+            let thumb_start = track_start + thumb_pos;
+            let thumb_end = thumb_start + thumb_size;
+
+            // Check if click is on thumb
+            let on_thumb = y >= thumb_start && y < thumb_end;
+            let thumb_offset = if on_thumb { y - thumb_start } else { 0 };
+
+            return Some((true, thumb_offset, thumb_size, on_thumb, border_size));
+        }
+    }
+
+    // Check horizontal scrollbar (bottom edge)
+    if content_width > inner_width {
+        let scrollbar_y = rect.bottom().saturating_sub(1).saturating_sub(border_size);
+        let track_start = rect.x + border_size;
+        let mut track_end = rect.right().saturating_sub(border_size);
+        // Reduce for vertical scrollbar if present
+        if content_height > inner_height {
+            track_end = track_end.saturating_sub(1);
+        }
+
+        if y == scrollbar_y && x >= track_start && x < track_end {
+            let track_width = track_end.saturating_sub(track_start);
+            let max_scroll = content_width.saturating_sub(inner_width);
+
+            // Calculate thumb size and position
+            let thumb_size = if content_width > 0 {
+                ((inner_width as u32 * track_width as u32) / content_width as u32)
+                    .max(1)
+                    .min(track_width as u32) as u16
+            } else {
+                track_width
+            };
+            let scroll_range = track_width.saturating_sub(thumb_size);
+            let thumb_pos = if max_scroll > 0 && scroll_range > 0 {
+                ((current.x as u32 * scroll_range as u32) / max_scroll as u32)
+                    .min(scroll_range as u32) as u16
+            } else {
+                0
+            };
+
+            let thumb_start = track_start + thumb_pos;
+            let thumb_end = thumb_start + thumb_size;
+
+            // Check if click is on thumb
+            let on_thumb = x >= thumb_start && x < thumb_end;
+            let thumb_offset = if on_thumb { x - thumb_start } else { 0 };
+
+            return Some((false, thumb_offset, thumb_size, on_thumb, border_size));
+        }
+    }
+
+    None
+}
+
+/// Calculate scroll position from mouse position during drag.
+fn calculate_scroll_from_position(
+    id: &str,
+    x: u16,
+    y: u16,
+    is_vertical: bool,
+    thumb_offset: u16,
+    border_size: u16,
+    layout: &LayoutResult,
+) -> Option<u16> {
+    let rect = layout.get(id)?;
+    let (content_width, content_height) = layout.content_size(id)?;
+    let (inner_width, inner_height) = layout.viewport_size(id)?;
+
+    if is_vertical {
+        let track_start = rect.y + border_size;
+        let track_end = rect.bottom().saturating_sub(border_size);
+        let track_height = track_end.saturating_sub(track_start);
+
+        if track_height == 0 {
+            return Some(0);
+        }
+
+        let max_scroll = content_height.saturating_sub(inner_height);
+
+        // Calculate thumb size for proper offset handling
+        let thumb_size = if content_height > 0 {
+            ((inner_height as u32 * track_height as u32) / content_height as u32)
+                .max(1)
+                .min(track_height as u32) as u16
+        } else {
+            track_height
+        };
+        let scroll_range = track_height.saturating_sub(thumb_size);
+
+        if scroll_range == 0 {
+            return Some(0);
+        }
+
+        // Adjust for thumb offset - the mouse position minus offset gives thumb start
+        let thumb_start_y = y.saturating_sub(thumb_offset);
+        let clamped_thumb_start = thumb_start_y.clamp(track_start, track_start + scroll_range);
+        let thumb_offset_in_track = clamped_thumb_start.saturating_sub(track_start);
+
+        let scroll_pos =
+            (thumb_offset_in_track as u32 * max_scroll as u32 / scroll_range as u32) as u16;
+        Some(scroll_pos.min(max_scroll))
+    } else {
+        let track_start = rect.x + border_size;
+        let mut track_end = rect.right().saturating_sub(border_size);
+        // Reduce for vertical scrollbar if present
+        if content_height > inner_height {
+            track_end = track_end.saturating_sub(1);
+        }
+        let track_width = track_end.saturating_sub(track_start);
+
+        if track_width == 0 {
+            return Some(0);
+        }
+
+        let max_scroll = content_width.saturating_sub(inner_width);
+
+        // Calculate thumb size for proper offset handling
+        let thumb_size = if content_width > 0 {
+            ((inner_width as u32 * track_width as u32) / content_width as u32)
+                .max(1)
+                .min(track_width as u32) as u16
+        } else {
+            track_width
+        };
+        let scroll_range = track_width.saturating_sub(thumb_size);
+
+        if scroll_range == 0 {
+            return Some(0);
+        }
+
+        // Adjust for thumb offset - the mouse position minus offset gives thumb start
+        let thumb_start_x = x.saturating_sub(thumb_offset);
+        let clamped_thumb_start = thumb_start_x.clamp(track_start, track_start + scroll_range);
+        let thumb_offset_in_track = clamped_thumb_start.saturating_sub(track_start);
+
+        let scroll_pos =
+            (thumb_offset_in_track as u32 * max_scroll as u32 / scroll_range as u32) as u16;
+        Some(scroll_pos.min(max_scroll))
     }
 }
 
