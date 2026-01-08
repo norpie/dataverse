@@ -924,32 +924,14 @@ fn render_scrollbar(
         let track_end = rect.bottom() - border_size;
         let track_height = track_end.saturating_sub(track_start);
 
-        if track_height > 0 {
-            // Calculate thumb size proportional to visible area
-            let thumb_size = if content_height > 0 {
-                ((inner_height as u32 * track_height as u32) / content_height as u32)
-                    .max(1)
-                    .min(track_height as u32) as u16
-            } else {
-                track_height
-            };
+        if let Some(geom) = crate::ScrollbarGeometry::new(track_start, track_height, inner_height, content_height) {
+            let thumb_start = geom.thumb_screen_start(scroll_y);
+            let thumb_end = thumb_start + geom.thumb_size;
 
-            // Calculate thumb position based on scroll offset (use rounding for precision)
-            let max_scroll = content_height.saturating_sub(inner_height);
-            let scroll_range = track_height.saturating_sub(thumb_size);
-            let thumb_pos = if max_scroll > 0 && scroll_range > 0 {
-                ((scroll_y as u32 * scroll_range as u32 + max_scroll as u32 / 2) / max_scroll as u32)
-                    .min(scroll_range as u32) as u16
-            } else {
-                0
-            };
-
-            // Draw track
             for y in track_start..track_end {
                 if is_visible(x, y) {
                     if let Some(cell) = buf.get_mut(x, y) {
-                        let in_thumb = y >= track_start + thumb_pos
-                            && y < track_start + thumb_pos + thumb_size;
+                        let in_thumb = y >= thumb_start && y < thumb_end;
                         cell.char = if in_thumb { '█' } else { '░' };
                         cell.fg = if in_thumb { thumb_color } else { track_color };
                     }
@@ -971,32 +953,14 @@ fn render_scrollbar(
         };
         let track_width = track_end.saturating_sub(track_start);
 
-        if track_width > 0 {
-            // Calculate thumb size proportional to visible area
-            let thumb_size = if content_width > 0 {
-                ((inner_width as u32 * track_width as u32) / content_width as u32)
-                    .max(1)
-                    .min(track_width as u32) as u16
-            } else {
-                track_width
-            };
+        if let Some(geom) = crate::ScrollbarGeometry::new(track_start, track_width, inner_width, content_width) {
+            let thumb_start = geom.thumb_screen_start(scroll_x);
+            let thumb_end = thumb_start + geom.thumb_size;
 
-            // Calculate thumb position based on scroll offset (use rounding for precision)
-            let max_scroll = content_width.saturating_sub(inner_width);
-            let scroll_range = track_width.saturating_sub(thumb_size);
-            let thumb_pos = if max_scroll > 0 && scroll_range > 0 {
-                ((scroll_x as u32 * scroll_range as u32 + max_scroll as u32 / 2) / max_scroll as u32)
-                    .min(scroll_range as u32) as u16
-            } else {
-                0
-            };
-
-            // Draw track
             for x in track_start..track_end {
                 if is_visible(x, y) {
                     if let Some(cell) = buf.get_mut(x, y) {
-                        let in_thumb = x >= track_start + thumb_pos
-                            && x < track_start + thumb_pos + thumb_size;
+                        let in_thumb = x >= thumb_start && x < thumb_end;
                         cell.char = if in_thumb { '█' } else { '░' };
                         cell.fg = if in_thumb { thumb_color } else { track_color };
                     }

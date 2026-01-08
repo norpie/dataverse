@@ -20,7 +20,7 @@ pub use event::{Event, Key, Modifiers, MouseButton, NavDirection};
 pub use focus::{collect_focusable, FocusState};
 pub use hit::{hit_test, hit_test_any, hit_test_focusable};
 pub use layout::{LayoutResult, Rect};
-pub use scroll::{collect_scrollable, ScrollOffset, ScrollState};
+pub use scroll::{collect_scrollable, ScrollbarGeometry, ScrollOffset, ScrollState};
 pub use terminal::Terminal;
 pub use text_input::{TextEditResult, TextInputData, TextInputState};
 pub use transitions::{Easing, TransitionConfig, Transitions};
