@@ -221,6 +221,7 @@ impl<'a, T: ListItem> List<HasListState<'a, T>> {
             // Build row element with item's rendered content
             let mut row = Element::row()
                 .id(&row_id)
+                .width(tuidom::Size::Fill)
                 .focusable(true)
                 .clickable(true)
                 .child(item.render());
@@ -277,7 +278,10 @@ impl<'a, T: ListItem> List<HasListState<'a, T>> {
         }
 
         // Build container column
-        let mut container = Element::col().id(&list_id).children(rows);
+        let mut container = Element::col()
+            .id(&list_id)
+            .width(tuidom::Size::Fill)
+            .children(rows);
 
         if let Some(style) = self.style {
             container = container.style(style);
