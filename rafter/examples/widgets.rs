@@ -45,12 +45,28 @@ impl WidgetShowcase {
     async fn on_start(&self) {
         self.message.set("Welcome! Try the widgets below.".into());
 
-        // Initialize select options
+        // Initialize select options with many countries to test scrolling
         let state = SelectState::new([
             ("us".to_string(), "United States"),
             ("uk".to_string(), "United Kingdom"),
             ("de".to_string(), "Germany"),
             ("fr".to_string(), "France"),
+            ("es".to_string(), "Spain"),
+            ("it".to_string(), "Italy"),
+            ("nl".to_string(), "Netherlands"),
+            ("be".to_string(), "Belgium"),
+            ("se".to_string(), "Sweden"),
+            ("no".to_string(), "Norway"),
+            ("dk".to_string(), "Denmark"),
+            ("fi".to_string(), "Finland"),
+            ("pl".to_string(), "Poland"),
+            ("pt".to_string(), "Portugal"),
+            ("at".to_string(), "Austria"),
+            ("ch".to_string(), "Switzerland"),
+            ("ie".to_string(), "Ireland"),
+            ("gr".to_string(), "Greece"),
+            ("cz".to_string(), "Czech Republic"),
+            ("hu".to_string(), "Hungary"),
         ]);
         log::debug!("on_start: setting country with {} options", state.options.len());
         self.country.set(state);

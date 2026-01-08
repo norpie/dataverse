@@ -270,21 +270,26 @@ impl<'a, T: Clone + PartialEq + Send + Sync + 'static> Select<HasState<'a, T>> {
         // Build dropdown if open
         if current.open {
             log::debug!("Select::build rendering {} options", current.options.len());
-            let mut options_col = Element::col();
+            let dropdown_id = format!("{}-dropdown", id);
+            let mut options_col = Element::col().id(&dropdown_id);
 
             for (i, (value, label)) in current.options.iter().enumerate() {
                 let opt_id = format!("{}-opt-{}", id, i);
                 let is_selected = current.value.as_ref() == Some(value);
 
-                let mut opt_elem = Element::text(label)
-                    .id(&opt_id)
-                    .focusable(true)
-                    .clickable(true);
-
-                // Highlight selected option
+                // Use a full-width row to ensure the entire option area is focusable/clickable
+                // This prevents focus gaps that would cause focus-follows-mouse to hit elements underneath
+                let mut text_elem = Element::text(label);
                 if is_selected {
-                    opt_elem = opt_elem.style(Style::new().bold());
+                    text_elem = text_elem.style(Style::new().bold());
                 }
+
+                let opt_elem = Element::row()
+                    .id(&opt_id)
+                    .width(tuidom::Size::Fill)
+                    .focusable(true)
+                    .clickable(true)
+                    .child(text_elem);
 
                 options_col = options_col.child(opt_elem);
 
@@ -325,7 +330,10 @@ impl<'a, T: Clone + PartialEq + Send + Sync + 'static> Select<HasState<'a, T>> {
             }
 
             // Use absolute positioning for dropdown overlay
-            use tuidom::{Position, Size};
+            use tuidom::{Overflow, Position, Size};
+
+            // Calculate dropdown height - cap at 10 items to enable scrolling
+            let dropdown_height = (current.options.len() as u16).min(10);
 
             let dropdown = options_col
                 .position(Position::Absolute)
@@ -333,6 +341,8 @@ impl<'a, T: Clone + PartialEq + Send + Sync + 'static> Select<HasState<'a, T>> {
                 .left(-1) // Extend background left for visual separation
                 .padding(tuidom::Edges::left(1)) // Keep content aligned with toggle
                 .width(Size::Fixed(min_width + 1)) // Account for extra padding
+                .height(Size::Fixed(dropdown_height)) // Cap height for scrolling
+                .overflow(Overflow::Auto) // Enable scrolling when content overflows
                 .z_index(100) // Render above other content
                 .style(Style::new().background(tuidom::Color::var("surface")));
 
