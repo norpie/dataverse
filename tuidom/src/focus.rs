@@ -155,7 +155,7 @@ impl FocusState {
                     if key == Key::Tab {
                         if let Some(old) = self.focused.clone() {
                             if let Some(new) = self.focus_next(root) {
-                                events.push(Event::Blur { target: old });
+                                events.push(Event::Blur { target: old, new_target: Some(new.clone()) });
                                 events.push(Event::Focus { target: new });
                             }
                         } else if let Some(new) = self.focus_next(root) {
@@ -167,7 +167,7 @@ impl FocusState {
                     if key == Key::BackTab {
                         if let Some(old) = self.focused.clone() {
                             if let Some(new) = self.focus_prev(root) {
-                                events.push(Event::Blur { target: old });
+                                events.push(Event::Blur { target: old, new_target: Some(new.clone()) });
                                 events.push(Event::Focus { target: new });
                             }
                         } else if let Some(new) = self.focus_prev(root) {
@@ -179,7 +179,7 @@ impl FocusState {
                     // Escape blurs focused element; only emits key event if nothing focused
                     if key == Key::Escape {
                         if let Some(old) = self.focused.take() {
-                            events.push(Event::Blur { target: old });
+                            events.push(Event::Blur { target: old, new_target: None });
                             continue;
                         }
                         // Fall through to emit key event
@@ -206,7 +206,7 @@ impl FocusState {
                         if let Some(dir) = direction {
                             if let Some(old) = self.focused.clone() {
                                 if let Some(new) = self.focus_direction(dir, root, layout) {
-                                    events.push(Event::Blur { target: old });
+                                    events.push(Event::Blur { target: old, new_target: Some(new.clone()) });
                                     events.push(Event::Focus { target: new });
                                     continue;
                                 }
@@ -244,7 +244,7 @@ impl FocusState {
                                 // Only change focus if different
                                 if self.focused.as_ref() != Some(&focusable_target) {
                                     if let Some(old) = self.focused.take() {
-                                        events.push(Event::Blur { target: old });
+                                        events.push(Event::Blur { target: old, new_target: Some(focusable_target.clone()) });
                                     }
                                     self.focused = Some(focusable_target.clone());
                                     events.push(Event::Focus {

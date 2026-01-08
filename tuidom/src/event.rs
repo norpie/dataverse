@@ -50,7 +50,11 @@ pub enum Event {
     /// Element gained focus
     Focus { target: String },
     /// Element lost focus
-    Blur { target: String },
+    Blur {
+        target: String,
+        /// The element that received focus (if any)
+        new_target: Option<String>,
+    },
     /// Terminal resized
     Resize { width: u16, height: u16 },
     /// Text input value changed

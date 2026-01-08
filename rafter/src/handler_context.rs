@@ -52,6 +52,11 @@ pub enum EventData {
     },
     /// Text input submitted (Enter pressed).
     Submit,
+    /// Element lost focus.
+    Blur {
+        /// The element that received focus (if any).
+        new_target: Option<String>,
+    },
 }
 
 // =============================================================================
@@ -282,6 +287,18 @@ impl<'a> HandlerContext<'a> {
     pub fn changed_text(&self) -> Option<&str> {
         match &self.event_data {
             Some(EventData::Change { text }) => Some(text),
+            _ => None,
+        }
+    }
+
+    /// Get the new focus target from a blur event.
+    ///
+    /// Convenience method that extracts the new_target from `EventData::Blur`.
+    /// Returns `None` if the event data is not a Blur event, or if blur happened
+    /// without a new target (e.g., Escape pressed).
+    pub fn blur_new_target(&self) -> Option<&str> {
+        match &self.event_data {
+            Some(EventData::Blur { new_target }) => new_target.as_deref(),
             _ => None,
         }
     }

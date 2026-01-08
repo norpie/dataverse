@@ -312,8 +312,22 @@ impl<'a> EventDispatcher<'a> {
                 }
             }
 
-            // Focus/Blur are handled by FocusState, not dispatched to widgets
-            Event::Focus { .. } | Event::Blur { .. } => {}
+            // Focus events not dispatched to widgets (handled by FocusState)
+            Event::Focus { .. } => {}
+
+            // Blur events: dispatch to on_blur handlers with new_target info
+            Event::Blur { target, new_target } => {
+                if let Some(handler) = handlers.get(target, "on_blur") {
+                    let hx_with_event = HandlerContext::for_app_with_event(
+                        &cx,
+                        self.gx,
+                        EventData::Blur {
+                            new_target: new_target.clone(),
+                        },
+                    );
+                    handler(&hx_with_event);
+                }
+            }
 
             // MouseMove and Resize are not dispatched to widgets
             Event::MouseMove { .. } | Event::Resize { .. } => {}

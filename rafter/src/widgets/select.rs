@@ -235,6 +235,24 @@ impl<'a, T: Clone + PartialEq + Send + Sync + 'static> Select<HasState<'a, T>> {
                     state_clone.update(|s| s.open = !s.open);
                 }),
             );
+
+            // Register blur handler to close dropdown when focus leaves the widget
+            let state_clone = state.clone();
+            let base_id = id.clone();
+            registry.register(
+                &id,
+                "on_blur",
+                Arc::new(move |hx| {
+                    // Only close if focus moved outside this select widget
+                    let should_close = match hx.blur_new_target() {
+                        Some(new_target) => !new_target.starts_with(&base_id),
+                        None => true, // Escape or focus lost entirely
+                    };
+                    if should_close {
+                        state_clone.update(|s| s.open = false);
+                    }
+                }),
+            );
         }
 
         // Build dropdown if open
@@ -272,6 +290,23 @@ impl<'a, T: Clone + PartialEq + Send + Sync + 'static> Select<HasState<'a, T>> {
                         });
                         if let Some(ref handler) = on_change {
                             handler(hx);
+                        }
+                    }),
+                );
+
+                // Register blur handler for option
+                let state_clone = state.clone();
+                let base_id = id.clone();
+                registry.register(
+                    &opt_id,
+                    "on_blur",
+                    Arc::new(move |hx| {
+                        let should_close = match hx.blur_new_target() {
+                            Some(new_target) => !new_target.starts_with(&base_id),
+                            None => true,
+                        };
+                        if should_close {
+                            state_clone.update(|s| s.open = false);
                         }
                     }),
                 );
