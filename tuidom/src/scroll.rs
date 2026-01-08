@@ -185,11 +185,14 @@ impl ScrollState {
                     x,
                     y,
                 } => {
+                    log::debug!("[scroll] Event::Scroll at ({}, {}) delta=({}, {})", x, y, delta_x, delta_y);
                     // Update last mouse position from scroll events too
                     self.last_mouse_pos = Some((*x, *y));
 
                     // Find the scrollable element at this position
-                    if let Some(scrollable_id) = find_scrollable_at(root, layout, *x, *y) {
+                    let scrollable = find_scrollable_at(root, layout, *x, *y);
+                    log::debug!("[scroll] find_scrollable_at returned: {:?}", scrollable);
+                    if let Some(scrollable_id) = scrollable {
                         // Get content and viewport sizes from layout (computed during layout pass)
                         let Some((content_width, content_height)) =
                             layout.content_size(&scrollable_id)
@@ -226,7 +229,10 @@ impl ScrollState {
                                 as u16;
                         }
 
+                        log::debug!("[scroll] can_v={} can_h={} current=({},{}) new=({},{})",
+                            can_scroll_vertical, can_scroll_horizontal, current.x, current.y, new_x, new_y);
                         if new_x != current.x || new_y != current.y {
+                            log::debug!("[scroll] Updating scroll for {} to ({}, {})", scrollable_id, new_x, new_y);
                             self.offsets
                                 .insert(scrollable_id.clone(), ScrollOffset::new(new_x, new_y));
                             consumed.push(event.clone());
