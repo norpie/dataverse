@@ -352,7 +352,7 @@ impl<'a, T: Clone + PartialEq + Send + Sync + 'static> Autocomplete<HasState<'a,
                 &id,
                 "on_change",
                 Arc::new(move |hx| {
-                    if let Some(text) = hx.changed_text() {
+                    if let Some(text) = hx.event().text() {
                         state_clone.update(|s| {
                             s.text = text.to_string();
                             s.refilter();
@@ -385,7 +385,7 @@ impl<'a, T: Clone + PartialEq + Send + Sync + 'static> Autocomplete<HasState<'a,
                 &id,
                 "on_blur",
                 Arc::new(move |hx| {
-                    let should_close = match hx.blur_new_target() {
+                    let should_close = match hx.event().blur_target() {
                         Some(new_target) => !new_target.starts_with(&base_id),
                         None => true,
                     };
@@ -482,7 +482,7 @@ impl<'a, T: Clone + PartialEq + Send + Sync + 'static> Autocomplete<HasState<'a,
                         &opt_id,
                         "on_blur",
                         Arc::new(move |hx| {
-                            let should_close = match hx.blur_new_target() {
+                            let should_close = match hx.event().blur_target() {
                                 Some(new_target) => !new_target.starts_with(&base_id),
                                 None => true,
                             };

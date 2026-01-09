@@ -471,7 +471,33 @@ impl Runtime {
             let events = text_inputs.process_events(&events, &root, layout);
 
             // 19. Process scroll events (wheel scrolling)
-            let _consumed_scroll = scroll.process_events(&events, &root, layout);
+            let scroll_changes = scroll.process_events(&events, &root, layout);
+
+            // 19b. Dispatch on_scroll handlers for elements that scrolled
+            if !scroll_changes.is_empty() {
+                let reg = registry.read().unwrap();
+                if let Some(instance) = reg.focused_instance() {
+                    let cx = instance.app_context();
+                    let handlers = instance.handlers();
+                    for change in &scroll_changes {
+                        if let Some(handler) = handlers.get(&change.element_id, "on_scroll") {
+                            let hx = crate::HandlerContext::for_app_with_event(
+                                &cx,
+                                gx,
+                                crate::handler_context::EventData::Scroll {
+                                    offset_x: change.offset_x,
+                                    offset_y: change.offset_y,
+                                    content_width: change.content_width,
+                                    content_height: change.content_height,
+                                    viewport_width: change.viewport_width,
+                                    viewport_height: change.viewport_height,
+                                },
+                            );
+                            handler(&hx);
+                        }
+                    }
+                }
+            }
 
             // 20. Dispatch events to keybinds and apps
             for event in &events {

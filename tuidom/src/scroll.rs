@@ -20,6 +20,28 @@ impl ScrollOffset {
     }
 }
 
+/// Information about a scroll position change.
+///
+/// Returned by `ScrollState::process_events` for each element whose
+/// scroll position changed.
+#[derive(Debug, Clone)]
+pub struct ScrollChange {
+    /// ID of the element that scrolled.
+    pub element_id: String,
+    /// New horizontal scroll offset.
+    pub offset_x: u16,
+    /// New vertical scroll offset.
+    pub offset_y: u16,
+    /// Total content width.
+    pub content_width: u16,
+    /// Total content height.
+    pub content_height: u16,
+    /// Visible viewport width.
+    pub viewport_width: u16,
+    /// Visible viewport height.
+    pub viewport_height: u16,
+}
+
 /// Scrollbar geometry and calculations.
 /// Used for hit testing, rendering, and scroll position conversion.
 #[derive(Debug, Clone, Copy)]
@@ -298,14 +320,14 @@ impl ScrollState {
     }
 
     /// Process events and update scroll offsets.
-    /// Returns events that were consumed (scroll events on scrollable elements).
+    /// Returns information about elements whose scroll position changed.
     pub fn process_events(
         &mut self,
         events: &[Event],
         root: &Element,
         layout: &LayoutResult,
-    ) -> Vec<Event> {
-        let mut consumed = Vec::new();
+    ) -> Vec<ScrollChange> {
+        let mut changes = Vec::new();
 
         for event in events {
             match event {
@@ -335,15 +357,15 @@ impl ScrollState {
                         else {
                             continue;
                         };
-                        let Some((inner_width, inner_height)) =
+                        let Some((viewport_width, viewport_height)) =
                             layout.viewport_size(&scrollable_id)
                         else {
                             continue;
                         };
 
                         // Check if content actually overflows
-                        let can_scroll_vertical = content_height > inner_height;
-                        let can_scroll_horizontal = content_width > inner_width;
+                        let can_scroll_vertical = content_height > viewport_height;
+                        let can_scroll_horizontal = content_width > viewport_width;
 
                         let current = self.get(&scrollable_id);
                         let mut new_x = current.x;
@@ -351,7 +373,7 @@ impl ScrollState {
 
                         // Handle vertical scrolling
                         if *delta_y != 0 && can_scroll_vertical {
-                            let max_scroll_y = content_height.saturating_sub(inner_height);
+                            let max_scroll_y = content_height.saturating_sub(viewport_height);
                             new_y = (current.y as i32 + *delta_y as i32)
                                 .clamp(0, max_scroll_y as i32)
                                 as u16;
@@ -359,7 +381,7 @@ impl ScrollState {
 
                         // Handle horizontal scrolling
                         if *delta_x != 0 && can_scroll_horizontal {
-                            let max_scroll_x = content_width.saturating_sub(inner_width);
+                            let max_scroll_x = content_width.saturating_sub(viewport_width);
                             new_x = (current.x as i32 + *delta_x as i32)
                                 .clamp(0, max_scroll_x as i32)
                                 as u16;
@@ -371,7 +393,15 @@ impl ScrollState {
                             log::debug!("[scroll] Updating scroll for {} to ({}, {})", scrollable_id, new_x, new_y);
                             self.offsets
                                 .insert(scrollable_id.clone(), ScrollOffset::new(new_x, new_y));
-                            consumed.push(event.clone());
+                            changes.push(ScrollChange {
+                                element_id: scrollable_id.clone(),
+                                offset_x: new_x,
+                                offset_y: new_y,
+                                content_width,
+                                content_height,
+                                viewport_width,
+                                viewport_height,
+                            });
                         }
 
                         // Store content size for reference
@@ -407,7 +437,22 @@ impl ScrollState {
                     };
 
                     if scrolled {
-                        consumed.push(event.clone());
+                        // Get sizes for the ScrollChange
+                        if let (Some((content_width, content_height)), Some((viewport_width, viewport_height))) = (
+                            layout.content_size(&scrollable_id),
+                            layout.viewport_size(&scrollable_id),
+                        ) {
+                            let offset = self.get(&scrollable_id);
+                            changes.push(ScrollChange {
+                                element_id: scrollable_id,
+                                offset_x: offset.x,
+                                offset_y: offset.y,
+                                content_width,
+                                content_height,
+                                viewport_width,
+                                viewport_height,
+                            });
+                        }
                     }
                 }
 
@@ -415,7 +460,7 @@ impl ScrollState {
             }
         }
 
-        consumed
+        changes
     }
 
     /// Process raw crossterm events for scrollbar dragging.

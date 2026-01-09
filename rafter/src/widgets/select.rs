@@ -260,7 +260,7 @@ impl<'a, T: Clone + PartialEq + Send + Sync + 'static> Select<HasState<'a, T>> {
                 "on_blur",
                 Arc::new(move |hx| {
                     // Only close if focus moved outside this select widget
-                    let should_close = match hx.blur_new_target() {
+                    let should_close = match hx.event().blur_target() {
                         Some(new_target) => !new_target.starts_with(&base_id),
                         None => true, // Escape or focus lost entirely
                     };
@@ -327,7 +327,7 @@ impl<'a, T: Clone + PartialEq + Send + Sync + 'static> Select<HasState<'a, T>> {
                     &opt_id,
                     "on_blur",
                     Arc::new(move |hx| {
-                        let should_close = match hx.blur_new_target() {
+                        let should_close = match hx.event().blur_target() {
                             Some(new_target) => !new_target.starts_with(&base_id),
                             None => true,
                         };

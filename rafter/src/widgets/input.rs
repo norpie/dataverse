@@ -196,7 +196,7 @@ impl<'a> Input<HasState<'a>> {
                 "on_change",
                 Arc::new(move |hx| {
                     // First update State<String> from event data
-                    if let Some(text) = hx.changed_text() {
+                    if let Some(text) = hx.event().text() {
                         state_clone.set(text.to_string());
                     }
                     // Then call user's handler if provided

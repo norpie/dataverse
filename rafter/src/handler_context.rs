@@ -43,8 +43,11 @@ pub type WidgetHandlers = HashMap<&'static str, Handler>;
 ///
 /// This allows handlers to access data from the event that triggered them,
 /// such as the new text value for input change events.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub enum EventData {
+    /// No event data (default for keybinds and events without data).
+    #[default]
+    None,
     /// Text input value changed.
     Change {
         /// The new text value.
@@ -57,6 +60,85 @@ pub enum EventData {
         /// The element that received focus (if any).
         new_target: Option<String>,
     },
+    /// Scroll position changed.
+    Scroll {
+        /// Current horizontal scroll offset.
+        offset_x: u16,
+        /// Current vertical scroll offset.
+        offset_y: u16,
+        /// Total content width.
+        content_width: u16,
+        /// Total content height.
+        content_height: u16,
+        /// Visible viewport width.
+        viewport_width: u16,
+        /// Visible viewport height.
+        viewport_height: u16,
+    },
+}
+
+impl EventData {
+    /// Get the changed text from a Change event.
+    pub fn text(&self) -> Option<&str> {
+        match self {
+            EventData::Change { text } => Some(text),
+            _ => None,
+        }
+    }
+
+    /// Get the new focus target from a Blur event.
+    pub fn blur_target(&self) -> Option<&str> {
+        match self {
+            EventData::Blur { new_target } => new_target.as_deref(),
+            _ => None,
+        }
+    }
+
+    /// Get scroll offset (x, y) from a Scroll event.
+    pub fn scroll_offset(&self) -> Option<(u16, u16)> {
+        match self {
+            EventData::Scroll { offset_x, offset_y, .. } => Some((*offset_x, *offset_y)),
+            _ => None,
+        }
+    }
+
+    /// Get vertical scroll progress (0.0 = top, 1.0 = bottom).
+    pub fn scroll_progress_y(&self) -> Option<f32> {
+        match self {
+            EventData::Scroll { offset_y, content_height, viewport_height, .. } => {
+                let max_scroll = content_height.saturating_sub(*viewport_height);
+                if max_scroll == 0 {
+                    Some(0.0)
+                } else {
+                    Some(*offset_y as f32 / max_scroll as f32)
+                }
+            }
+            _ => None,
+        }
+    }
+
+    /// Check if scroll position is near the bottom.
+    ///
+    /// Returns true if within `threshold` pixels of the bottom, or if not a Scroll event.
+    pub fn is_near_bottom(&self, threshold: u16) -> bool {
+        match self {
+            EventData::Scroll { offset_y, content_height, viewport_height, .. } => {
+                let max_scroll = content_height.saturating_sub(*viewport_height);
+                *offset_y + threshold >= max_scroll
+            }
+            _ => false,
+        }
+    }
+
+    /// Check if scroll position is near the top.
+    ///
+    /// Returns true if within `threshold` pixels of the top, or if not a Scroll event.
+    pub fn is_near_top(&self, threshold: u16) -> bool {
+        match self {
+            EventData::Scroll { offset_y, .. } => *offset_y <= threshold,
+            _ => false,
+        }
+    }
 }
 
 // =============================================================================
@@ -157,7 +239,7 @@ pub struct HandlerContext<'a> {
     /// Type-erased modal context (None for apps/systems)
     modal_context: Option<&'a (dyn Any + Send + Sync)>,
     /// Event-specific data (for widget event handlers)
-    event_data: Option<EventData>,
+    event_data: EventData,
 }
 
 impl<'a> HandlerContext<'a> {
@@ -167,7 +249,7 @@ impl<'a> HandlerContext<'a> {
             cx: Some(cx),
             gx,
             modal_context: None,
-            event_data: None,
+            event_data: EventData::None,
         }
     }
 
@@ -181,7 +263,7 @@ impl<'a> HandlerContext<'a> {
             cx: Some(cx),
             gx,
             modal_context: None,
-            event_data: Some(event_data),
+            event_data,
         }
     }
 
@@ -195,7 +277,7 @@ impl<'a> HandlerContext<'a> {
             cx: Some(cx),
             gx,
             modal_context: Some(mx),
-            event_data: None,
+            event_data: EventData::None,
         }
     }
 
@@ -209,7 +291,7 @@ impl<'a> HandlerContext<'a> {
             cx: Some(cx),
             gx,
             modal_context: Some(mx),
-            event_data: None,
+            event_data: EventData::None,
         }
     }
 
@@ -219,7 +301,7 @@ impl<'a> HandlerContext<'a> {
             cx: None,
             gx,
             modal_context: None,
-            event_data: None,
+            event_data: EventData::None,
         }
     }
 
@@ -272,34 +354,12 @@ impl<'a> HandlerContext<'a> {
         self.modal_context.is_some()
     }
 
-    /// Get the event data (if any).
+    /// Get the event data.
     ///
     /// Returns the event-specific data passed when the handler was invoked.
     /// For example, `EventData::Change { text }` for input change handlers.
-    pub fn event_data(&self) -> Option<&EventData> {
-        self.event_data.as_ref()
-    }
-
-    /// Get the changed text from an input change event.
-    ///
-    /// Convenience method that extracts the text from `EventData::Change`.
-    /// Returns `None` if the event data is not a Change event.
-    pub fn changed_text(&self) -> Option<&str> {
-        match &self.event_data {
-            Some(EventData::Change { text }) => Some(text),
-            _ => None,
-        }
-    }
-
-    /// Get the new focus target from a blur event.
-    ///
-    /// Convenience method that extracts the new_target from `EventData::Blur`.
-    /// Returns `None` if the event data is not a Blur event, or if blur happened
-    /// without a new target (e.g., Escape pressed).
-    pub fn blur_new_target(&self) -> Option<&str> {
-        match &self.event_data {
-            Some(EventData::Blur { new_target }) => new_target.as_deref(),
-            _ => None,
-        }
+    /// Returns `EventData::None` if no event data was provided.
+    pub fn event(&self) -> &EventData {
+        &self.event_data
     }
 }
