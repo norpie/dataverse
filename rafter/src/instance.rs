@@ -290,7 +290,12 @@ impl<A: App> AppInstance<A> {
         let id = InstanceId::new();
         let config = A::config();
         let title = app.title();
-        let info = InstanceInfo::new(id, TypeId::of::<A>(), config.name, title);
+        let type_id = TypeId::of::<A>();
+        log::debug!(
+            "[AppInstance::new] name={} type_id={:?}",
+            config.name, type_id
+        );
+        let info = InstanceInfo::new(id, type_id, config.name, title);
         let context = AppContext::new(id, gx, config.name);
 
         Self {
@@ -314,7 +319,9 @@ impl<A: App> AnyAppInstance for AppInstance<A> {
     }
 
     fn type_id(&self) -> TypeId {
-        TypeId::of::<A>()
+        let tid = TypeId::of::<A>();
+        log::debug!("[AnyAppInstance::type_id] A={} type_id={:?}", std::any::type_name::<A>(), tid);
+        tid
     }
 
     fn info(&self) -> InstanceInfo {
@@ -488,7 +495,12 @@ impl InstanceRegistry {
     /// Insert an instance into the registry.
     pub fn insert(&mut self, instance: Box<dyn AnyAppInstance>) {
         let id = instance.id();
-        let type_id = instance.type_id();
+        let type_id = AnyAppInstance::type_id(instance.as_ref());
+
+        log::debug!(
+            "[registry.insert] id={:?} type_id={:?}",
+            id, type_id
+        );
 
         self.instances.insert(id, instance);
         *self.instance_counts.entry(type_id).or_insert(0) += 1;
@@ -503,7 +515,7 @@ impl InstanceRegistry {
             return false;
         };
 
-        let type_id = instance.type_id();
+        let type_id = AnyAppInstance::type_id(instance.as_ref());
 
         // Update instance count
         if let Some(count) = self.instance_counts.get_mut(&type_id) {
@@ -616,7 +628,7 @@ impl InstanceQuery for InstanceRegistry {
         self.instances
             .values()
             .filter_map(|i| {
-                if i.type_id() == target_type_id {
+                if AnyAppInstance::type_id(i.as_ref()) == target_type_id {
                     Some(i.info())
                 } else {
                     None
@@ -626,8 +638,17 @@ impl InstanceQuery for InstanceRegistry {
     }
 
     fn instance_of_type(&self, target_type_id: TypeId) -> Option<InstanceId> {
+        log::debug!(
+            "[registry.instance_of_type] looking for {:?}, have {} instances",
+            target_type_id, self.instances.len()
+        );
         for instance in self.instances.values() {
-            if instance.type_id() == target_type_id {
+            let inst_type_id = AnyAppInstance::type_id(instance.as_ref());
+            log::debug!(
+                "[registry.instance_of_type] checking {:?} (type={:?})",
+                instance.id(), inst_type_id
+            );
+            if inst_type_id == target_type_id {
                 return Some(instance.id());
             }
         }

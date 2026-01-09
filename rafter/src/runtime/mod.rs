@@ -760,7 +760,7 @@ impl Runtime {
             RequestTarget::AppType(target_type_id) => {
                 let mut found_id = None;
                 for instance in reg.iter() {
-                    if instance.type_id() == target_type_id && !instance.is_sleeping() {
+                    if AnyAppInstance::type_id(instance) == target_type_id && !instance.is_sleeping() {
                         found_id = Some(instance.id());
                         break;
                     }
