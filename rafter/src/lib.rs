@@ -27,7 +27,7 @@ pub use app_context::{
     extract_panic_message, AppContext, AppError, AppErrorKind, AppModalRequest, ErrorReceiver,
     ErrorSender,
 };
-pub use event::Event;
+pub use event::{Event, FocusChanged, InstanceClosed, InstanceSpawned};
 pub use handler_context::{Handler, HandlerContext, HandlerRegistry, WidgetHandlers};
 pub use global_context::{
     ArcEvent, DataStore, GlobalContext, GlobalModalRequest, InstanceCommand, InstanceQuery,

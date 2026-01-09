@@ -28,6 +28,7 @@ use crate::registration::AnySystem;
 use crate::system::System;
 use crate::toast::Toast;
 use crate::wakeup::{channel as wakeup_channel, WakeupReceiver};
+use crate::event::{FocusChanged, InstanceClosed, InstanceSpawned};
 use crate::{App, AppContext, BlurPolicy, GlobalContext};
 
 use dispatch::AnyModal;
@@ -202,6 +203,7 @@ impl Runtime {
         // Spawn initial app
         let instance = AppInstance::new(app, gx.clone());
         let instance_id = instance.id();
+        let instance_name = instance.config().name;
         instance.install_wakeup(wakeup_tx.clone(), &gx);
 
         // Call on_start lifecycle method
@@ -212,6 +214,10 @@ impl Runtime {
             reg.insert(Box::new(instance));
             reg.focus(instance_id);
         }
+
+        // Publish events for initial app (after systems are initialized)
+        gx.publish(InstanceSpawned { id: instance_id, name: instance_name });
+        gx.publish(FocusChanged { old: None, new: instance_id });
 
         // Active toasts
         let mut active_toasts: Vec<ActiveToast> = Vec::new();
@@ -630,6 +636,7 @@ impl Runtime {
                 InstanceCommand::Spawn { app, focus } => {
                     let instance = app.into_instance(gx.clone());
                     let id = instance.id();
+                    let name = instance.config().name;
 
                     // Install wakeup sender
                     if let Some(sender) = gx.wakeup_sender() {
@@ -639,17 +646,34 @@ impl Runtime {
                     // Call on_start lifecycle method
                     instance.on_start().await;
 
-                    let mut reg = registry.write().unwrap();
-                    reg.insert(instance);
-                    if focus {
-                        reg.focus(id);
+                    {
+                        let mut reg = registry.write().unwrap();
+                        reg.insert(instance);
+                        if focus {
+                            reg.focus(id);
+                        }
                     }
+
+                    // Publish InstanceSpawned event
+                    gx.publish(InstanceSpawned { id, name });
                 }
 
                 InstanceCommand::Close { id, force: _ } => {
                     // TODO: Handle on_close_request for non-forced closes
-                    let mut reg = registry.write().unwrap();
-                    reg.close(id);
+                    let name = {
+                        let reg = registry.read().unwrap();
+                        reg.get(id).map(|i| i.config().name)
+                    };
+
+                    {
+                        let mut reg = registry.write().unwrap();
+                        reg.close(id);
+                    }
+
+                    // Publish InstanceClosed event
+                    if let Some(name) = name {
+                        gx.publish(InstanceClosed { id, name });
+                    }
                 }
 
                 InstanceCommand::Focus { id } => {
@@ -715,6 +739,9 @@ impl Runtime {
                         let mut reg = registry.write().unwrap();
                         reg.close(close_id);
                     }
+
+                    // Publish FocusChanged event
+                    gx.publish(FocusChanged { old: old_focused, new: id });
                 }
 
                 InstanceCommand::PublishEvent { event } => {

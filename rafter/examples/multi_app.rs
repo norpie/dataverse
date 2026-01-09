@@ -16,7 +16,7 @@ use log::{debug, info, LevelFilter};
 use rafter::page;
 use rafter::prelude::*;
 use rafter::widgets::{Button, Text};
-use rafter::{Event, InstanceInfo, Overlay, RequestError, Request};
+use rafter::{Event, FocusChanged, InstanceClosed, InstanceInfo, InstanceSpawned, Overlay, Request, RequestError};
 use simplelog::{Config, WriteLogger};
 
 // ============================================================================
@@ -132,10 +132,21 @@ impl Taskbar {
     }
 
     #[event_handler]
-    async fn on_app_activated(&self, event: AppActivated, gx: &GlobalContext) {
-        let instances = gx.instances();
-        info!("[Taskbar] on_app_activated({}): {} instances", event.app_name, instances.len());
-        self.instances.set(instances);
+    async fn on_instance_spawned(&self, event: InstanceSpawned, gx: &GlobalContext) {
+        info!("[Taskbar] on_instance_spawned({})", event.name);
+        self.instances.set(gx.instances());
+    }
+
+    #[event_handler]
+    async fn on_instance_closed(&self, event: InstanceClosed, gx: &GlobalContext) {
+        info!("[Taskbar] on_instance_closed({})", event.name);
+        self.instances.set(gx.instances());
+    }
+
+    #[event_handler]
+    async fn on_focus_changed(&self, _event: FocusChanged, gx: &GlobalContext) {
+        info!("[Taskbar] on_focus_changed");
+        self.instances.set(gx.instances());
     }
 
     fn overlay(&self) -> Option<Overlay> {
