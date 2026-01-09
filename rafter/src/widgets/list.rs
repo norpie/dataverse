@@ -237,7 +237,9 @@ impl<'a, T: ListItem> List<HasListState<'a, T>> {
                     row = row.style(style.clone());
                 } else {
                     row = row.style(
-                        Style::new().background(Color::var("list.item_selected")),
+                        Style::new()
+                            .background(Color::var("list.item_selected"))
+                            .foreground(Color::var("text.inverted")),
                     );
                 }
             }
@@ -247,7 +249,9 @@ impl<'a, T: ListItem> List<HasListState<'a, T>> {
                 row = row.style_focused(style.clone());
             } else {
                 row = row.style_focused(
-                    Style::new().background(Color::var("list.item_focused")),
+                    Style::new()
+                        .background(Color::var("list.item_focused"))
+                        .foreground(Color::var("text.inverted")),
                 );
             }
 

@@ -25,6 +25,7 @@ pub struct TextColors {
     pub secondary: Color,
     pub muted: Color,
     pub disabled: Color,
+    pub inverted: Color,
 }
 
 #[theme]
@@ -156,6 +157,7 @@ pub fn default_theme() -> RafterTheme {
             secondary: Color::oklch(0.75, 0.02, 280.0),
             muted: Color::oklch(0.5, 0.02, 280.0),
             disabled: Color::oklch(0.35, 0.01, 280.0),
+            inverted: Color::oklch(0.15, 0.0, 0.0),
         },
 
         scrollbar: ScrollbarColors {

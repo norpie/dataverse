@@ -445,7 +445,11 @@ impl<'a, T: Clone + PartialEq + Send + Sync + 'static> Autocomplete<HasState<'a,
                         .width(Size::Fill)
                         .focusable(true)
                         .clickable(true)
-                        .style_focused(Style::new().background(Color::var("autocomplete.item_focused")))
+                        .style_focused(
+                            Style::new()
+                                .background(Color::var("autocomplete.item_focused"))
+                                .foreground(Color::var("text.inverted")),
+                        )
                         .child(text_elem);
 
                     options_col = options_col.child(opt_elem);
