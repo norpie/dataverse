@@ -337,7 +337,7 @@ impl ScrollState {
                 }
 
                 Event::Scroll {
-                    target: _,
+                    target,
                     delta_x,
                     delta_y,
                     x,
@@ -347,7 +347,14 @@ impl ScrollState {
                     // Update last mouse position from scroll events too
                     self.last_mouse_pos = Some((*x, *y));
 
-                    // Find the scrollable element at this position
+                    // If target is set, a .scrollable() element will handle this event
+                    // via the dispatcher - skip automatic handling
+                    if target.is_some() {
+                        log::debug!("[scroll] Skipping automatic scroll - target {:?} will handle via dispatcher", target);
+                        continue;
+                    }
+
+                    // Find the scrollable element at this position (overflow: Auto/Scroll)
                     let scrollable = find_scrollable_at(root, layout, *x, *y);
                     log::debug!("[scroll] find_scrollable_at returned: {:?}", scrollable);
                     if let Some(scrollable_id) = scrollable {

@@ -60,7 +60,7 @@ pub enum EventData {
         /// The element that received focus (if any).
         new_target: Option<String>,
     },
-    /// Scroll position changed.
+    /// Scroll position changed (for observing automatic scroll results).
     Scroll {
         /// Current horizontal scroll offset.
         offset_x: u16,
@@ -74,6 +74,24 @@ pub enum EventData {
         viewport_width: u16,
         /// Visible viewport height.
         viewport_height: u16,
+    },
+    /// Scroll input received (for `.scrollable()` elements handling their own scrolling).
+    ScrollInput {
+        /// Horizontal scroll delta (negative = left, positive = right).
+        delta_x: i16,
+        /// Vertical scroll delta (negative = up, positive = down).
+        delta_y: i16,
+    },
+    /// Layout dimensions available (for `on_layout` handlers).
+    Layout {
+        /// Element X position.
+        x: u16,
+        /// Element Y position.
+        y: u16,
+        /// Element width.
+        width: u16,
+        /// Element height.
+        height: u16,
     },
 }
 
@@ -154,6 +172,30 @@ impl EventData {
                 progress <= threshold
             }
             _ => false,
+        }
+    }
+
+    /// Get scroll input delta (x, y) from a ScrollInput event.
+    pub fn scroll_delta(&self) -> Option<(i16, i16)> {
+        match self {
+            EventData::ScrollInput { delta_x, delta_y } => Some((*delta_x, *delta_y)),
+            _ => None,
+        }
+    }
+
+    /// Get layout dimensions (x, y, width, height) from a Layout event.
+    pub fn layout(&self) -> Option<(u16, u16, u16, u16)> {
+        match self {
+            EventData::Layout { x, y, width, height } => Some((*x, *y, *width, *height)),
+            _ => None,
+        }
+    }
+
+    /// Get layout size (width, height) from a Layout event.
+    pub fn layout_size(&self) -> Option<(u16, u16)> {
+        match self {
+            EventData::Layout { width, height, .. } => Some((*width, *height)),
+            _ => None,
         }
     }
 }

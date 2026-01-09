@@ -318,14 +318,23 @@ impl<'a> EventDispatcher<'a> {
                 }
             }
 
-            Event::Scroll { target, delta_y, .. } => {
+            Event::Scroll { target, delta_x, delta_y, .. } => {
                 if let Some(target_id) = target {
-                    let result = dispatch_scroll_to_instance(instance, *delta_y, self.layout);
-                    if result.is_handled() {
-                        dispatch_widget_result(handlers, target_id, &result, &hx);
-                        return Some(DispatchResult::HandledByWidget(result));
+                    // Check for on_scroll handler on the scrollable element
+                    if let Some(handler) = handlers.get(target_id, "on_scroll") {
+                        let hx_with_event = HandlerContext::for_app_with_event(
+                            &cx,
+                            self.gx,
+                            EventData::ScrollInput {
+                                delta_x: *delta_x,
+                                delta_y: *delta_y,
+                            },
+                        );
+                        handler(&hx_with_event);
+                        return Some(DispatchResult::HandledByWidget(WidgetResult::Handled));
                     }
                 }
+                // No handler - fall through to automatic scroll handling in runtime
             }
 
             Event::Drag { target, x, y, button: _ } => {
@@ -417,16 +426,6 @@ fn dispatch_key_to_instance(
     _layout: &LayoutResult,
 ) -> WidgetResult {
     // TODO: Call instance.dispatch_widget_key() when macros generate it
-    WidgetResult::Ignored
-}
-
-/// Dispatch a scroll event to an instance's target widget.
-fn dispatch_scroll_to_instance(
-    _instance: &dyn AnyAppInstance,
-    _delta: i16,
-    _layout: &LayoutResult,
-) -> WidgetResult {
-    // TODO: Call instance.dispatch_widget_scroll() when macros generate it
     WidgetResult::Ignored
 }
 
