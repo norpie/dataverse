@@ -342,11 +342,8 @@ impl AppA {
 
     #[handler]
     async fn next_app(&self, gx: &GlobalContext) {
-        if let Some(id) = gx.instance_of::<AppB>() {
-            gx.focus_instance(id);
-        } else {
-            let _ = gx.spawn_and_focus(AppB::default());
-        }
+        // AppB is a singleton - use the generated helper method
+        let _ = AppB::get_or_spawn_and_focus(gx);
     }
 
     fn element(&self) -> Element {
@@ -567,11 +564,10 @@ async fn main() {
 
     let api_client = MockApiClient::new("https://api.example.com");
 
+    // Systems are auto-registered via inventory from #[system] macro
     if let Err(e) = Runtime::new()
         .expect("Failed to create runtime")
         .data(api_client)
-        .system(Taskbar::default())
-        .system(GlobalKeys::default())
         .run(AppA::default())
         .await
     {
