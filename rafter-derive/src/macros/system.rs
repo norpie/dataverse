@@ -308,9 +308,9 @@ fn generate_metadata(name: &Ident, attrs: &SystemAttrs, fields: Option<&FieldsNa
         })
         .unwrap_or_default();
 
-    let is_dirty_checks = dirty_fields.iter().map(|f| quote! { self.#f.is_dirty() });
-    let clear_dirty_calls = dirty_fields.iter().map(|f| quote! { self.#f.clear_dirty(); });
-    let install_wakeup_calls = wakeup_fields.iter().map(|f| quote! { self.#f.install_wakeup(sender.clone()); });
+    let is_dirty_checks = dirty_fields.iter().map(|f| quote! { system.#f.is_dirty() });
+    let clear_dirty_calls = dirty_fields.iter().map(|f| quote! { system.#f.clear_dirty(); });
+    let install_wakeup_calls = wakeup_fields.iter().map(|f| quote! { system.#f.install_wakeup(sender.clone()); });
 
     let metadata_name = format_ident!("__rafter_system_metadata_{}", name.to_string().to_lowercase());
 
@@ -323,21 +323,16 @@ fn generate_metadata(name: &Ident, attrs: &SystemAttrs, fields: Option<&FieldsNa
             pub const NAME: &str = #name_str;
             pub const HAS_OVERLAY: bool = #has_overlay;
             #position_const
-        }
 
-        impl #name {
-            #[doc(hidden)]
-            pub fn __is_dirty(&self) -> bool {
+            pub fn is_dirty(system: &#name) -> bool {
                 false #(|| #is_dirty_checks)*
             }
 
-            #[doc(hidden)]
-            pub fn __clear_dirty(&self) {
+            pub fn clear_dirty(system: &#name) {
                 #(#clear_dirty_calls)*
             }
 
-            #[doc(hidden)]
-            pub fn __install_wakeup(&self, sender: rafter::WakeupSender) {
+            pub fn install_wakeup(system: &#name, sender: rafter::WakeupSender) {
                 #(#install_wakeup_calls)*
             }
         }

@@ -123,12 +123,20 @@ fn generate_default_impl(name: &Ident, fields: &FieldsNamed) -> TokenStream {
         })
         .collect();
 
+    let fields_init = if field_defaults.is_empty() {
+        quote! { __handler_registry: rafter::HandlerRegistry::new() }
+    } else {
+        quote! {
+            #(#field_defaults),*,
+            __handler_registry: rafter::HandlerRegistry::new()
+        }
+    };
+
     quote! {
         impl Default for #name {
             fn default() -> Self {
                 Self {
-                    #(#field_defaults),*,
-                    __handler_registry: rafter::HandlerRegistry::new(),
+                    #fields_init
                 }
             }
         }
@@ -146,12 +154,20 @@ fn generate_clone_impl(name: &Ident, fields: &FieldsNamed) -> TokenStream {
         })
         .collect();
 
+    let fields_clone = if field_clones.is_empty() {
+        quote! { __handler_registry: self.__handler_registry.clone() }
+    } else {
+        quote! {
+            #(#field_clones),*,
+            __handler_registry: self.__handler_registry.clone()
+        }
+    };
+
     quote! {
         impl Clone for #name {
             fn clone(&self) -> Self {
                 Self {
-                    #(#field_clones),*,
-                    __handler_registry: self.__handler_registry.clone(),
+                    #fields_clone
                 }
             }
         }
@@ -299,12 +315,24 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
     let registration = generate_registration(name);
     let metadata = generate_metadata(name, &attrs, fields);
 
-    quote! {
-        #(#other_attrs)*
-        #vis struct #name {
+    // Handle empty fields case to avoid trailing comma issues
+    let fields_tokens = if transformed_fields.is_empty() {
+        quote! {
+            #[doc(hidden)]
+            __handler_registry: rafter::HandlerRegistry,
+        }
+    } else {
+        quote! {
             #(#transformed_fields),*,
             #[doc(hidden)]
             __handler_registry: rafter::HandlerRegistry,
+        }
+    };
+
+    quote! {
+        #(#other_attrs)*
+        #vis struct #name {
+            #fields_tokens
         }
 
         #default_impl
