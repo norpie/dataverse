@@ -32,6 +32,7 @@ pub struct Input<S = NeedsState> {
     id: Option<String>,
     placeholder: Option<String>,
     disabled: bool,
+    password: bool,
     width: Option<u16>,
     style: Option<Style>,
     style_focused: Option<Style>,
@@ -53,6 +54,7 @@ impl Input<NeedsState> {
             id: None,
             placeholder: None,
             disabled: false,
+            password: false,
             width: None,
             style: None,
             style_focused: None,
@@ -68,6 +70,7 @@ impl Input<NeedsState> {
             id: self.id,
             placeholder: self.placeholder,
             disabled: self.disabled,
+            password: self.password,
             width: self.width,
             style: self.style,
             style_focused: self.style_focused,
@@ -93,6 +96,12 @@ impl<S> Input<S> {
     /// Mark the input as disabled.
     pub fn disabled(mut self) -> Self {
         self.disabled = true;
+        self
+    }
+
+    /// Mark the input as a password field (displays • instead of text).
+    pub fn password(mut self) -> Self {
+        self.password = true;
         self
     }
 
@@ -151,6 +160,10 @@ impl<'a> Input<HasState<'a>> {
 
         if let Some(placeholder) = &self.placeholder {
             elem = elem.placeholder(placeholder);
+        }
+
+        if self.password {
+            elem = elem.password();
         }
 
         let style = self

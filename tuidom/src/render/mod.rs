@@ -369,6 +369,7 @@ fn render_single_element_timed(
             selection,
             placeholder,
             focused,
+            mask,
         } => {
             render_text_input(
                 value,
@@ -376,6 +377,7 @@ fn render_single_element_timed(
                 *selection,
                 placeholder.as_deref(),
                 *focused,
+                *mask,
                 element,
                 rect,
                 buf,
@@ -581,6 +583,7 @@ fn render_text_input(
     selection: Option<(usize, usize)>,
     placeholder: Option<&str>,
     focused: bool,
+    mask: Option<char>,
     element: &Element,
     rect: Rect,
     buf: &mut Buffer,
@@ -661,12 +664,21 @@ fn render_text_input(
     let visible_width = inner.width as usize;
     let cursor_margin = visible_width.min(5);
 
+    // Get display width for a character (uses mask width if masked)
+    let display_char_width = |ch: char| -> usize {
+        if is_placeholder {
+            char_width(ch)
+        } else {
+            mask.map(char_width).unwrap_or_else(|| char_width(ch))
+        }
+    };
+
     let scroll_offset = if focused && !is_placeholder && visible_width > cursor_margin {
         // Calculate the display width up to the cursor (including cursor position)
         let width_to_cursor: usize = chars
             .iter()
             .take(cursor)
-            .map(|&c| char_width(c))
+            .map(|&c| display_char_width(c))
             .sum::<usize>()
             + 1; // +1 for cursor itself
 
@@ -682,7 +694,7 @@ fn render_text_input(
                 if skipped_width >= target_scroll_width {
                     break;
                 }
-                skipped_width += char_width(ch);
+                skipped_width += display_char_width(ch);
                 offset += 1;
             }
             offset
@@ -700,10 +712,17 @@ fn render_text_input(
             break;
         }
 
+        // Determine the character to display (mask for password fields, unless placeholder)
+        let display_ch = if is_placeholder {
+            ch
+        } else {
+            mask.unwrap_or(ch)
+        };
+
         // Check horizontal clip
         if let Some(c) = clip {
             if x < c.x {
-                x += char_width(ch) as u16;
+                x += char_width(display_ch) as u16;
                 continue;
             }
             if x >= c.right() {
@@ -734,13 +753,13 @@ fn render_text_input(
         buf.set(
             x,
             y,
-            Cell::new(ch)
+            Cell::new(display_ch)
                 .with_fg(char_fg)
                 .with_bg(char_bg)
                 .with_style(element.style.text_style),
         );
 
-        let ch_w = char_width(ch);
+        let ch_w = char_width(display_ch);
         if ch_w == 2 && x + 1 < inner.right() {
             let cont_x = x + 1;
             if clip.is_none_or(|c| cont_x >= c.x && cont_x < c.right()) {
@@ -762,7 +781,7 @@ fn render_text_input(
         let width_to_cursor: usize = chars
             .iter()
             .skip(scroll_offset)
-            .map(|&c| char_width(c))
+            .map(|&c| display_char_width(c))
             .sum();
         let cursor_x = inner.x + width_to_cursor as u16;
         if cursor_x < inner.right() {

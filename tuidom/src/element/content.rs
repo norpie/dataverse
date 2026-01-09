@@ -24,6 +24,8 @@ pub enum Content {
         selection: Option<(usize, usize)>,
         placeholder: Option<String>,
         focused: bool,
+        /// When Some, display this character instead of the actual text (for passwords).
+        mask: Option<char>,
     },
 }
 

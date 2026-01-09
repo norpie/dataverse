@@ -186,6 +186,7 @@ impl Element {
                 selection: None,
                 placeholder: None,
                 focused: false,
+                mask: None,
             },
             focusable: true,
             captures_input: true,
@@ -446,6 +447,22 @@ impl Element {
             *cursor = data.cursor;
             *selection = data.selection();
             *focused = is_focused;
+        }
+        self
+    }
+
+    /// Set the text input to password mode (displays • for each character).
+    pub fn password(mut self) -> Self {
+        if let Content::TextInput { mask, .. } = &mut self.content {
+            *mask = Some('•');
+        }
+        self
+    }
+
+    /// Set a custom mask character for the text input.
+    pub fn masked(mut self, mask_char: char) -> Self {
+        if let Content::TextInput { mask, .. } = &mut self.content {
+            *mask = Some(mask_char);
         }
         self
     }

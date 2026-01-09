@@ -26,6 +26,7 @@ struct WidgetShowcase {
     // Input state
     username: String,
     password: String,
+    password_visible: bool,
 
     // Select state
     country: SelectState<String>,
@@ -141,6 +142,12 @@ impl WidgetShowcase {
     }
 
     #[handler]
+    async fn toggle_password_visibility(&self) {
+        let visible = self.password_visible.get();
+        self.password_visible.set(!visible);
+    }
+
+    #[handler]
     async fn submit_form(&self, gx: &GlobalContext) {
         let username = self.username.get();
         let agree = self.agree.get();
@@ -195,8 +202,15 @@ impl WidgetShowcase {
                         }
                         row (gap: 2) {
                             text (content: "Password:") style (fg: muted)
-                            input (state: self.password, id: "password", placeholder: "Enter password...", width: 30)
-                                style (bg: surface)
+                            if self.password_visible.get() {
+                                input (state: self.password, id: "password", placeholder: "Enter password...", width: 30)
+                                    style (bg: surface)
+                            } else {
+                                input (state: self.password, id: "password", placeholder: "Enter password...", width: 30, password)
+                                    style (bg: surface)
+                            }
+                            button (label: {if self.password_visible.get() { "Hide" } else { "Show" }}, id: "toggle-pw")
+                                on_activate: toggle_password_visibility()
                         }
                     }
 
