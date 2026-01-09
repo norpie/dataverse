@@ -269,6 +269,12 @@ impl AppContext {
                 Ok(value) => Some(value),
                 Err(panic) => {
                     let message = extract_panic_message(&panic);
+                    log::error!(
+                        "[{}:{}] Task panicked: {}",
+                        app_name,
+                        instance_id,
+                        message
+                    );
                     if let Some(sender) = error_sender {
                         let _ = sender.send(AppError {
                             app_name,

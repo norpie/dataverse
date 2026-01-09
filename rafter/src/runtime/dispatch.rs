@@ -12,18 +12,39 @@ use std::sync::{Arc, RwLock};
 
 use tuidom::{Event, Key, LayoutResult, Modifiers};
 
-use crate::handler_context::EventData;
+use crate::handler_context::{call_handler, call_handler_for_app, EventData, HandlerCallResult};
 use crate::instance::{AnyAppInstance, InstanceRegistry};
 use crate::modal::ModalEntry;
 use crate::registration::AnySystem;
-use crate::{AppContext, GlobalContext, HandlerContext, Modal, WidgetResult};
+use crate::{AppContext, GlobalContext, Handler, HandlerContext, Modal, WidgetResult};
+
+/// Helper to call a handler and convert panic to DispatchResult.
+fn call_and_check(handler: &Handler, hx: &HandlerContext) -> Option<DispatchResult> {
+    match call_handler(handler, hx) {
+        HandlerCallResult::Ok => None,
+        HandlerCallResult::Panicked { message } => Some(DispatchResult::HandlerPanicked { message }),
+    }
+}
+
+/// Helper to call an app handler and convert panic to DispatchResult.
+fn call_app_and_check(
+    handler: &Handler,
+    hx: &HandlerContext,
+    app_name: &str,
+    instance_id: crate::InstanceId,
+) -> Option<DispatchResult> {
+    match call_handler_for_app(handler, hx, app_name, instance_id) {
+        HandlerCallResult::Ok => None,
+        HandlerCallResult::Panicked { message } => Some(DispatchResult::HandlerPanicked { message }),
+    }
+}
 
 // =============================================================================
 // DispatchResult
 // =============================================================================
 
 /// Result of event dispatch.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DispatchResult {
     /// Event was not handled.
     NotHandled,
@@ -33,11 +54,20 @@ pub enum DispatchResult {
     HandledByModal,
     /// Event was handled by a widget.
     HandledByWidget(WidgetResult),
+    /// Handler panicked.
+    HandlerPanicked {
+        /// The panic message.
+        message: String,
+    },
 }
 
 impl DispatchResult {
     pub fn is_handled(&self) -> bool {
         !matches!(self, DispatchResult::NotHandled)
+    }
+
+    pub fn is_panic(&self) -> bool {
+        matches!(self, DispatchResult::HandlerPanicked { .. })
     }
 }
 
@@ -132,7 +162,9 @@ impl<'a> EventDispatcher<'a> {
                 // Create a default AppContext for global modals
                 let cx = AppContext::default();
                 let hx = HandlerContext::for_app(&cx, self.gx);
-                handler(&hx);
+                if let Some(panic_result) = call_and_check(&handler, &hx) {
+                    return Some(panic_result);
+                }
                 return Some(DispatchResult::HandledByModal);
             }
         }
@@ -174,7 +206,9 @@ impl<'a> EventDispatcher<'a> {
                 let cx = instance.app_context();
                 let mx = modal.modal_context();
                 let hx = HandlerContext::for_modal_any(&cx, self.gx, mx);
-                handler(&hx);
+                if let Some(panic_result) = call_app_and_check(&handler, &hx, instance.config().name, instance.id()) {
+                    return Some(panic_result);
+                }
                 return Some(DispatchResult::HandledByModal);
             }
             log::debug!("dispatch_to_app_modals: no keybind matched");
@@ -197,7 +231,9 @@ impl<'a> EventDispatcher<'a> {
             let keybinds = system.keybinds();
             if let Some(handler) = keybinds.match_key(*key, *modifiers) {
                 let hx = HandlerContext::for_system(self.gx);
-                handler(&hx);
+                if let Some(panic_result) = call_and_check(&handler, &hx) {
+                    return Some(panic_result);
+                }
                 return Some(DispatchResult::HandledByKeybind);
             }
         }
@@ -232,7 +268,9 @@ impl<'a> EventDispatcher<'a> {
             log::debug!("dispatch_to_app_keybinds: matched keybind, calling handler");
             let cx = instance.app_context();
             let hx = HandlerContext::for_app(&cx, self.gx);
-            handler(&hx);
+            if let Some(panic_result) = call_app_and_check(&handler, &hx, instance.config().name, instance.id()) {
+                return Some(panic_result);
+            }
             log::debug!("dispatch_to_app_keybinds: handler returned");
             return Some(DispatchResult::HandledByKeybind);
         }
@@ -259,7 +297,9 @@ impl<'a> EventDispatcher<'a> {
                     if let Some(target_id) = target {
                         // First check app instance handlers
                         if let Some(handler) = handlers.get(target_id, "on_activate") {
-                            handler(&hx);
+                            if let Some(panic_result) = call_app_and_check(&handler, &hx, instance.config().name, instance.id()) {
+                                return Some(panic_result);
+                            }
                             return Some(DispatchResult::HandledByWidget(WidgetResult::Activated));
                         }
 
@@ -268,7 +308,9 @@ impl<'a> EventDispatcher<'a> {
                             let system_handlers = system.handlers();
                             if let Some(handler) = system_handlers.get(target_id, "on_activate") {
                                 let system_hx = HandlerContext::for_system(self.gx);
-                                handler(&system_hx);
+                                if let Some(panic_result) = call_and_check(&handler, &system_hx) {
+                                    return Some(panic_result);
+                                }
                                 return Some(DispatchResult::HandledByWidget(WidgetResult::Activated));
                             }
                         }
@@ -279,7 +321,9 @@ impl<'a> EventDispatcher<'a> {
                 if let Some(target_id) = target {
                     let result = dispatch_key_to_instance(instance, *key, *modifiers, self.layout);
                     if result.is_handled() {
-                        dispatch_widget_result(handlers, target_id, &result, &hx);
+                        if let Some(panic_result) = dispatch_widget_result(handlers, target_id, &result, &hx, instance.config().name, instance.id()) {
+                            return Some(panic_result);
+                        }
                         return Some(DispatchResult::HandledByWidget(result));
                     }
                 }
@@ -297,7 +341,9 @@ impl<'a> EventDispatcher<'a> {
                     // First check app instance handlers
                     if let Some(handler) = handlers.get(target_id, "on_activate") {
                         log::debug!("dispatch_to_widgets: found app handler, calling");
-                        handler(&hx);
+                        if let Some(panic_result) = call_app_and_check(&handler, &hx, instance.config().name, instance.id()) {
+                            return Some(panic_result);
+                        }
                         log::debug!("dispatch_to_widgets: handler returned");
                         return Some(DispatchResult::HandledByWidget(WidgetResult::Activated));
                     }
@@ -308,7 +354,9 @@ impl<'a> EventDispatcher<'a> {
                         if let Some(handler) = system_handlers.get(target_id, "on_activate") {
                             log::debug!("dispatch_to_widgets: found system handler for {}, calling", system.name());
                             let system_hx = HandlerContext::for_system(self.gx);
-                            handler(&system_hx);
+                            if let Some(panic_result) = call_and_check(&handler, &system_hx) {
+                                return Some(panic_result);
+                            }
                             log::debug!("dispatch_to_widgets: system handler returned");
                             return Some(DispatchResult::HandledByWidget(WidgetResult::Activated));
                         }
@@ -330,7 +378,9 @@ impl<'a> EventDispatcher<'a> {
                                 delta_y: *delta_y,
                             },
                         );
-                        handler(&hx_with_event);
+                        if let Some(panic_result) = call_app_and_check(&handler, &hx_with_event, instance.config().name, instance.id()) {
+                            return Some(panic_result);
+                        }
                         return Some(DispatchResult::HandledByWidget(WidgetResult::Handled));
                     }
                 }
@@ -341,7 +391,9 @@ impl<'a> EventDispatcher<'a> {
                 if let Some(target_id) = target {
                     let result = dispatch_drag_to_instance(instance, *x, *y, self.layout);
                     if result.is_handled() {
-                        dispatch_widget_result(handlers, target_id, &result, &hx);
+                        if let Some(panic_result) = dispatch_widget_result(handlers, target_id, &result, &hx, instance.config().name, instance.id()) {
+                            return Some(panic_result);
+                        }
                         return Some(DispatchResult::HandledByWidget(result));
                     }
                 }
@@ -351,7 +403,9 @@ impl<'a> EventDispatcher<'a> {
                 if let Some(target_id) = target {
                     let result = dispatch_release_to_instance(instance, self.layout);
                     if result.is_handled() {
-                        dispatch_widget_result(handlers, target_id, &result, &hx);
+                        if let Some(panic_result) = dispatch_widget_result(handlers, target_id, &result, &hx, instance.config().name, instance.id()) {
+                            return Some(panic_result);
+                        }
                         return Some(DispatchResult::HandledByWidget(result));
                     }
                 }
@@ -370,7 +424,9 @@ impl<'a> EventDispatcher<'a> {
                             new_target: new_target.clone(),
                         },
                     );
-                    handler(&hx_with_event);
+                    if let Some(panic_result) = call_app_and_check(&handler, &hx_with_event, instance.config().name, instance.id()) {
+                        return Some(panic_result);
+                    }
                 }
             }
 
@@ -388,7 +444,9 @@ impl<'a> EventDispatcher<'a> {
                             text: text.clone(),
                         },
                     );
-                    handler(&hx_with_event);
+                    if let Some(panic_result) = call_app_and_check(&handler, &hx_with_event, instance.config().name, instance.id()) {
+                        return Some(panic_result);
+                    }
                     return Some(DispatchResult::HandledByWidget(WidgetResult::Changed));
                 }
             }
@@ -401,7 +459,9 @@ impl<'a> EventDispatcher<'a> {
                         self.gx,
                         EventData::Submit,
                     );
-                    handler(&hx_with_event);
+                    if let Some(panic_result) = call_app_and_check(&handler, &hx_with_event, instance.config().name, instance.id()) {
+                        return Some(panic_result);
+                    }
                     return Some(DispatchResult::HandledByWidget(WidgetResult::Submitted));
                 }
             }
@@ -452,14 +512,17 @@ fn dispatch_release_to_instance(
 /// Map a WidgetResult to the appropriate handler dispatch.
 ///
 /// Looks up the handler for the given element and event type, then calls it.
+/// Returns Some(DispatchResult) if the handler panicked.
 fn dispatch_widget_result(
     handlers: &crate::HandlerRegistry,
     element_id: &str,
     result: &WidgetResult,
     hx: &HandlerContext,
-) {
+    app_name: &str,
+    instance_id: crate::InstanceId,
+) -> Option<DispatchResult> {
     let event_type = match result {
-        WidgetResult::Ignored | WidgetResult::Handled => return,
+        WidgetResult::Ignored | WidgetResult::Handled => return None,
         WidgetResult::Activated => "on_activate",
         WidgetResult::Changed => "on_change",
         WidgetResult::CursorMoved => "on_cursor_moved",
@@ -471,8 +534,9 @@ fn dispatch_widget_result(
     };
 
     if let Some(handler) = handlers.get(element_id, event_type) {
-        handler(hx);
+        return call_app_and_check(&handler, hx, app_name, instance_id);
     }
+    None
 }
 
 // =============================================================================

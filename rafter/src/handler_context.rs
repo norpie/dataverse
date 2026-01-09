@@ -422,3 +422,87 @@ impl<'a> HandlerContext<'a> {
         &self.event_data
     }
 }
+
+// =============================================================================
+// Safe Handler Invocation
+// =============================================================================
+
+/// Result of calling a handler.
+#[derive(Debug, Clone)]
+pub enum HandlerCallResult {
+    /// Handler completed successfully.
+    Ok,
+    /// Handler panicked.
+    Panicked {
+        /// The panic message.
+        message: String,
+    },
+}
+
+impl HandlerCallResult {
+    /// Returns true if the handler panicked.
+    pub fn is_panic(&self) -> bool {
+        matches!(self, HandlerCallResult::Panicked { .. })
+    }
+
+    /// Returns the panic message if the handler panicked.
+    pub fn panic_message(&self) -> Option<&str> {
+        match self {
+            HandlerCallResult::Panicked { message } => Some(message),
+            HandlerCallResult::Ok => None,
+        }
+    }
+}
+
+/// Safely call a handler, catching any panics.
+///
+/// Returns `HandlerCallResult::Ok` if the handler completed successfully,
+/// or `HandlerCallResult::Panicked` with the panic message if it panicked.
+///
+/// Panics are always logged at ERROR level.
+pub fn call_handler(handler: &Handler, hx: &HandlerContext) -> HandlerCallResult {
+    use std::panic::{catch_unwind, AssertUnwindSafe};
+
+    let result = catch_unwind(AssertUnwindSafe(|| {
+        handler(hx);
+    }));
+
+    match result {
+        Ok(()) => HandlerCallResult::Ok,
+        Err(panic) => {
+            let message = crate::extract_panic_message(&panic);
+            log::error!("Handler panicked: {}", message);
+            HandlerCallResult::Panicked { message }
+        }
+    }
+}
+
+/// Safely call a handler with context about what app it belongs to.
+///
+/// Like `call_handler`, but includes app name and instance ID in the log message.
+pub fn call_handler_for_app(
+    handler: &Handler,
+    hx: &HandlerContext,
+    app_name: &str,
+    instance_id: crate::InstanceId,
+) -> HandlerCallResult {
+    use std::panic::{catch_unwind, AssertUnwindSafe};
+
+    let result = catch_unwind(AssertUnwindSafe(|| {
+        handler(hx);
+    }));
+
+    match result {
+        Ok(()) => HandlerCallResult::Ok,
+        Err(panic) => {
+            let message = crate::extract_panic_message(&panic);
+            log::error!(
+                "[{}:{}] Handler panicked: {}",
+                app_name,
+                instance_id,
+                message
+            );
+            HandlerCallResult::Panicked { message }
+        }
+    }
+}

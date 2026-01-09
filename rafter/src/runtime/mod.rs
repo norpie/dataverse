@@ -356,6 +356,8 @@ impl Runtime {
                 if let Some(instance) = reg.focused_instance() {
                     let cx = instance.app_context();
                     let handlers = instance.handlers();
+                    let app_name = instance.config().name;
+                    let instance_id = instance.id();
                     for (id, rect) in layout.iter_rects() {
                         if let Some(handler) = handlers.get(id, "on_layout") {
                             let hx = crate::HandlerContext::for_app_with_event(
@@ -368,7 +370,7 @@ impl Runtime {
                                     height: rect.height,
                                 },
                             );
-                            handler(&hx);
+                            let _ = crate::handler_context::call_handler_for_app(&handler, &hx, app_name, instance_id);
                         }
                     }
                 }
@@ -511,6 +513,8 @@ impl Runtime {
                 if let Some(instance) = reg.focused_instance() {
                     let cx = instance.app_context();
                     let handlers = instance.handlers();
+                    let app_name = instance.config().name;
+                    let instance_id = instance.id();
                     for change in &scroll_changes {
                         if let Some(handler) = handlers.get(&change.element_id, "on_scroll") {
                             let hx = crate::HandlerContext::for_app_with_event(
@@ -525,7 +529,7 @@ impl Runtime {
                                     viewport_height: change.viewport_height,
                                 },
                             );
-                            handler(&hx);
+                            let _ = crate::handler_context::call_handler_for_app(&handler, &hx, app_name, instance_id);
                         }
                     }
                 }
@@ -533,7 +537,42 @@ impl Runtime {
 
             // 20. Dispatch events to keybinds and apps
             for event in &events {
-                dispatch::dispatch_event(event, global_modals, systems, registry, gx, layout);
+                let result = dispatch::dispatch_event(event, global_modals, systems, registry, gx, layout);
+
+                // Handle panics according to PanicBehavior
+                if let dispatch::DispatchResult::HandlerPanicked { message } = result {
+                    let reg = registry.read().unwrap();
+                    if let Some(instance) = reg.focused_instance() {
+                        let behavior = instance.config().panic_behavior;
+                        let app_name = instance.config().name;
+                        let instance_id = instance.id();
+                        drop(reg); // Release lock before taking action
+
+                        match behavior {
+                            crate::PanicBehavior::Close => {
+                                log::warn!(
+                                    "[{}:{}] Closing instance due to handler panic (PanicBehavior::Close): {}",
+                                    app_name, instance_id, message
+                                );
+                                let mut reg = registry.write().unwrap();
+                                reg.close(instance_id);
+                            }
+                            crate::PanicBehavior::Restart => {
+                                log::warn!(
+                                    "[{}:{}] Restart not yet implemented for handler panics (PanicBehavior::Restart): {}",
+                                    app_name, instance_id, message
+                                );
+                                // TODO: Implement restart - requires creating new instance
+                            }
+                            crate::PanicBehavior::Ignore => {
+                                log::warn!(
+                                    "[{}:{}] Ignoring handler panic (PanicBehavior::Ignore): {}",
+                                    app_name, instance_id, message
+                                );
+                            }
+                        }
+                    }
+                }
             }
 
             // 20. Check wakeups (state changes from async tasks)
