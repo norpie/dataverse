@@ -270,9 +270,13 @@ impl Runtime {
         let animation_timeout = Duration::from_millis(16);
         let idle_timeout = Duration::from_millis(100);
 
+        // Track drag target for mouse capture (send all drag events to click target until release)
+        let mut drag_target: Option<String> = None;
+
         loop {
             // 1. Check shutdown
             if gx.is_shutdown_requested() {
+                log::debug!("[runtime] Exiting: shutdown requested");
                 break;
             }
 
@@ -280,6 +284,7 @@ impl Runtime {
             {
                 let reg = registry.read().unwrap();
                 if reg.is_empty() {
+                    log::debug!("[runtime] Exiting: no instances remaining");
                     break;
                 }
             }
@@ -324,7 +329,9 @@ impl Runtime {
             }
 
             // 6. Build UI
+            log::debug!("[runtime] Building root element...");
             let mut root = self.build_root_element(registry, systems, active_toasts);
+            log::debug!("[runtime] Root element built successfully");
 
             // 7. Process cursor position requests (before enrichment uses TextInputState)
             {
@@ -473,9 +480,21 @@ impl Runtime {
                 let reg = registry.read().unwrap();
                 if let Some(instance) = reg.focused_instance() {
                     let cx = instance.app_context();
+                    // Process scroll requests
                     for target_id in cx.take_scroll_requests() {
                         if let Some(change) = scroll_to_element(&root, layout, scroll, &target_id) {
                             focus_scroll_changes.push(change);
+                        }
+                    }
+                    // Process focus requests from widgets/app
+                    if let Some(target_id) = cx.take_focus_request() {
+                        log::debug!("[runtime] Processing focus request: {}", target_id);
+                        if focus.focus(&target_id) {
+                            log::debug!("[runtime] Focus changed to: {}", target_id);
+                            // Scroll the newly focused element into view
+                            if let Some(change) = scroll_to_element(&root, layout, scroll, &target_id) {
+                                focus_scroll_changes.push(change);
+                            }
                         }
                     }
                 }
@@ -535,6 +554,46 @@ impl Runtime {
                 }
             }
 
+            // 19c. Apply drag capture - redirect drag events to the click target
+            let events: Vec<tuidom::Event> = events.into_iter().map(|event| {
+                match &event {
+                    tuidom::Event::Click { target, .. } => {
+                        // Store click target for drag capture
+                        drag_target = target.clone();
+                        event
+                    }
+                    tuidom::Event::Drag { target: _, x, y, button } => {
+                        // Redirect drag to the captured target
+                        if let Some(ref captured) = drag_target {
+                            tuidom::Event::Drag {
+                                target: Some(captured.clone()),
+                                x: *x,
+                                y: *y,
+                                button: *button,
+                            }
+                        } else {
+                            event
+                        }
+                    }
+                    tuidom::Event::Release { target: _, x, y, button } => {
+                        // Redirect release to the captured target, then clear it
+                        let result = if let Some(ref captured) = drag_target {
+                            tuidom::Event::Release {
+                                target: Some(captured.clone()),
+                                x: *x,
+                                y: *y,
+                                button: *button,
+                            }
+                        } else {
+                            event
+                        };
+                        drag_target = None;
+                        result
+                    }
+                    _ => event,
+                }
+            }).collect();
+
             // 20. Dispatch events to keybinds and apps
             for event in &events {
                 let result = dispatch::dispatch_event(event, global_modals, systems, registry, gx, layout);
@@ -575,7 +634,22 @@ impl Runtime {
                 }
             }
 
-            // 20. Check wakeups (state changes from async tasks)
+            // 20b. Process focus requests from handlers (e.g., list boundary scrolling)
+            // This runs AFTER dispatch so handler focus requests take effect immediately
+            {
+                let reg = registry.read().unwrap();
+                if let Some(instance) = reg.focused_instance() {
+                    let cx = instance.app_context();
+                    if let Some(target_id) = cx.take_focus_request() {
+                        log::debug!("[runtime] Processing post-dispatch focus request: {}", target_id);
+                        if focus.focus(&target_id) {
+                            log::debug!("[runtime] Focus changed to: {}", target_id);
+                        }
+                    }
+                }
+            }
+
+            // 21. Check wakeups (state changes from async tasks)
             while wakeup_rx.try_recv() {
                 // Just drain the wakeup queue - we'll re-render on next iteration
             }
@@ -635,7 +709,9 @@ impl Runtime {
         {
             let reg = registry.read().unwrap();
             if let Some(instance) = reg.focused_instance() {
+                log::debug!("[runtime] Calling instance.element() for {}", instance.config().name);
                 let app_element = instance.element();
+                log::debug!("[runtime] instance.element() returned");
                 root = root.child(app_element.width(Size::Fill).height(Size::Fill));
             }
         }

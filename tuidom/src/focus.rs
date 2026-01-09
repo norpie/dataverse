@@ -1,9 +1,10 @@
 use crossterm::event::{Event as CrosstermEvent, KeyEventKind, MouseEventKind};
 
 use crate::element::{find_element, Content, Element};
-use crate::event::{Event, Key, Modifiers, NavDirection};
+use crate::event::{Event, Key, Modifiers, NavDirection, ScrollAction};
 use crate::hit::hit_test_focusable;
 use crate::layout::{LayoutResult, Rect};
+use crate::scroll::find_scrollable_ancestor_with_type;
 
 /// Tracks which element is currently focused and processes events.
 #[derive(Debug, Default)]
@@ -213,12 +214,76 @@ impl FocusState {
                         if let Some(dir) = direction {
                             if let Some(old) = self.focused.clone() {
                                 if let Some(new) = self.focus_direction(dir, root, layout) {
+                                    // For Up/Down in a .scrollable() element, check if navigation
+                                    // would leave the scrollable container. If so, emit Key event
+                                    // instead to let the widget handle boundary scrolling.
+                                    if matches!(key, Key::Up | Key::Down) {
+                                        if let Some((scrollable_id, is_fake)) = find_scrollable_ancestor_with_type(root, &old) {
+                                            if is_fake {
+                                                // Check if new target is still inside the scrollable
+                                                let new_in_scrollable = find_scrollable_ancestor_with_type(root, &new)
+                                                    .map(|(id, _)| id == scrollable_id)
+                                                    .unwrap_or(false);
+
+                                                if !new_in_scrollable {
+                                                    // Navigation would leave the scrollable - emit Key event first
+                                                    // so widget's on_key_up/on_key_down handler can fire and override focus
+                                                    // Note: use `old` not `self.focused` since focus_direction mutates it
+                                                    log::debug!("[focus] Up/Down would leave scrollable {}, emitting Key event for {} (focus moved to {})", scrollable_id, old, new);
+                                                    events.push(Event::Key {
+                                                        target: Some(old.clone()),
+                                                        key,
+                                                        modifiers,
+                                                    });
+                                                    // Also emit the focus change - if handler sets focus, post-dispatch will override
+                                                    events.push(Event::Blur { target: old, new_target: Some(new.clone()) });
+                                                    events.push(Event::Focus { target: new });
+                                                    continue;
+                                                }
+                                            }
+                                        }
+                                    }
+
                                     events.push(Event::Blur { target: old, new_target: Some(new.clone()) });
                                     events.push(Event::Focus { target: new });
                                     continue;
                                 }
                             }
                             // If no navigation happened, fall through to emit key event
+                        }
+                    }
+
+                    // Handle scroll keys for .scrollable() elements
+                    // Convert PageUp/PageDown/Home/End to Event::Scroll with action
+                    if modifiers.none() {
+                        let scroll_action = match key {
+                            Key::PageUp => Some(ScrollAction::PageUp),
+                            Key::PageDown => Some(ScrollAction::PageDown),
+                            Key::Home => Some(ScrollAction::Home),
+                            Key::End => Some(ScrollAction::End),
+                            _ => None,
+                        };
+
+                        if let Some(action) = scroll_action {
+                            // Check if there's a .scrollable() ancestor
+                            if let Some(target_id) = &self.focused {
+                                if let Some((scrollable_id, is_fake)) = find_scrollable_ancestor_with_type(root, target_id) {
+                                    if is_fake {
+                                        // For .scrollable() elements, emit Event::Scroll with action
+                                        // so the widget handles it (they know virtual content size)
+                                        events.push(Event::Scroll {
+                                            target: Some(scrollable_id),
+                                            x: 0,
+                                            y: 0,
+                                            delta_x: 0,
+                                            delta_y: 0,
+                                            action: Some(action),
+                                        });
+                                        continue;
+                                    }
+                                    // For overflow elements, let ScrollState handle it via Event::Key
+                                }
+                            }
                         }
                     }
 
@@ -277,6 +342,7 @@ impl FocusState {
                                 y,
                                 delta_x: 0,
                                 delta_y: -1,
+                                action: None,
                             });
                         }
 
@@ -288,6 +354,7 @@ impl FocusState {
                                 y,
                                 delta_x: 0,
                                 delta_y: 1,
+                                action: None,
                             });
                         }
 
@@ -299,6 +366,7 @@ impl FocusState {
                                 y,
                                 delta_x: -1,
                                 delta_y: 0,
+                                action: None,
                             });
                         }
 
@@ -310,6 +378,7 @@ impl FocusState {
                                 y,
                                 delta_x: 1,
                                 delta_y: 0,
+                                action: None,
                             });
                         }
 

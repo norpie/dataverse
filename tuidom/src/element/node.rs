@@ -54,8 +54,9 @@ pub struct Element {
     pub flex_shrink: u16,
     pub align_self: Option<Align>,
 
-    // Overflow
-    pub overflow: Overflow,
+    // Overflow (separate X/Y for independent control)
+    pub overflow_x: Overflow,
+    pub overflow_y: Overflow,
     pub scroll_offset: (u16, u16),
 
     // Virtualization hint
@@ -123,7 +124,8 @@ impl Default for Element {
             flex_grow: 0,
             flex_shrink: 1,
             align_self: None,
-            overflow: Overflow::Visible,
+            overflow_x: Overflow::Visible,
+            overflow_y: Overflow::Visible,
             scroll_offset: (0, 0),
             item_height: None,
             style: Style::default(),
@@ -334,8 +336,22 @@ impl Element {
     }
 
     // Overflow
+    /// Set both horizontal and vertical overflow behavior.
     pub fn overflow(mut self, overflow: Overflow) -> Self {
-        self.overflow = overflow;
+        self.overflow_x = overflow;
+        self.overflow_y = overflow;
+        self
+    }
+
+    /// Set horizontal overflow behavior.
+    pub fn overflow_x(mut self, overflow: Overflow) -> Self {
+        self.overflow_x = overflow;
+        self
+    }
+
+    /// Set vertical overflow behavior.
+    pub fn overflow_y(mut self, overflow: Overflow) -> Self {
+        self.overflow_y = overflow;
         self
     }
 

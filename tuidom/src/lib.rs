@@ -16,7 +16,7 @@ pub mod types;
 pub use animation::AnimationState;
 pub use buffer::Buffer;
 pub use element::{find_element, Content, Element};
-pub use event::{Event, Key, Modifiers, MouseButton, NavDirection};
+pub use event::{Event, Key, Modifiers, MouseButton, NavDirection, ScrollAction};
 pub use focus::{collect_focusable, FocusState};
 pub use hit::{hit_test, hit_test_any, hit_test_focusable};
 pub use layout::{LayoutResult, Rect};

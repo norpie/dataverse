@@ -245,32 +245,38 @@ fn layout_children(
         element.padding.left + border_size,
     );
 
-    // Determine scrollbar reservations based on overflow mode
+    // Determine scrollbar reservations based on overflow mode (separate X/Y)
     let is_row = element.direction == Direction::Row;
-    let (scrollbar_right, scrollbar_bottom) = match element.overflow {
-        Overflow::Scroll => (1, 1), // Always show both scrollbars
+
+    // Calculate content size for Auto mode (only if needed)
+    let content_size = if element.overflow_x == Overflow::Auto || element.overflow_y == Overflow::Auto {
+        Some(compute_content_size(&flow_children, inner_no_scroll, is_row, element.gap))
+    } else {
+        None
+    };
+
+    // Vertical scrollbar (right side) based on overflow_y
+    let scrollbar_right = match element.overflow_y {
+        Overflow::Scroll => 1, // Always show vertical scrollbar
         Overflow::Auto => {
-            // Smart reservation: only reserve space for scrollbars that are needed
-            // Note: compute_content_size calls estimate_size which has O(1) fast path
-            // when child elements have item_height set
-            let (content_width, content_height) =
-                compute_content_size(&flow_children, inner_no_scroll, is_row, element.gap);
-
-            let needs_vertical = content_height > inner_no_scroll.height;
-            // Check horizontal need accounting for vertical scrollbar taking 1 char
-            let available_width_after_vscroll = if needs_vertical {
-                inner_no_scroll.width.saturating_sub(1)
-            } else {
-                inner_no_scroll.width
-            };
-            let needs_horizontal = content_width > available_width_after_vscroll;
-
-            (
-                if needs_vertical { 1 } else { 0 },
-                if needs_horizontal { 1 } else { 0 },
-            )
+            if let Some((_, content_height)) = content_size {
+                if content_height > inner_no_scroll.height { 1 } else { 0 }
+            } else { 0 }
         }
-        _ => (0, 0),
+        _ => 0,
+    };
+
+    // Horizontal scrollbar (bottom) based on overflow_x
+    let scrollbar_bottom = match element.overflow_x {
+        Overflow::Scroll => 1, // Always show horizontal scrollbar
+        Overflow::Auto => {
+            if let Some((content_width, _)) = content_size {
+                // Account for vertical scrollbar when checking horizontal overflow
+                let available_width = inner_no_scroll.width.saturating_sub(scrollbar_right);
+                if content_width > available_width { 1 } else { 0 }
+            } else { 0 }
+        }
+        _ => 0,
     };
 
     let inner = rect.shrink(
@@ -285,7 +291,9 @@ fn layout_children(
     // Determine scroll context for children:
     // - If this element is scrollable, create new scroll context
     // - Otherwise, inherit from parent
-    let is_scrollable = element.overflow == Overflow::Scroll || element.overflow == Overflow::Auto;
+    let is_scrollable = element.overflow_x == Overflow::Scroll || element.overflow_x == Overflow::Auto
+        || element.overflow_y == Overflow::Scroll || element.overflow_y == Overflow::Auto
+        || element.scrollable;
     let child_scroll_ctx = if is_scrollable {
         Some(ScrollContext {
             scroll_y,
@@ -386,7 +394,9 @@ fn layout_children(
     }
 
     // Store content size for scrollable elements using natural/unconstrained child sizes
-    if element.overflow == Overflow::Scroll || element.overflow == Overflow::Auto {
+    if element.overflow_x == Overflow::Scroll || element.overflow_x == Overflow::Auto
+        || element.overflow_y == Overflow::Scroll || element.overflow_y == Overflow::Auto
+        || element.scrollable {
         // Calculate natural content size (what children would take if unconstrained)
         let (content_width, content_height) =
             compute_content_size(&flow_children, inner, is_row, element.gap);
@@ -842,7 +852,10 @@ fn estimate_size(element: &Element, is_width: bool) -> u16 {
     };
 
     // Reserve space for scrollbars in scrollable containers
-    let scrollbar_size = match element.overflow {
+    // Width calculation needs to account for vertical scrollbar (overflow_y)
+    // Height calculation needs to account for horizontal scrollbar (overflow_x)
+    let overflow_for_axis = if is_width { element.overflow_y } else { element.overflow_x };
+    let scrollbar_size = match overflow_for_axis {
         Overflow::Scroll | Overflow::Auto => 1,
         _ => 0,
     };
@@ -1119,6 +1132,12 @@ fn layout_children_virtualized(
         layout_children(child, child_rect, result, animation, scroll_ctx);
     }
 
-    // Content width is just the inner width for column layout
-    (inner.width, total_height)
+    // Calculate content width as max child width (for horizontal scroll support)
+    let content_width = flow_children
+        .iter()
+        .map(|c| estimate_size(c, true) + c.margin.left + c.margin.right)
+        .max()
+        .unwrap_or(inner.width);
+
+    (content_width, total_height)
 }

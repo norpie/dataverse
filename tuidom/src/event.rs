@@ -7,6 +7,19 @@ pub enum NavDirection {
     Right,
 }
 
+/// Scroll action for keyboard-triggered scrolling.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ScrollAction {
+    /// Scroll up by one page.
+    PageUp,
+    /// Scroll down by one page.
+    PageDown,
+    /// Scroll to the beginning.
+    Home,
+    /// Scroll to the end.
+    End,
+}
+
 /// High-level events with element targeting
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Event {
@@ -30,6 +43,8 @@ pub enum Event {
         y: u16,
         delta_x: i16,
         delta_y: i16,
+        /// Scroll action for keyboard-triggered scrolling (PageUp, PageDown, Home, End).
+        action: Option<ScrollAction>,
     },
     /// Mouse move event (for hover tracking)
     MouseMove { x: u16, y: u16 },

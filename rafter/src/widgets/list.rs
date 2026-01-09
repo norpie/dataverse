@@ -6,7 +6,7 @@
 use std::hash::Hash;
 use std::sync::Arc;
 
-use tuidom::{Color, Element, Size, Style, Transitions};
+use tuidom::{Color, Element, Overflow, Size, Style, Transitions};
 
 use crate::state::State;
 use crate::{HandlerRegistry, WidgetHandlers};
@@ -98,6 +98,14 @@ pub struct ListState<T: ListItem> {
     /// `cumulative[0]` = 0, `cumulative[n]` = total content height
     /// Length = `items.len() + 1`
     cumulative_heights: Vec<u16>,
+
+    /// Scrollbar screen rect (x, y, width, height) for drag calculations.
+    /// Updated via on_layout handler.
+    scrollbar_rect: Option<(u16, u16, u16, u16)>,
+
+    /// Grab offset within thumb for smooth dragging.
+    /// Set on click, cleared on release.
+    drag_grab_offset: Option<u16>,
 }
 
 impl<T: ListItem> Default for ListState<T> {
@@ -108,6 +116,8 @@ impl<T: ListItem> Default for ListState<T> {
             scroll: ScrollState::new(),
             last_activated: None,
             cumulative_heights: vec![0],
+            scrollbar_rect: None,
+            drag_grab_offset: None,
         }
     }
 }
@@ -121,6 +131,8 @@ impl<T: ListItem> ListState<T> {
             scroll: ScrollState::new(),
             last_activated: None,
             cumulative_heights: vec![0],
+            scrollbar_rect: None,
+            drag_grab_offset: None,
         };
         state.set_items(items);
         state
@@ -216,6 +228,11 @@ impl<T: ListItem> ListState<T> {
 
         self.scroll.offset != old_offset
     }
+
+    /// Get the index of the first visible item based on current scroll offset.
+    pub fn first_visible_index(&self) -> usize {
+        self.item_at_offset(self.scroll.offset)
+    }
 }
 
 // =============================================================================
@@ -226,8 +243,6 @@ impl<T: ListItem> ListState<T> {
 struct VisibleItem {
     /// Index in the items array.
     index: usize,
-    /// Y offset from top of content.
-    y_offset: u16,
 }
 
 // =============================================================================
@@ -267,6 +282,9 @@ pub struct List<S = NeedsState> {
     buffer: usize,
     /// Whether to show scrollbar (default: true when content exceeds viewport).
     show_scrollbar: bool,
+    /// Whether to enable horizontal scrolling (default: false).
+    /// When enabled, items can overflow horizontally and a scrollbar appears.
+    horizontal_scroll: bool,
 }
 
 impl Default for List<NeedsState> {
@@ -288,6 +306,7 @@ impl List<NeedsState> {
             transitions: None,
             buffer: 5,
             show_scrollbar: true,
+            horizontal_scroll: false,
         }
     }
 
@@ -303,6 +322,7 @@ impl List<NeedsState> {
             transitions: self.transitions,
             buffer: self.buffer,
             show_scrollbar: self.show_scrollbar,
+            horizontal_scroll: self.horizontal_scroll,
         }
     }
 }
@@ -360,6 +380,16 @@ impl<S> List<S> {
         self.show_scrollbar = show;
         self
     }
+
+    /// Enable horizontal scrolling.
+    ///
+    /// When enabled, items can overflow horizontally and a horizontal
+    /// scrollbar appears when content is wider than the viewport.
+    /// Default is false (items are clipped).
+    pub fn horizontal_scroll(mut self, enable: bool) -> Self {
+        self.horizontal_scroll = enable;
+        self
+    }
 }
 
 impl<'a, T: ListItem> List<HasListState<'a, T>> {
@@ -368,34 +398,36 @@ impl<'a, T: ListItem> List<HasListState<'a, T>> {
     /// Creates elements only for visible items plus a buffer. Uses spacers
     /// above and below to maintain correct scroll height.
     pub fn build(self, registry: &HandlerRegistry, handlers: &WidgetHandlers) -> Element {
+        log::debug!("[List::build] Starting build");
         let state = self.state_marker.0;
-        let mut current = state.get();
         let list_id = self.id.clone().unwrap_or_else(|| "list".into());
         let content_id = format!("{}-content", list_id);
 
-        // Process any pending scroll request
-        current.process_scroll();
+        // Process any pending scroll request and persist it
+        state.update(|s| { s.process_scroll(); });
+
+        let current = state.get();
+        log::debug!("[List::build] Got state, items={}", current.items.len());
 
         // Calculate visible range
+        log::debug!("[List::build] Calculating visible items");
         let visible = self.calculate_visible_items(&current);
+        log::debug!("[List::build] Visible items: {}", visible.len());
 
-        // Create spacer for items above visible range
-        let top_spacer_height = visible
-            .first()
-            .map(|v| v.y_offset)
-            .unwrap_or(0);
+        // Create elements only for visible items (no spacers - we use ScrollState)
+        let mut children = Vec::with_capacity(visible.len());
 
-        // Create elements only for visible items
-        let mut children = Vec::with_capacity(visible.len() + 2);
-
-        if top_spacer_height > 0 {
-            children.push(Element::box_().height(Size::Fixed(top_spacer_height)));
-        }
-
-        for vis_item in &visible {
+        log::debug!("[List::build] Building {} item rows", visible.len());
+        let visible_count = visible.len();
+        let total_items = current.items.len();
+        for (pos_in_visible, vis_item) in visible.iter().enumerate() {
             let item = &current.items[vis_item.index];
             let row = self.build_item_row(
                 item,
+                vis_item.index,
+                pos_in_visible,
+                visible_count,
+                total_items,
                 &current.selection,
                 &list_id,
                 registry,
@@ -404,28 +436,30 @@ impl<'a, T: ListItem> List<HasListState<'a, T>> {
             );
             children.push(row);
         }
+        log::debug!("[List::build] Item rows built");
 
-        // Bottom spacer to maintain scroll height
-        let bottom_y = visible
-            .last()
-            .map(|v| {
-                let item = &current.items[v.index];
-                v.y_offset + item.height()
-            })
-            .unwrap_or(0);
-        let bottom_spacer_height = current.total_height().saturating_sub(bottom_y);
+        // NOTE: No spacers needed - we handle scroll position via ScrollState,
+        // not tuidom's scroll system. Just render visible items directly.
 
-        if bottom_spacer_height > 0 {
-            children.push(Element::box_().height(Size::Fixed(bottom_spacer_height)));
-        }
-
-        // Build content column (scrollable)
+        log::debug!("[List::build] Building content element with {} children, horizontal_scroll={}", children.len(), self.horizontal_scroll);
+        // Build content column:
+        // - overflow_x: Auto (if horizontal_scroll enabled) or Hidden (default)
+        // - overflow_y: Hidden - we handle vertical via virtualization (clips, no tuidom scrollbar)
+        // - scrollable: true - receive scroll events for vertical scrolling
+        let overflow_x = if self.horizontal_scroll {
+            Overflow::Auto
+        } else {
+            Overflow::Hidden
+        };
         let mut content = Element::col()
             .id(&content_id)
             .width(Size::Fill)
             .height(Size::Fill)
+            .overflow_x(overflow_x)
+            .overflow_y(Overflow::Hidden)
             .scrollable(true)
             .children(children);
+        log::debug!("[List::build] Content element built");
 
         if let Some(ref style) = self.style {
             content = content.style(style.clone());
@@ -434,46 +468,263 @@ impl<'a, T: ListItem> List<HasListState<'a, T>> {
             content = content.transitions(transitions.clone());
         }
 
-        // Register on_scroll handler
+        log::debug!("[List::build] Registering on_scroll handler");
+        // Register on_scroll handler (handles both mouse wheel and keyboard scroll)
         {
             let state_clone = state.clone();
+            let list_id_clone = list_id.clone();
             registry.register(
                 &content_id,
                 "on_scroll",
                 Arc::new(move |hx| {
+                    // Mouse wheel: delta
                     if let Some((_, delta_y)) = hx.event().scroll_delta() {
+                        log::debug!("[List::on_scroll] scroll_delta delta_y={}", delta_y);
                         state_clone.update(|s| {
                             s.scroll.scroll_by(delta_y);
                         });
+                    }
+                    // Page Up/Down/Home/End: scroll action from keyboard
+                    if let Some(action) = hx.event().scroll_action() {
+                        log::debug!("[List::on_scroll] scroll_action {:?}", action);
+
+                        // Apply the scroll action immediately
+                        state_clone.update(|s| {
+                            let scroll_request = match action {
+                                tuidom::ScrollAction::PageUp => super::scroll::ScrollRequest::PageUp,
+                                tuidom::ScrollAction::PageDown => super::scroll::ScrollRequest::PageDown,
+                                tuidom::ScrollAction::Home => super::scroll::ScrollRequest::Home,
+                                tuidom::ScrollAction::End => super::scroll::ScrollRequest::End,
+                            };
+                            s.scroll.apply_request(scroll_request);
+                        });
+
+                        // Calculate target based on NEW scroll position and focus it
+                        let current = state_clone.get();
+                        if current.items.is_empty() {
+                            return;
+                        }
+
+                        let target_index = match action {
+                            tuidom::ScrollAction::Home => 0,
+                            tuidom::ScrollAction::End => current.items.len() - 1,
+                            tuidom::ScrollAction::PageUp => {
+                                // Focus first visible item after scroll
+                                current.first_visible_index()
+                            }
+                            tuidom::ScrollAction::PageDown => {
+                                // Focus last visible item after scroll
+                                let first = current.first_visible_index();
+                                let viewport = current.scroll.viewport as usize;
+                                (first + viewport.saturating_sub(1)).min(current.items.len() - 1)
+                            }
+                        };
+
+                        if let Some(item) = current.items.get(target_index) {
+                            let item_id = format!("{}-item-{}", list_id_clone, item.key().to_string());
+                            log::debug!("[List::on_scroll] Focusing item: {} (index {})", item_id, target_index);
+                            hx.cx().focus(&item_id);
+                        }
                     }
                 }),
             );
         }
 
+        log::debug!("[List::build] Registering on_layout handler");
         // Register on_layout handler for viewport discovery
         {
             let state_clone = state.clone();
+            let has_horizontal_scroll = self.horizontal_scroll;
             registry.register(
                 &content_id,
                 "on_layout",
                 Arc::new(move |hx| {
                     if let Some((_, _, _, height)) = hx.event().layout() {
+                        // Subtract 1 for horizontal scrollbar only when horizontal_scroll is enabled
+                        // (horizontal scrollbar takes 1 row at bottom when content overflows)
+                        let viewport_height = if has_horizontal_scroll {
+                            height.saturating_sub(1)
+                        } else {
+                            height
+                        };
                         state_clone.update(|s| {
-                            s.scroll.set_viewport(height);
+                            s.scroll.set_viewport(viewport_height);
                         });
                     }
                 }),
             );
         }
 
+        log::debug!("[List::build] Checking scrollbar");
         // Add scrollbar if needed
         let show_scrollbar = self.show_scrollbar && current.scroll.can_scroll();
+        log::debug!("[List::build] show_scrollbar={}", show_scrollbar);
         if show_scrollbar {
+            let scrollbar_id = format!("{}-scrollbar", list_id);
             let scrollbar = Scrollbar::vertical()
-                .id(format!("{}-scrollbar", list_id))
+                .id(&scrollbar_id)
                 .scroll_state(&current.scroll)
                 .build();
 
+            // Register scrollbar handlers for click/drag scrolling
+            {
+                // on_layout: store scrollbar rect for position calculations
+                let state_clone = state.clone();
+                registry.register(
+                    &scrollbar_id,
+                    "on_layout",
+                    Arc::new(move |hx| {
+                        if let Some((x, y, width, height)) = hx.event().layout() {
+                            state_clone.update(|s| {
+                                s.scrollbar_rect = Some((x, y, width, height));
+                            });
+                        }
+                    }),
+                );
+
+                // on_activate: click on scrollbar - detect thumb vs track
+                let state_clone = state.clone();
+                registry.register(
+                    &scrollbar_id,
+                    "on_activate",
+                    Arc::new(move |hx| {
+                        if let Some((_, click_y)) = hx.event().click_position() {
+                            let current = state_clone.get();
+                            if let Some((_, track_y, _, track_height)) = current.scrollbar_rect {
+                                if track_height > 0 {
+                                    let content_size = current.scroll.content_height;
+                                    let viewport = current.scroll.viewport;
+                                    let max_offset = current.scroll.max_offset();
+                                    let current_offset = current.scroll.offset;
+
+                                    // Calculate thumb size and position (same as Scrollbar::build)
+                                    let thumb_size = if content_size == 0 {
+                                        track_height
+                                    } else {
+                                        let ratio = viewport as f32 / content_size as f32;
+                                        ((ratio * track_height as f32).round() as u16).clamp(1, track_height)
+                                    };
+
+                                    let thumb_pos = if max_offset == 0 {
+                                        0
+                                    } else {
+                                        let progress = current_offset as f32 / max_offset as f32;
+                                        let available_space = track_height.saturating_sub(thumb_size);
+                                        (progress * available_space as f32).round() as u16
+                                    };
+
+                                    let thumb_screen_start = track_y + thumb_pos;
+                                    let thumb_screen_end = thumb_screen_start + thumb_size;
+
+                                    // Check if click is on thumb or track
+                                    if click_y >= thumb_screen_start && click_y < thumb_screen_end {
+                                        // Clicked on thumb - just store grab offset, don't scroll
+                                        let grab_offset = click_y - thumb_screen_start;
+                                        log::debug!("[List::scrollbar] clicked on thumb, grab_offset={}", grab_offset);
+                                        state_clone.update(|s| {
+                                            s.drag_grab_offset = Some(grab_offset);
+                                        });
+                                    } else {
+                                        // Clicked on track - calculate proportional grab offset
+                                        let relative_y = click_y.saturating_sub(track_y);
+                                        let track_ratio = relative_y as f32 / track_height.max(1) as f32;
+                                        let grab_offset = ((track_ratio * thumb_size as f32).round() as u16)
+                                            .min(thumb_size.saturating_sub(1));
+
+                                        let scroll_range = track_height.saturating_sub(thumb_size);
+
+                                        // Calculate scroll position from click using grab offset
+                                        let thumb_start = click_y.saturating_sub(grab_offset);
+                                        let clamped_thumb_start = thumb_start.clamp(track_y, track_y + scroll_range);
+                                        let thumb_pos_in_track = clamped_thumb_start.saturating_sub(track_y);
+
+                                        // Convert thumb position to scroll offset
+                                        let new_offset = if scroll_range == 0 {
+                                            0
+                                        } else {
+                                            ((thumb_pos_in_track as u32 * max_offset as u32 + scroll_range as u32 / 2)
+                                                / scroll_range as u32)
+                                                .min(max_offset as u32) as u16
+                                        };
+
+                                        log::debug!("[List::scrollbar] clicked on track at y={}, grab_offset={}, new_offset={}",
+                                            click_y, grab_offset, new_offset);
+                                        state_clone.update(|s| {
+                                            s.scroll.offset = new_offset;
+                                            s.drag_grab_offset = Some(grab_offset);
+                                        });
+                                    }
+                                }
+                            }
+                        }
+                    }),
+                );
+
+                // on_drag: drag to scroll using grab offset
+                let state_clone = state.clone();
+                registry.register(
+                    &scrollbar_id,
+                    "on_drag",
+                    Arc::new(move |hx| {
+                        if let Some((_, drag_y)) = hx.event().drag_position() {
+                            let current = state_clone.get();
+                            if let Some((_, track_y, _, track_height)) = current.scrollbar_rect {
+                                if track_height > 0 {
+                                    let content_size = current.scroll.content_height;
+                                    let viewport = current.scroll.viewport;
+                                    let max_offset = current.scroll.max_offset();
+                                    let grab_offset = current.drag_grab_offset.unwrap_or(0);
+
+                                    // Calculate thumb size
+                                    let thumb_size = if content_size == 0 {
+                                        track_height
+                                    } else {
+                                        let ratio = viewport as f32 / content_size as f32;
+                                        ((ratio * track_height as f32).round() as u16).clamp(1, track_height)
+                                    };
+
+                                    let scroll_range = track_height.saturating_sub(thumb_size);
+
+                                    // Calculate thumb position from drag position and grab offset
+                                    let thumb_start = drag_y.saturating_sub(grab_offset);
+                                    let clamped_thumb_start = thumb_start.clamp(track_y, track_y + scroll_range);
+                                    let thumb_pos_in_track = clamped_thumb_start.saturating_sub(track_y);
+
+                                    // Convert thumb position to scroll offset
+                                    let new_offset = if scroll_range == 0 {
+                                        0
+                                    } else {
+                                        ((thumb_pos_in_track as u32 * max_offset as u32 + scroll_range as u32 / 2)
+                                            / scroll_range as u32)
+                                            .min(max_offset as u32) as u16
+                                    };
+
+                                    log::debug!("[List::scrollbar] drag at y={}, grab_offset={}, new_offset={}",
+                                        drag_y, grab_offset, new_offset);
+                                    state_clone.update(|s| {
+                                        s.scroll.offset = new_offset;
+                                    });
+                                }
+                            }
+                        }
+                    }),
+                );
+
+                // on_release: clear grab offset when drag ends
+                let state_clone = state.clone();
+                registry.register(
+                    &scrollbar_id,
+                    "on_release",
+                    Arc::new(move |_hx| {
+                        log::debug!("[List::scrollbar] release, clearing grab offset");
+                        state_clone.update(|s| {
+                            s.drag_grab_offset = None;
+                        });
+                    }),
+                );
+            }
+
+            log::debug!("[List::build] Build complete (with scrollbar)");
             Element::row()
                 .id(&list_id)
                 .width(Size::Fill)
@@ -481,6 +732,7 @@ impl<'a, T: ListItem> List<HasListState<'a, T>> {
                 .child(content)
                 .child(scrollbar)
         } else {
+            log::debug!("[List::build] Build complete (no scrollbar)");
             content.id(&list_id)
         }
     }
@@ -489,7 +741,6 @@ impl<'a, T: ListItem> List<HasListState<'a, T>> {
     fn calculate_visible_items(&self, state: &ListState<T>) -> Vec<VisibleItem> {
         let scroll_y = state.scroll.offset;
         let viewport = state.scroll.viewport;
-        let buffer = self.buffer;
 
         if state.items.is_empty() {
             return Vec::new();
@@ -500,19 +751,19 @@ impl<'a, T: ListItem> List<HasListState<'a, T>> {
 
         // O(log n) binary search to find first visible item
         let first_visible = state.item_at_offset(scroll_y);
-        let start_idx = first_visible.saturating_sub(buffer);
 
-        // O(log n) binary search to find last visible item
-        let last_visible = state.item_at_offset(scroll_y.saturating_add(effective_viewport));
-        let end_idx = (last_visible + buffer + 1).min(state.items.len());
+        // Calculate exactly how many items fit in viewport
+        let mut end_idx = first_visible;
+        let mut total_height: u16 = 0;
+        while end_idx < state.items.len() && total_height < effective_viewport {
+            total_height += state.item_height(end_idx);
+            end_idx += 1;
+        }
 
-        // Collect visible items with O(1) position lookups
-        let mut items = Vec::with_capacity(end_idx - start_idx);
-        for i in start_idx..end_idx {
-            items.push(VisibleItem {
-                index: i,
-                y_offset: state.item_y_offset(i),
-            });
+        // Collect visible items
+        let mut items = Vec::with_capacity(end_idx - first_visible);
+        for i in first_visible..end_idx {
+            items.push(VisibleItem { index: i });
         }
 
         items
@@ -522,6 +773,10 @@ impl<'a, T: ListItem> List<HasListState<'a, T>> {
     fn build_item_row(
         &self,
         item: &T,
+        item_index: usize,
+        pos_in_visible: usize,
+        visible_count: usize,
+        total_items: usize,
         selection: &Selection<T::Key>,
         list_id: &str,
         registry: &HandlerRegistry,
@@ -532,10 +787,20 @@ impl<'a, T: ListItem> List<HasListState<'a, T>> {
         let row_id = format!("{}-item-{}", list_id, key.to_string());
         let is_selected = selection.is_selected(&key);
 
+        // Check if this item is at a scroll boundary
+        let is_at_top_boundary = pos_in_visible == 0 && item_index > 0;
+        let is_at_bottom_boundary = pos_in_visible == visible_count - 1 && item_index < total_items - 1;
+
         // Build row element with item's rendered content
+        // Use Auto width for horizontal scrolling, Fill otherwise
+        let row_width = if self.horizontal_scroll {
+            Size::Auto
+        } else {
+            Size::Fill
+        };
         let mut row = Element::row()
             .id(&row_id)
-            .width(Size::Fill)
+            .width(row_width)
             .focusable(true)
             .clickable(true)
             .child(item.render());
@@ -571,6 +836,53 @@ impl<'a, T: ListItem> List<HasListState<'a, T>> {
 
         // Set explicit height for virtualization
         row = row.height(Size::Fixed(item.height()));
+
+        // Register key handler for boundary scrolling
+        // When Up/Down is pressed at a boundary, scroll and focus the next item
+        if is_at_top_boundary {
+            let state_clone = state.clone();
+            let list_id_clone = list_id.to_string();
+            let target_index = item_index.saturating_sub(1);
+            registry.register(
+                &row_id,
+                "on_key_up",
+                Arc::new(move |hx| {
+                    log::debug!("[List::on_key_up] at top boundary, scrolling up");
+                    state_clone.update(|s| {
+                        s.scroll.apply_request(super::scroll::ScrollRequest::Delta(-1));
+                    });
+                    // Focus the previous item
+                    let current = state_clone.get();
+                    if let Some(item) = current.items.get(target_index) {
+                        let item_id = format!("{}-item-{}", list_id_clone, item.key().to_string());
+                        log::debug!("[List::on_key_up] Focusing item: {}", item_id);
+                        hx.cx().focus(&item_id);
+                    }
+                }),
+            );
+        }
+        if is_at_bottom_boundary {
+            let state_clone = state.clone();
+            let list_id_clone = list_id.to_string();
+            let target_index = item_index + 1;
+            registry.register(
+                &row_id,
+                "on_key_down",
+                Arc::new(move |hx| {
+                    log::debug!("[List::on_key_down] at bottom boundary, scrolling down");
+                    state_clone.update(|s| {
+                        s.scroll.apply_request(super::scroll::ScrollRequest::Delta(1));
+                    });
+                    // Focus the next item
+                    let current = state_clone.get();
+                    if let Some(item) = current.items.get(target_index) {
+                        let item_id = format!("{}-item-{}", list_id_clone, item.key().to_string());
+                        log::debug!("[List::on_key_down] Focusing item: {}", item_id);
+                        hx.cx().focus(&item_id);
+                    }
+                }),
+            );
+        }
 
         // Register activation handler
         let state_clone = state.clone();

@@ -342,15 +342,20 @@ impl ScrollState {
                     delta_y,
                     x,
                     y,
+                    ..
                 } => {
                     log::debug!("[scroll] Event::Scroll at ({}, {}) delta=({}, {})", x, y, delta_x, delta_y);
                     // Update last mouse position from scroll events too
                     self.last_mouse_pos = Some((*x, *y));
 
-                    // If target is set, a .scrollable() element will handle this event
-                    // via the dispatcher - skip automatic handling
-                    if target.is_some() {
-                        log::debug!("[scroll] Skipping automatic scroll - target {:?} will handle via dispatcher", target);
+                    // If target is set (from .scrollable()), the handler deals with vertical scroll.
+                    // But we still want to process horizontal scroll via overflow_x: Auto/Scroll.
+                    // So only skip if there's no horizontal delta to process.
+                    let handler_handles_vertical = target.is_some() && *delta_y != 0;
+                    let has_horizontal_delta = *delta_x != 0;
+
+                    if handler_handles_vertical && !has_horizontal_delta {
+                        log::debug!("[scroll] Skipping automatic scroll - target {:?} handles vertical via dispatcher", target);
                         continue;
                     }
 
@@ -378,15 +383,15 @@ impl ScrollState {
                         let mut new_x = current.x;
                         let mut new_y = current.y;
 
-                        // Handle vertical scrolling
-                        if *delta_y != 0 && can_scroll_vertical {
+                        // Handle vertical scrolling (only if not handled by .scrollable() handler)
+                        if *delta_y != 0 && can_scroll_vertical && target.is_none() {
                             let max_scroll_y = content_height.saturating_sub(viewport_height);
                             new_y = (current.y as i32 + *delta_y as i32)
                                 .clamp(0, max_scroll_y as i32)
                                 as u16;
                         }
 
-                        // Handle horizontal scrolling
+                        // Handle horizontal scrolling (always process - handlers don't deal with this)
                         if *delta_x != 0 && can_scroll_horizontal {
                             let max_scroll_x = content_width.saturating_sub(viewport_width);
                             new_x = (current.x as i32 + *delta_x as i32)
@@ -423,15 +428,22 @@ impl ScrollState {
                         continue;
                     }
 
+                    log::debug!("[scroll] Key {:?} target={:?}", key, target);
+
                     // Find scrollable element: from focused element's ancestor, or under mouse
                     let scrollable_id = match target {
-                        Some(target_id) => find_scrollable_ancestor(root, target_id),
+                        Some(target_id) => {
+                            let result = find_scrollable_ancestor(root, target_id);
+                            log::debug!("[scroll] find_scrollable_ancestor({}) = {:?}", target_id, result);
+                            result
+                        }
                         None => self
                             .last_mouse_pos
                             .and_then(|(x, y)| find_scrollable_at(root, layout, x, y)),
                     };
 
                     let Some(scrollable_id) = scrollable_id else {
+                        log::debug!("[scroll] No scrollable found, skipping");
                         continue;
                     };
 
@@ -536,9 +548,12 @@ impl ScrollState {
                                 let mouse_pos = if drag.is_vertical { y } else { x };
                                 let scroll_pos = drag.geom.scroll_from_drag(mouse_pos, drag.grab_offset);
                                 let current = self.get(&drag.element_id);
+                                log::debug!("[scroll-drag] Drag: is_vertical={} mouse_pos={} scroll_pos={} current=({},{})",
+                                    drag.is_vertical, mouse_pos, scroll_pos, current.x, current.y);
                                 if drag.is_vertical {
                                     self.set(&drag.element_id, current.x, scroll_pos);
                                 } else {
+                                    log::debug!("[scroll-drag] Setting horizontal scroll to {} for {}", scroll_pos, drag.element_id);
                                     self.set(&drag.element_id, scroll_pos, current.y);
                                 }
                                 // Consume this event
@@ -589,7 +604,11 @@ fn collect_scrollable_with_elements(element: &Element) -> Vec<(String, &Element)
 }
 
 fn collect_scrollable_with_elements_recursive<'a>(element: &'a Element, result: &mut Vec<(String, &'a Element)>) {
-    if element.overflow == Overflow::Scroll || element.overflow == Overflow::Auto {
+    // Include elements with overflow scroll/auto (either axis) OR .scrollable(true)
+    let is_scrollable = element.overflow_x == Overflow::Scroll || element.overflow_x == Overflow::Auto
+        || element.overflow_y == Overflow::Scroll || element.overflow_y == Overflow::Auto
+        || element.scrollable;
+    if is_scrollable {
         result.push((element.id.clone(), element));
     }
     if let Content::Children(children) = &element.content {
@@ -612,6 +631,9 @@ fn check_scrollbar_hit(
     let (content_width, content_height) = layout.content_size(id)?;
     let (inner_width, inner_height) = layout.viewport_size(id)?;
     let current = scroll.get(id);
+
+    log::debug!("[scrollbar-hit] checking {} at ({},{}) rect={:?} content=({},{}) viewport=({},{})",
+        id, x, y, rect, content_width, content_height, inner_width, inner_height);
 
     let border_size = if element.style.border == crate::types::Border::None {
         0
@@ -646,14 +668,21 @@ fn check_scrollbar_hit(
     }
     let h_track_length = h_track_end.saturating_sub(h_track_start);
 
+    log::debug!("[scrollbar-hit] horizontal: scrollbar_y={} h_track={}..{} (len={}) click_y={} in_y_range={} in_x_range={}",
+        scrollbar_y, h_track_start, h_track_end, h_track_length,
+        y, y == scrollbar_y, x >= h_track_start && x < h_track_end);
+
     if y == scrollbar_y && x >= h_track_start && x < h_track_end {
         if let Some(geom) = ScrollbarGeometry::new(h_track_start, h_track_length, inner_width, content_width) {
             let thumb_offset = geom.hit_test_thumb(x, current.x);
+            log::debug!("[scrollbar-hit] HORIZONTAL HIT! geom={:?} thumb_offset={:?}", geom, thumb_offset);
             return Some(ScrollbarHit {
                 geom,
                 is_vertical: false,
                 thumb_offset,
             });
+        } else {
+            log::debug!("[scrollbar-hit] ScrollbarGeometry::new returned None (no overflow?)");
         }
     }
 
@@ -690,13 +719,59 @@ pub fn find_scrollable_ancestor(root: &Element, target_id: &str) -> Option<Strin
     find_scrollable_ancestor_recursive(root, target_id, None)
 }
 
+/// Find the nearest scrollable ancestor and return whether it's a `.scrollable()` element.
+/// Returns (element_id, is_fake_scrollable) where is_fake_scrollable is true for
+/// `.scrollable()` elements (which handle their own scrolling) vs overflow elements.
+pub fn find_scrollable_ancestor_with_type(root: &Element, target_id: &str) -> Option<(String, bool)> {
+    find_scrollable_ancestor_with_type_recursive(root, target_id, None)
+}
+
+fn find_scrollable_ancestor_with_type_recursive(
+    element: &Element,
+    target_id: &str,
+    current_scrollable: Option<(&str, bool)>,
+) -> Option<(String, bool)> {
+    // Update current scrollable ancestor if this element is scrollable
+    // Check .scrollable flag first (takes precedence for "fake" scrolling)
+    let has_overflow_scroll = element.overflow_x == Overflow::Scroll || element.overflow_x == Overflow::Auto
+        || element.overflow_y == Overflow::Scroll || element.overflow_y == Overflow::Auto;
+    let scrollable = if element.scrollable {
+        Some((element.id.as_str(), true))
+    } else if has_overflow_scroll {
+        Some((element.id.as_str(), false))
+    } else {
+        current_scrollable
+    };
+
+    // If this is the target, return the current scrollable ancestor
+    if element.id == target_id {
+        return scrollable.map(|(id, is_fake)| (id.to_string(), is_fake));
+    }
+
+    // Search children
+    if let Content::Children(children) = &element.content {
+        for child in children {
+            if let Some(result) = find_scrollable_ancestor_with_type_recursive(child, target_id, scrollable) {
+                return Some(result);
+            }
+        }
+    }
+
+    None
+}
+
 fn find_scrollable_ancestor_recursive(
     element: &Element,
     target_id: &str,
     current_scrollable: Option<&str>,
 ) -> Option<String> {
-    // Update current scrollable ancestor if this element is scrollable
-    let scrollable = if element.overflow == Overflow::Scroll || element.overflow == Overflow::Auto {
+    // Update current scrollable ancestor if this element is scrollable (overflow or .scrollable flag)
+    let is_scrollable = element.overflow_x == Overflow::Scroll || element.overflow_x == Overflow::Auto
+        || element.overflow_y == Overflow::Scroll || element.overflow_y == Overflow::Auto
+        || element.scrollable;
+    let scrollable = if is_scrollable {
+        log::trace!("[find_scrollable_ancestor] {} is scrollable (overflow_x={:?}, overflow_y={:?}, scrollable={})",
+            element.id, element.overflow_x, element.overflow_y, element.scrollable);
         Some(element.id.as_str())
     } else {
         current_scrollable
@@ -727,7 +802,11 @@ pub fn collect_scrollable(element: &Element) -> Vec<String> {
 }
 
 fn collect_scrollable_recursive(element: &Element, result: &mut Vec<String>) {
-    if element.overflow == Overflow::Scroll || element.overflow == Overflow::Auto {
+    // Include elements with overflow scroll/auto (either axis) OR .scrollable(true)
+    let is_scrollable = element.overflow_x == Overflow::Scroll || element.overflow_x == Overflow::Auto
+        || element.overflow_y == Overflow::Scroll || element.overflow_y == Overflow::Auto
+        || element.scrollable;
+    if is_scrollable {
         result.push(element.id.clone());
     }
     if let Content::Children(children) = &element.content {

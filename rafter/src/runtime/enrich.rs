@@ -8,7 +8,7 @@
 //! - Populates text input cursor/selection from TextInputState
 //! - Sets scroll_offset from ScrollState
 
-use tuidom::{Color, Content, Element, FocusState, ScrollState, TextInputState};
+use tuidom::{Color, Content, Element, FocusState, Overflow, ScrollState, TextInputState};
 
 /// Enrich elements with runtime state before rendering.
 ///
@@ -67,9 +67,33 @@ fn enrich_elements_inner(
         *focused = element.focused;
     }
 
-    // 5. Set scroll_offset from ScrollState
+    // 5. Set scroll_offset from ScrollState - per axis based on overflow mode
+    // Elements with overflow_x/overflow_y = Scroll/Auto use tuidom's scroll system for that axis
+    // Elements with .scrollable(true) handle scrolling via handlers (separate from overflow)
     let offset = scroll.get(&element.id);
-    element.scroll_offset = (offset.x, offset.y);
+
+    // Apply horizontal scroll offset if overflow_x is Scroll/Auto
+    let use_tuidom_scroll_x = element.overflow_x == Overflow::Scroll || element.overflow_x == Overflow::Auto;
+    let scroll_x = if use_tuidom_scroll_x { offset.x } else { 0 };
+
+    // Apply vertical scroll offset if overflow_y is Scroll/Auto
+    // BUT: if element has .scrollable(true), it handles vertical scroll via handlers instead
+    let use_tuidom_scroll_y = (element.overflow_y == Overflow::Scroll || element.overflow_y == Overflow::Auto)
+        && !element.scrollable;
+    let scroll_y = if use_tuidom_scroll_y { offset.y } else { 0 };
+
+    // Always log for elements with horizontal scroll enabled
+    if use_tuidom_scroll_x {
+        log::debug!("[enrich] {} use_tuidom_scroll_x=true offset=({},{}) setting scroll_offset=({},{})",
+            element.id, offset.x, offset.y, scroll_x, scroll_y);
+    }
+
+    element.scroll_offset = (scroll_x, scroll_y);
+
+    // Verify the scroll_offset was actually set
+    if use_tuidom_scroll_x && element.scroll_offset != (scroll_x, scroll_y) {
+        log::error!("[enrich] BUG: scroll_offset wasn't set correctly!");
+    }
 
     // 6. Recurse into children, passing this element's foreground for inheritance
     let child_foreground = element.style.foreground.as_ref();

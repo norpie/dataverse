@@ -60,6 +60,8 @@ pub enum EventData {
         /// The element that received focus (if any).
         new_target: Option<String>,
     },
+    /// Element gained focus.
+    Focus,
     /// Scroll position changed (for observing automatic scroll results).
     Scroll {
         /// Current horizontal scroll offset.
@@ -81,6 +83,8 @@ pub enum EventData {
         delta_x: i16,
         /// Vertical scroll delta (negative = up, positive = down).
         delta_y: i16,
+        /// Scroll action for keyboard-triggered scrolling (PageUp, PageDown, Home, End).
+        action: Option<tuidom::ScrollAction>,
     },
     /// Layout dimensions available (for `on_layout` handlers).
     Layout {
@@ -92,6 +96,20 @@ pub enum EventData {
         width: u16,
         /// Element height.
         height: u16,
+    },
+    /// Click event with position.
+    Click {
+        /// Screen X position of click.
+        x: u16,
+        /// Screen Y position of click.
+        y: u16,
+    },
+    /// Drag event with position.
+    Drag {
+        /// Screen X position during drag.
+        x: u16,
+        /// Screen Y position during drag.
+        y: u16,
     },
 }
 
@@ -178,7 +196,15 @@ impl EventData {
     /// Get scroll input delta (x, y) from a ScrollInput event.
     pub fn scroll_delta(&self) -> Option<(i16, i16)> {
         match self {
-            EventData::ScrollInput { delta_x, delta_y } => Some((*delta_x, *delta_y)),
+            EventData::ScrollInput { delta_x, delta_y, .. } => Some((*delta_x, *delta_y)),
+            _ => None,
+        }
+    }
+
+    /// Get scroll action (PageUp, PageDown, Home, End) from a ScrollInput event.
+    pub fn scroll_action(&self) -> Option<tuidom::ScrollAction> {
+        match self {
+            EventData::ScrollInput { action, .. } => *action,
             _ => None,
         }
     }
@@ -195,6 +221,22 @@ impl EventData {
     pub fn layout_size(&self) -> Option<(u16, u16)> {
         match self {
             EventData::Layout { width, height, .. } => Some((*width, *height)),
+            _ => None,
+        }
+    }
+
+    /// Get click position (x, y) from a Click event.
+    pub fn click_position(&self) -> Option<(u16, u16)> {
+        match self {
+            EventData::Click { x, y } => Some((*x, *y)),
+            _ => None,
+        }
+    }
+
+    /// Get drag position (x, y) from a Drag event.
+    pub fn drag_position(&self) -> Option<(u16, u16)> {
+        match self {
+            EventData::Drag { x, y } => Some((*x, *y)),
             _ => None,
         }
     }

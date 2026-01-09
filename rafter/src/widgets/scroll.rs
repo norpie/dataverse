@@ -244,10 +244,11 @@ pub struct ScrollbarStyle {
 impl Default for ScrollbarStyle {
     fn default() -> Self {
         Self {
-            track_char: '│',
+            track_char: '░',
             thumb_char: '█',
-            track_style: Style::new().foreground(Color::var("scrollbar.track")),
-            thumb_style: Style::new().foreground(Color::var("scrollbar.thumb")),
+            // Match tuidom's scrollbar colors: dark gray track, lighter gray thumb
+            track_style: Style::new().foreground(Color::Rgb { r: 60, g: 60, b: 60 }),
+            thumb_style: Style::new().foreground(Color::Rgb { r: 150, g: 150, b: 150 }),
         }
     }
 }
@@ -327,11 +328,7 @@ impl Scrollbar {
     pub fn horizontal() -> Self {
         Self {
             orientation: Orientation::Horizontal,
-            style: ScrollbarStyle {
-                track_char: '─',
-                thumb_char: '█',
-                ..Default::default()
-            },
+            // Horizontal uses same style as vertical (░ for track, █ for thumb)
             ..Default::default()
         }
     }
@@ -368,9 +365,21 @@ impl Scrollbar {
     pub fn build(self) -> Element {
         let id = self.id.clone().unwrap_or_else(|| "scrollbar".into());
 
+        log::debug!(
+            "[Scrollbar::build] viewport={} content_size={} offset={}",
+            self.viewport, self.content_size, self.offset
+        );
+
         // Calculate thumb size and position
         let track_size = self.viewport;
         let max_offset = self.content_size.saturating_sub(self.viewport);
+        log::debug!("[Scrollbar::build] track_size={} max_offset={}", track_size, max_offset);
+
+        // If viewport is 0, return empty element (happens on first frame before layout)
+        if track_size == 0 {
+            log::debug!("[Scrollbar::build] track_size=0, returning empty element");
+            return Element::col().id(&id).width(Size::Fixed(1)).height(Size::Fill);
+        }
 
         // Thumb size proportional to viewport/content ratio
         let thumb_size = if self.content_size == 0 {
@@ -421,6 +430,7 @@ impl Scrollbar {
             .id(id)
             .width(Size::Fixed(1))
             .height(Size::Fill)
+            .clickable(true)
             .children(children)
     }
 

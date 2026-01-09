@@ -48,6 +48,10 @@ struct RenderItem<'a> {
     /// Cumulative layout_position offset from ancestors (dx, dy).
     /// Children inherit their parent's animation offset.
     layout_offset: (i16, i16),
+    /// Accumulated scroll offset from ancestors.
+    /// When a parent has overflow scroll, its children inherit this offset
+    /// so their content renders shifted within the clipping region.
+    inherited_scroll: (u16, u16),
 }
 
 /// Timing stats for render operations (in microseconds).
@@ -82,6 +86,7 @@ pub fn render_to_buffer(
         element.z_index,
         None,
         (0, 0), // Initial layout offset
+        (0, 0), // Initial inherited scroll
         animation,
     );
     let t1 = Instant::now();
@@ -109,6 +114,7 @@ pub fn render_to_buffer(
             buf,
             item.clip,
             item.layout_offset,
+            item.inherited_scroll,
             animation,
             &mut stats,
             &mut oklch_cache,
@@ -139,6 +145,7 @@ fn collect_elements<'a>(
     parent_z_index: i16,
     parent_clip: Option<Rect>,
     parent_layout_offset: (i16, i16),
+    parent_inherited_scroll: (u16, u16),
     animation: &AnimationState,
 ) -> usize {
     let mut order = tree_order;
@@ -164,7 +171,9 @@ fn collect_elements<'a>(
     );
 
     // Compute this element's clip rect for its children
-    let child_clip = if element.overflow != Overflow::Visible {
+    // Clip if either axis has non-Visible overflow
+    let clips_children = element.overflow_x != Overflow::Visible || element.overflow_y != Overflow::Visible;
+    let child_clip = if clips_children {
         // This element clips its children - compute inner bounds
         if let Some(rect) = layout.get(&element.id) {
             let border_size = if element.style.border == crate::types::Border::None {
@@ -173,35 +182,36 @@ fn collect_elements<'a>(
                 1
             };
             // Reserve space for scrollbars so children don't render over them
-            let (scrollbar_right, scrollbar_bottom) = match element.overflow {
-                Overflow::Scroll => (1, 1), // Always reserve for scroll
+            // Vertical scrollbar (right side) based on overflow_y
+            let scrollbar_right = match element.overflow_y {
+                Overflow::Scroll => 1,
                 Overflow::Auto => {
-                    // Only reserve if content actually overflows
-                    if let Some((cw, ch)) = layout.content_size(&element.id) {
-                        // Compare content size to viewport (inner area after padding/border)
-                        let viewport_w = rect.width.saturating_sub(
-                            element.padding.left + element.padding.right + border_size * 2,
-                        );
+                    if let Some((_, ch)) = layout.content_size(&element.id) {
                         let viewport_h = rect.height.saturating_sub(
                             element.padding.top + element.padding.bottom + border_size * 2,
                         );
-                        let has_v_overflow = ch > viewport_h;
-                        let has_h_overflow = cw > viewport_w;
-                        log::debug!(
-                            "[clip] id={} content=({},{}) viewport=({},{}) overflow=({},{})",
-                            element.id, cw, ch, viewport_w, viewport_h, has_h_overflow, has_v_overflow
-                        );
-                        (
-                            if has_v_overflow { 1 } else { 0 },
-                            if has_h_overflow { 1 } else { 0 },
-                        )
-                    } else {
-                        log::debug!("[clip] id={} no content_size", element.id);
-                        (0, 0)
-                    }
+                        if ch > viewport_h { 1 } else { 0 }
+                    } else { 0 }
                 }
-                _ => (0, 0),
+                _ => 0,
             };
+            // Horizontal scrollbar (bottom) based on overflow_x
+            let scrollbar_bottom = match element.overflow_x {
+                Overflow::Scroll => 1,
+                Overflow::Auto => {
+                    if let Some((cw, _)) = layout.content_size(&element.id) {
+                        let viewport_w = rect.width.saturating_sub(
+                            element.padding.left + element.padding.right + border_size * 2 + scrollbar_right,
+                        );
+                        if cw > viewport_w { 1 } else { 0 }
+                    } else { 0 }
+                }
+                _ => 0,
+            };
+            log::debug!(
+                "[clip] id={} overflow_x={:?} overflow_y={:?} scrollbar_reserve=({},{})",
+                element.id, element.overflow_x, element.overflow_y, scrollbar_right, scrollbar_bottom
+            );
             let inner = rect.shrink(
                 element.padding.top + border_size,
                 element.padding.right + border_size + scrollbar_right,
@@ -227,8 +237,17 @@ fn collect_elements<'a>(
         tree_order: order,
         clip: parent_clip, // This element is clipped by parent's clip
         layout_offset: cumulative_offset,
+        inherited_scroll: parent_inherited_scroll,
     });
     order += 1;
+
+    // Accumulate scroll offset for children.
+    // When this element has overflow scroll, its children inherit this scroll offset
+    // so their content is rendered shifted within the clipping region.
+    let child_scroll = (
+        parent_inherited_scroll.0.saturating_add(element.scroll_offset.0),
+        parent_inherited_scroll.1.saturating_add(element.scroll_offset.1),
+    );
 
     match &element.content {
         Content::Children(children) => {
@@ -246,6 +265,7 @@ fn collect_elements<'a>(
                     effective_z,
                     child_clip,
                     cumulative_offset,
+                    child_scroll,
                     animation,
                 );
             }
@@ -264,6 +284,7 @@ fn collect_elements<'a>(
                         effective_z,
                         child_clip,
                         cumulative_offset,
+                        child_scroll,
                         animation,
                     );
                 }
@@ -297,6 +318,7 @@ fn render_single_element_timed(
     buf: &mut Buffer,
     clip: Option<Rect>,
     layout_offset: (i16, i16),
+    inherited_scroll: (u16, u16),
     animation: &AnimationState,
     stats: &mut RenderStats,
     oklch_cache: &mut OklchCache,
@@ -369,7 +391,7 @@ fn render_single_element_timed(
     match &element.content {
         Content::None | Content::Children(_) | Content::Frames { .. } => {}
         Content::Text(text) => {
-            render_text(text, element, rect, buf, clip, animation, oklch_cache);
+            render_text(text, element, rect, buf, clip, inherited_scroll, animation, oklch_cache);
         }
         Content::TextInput {
             value,
@@ -448,6 +470,7 @@ fn render_text(
     rect: Rect,
     buf: &mut Buffer,
     clip: Option<Rect>,
+    inherited_scroll: (u16, u16),
     animation: &AnimationState,
     oklch_cache: &mut OklchCache,
 ) {
@@ -490,6 +513,7 @@ fn render_text(
     }
 
     let max_width = inner.width as usize;
+    let scroll_x = inherited_scroll.0;
 
     // Get lines based on wrap mode
     let lines: Vec<String> = match element.text_wrap {
@@ -529,9 +553,12 @@ fn render_text(
             let line_width = display_width(line);
             align_offset(line_width, max_width, element.text_align) as u16
         };
-        let mut x = inner.x + x_offset;
 
-        // Render characters
+        // Track logical position within content (before scroll)
+        // logical_x is the offset from (inner.x + x_offset)
+        let mut logical_x = 0u16;
+
+        // Render characters with scroll offset applied
         for ch in line.chars() {
             let ch_w = char_width(ch);
 
@@ -540,24 +567,33 @@ fn render_text(
                 continue;
             }
 
+            // Skip characters that are fully scrolled off the left edge
+            if logical_x + ch_w as u16 <= scroll_x {
+                logical_x += ch_w as u16;
+                continue;
+            }
+
+            // Calculate render position: shift left by scroll_x amount
+            let render_x = inner.x + x_offset + logical_x.saturating_sub(scroll_x);
+
             // Check if we have room for the full character width
-            if x + ch_w as u16 > inner.right() {
+            if render_x + ch_w as u16 > inner.right() {
                 break;
             }
 
             // Skip if clipped horizontally
             if let Some(c) = clip {
-                if x < c.x || x >= c.right() {
-                    x += ch_w as u16;
+                if render_x < c.x || render_x >= c.right() {
+                    logical_x += ch_w as u16;
                     continue;
                 }
             }
 
             // Preserve existing background if no explicit background set
-            let bg = explicit_bg.or_else(|| buf.get(x, y).and_then(|c| c.bg));
+            let bg = explicit_bg.or_else(|| buf.get(render_x, y).and_then(|c| c.bg));
 
             buf.set(
-                x,
+                render_x,
                 y,
                 Cell::new(ch)
                     .with_fg(fg)
@@ -566,9 +602,9 @@ fn render_text(
             );
 
             // For wide chars (CJK), fill the next cell with a continuation marker
-            if ch_w == 2 && x + 1 < inner.right() {
+            if ch_w == 2 && render_x + 1 < inner.right() {
                 // Only render continuation if not clipped
-                let cont_x = x + 1;
+                let cont_x = render_x + 1;
                 if clip.is_none_or(|c| cont_x >= c.x && cont_x < c.right()) {
                     let mut continuation = Cell::new(' ')
                         .with_fg(fg)
@@ -579,7 +615,7 @@ fn render_text(
                 }
             }
 
-            x += ch_w as u16;
+            logical_x += ch_w as u16;
         }
     }
 }
@@ -896,8 +932,10 @@ fn render_scrollbar(
     content_size: Option<(u16, u16)>,
     viewport_size: Option<(u16, u16)>,
 ) {
-    // Only render scrollbar for Scroll/Auto
-    if element.overflow != Overflow::Scroll && element.overflow != Overflow::Auto {
+    // Only render scrollbar if at least one axis has Scroll/Auto
+    let has_scrollbar_x = element.overflow_x == Overflow::Scroll || element.overflow_x == Overflow::Auto;
+    let has_scrollbar_y = element.overflow_y == Overflow::Scroll || element.overflow_y == Overflow::Auto;
+    if !has_scrollbar_x && !has_scrollbar_y {
         return;
     }
 
@@ -927,8 +965,8 @@ fn render_scrollbar(
 
     // For Auto, only show scrollbar if content overflows
     // For Scroll, always show the scrollbar
-    let show_vertical = element.overflow == Overflow::Scroll || overflows_vertical;
-    let show_horizontal = element.overflow == Overflow::Scroll || overflows_horizontal;
+    let show_vertical = element.overflow_y == Overflow::Scroll || (element.overflow_y == Overflow::Auto && overflows_vertical);
+    let show_horizontal = element.overflow_x == Overflow::Scroll || (element.overflow_x == Overflow::Auto && overflows_horizontal);
 
     log::debug!(
         "  overflows_v={} overflows_h={} show_v={} show_h={}",

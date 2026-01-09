@@ -40,7 +40,7 @@ fn generate_items(count: usize) -> Vec<PerfItem> {
     (0..count as u64)
         .map(|id| PerfItem {
             id,
-            label: format!("Item number {} - performance test entry", id + 1),
+            label: format!("Item {} {}", id + 1, "X".repeat(500)),
         })
         .collect()
 }
@@ -64,12 +64,18 @@ impl PerfListExample {
         bind("1", load_1k);
         bind("2", load_10k);
         bind("3", load_100k);
+        bind("4", load_50);
         bind("c", clear);
     }
 
     #[handler]
     async fn quit(&self, gx: &GlobalContext) {
         gx.shutdown();
+    }
+
+    #[handler]
+    async fn load_50(&self) {
+        self.load_items(50);
     }
 
     #[handler]
@@ -107,7 +113,7 @@ impl PerfListExample {
         let status = self.status.get();
 
         page! {
-            column (padding: 2, gap: 1, height: fill, width: fill) {
+            column (padding: 0, gap: 1, height: fill, width: fill) {
                 // Header
                 text (content: "Performance List Example") style (bold)
                 text (content: "Test virtualization with large lists")
@@ -117,6 +123,7 @@ impl PerfListExample {
                     button (id: "btn-1k", label: "1K Items") on_activate: load_1k()
                     button (id: "btn-10k", label: "10K Items") on_activate: load_10k()
                     button (id: "btn-100k", label: "100K Items") on_activate: load_100k()
+                    button (id: "btn-50", label: "50 Items") on_activate: load_50()
                     button (id: "btn-clear", label: "Clear") on_activate: clear()
                 }
 
@@ -127,10 +134,8 @@ impl PerfListExample {
                     text (content: {format!("[{} items]", count)})
                 }
 
-                // Scrollable list (virtualization is automatic)
-                box_ (id: "perf-scroll", height: fill, width: fill, overflow: auto) {
-                    list (state: self.items, id: "perf-list")
-                }
+                // Virtualized list (has its own scrollbar, horizontal scroll enabled)
+                list (state: self.items, id: "perf-list", height: fill, horizontal_scroll: true)
 
                 // Footer
                 row (gap: 2) {
