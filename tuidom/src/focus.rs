@@ -99,6 +99,7 @@ impl FocusState {
 
     /// Focus the nearest focusable element in the given direction.
     /// Returns the newly focused element ID if focus changed.
+    /// Higher z-index elements are prioritized (e.g., dropdown overlays).
     pub fn focus_direction(
         &mut self,
         direction: NavDirection,
@@ -108,18 +109,22 @@ impl FocusState {
         let current_id = self.focused.as_ref()?;
         let current_rect = layout.get(current_id)?;
 
-        let focusable = collect_focusable(root);
+        let focusable = collect_focusable_with_z(root);
 
         // Find the best candidate in the given direction
+        // Score is (negative z_index, spatial_score) so higher z-index wins, then closer spatial
         let best = focusable
             .iter()
-            .filter(|id| *id != current_id)
-            .filter_map(|id| {
+            .filter(|(id, _)| id != current_id)
+            .filter_map(|(id, z_index)| {
                 let rect = layout.get(id)?;
-                let score = direction_score(current_rect, rect, direction)?;
-                Some((id, score))
+                let spatial_score = direction_score(current_rect, rect, direction)?;
+                // Negative z_index so higher z-index sorts first (lower score = better)
+                Some((id, (-(*z_index as i32), spatial_score)))
             })
-            .min_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))?;
+            .min_by(|(_, a), (_, b)| {
+                a.0.cmp(&b.0).then_with(|| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal))
+            })?;
 
         let new_focus = best.0.clone();
         if self.focused.as_ref() != Some(&new_focus) {
@@ -186,7 +191,8 @@ impl FocusState {
                     }
 
                     // Handle arrow keys for spatial navigation (only without modifiers)
-                    // Skip if focused element captures input (for text cursor movement)
+                    // Skip Left/Right if focused element captures input (for text cursor movement)
+                    // But allow Up/Down even for text inputs (they don't move cursor in single-line inputs)
                     let focused_captures_input = self
                         .focused
                         .as_ref()
@@ -194,12 +200,13 @@ impl FocusState {
                         .map(|el| el.captures_input)
                         .unwrap_or(false);
 
-                    if modifiers.none() && !focused_captures_input {
+                    if modifiers.none() {
                         let direction = match key {
                             Key::Up => Some(NavDirection::Up),
                             Key::Down => Some(NavDirection::Down),
-                            Key::Left => Some(NavDirection::Left),
-                            Key::Right => Some(NavDirection::Right),
+                            // Left/Right only navigate when not in a text input
+                            Key::Left if !focused_captures_input => Some(NavDirection::Left),
+                            Key::Right if !focused_captures_input => Some(NavDirection::Right),
                             _ => None,
                         };
 
@@ -357,6 +364,32 @@ fn collect_focusable_recursive(element: &Element, result: &mut Vec<String>) {
     if let Content::Children(children) = &element.content {
         for child in children {
             collect_focusable_recursive(child, result);
+        }
+    }
+}
+
+/// Collect all focusable elements with their effective z-index.
+/// Used for keyboard navigation to prioritize higher z-index elements (overlays).
+fn collect_focusable_with_z(element: &Element) -> Vec<(String, i16)> {
+    let mut result = Vec::new();
+    collect_focusable_with_z_recursive(element, 0, &mut result);
+    result
+}
+
+fn collect_focusable_with_z_recursive(element: &Element, inherited_z: i16, result: &mut Vec<(String, i16)>) {
+    // Effective z-index: use element's z_index if set, otherwise inherit
+    let effective_z = if element.z_index != 0 {
+        element.z_index
+    } else {
+        inherited_z
+    };
+
+    if element.focusable {
+        result.push((element.id.clone(), effective_z));
+    }
+    if let Content::Children(children) = &element.content {
+        for child in children {
+            collect_focusable_with_z_recursive(child, effective_z, result);
         }
     }
 }
