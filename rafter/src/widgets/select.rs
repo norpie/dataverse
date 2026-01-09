@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use tuidom::{Element, Style, Transitions};
+use tuidom::{Color, Element, Style, Transitions};
 
 use crate::state::State;
 use crate::{HandlerRegistry, WidgetHandlers};
@@ -227,12 +227,16 @@ impl<'a, T: Clone + PartialEq + Send + Sync + 'static> Select<HasState<'a, T>> {
         if let Some(style) = self.style.clone() {
             toggle = toggle.style(style);
         }
-        if let Some(style) = self.style_focused.clone() {
-            toggle = toggle.style_focused(style);
-        }
-        if let Some(style) = self.style_disabled.clone() {
-            toggle = toggle.style_disabled(style);
-        }
+        let focused_style = self
+            .style_focused
+            .clone()
+            .unwrap_or_else(|| Style::new().background(Color::var("select.focused")));
+        let disabled_style = self
+            .style_disabled
+            .clone()
+            .unwrap_or_else(|| Style::new().background(Color::var("select.disabled")));
+        toggle = toggle.style_focused(focused_style);
+        toggle = toggle.style_disabled(disabled_style);
         if let Some(transitions) = self.transitions.clone() {
             toggle = toggle.transitions(transitions);
         }
@@ -289,7 +293,7 @@ impl<'a, T: Clone + PartialEq + Send + Sync + 'static> Select<HasState<'a, T>> {
                     .width(tuidom::Size::Fill)
                     .focusable(true)
                     .clickable(true)
-                    .style_focused(Style::new().background(tuidom::Color::var("accent")))
+                    .style_focused(Style::new().background(Color::var("select.item_focused")))
                     .child(text_elem);
 
                 options_col = options_col.child(opt_elem);
@@ -345,7 +349,7 @@ impl<'a, T: Clone + PartialEq + Send + Sync + 'static> Select<HasState<'a, T>> {
                 .height(Size::Fixed(dropdown_height)) // Cap height for scrolling
                 .overflow(Overflow::Auto) // Enable scrolling when content overflows
                 .z_index(100) // Render above other content
-                .style(Style::new().background(tuidom::Color::var("surface")));
+                .style(Style::new().background(Color::var("select.dropdown_bg")));
 
             Element::box_()
                 .width(Size::Fixed(min_width))

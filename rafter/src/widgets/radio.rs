@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use tuidom::{Element, Style, Transitions};
+use tuidom::{Color, Element, Style, Transitions};
 
 use crate::state::State;
 use crate::{HandlerRegistry, WidgetHandlers};
@@ -222,12 +222,16 @@ impl<'a, T: Clone + PartialEq + Send + Sync + 'static> RadioGroup<HasState<'a, T
                 .disabled(self.disabled)
                 .children(vec![indicator_elem, label_elem]);
 
-            if let Some(style) = self.style_focused.clone() {
-                opt_row = opt_row.style_focused(style);
-            }
-            if let Some(style) = self.style_disabled.clone() {
-                opt_row = opt_row.style_disabled(style);
-            }
+            let focused_style = self
+                .style_focused
+                .clone()
+                .unwrap_or_else(|| Style::new().background(Color::var("radio.focused")));
+            let disabled_style = self
+                .style_disabled
+                .clone()
+                .unwrap_or_else(|| Style::new().background(Color::var("radio.disabled")));
+            opt_row = opt_row.style_focused(focused_style);
+            opt_row = opt_row.style_disabled(disabled_style);
 
             container = container.child(opt_row);
 

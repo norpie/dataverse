@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use tuidom::{Element, Style, Transitions};
+use tuidom::{Color, Element, Style, Transitions};
 
 use crate::state::State;
 use crate::{HandlerRegistry, WidgetHandlers};
@@ -158,9 +158,11 @@ impl<'a> Collapsible<HasState<'a>> {
         if let Some(style) = self.header_style {
             header_row = header_row.style(style);
         }
-        if let Some(style) = self.style_focused.clone() {
-            header_row = header_row.style_focused(style);
-        }
+        let focused_style = self
+            .style_focused
+            .clone()
+            .unwrap_or_else(|| Style::new().background(Color::var("collapsible.focused")));
+        header_row = header_row.style_focused(focused_style);
 
         // Register toggle handler
         let state_clone = state.clone();

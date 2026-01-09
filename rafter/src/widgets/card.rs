@@ -1,6 +1,6 @@
 //! Card widget - a container with optional header styling.
 
-use tuidom::{Element, Style, Transitions};
+use tuidom::{Color, Element, Style, Transitions};
 
 use crate::{HandlerRegistry, WidgetHandlers};
 
@@ -88,12 +88,14 @@ impl Card {
         if let Some(style) = self.style {
             elem = elem.style(style);
         }
-        if let Some(style) = self.style_focused {
-            elem = elem.style_focused(style);
-        }
-        if let Some(style) = self.style_disabled {
-            elem = elem.style_disabled(style);
-        }
+        let focused_style = self
+            .style_focused
+            .unwrap_or_else(|| Style::new().background(Color::var("card.focused")));
+        let disabled_style = self
+            .style_disabled
+            .unwrap_or_else(|| Style::new().background(Color::var("card.disabled")));
+        elem = elem.style_focused(focused_style);
+        elem = elem.style_disabled(disabled_style);
         if let Some(transitions) = self.transitions {
             elem = elem.transitions(transitions);
         }

@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use nucleo_matcher::pattern::{AtomKind, CaseMatching, Normalization, Pattern};
 use nucleo_matcher::{Config, Matcher, Utf32Str};
-use tuidom::{Element, Overflow, Position, Size, Style, Transitions};
+use tuidom::{Color, Element, Overflow, Position, Size, Style, Transitions};
 
 use crate::state::State;
 use crate::{HandlerRegistry, WidgetHandlers};
@@ -329,12 +329,16 @@ impl<'a, T: Clone + PartialEq + Send + Sync + 'static> Autocomplete<HasState<'a,
         if let Some(style) = self.style.clone() {
             input = input.style(style);
         }
-        if let Some(style) = self.style_focused.clone() {
-            input = input.style_focused(style);
-        }
-        if let Some(style) = self.style_disabled.clone() {
-            input = input.style_disabled(style);
-        }
+        let focused_style = self
+            .style_focused
+            .clone()
+            .unwrap_or_else(|| Style::new().background(Color::var("autocomplete.focused")));
+        let disabled_style = self
+            .style_disabled
+            .clone()
+            .unwrap_or_else(|| Style::new().background(Color::var("autocomplete.disabled")));
+        input = input.style_focused(focused_style);
+        input = input.style_disabled(disabled_style);
         if let Some(transitions) = self.transitions.clone() {
             input = input.transitions(transitions);
         }
@@ -441,7 +445,7 @@ impl<'a, T: Clone + PartialEq + Send + Sync + 'static> Autocomplete<HasState<'a,
                         .width(Size::Fill)
                         .focusable(true)
                         .clickable(true)
-                        .style_focused(Style::new().background(tuidom::Color::var("accent")))
+                        .style_focused(Style::new().background(Color::var("autocomplete.item_focused")))
                         .child(text_elem);
 
                     options_col = options_col.child(opt_elem);
@@ -498,7 +502,7 @@ impl<'a, T: Clone + PartialEq + Send + Sync + 'static> Autocomplete<HasState<'a,
                 .height(Size::Fixed(dropdown_height))
                 .overflow(Overflow::Auto)
                 .z_index(100)
-                .style(Style::new().background(tuidom::Color::var("surface")));
+                .style(Style::new().background(Color::var("autocomplete.dropdown_bg")));
 
             Element::box_()
                 .width(Size::Fixed(min_width))

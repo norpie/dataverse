@@ -1,6 +1,6 @@
 //! Checkbox widget - a toggleable checkbox with optional label.
 
-use tuidom::{Element, Style, Transitions};
+use tuidom::{Color, Element, Style, Transitions};
 
 use crate::{HandlerRegistry, State, WidgetHandlers};
 
@@ -188,11 +188,21 @@ impl<'a> Checkbox<HasState<'a>> {
         }
 
         // Build the full element (indicator + optional label)
+        let focused_style = self
+            .style_focused
+            .clone()
+            .unwrap_or_else(|| Style::new().background(Color::var("checkbox.focused")));
+        let disabled_style = self
+            .style_disabled
+            .clone()
+            .unwrap_or_else(|| Style::new().background(Color::var("checkbox.disabled")));
+
         let mut elem = if let Some(label_text) = &self.label {
             let mut label_elem = Element::text(label_text);
             if let Some(label_style) = self.label_style.clone() {
                 label_elem = label_elem.style(label_style);
             }
+            label_elem = label_elem.style_focused(focused_style.clone());
 
             Element::row()
                 .gap(1)
@@ -205,14 +215,10 @@ impl<'a> Checkbox<HasState<'a>> {
             .id(&id)
             .focusable(!self.disabled)
             .clickable(!self.disabled)
-            .disabled(self.disabled);
+            .disabled(self.disabled)
+            .style_focused(focused_style);
 
-        if let Some(style) = self.style_focused {
-            elem = elem.style_focused(style);
-        }
-        if let Some(style) = self.style_disabled {
-            elem = elem.style_disabled(style);
-        }
+        elem = elem.style_disabled(disabled_style);
         if let Some(transitions) = self.transitions {
             elem = elem.transitions(transitions);
         }

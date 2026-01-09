@@ -3,7 +3,7 @@
 use std::hash::Hash;
 use std::sync::Arc;
 
-use tuidom::{Element, Style, Transitions};
+use tuidom::{Color, Element, Style, Transitions};
 
 use crate::state::State;
 use crate::{HandlerRegistry, WidgetHandlers};
@@ -236,9 +236,8 @@ impl<'a, T: ListItem> List<HasListState<'a, T>> {
                 if let Some(ref style) = self.item_style_selected {
                     row = row.style(style.clone());
                 } else {
-                    // Default selected style: dimmed accent background
                     row = row.style(
-                        Style::new().background(tuidom::Color::var("accent").darken(0.3)),
+                        Style::new().background(Color::var("list.item_selected")),
                     );
                 }
             }
@@ -247,8 +246,9 @@ impl<'a, T: ListItem> List<HasListState<'a, T>> {
             if let Some(ref style) = self.item_style_focused {
                 row = row.style_focused(style.clone());
             } else {
-                // Default focused style: accent background
-                row = row.style_focused(Style::new().background(tuidom::Color::var("accent")));
+                row = row.style_focused(
+                    Style::new().background(Color::var("list.item_focused")),
+                );
             }
 
             rows.push(row);

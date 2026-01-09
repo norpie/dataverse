@@ -34,6 +34,51 @@ pub struct ScrollbarColors {
 }
 
 #[theme]
+pub struct CheckboxColors {
+    pub focused: Color,
+    pub disabled: Color,
+}
+
+#[theme]
+pub struct SelectColors {
+    pub focused: Color,
+    pub disabled: Color,
+    pub dropdown_bg: Color,
+    pub item_focused: Color,
+}
+
+#[theme]
+pub struct ListColors {
+    pub item_focused: Color,
+    pub item_selected: Color,
+}
+
+#[theme]
+pub struct RadioColors {
+    pub focused: Color,
+    pub disabled: Color,
+}
+
+#[theme]
+pub struct CardColors {
+    pub focused: Color,
+    pub disabled: Color,
+}
+
+#[theme]
+pub struct CollapsibleColors {
+    pub focused: Color,
+}
+
+#[theme]
+pub struct AutocompleteColors {
+    pub focused: Color,
+    pub disabled: Color,
+    pub dropdown_bg: Color,
+    pub item_focused: Color,
+}
+
+#[theme]
 pub struct RafterTheme {
     // Core colors
     pub background: Color,
@@ -58,6 +103,20 @@ pub struct RafterTheme {
     pub text: TextColors,
     #[group]
     pub scrollbar: ScrollbarColors,
+    #[group]
+    pub checkbox: CheckboxColors,
+    #[group]
+    pub select: SelectColors,
+    #[group]
+    pub list: ListColors,
+    #[group]
+    pub radio: RadioColors,
+    #[group]
+    pub card: CardColors,
+    #[group]
+    pub collapsible: CollapsibleColors,
+    #[group]
+    pub autocomplete: AutocompleteColors,
 }
 
 /// Create the default rafter theme.
@@ -79,10 +138,10 @@ pub fn default_theme() -> RafterTheme {
         error: Color::oklch(0.65, 0.2, 25.0),    // red
 
         button: ButtonColors {
-            normal: Color::oklch(0.25, 0.03, 280.0),
-            hover: Color::oklch(0.35, 0.05, 280.0),
-            active: Color::oklch(0.45, 0.08, 280.0),
-            disabled: Color::oklch(0.15, 0.01, 280.0),
+            normal: Color::var("surface").lighten(0.05),
+            hover: Color::var("surface").lighten(0.15),
+            active: Color::var("surface").lighten(0.25),
+            disabled: Color::var("surface").darken(0.05),
         },
 
         input: InputColors {
@@ -102,6 +161,44 @@ pub fn default_theme() -> RafterTheme {
         scrollbar: ScrollbarColors {
             track: Color::oklch(0.15, 0.01, 280.0),
             thumb: Color::oklch(0.4, 0.05, 280.0),
+        },
+
+        checkbox: CheckboxColors {
+            focused: Color::var("surface").lighten(0.1),
+            disabled: Color::var("surface").darken(0.1),
+        },
+
+        select: SelectColors {
+            focused: Color::var("surface").lighten(0.1),
+            disabled: Color::var("surface").darken(0.1),
+            dropdown_bg: Color::var("surface"),
+            item_focused: Color::var("accent"),
+        },
+
+        list: ListColors {
+            item_focused: Color::var("accent"),
+            item_selected: Color::var("accent").darken(0.3),
+        },
+
+        radio: RadioColors {
+            focused: Color::var("surface").lighten(0.1),
+            disabled: Color::var("surface").darken(0.1),
+        },
+
+        card: CardColors {
+            focused: Color::var("surface").lighten(0.1),
+            disabled: Color::var("surface").darken(0.1),
+        },
+
+        collapsible: CollapsibleColors {
+            focused: Color::var("surface").lighten(0.1),
+        },
+
+        autocomplete: AutocompleteColors {
+            focused: Color::var("surface").lighten(0.1),
+            disabled: Color::var("surface").darken(0.1),
+            dropdown_bg: Color::var("surface"),
+            item_focused: Color::var("accent"),
         },
     }
 }
