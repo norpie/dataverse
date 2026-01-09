@@ -832,6 +832,11 @@ impl Runtime {
 
             let instance = reg.get(instance_id).ok_or(RequestError::InstanceNotFound)?;
 
+            // Check if instance is sleeping (only for direct instance targeting)
+            if instance.is_sleeping() {
+                return Err(RequestError::InstanceSleeping(instance_id));
+            }
+
             if !instance.has_request_handler(request_type) {
                 return Err(RequestError::NoHandler);
             }

@@ -135,10 +135,12 @@ impl std::error::Error for SpawnError {}
 /// Error when making a request.
 #[derive(Debug, Clone)]
 pub enum RequestError {
-    /// No instance of the target type found.
+    /// No instance of the target type found (or all are sleeping).
     NoInstance,
     /// Instance not found.
     InstanceNotFound,
+    /// Target instance is sleeping and cannot process requests.
+    InstanceSleeping(InstanceId),
     /// Target has no handler for this request type.
     NoHandler,
     /// Handler panicked.
@@ -150,6 +152,7 @@ impl std::fmt::Display for RequestError {
         match self {
             RequestError::NoInstance => write!(f, "No instance of target type found"),
             RequestError::InstanceNotFound => write!(f, "Instance not found"),
+            RequestError::InstanceSleeping(id) => write!(f, "Instance is sleeping: {}", id),
             RequestError::NoHandler => write!(f, "No handler for this request type"),
             RequestError::HandlerPanicked => write!(f, "Handler panicked"),
         }
