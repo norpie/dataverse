@@ -411,10 +411,7 @@ impl<A: App> AnyAppInstance for AppInstance<A> {
         cx: &AppContext,
         gx: &GlobalContext,
     ) -> bool {
-        // Need to box the reference for the App trait
-        // This is a limitation - we'll pass a clone via ArcEvent
-        let _ = (event_type, event, cx, gx);
-        false // TODO: implement when we have proper event dispatch
+        self.app.dispatch_event(event_type, event, cx, gx)
     }
 
     fn dispatch_request(

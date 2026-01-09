@@ -1051,7 +1051,8 @@ pub fn generate_event_dispatch(
 
             quote! {
                 t if t == std::any::TypeId::of::<#event_type>() => {
-                    if let Ok(event) = event.downcast::<#event_type>() {
+                    if let Some(event) = event.downcast_ref::<#event_type>() {
+                        let event = event.clone();
                         #clones
                         tokio::spawn(async move {
                             #call
@@ -1079,7 +1080,7 @@ pub fn generate_event_dispatch(
             fn dispatch_event(
                 &self,
                 event_type: std::any::TypeId,
-                event: Box<dyn std::any::Any + Send + Sync>,
+                event: &(dyn std::any::Any + Send + Sync),
                 cx: &rafter::AppContext,
                 gx: &rafter::GlobalContext,
             ) -> bool
@@ -1088,7 +1089,7 @@ pub fn generate_event_dispatch(
             fn dispatch_event(
                 &self,
                 event_type: std::any::TypeId,
-                event: Box<dyn std::any::Any + Send + Sync>,
+                event: &(dyn std::any::Any + Send + Sync),
                 gx: &rafter::GlobalContext,
             ) -> bool
         },
@@ -1201,10 +1202,10 @@ fn generate_event_handler_call_and_clones(
     match context_type {
         DispatchContextType::App => {
             let call = match (contexts.app_context, contexts.global_context) {
-                (false, false) => quote! { this.#name(*event).await; },
-                (true, false) => quote! { this.#name(*event, &cx).await; },
-                (false, true) => quote! { this.#name(*event, &gx).await; },
-                (true, true) => quote! { this.#name(*event, &cx, &gx).await; },
+                (false, false) => quote! { this.#name(event).await; },
+                (true, false) => quote! { this.#name(event, &cx).await; },
+                (false, true) => quote! { this.#name(event, &gx).await; },
+                (true, true) => quote! { this.#name(event, &cx, &gx).await; },
             };
             let clones = match (contexts.app_context, contexts.global_context) {
                 (false, false) => quote! { let this = self.clone(); },
@@ -1217,9 +1218,9 @@ fn generate_event_handler_call_and_clones(
         DispatchContextType::System => {
             // Systems only have GlobalContext
             let call = if contexts.global_context {
-                quote! { this.#name(*event, &gx).await; }
+                quote! { this.#name(event, &gx).await; }
             } else {
-                quote! { this.#name(*event).await; }
+                quote! { this.#name(event).await; }
             };
             let clones = if contexts.global_context {
                 quote! { let this = self.clone(); let gx = gx.clone(); }

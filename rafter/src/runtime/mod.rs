@@ -719,12 +719,19 @@ impl Runtime {
                 InstanceCommand::PublishEvent { event } => {
                     let reg = registry.read().unwrap();
                     let event_type = event.type_id();
+                    log::debug!("[PublishEvent] event_type={:?}, instances={}", event_type, reg.len());
 
                     for instance in reg.iter() {
-                        if !instance.is_sleeping() && instance.has_event_handler(event_type) {
+                        let has_handler = instance.has_event_handler(event_type);
+                        log::debug!(
+                            "[PublishEvent] instance={} sleeping={} has_handler={}",
+                            instance.config().name, instance.is_sleeping(), has_handler
+                        );
+                        if !instance.is_sleeping() && has_handler {
                             // Create AppContext for this instance
                             let cx = AppContext::new(instance.id(), gx.clone(), instance.config().name);
-                            instance.dispatch_event(event_type, event.as_ref(), &cx, gx);
+                            let handled = instance.dispatch_event(event_type, event.as_ref(), &cx, gx);
+                            log::debug!("[PublishEvent] dispatched to {}, handled={}", instance.config().name, handled);
                         }
                     }
                 }

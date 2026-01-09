@@ -164,7 +164,7 @@ pub trait App: Clone + Send + Sync + 'static {
     fn dispatch_event(
         &self,
         event_type: TypeId,
-        event: Box<dyn Any + Send + Sync>,
+        event: &(dyn Any + Send + Sync),
         cx: &AppContext,
         gx: &GlobalContext,
     ) -> bool {
