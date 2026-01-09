@@ -28,6 +28,7 @@
 //! The macro converts widget names from snake_case to PascalCase and generates
 //! builder method calls for each prop.
 
+pub mod autocomplete;
 pub mod button;
 pub mod card;
 pub mod checkbox;
@@ -39,6 +40,7 @@ pub mod select;
 pub mod selection;
 pub mod text;
 
+pub use autocomplete::{Autocomplete, AutocompleteState};
 pub use button::Button;
 pub use card::Card;
 pub use checkbox::{Checkbox, CheckboxVariant};
