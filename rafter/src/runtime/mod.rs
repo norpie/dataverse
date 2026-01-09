@@ -735,7 +735,7 @@ impl Runtime {
                     request_type,
                     response_tx,
                 } => {
-                    let result = self.handle_request(registry, gx, target, request, request_type);
+                    let result = self.handle_request(registry, gx, target, request, request_type).await;
                     let _ = response_tx.send(result);
                 }
             }
@@ -745,7 +745,7 @@ impl Runtime {
     }
 
     /// Handle a request command.
-    fn handle_request(
+    async fn handle_request(
         &self,
         registry: &Arc<RwLock<InstanceRegistry>>,
         gx: &GlobalContext,
@@ -753,42 +753,40 @@ impl Runtime {
         request: Box<dyn Any + Send + Sync>,
         request_type: TypeId,
     ) -> Result<Box<dyn Any + Send + Sync>, RequestError> {
-        let reg = registry.read().unwrap();
+        // Find target instance and get the future while holding the lock briefly
+        let future = {
+            let reg = registry.read().unwrap();
 
-        // Find target instance
-        let instance_id = match target {
-            RequestTarget::AppType(target_type_id) => {
-                let mut found_id = None;
-                for instance in reg.iter() {
-                    if AnyAppInstance::type_id(instance) == target_type_id && !instance.is_sleeping() {
-                        found_id = Some(instance.id());
-                        break;
+            // Find target instance
+            let instance_id = match target {
+                RequestTarget::AppType(target_type_id) => {
+                    let mut found_id = None;
+                    for instance in reg.iter() {
+                        if AnyAppInstance::type_id(instance) == target_type_id && !instance.is_sleeping() {
+                            found_id = Some(instance.id());
+                            break;
+                        }
                     }
+                    found_id.ok_or(RequestError::NoInstance)?
                 }
-                found_id.ok_or(RequestError::NoInstance)?
+                RequestTarget::Instance(id) => id,
+            };
+
+            let instance = reg.get(instance_id).ok_or(RequestError::InstanceNotFound)?;
+
+            if !instance.has_request_handler(request_type) {
+                return Err(RequestError::NoHandler);
             }
-            RequestTarget::Instance(id) => id,
+
+            // Create AppContext for target instance
+            let cx = AppContext::new(instance_id, gx.clone(), instance.config().name);
+
+            // Dispatch request - get the future
+            instance.dispatch_request(request_type, request, &cx, gx)
         };
 
-        let instance = reg.get(instance_id).ok_or(RequestError::InstanceNotFound)?;
-
-        if !instance.has_request_handler(request_type) {
-            return Err(RequestError::NoHandler);
-        }
-
-        // Create AppContext for target instance
-        let cx = AppContext::new(instance_id, gx.clone(), instance.config().name);
-
-        // Dispatch request - for now we don't support async request handlers
-        // This would need to be spawned as a task
-        let future = instance.dispatch_request(request_type, request, &cx, gx);
-
         match future {
-            Some(_future) => {
-                // TODO: Spawn the future and wait for result
-                // For now, return NoHandler since we can't block here
-                Err(RequestError::NoHandler)
-            }
+            Some(fut) => Ok(fut.await),
             None => Err(RequestError::NoHandler),
         }
     }
