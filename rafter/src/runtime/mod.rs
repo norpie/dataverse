@@ -499,11 +499,11 @@ impl Runtime {
         for system in systems {
             if let Some(overlay) = system.overlay() {
                 match overlay.position {
-                    crate::system::OverlayPosition::Top { .. } => {
-                        top_overlays.push(overlay.element);
+                    crate::system::OverlayPosition::Top { height } => {
+                        top_overlays.push(overlay.element.height(Size::Fixed(height)));
                     }
-                    crate::system::OverlayPosition::Bottom { .. } => {
-                        bottom_overlays.push(overlay.element);
+                    crate::system::OverlayPosition::Bottom { height } => {
+                        bottom_overlays.push(overlay.element.height(Size::Fixed(height)));
                     }
                     crate::system::OverlayPosition::Left { .. }
                     | crate::system::OverlayPosition::Right { .. } => {
