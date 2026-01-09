@@ -9,7 +9,7 @@ use std::pin::Pin;
 
 use tuidom::Element;
 
-use crate::{GlobalContext, KeybindClosures, WakeupSender};
+use crate::{GlobalContext, HandlerRegistry, KeybindClosures, WakeupSender};
 
 /// Position configuration for a system overlay.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -92,6 +92,12 @@ pub trait System: Clone + Send + Sync + 'static {
     /// Get the system's keybinds (closure-based).
     fn keybinds(&self) -> KeybindClosures {
         KeybindClosures::new()
+    }
+
+    /// Get the handler registry for page! macro integration.
+    fn handlers(&self) -> &HandlerRegistry {
+        static EMPTY: std::sync::OnceLock<HandlerRegistry> = std::sync::OnceLock::new();
+        EMPTY.get_or_init(HandlerRegistry::new)
     }
 
     // =========================================================================
