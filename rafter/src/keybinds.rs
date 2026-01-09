@@ -362,6 +362,11 @@ pub struct KeybindInfo {
 
 /// Parse a key string like "ctrl+shift+a" or "gg" into KeyCombo(s).
 pub fn parse_key_string(s: &str) -> Result<Vec<KeyCombo>, ParseKeyError> {
+    // Special case: "+" by itself is the plus key
+    if s == "+" {
+        return Ok(vec![KeyCombo::new(Key::Char('+'), Modifiers::default())]);
+    }
+
     let mut ctrl = false;
     let mut shift = false;
     let mut alt = false;
@@ -373,6 +378,10 @@ pub fn parse_key_string(s: &str) -> Result<Vec<KeyCombo>, ParseKeyError> {
                 "ctrl" | "control" => ctrl = true,
                 "shift" => shift = true,
                 "alt" => alt = true,
+                "" => {
+                    // Empty part means the key itself is '+', e.g., "ctrl++"
+                    // Skip empty parts from splitting
+                }
                 other => {
                     return Err(ParseKeyError {
                         message: format!("Unknown modifier: {}", other),
@@ -380,7 +389,9 @@ pub fn parse_key_string(s: &str) -> Result<Vec<KeyCombo>, ParseKeyError> {
                 }
             }
         }
-        parts[parts.len() - 1]
+        // If last part is empty, the key is '+'
+        let last = parts[parts.len() - 1];
+        if last.is_empty() { "+" } else { last }
     } else {
         parts[0]
     };
