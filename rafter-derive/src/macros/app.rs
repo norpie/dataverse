@@ -275,6 +275,37 @@ fn generate_metadata(name: &Ident, attrs: &AppAttrs, fields: &FieldsNamed) -> To
     }
 }
 
+/// Generate singleton helper methods for apps marked with `singleton`.
+fn generate_singleton_methods(name: &Ident, attrs: &AppAttrs) -> TokenStream {
+    if !attrs.singleton {
+        return quote! {};
+    }
+
+    quote! {
+        impl #name {
+            /// Get the existing singleton instance, or spawn a new one.
+            ///
+            /// This method ensures only one instance of this app exists.
+            pub fn get_or_spawn(gx: &rafter::GlobalContext) -> Result<rafter::InstanceId, rafter::SpawnError> {
+                if let Some(id) = gx.instance_of::<Self>() {
+                    Ok(id)
+                } else {
+                    gx.spawn(Self::default())
+                }
+            }
+
+            /// Get the existing singleton instance, or spawn and focus a new one.
+            ///
+            /// This method ensures only one instance of this app exists and is focused.
+            pub fn get_or_spawn_and_focus(gx: &rafter::GlobalContext) -> Result<rafter::InstanceId, rafter::SpawnError> {
+                let id = Self::get_or_spawn(gx)?;
+                gx.focus_instance(id);
+                Ok(id)
+            }
+        }
+    }
+}
+
 pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
     let attrs = match AppAttrs::parse(attr) {
         Ok(a) => a,
@@ -314,6 +345,7 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
     let clone_impl = generate_clone_impl(name, fields);
     let registration = generate_registration(name);
     let metadata = generate_metadata(name, &attrs, fields);
+    let singleton_methods = generate_singleton_methods(name, &attrs);
 
     // Handle empty fields case to avoid trailing comma issues
     let fields_tokens = if transformed_fields.is_empty() {
@@ -339,5 +371,6 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
         #clone_impl
         #registration
         #metadata
+        #singleton_methods
     }
 }
