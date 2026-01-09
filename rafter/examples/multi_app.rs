@@ -16,7 +16,7 @@ use log::{debug, info, LevelFilter};
 use rafter::page;
 use rafter::prelude::*;
 use rafter::widgets::{Button, Text};
-use rafter::{Event, FocusChanged, InstanceClosed, InstanceInfo, InstanceSpawned, Overlay, Request, RequestError};
+use rafter::{Event, FocusChanged, InstanceClosed, InstanceId, InstanceInfo, InstanceSpawned, Overlay, Request, RequestError};
 use simplelog::{Config, WriteLogger};
 
 // ============================================================================
@@ -149,27 +149,35 @@ impl Taskbar {
         self.instances.set(gx.instances());
     }
 
+    #[handler]
+    async fn on_taskbar_click(&self, id: InstanceId, gx: &GlobalContext) {
+        gx.focus_instance(id);
+    }
+
     fn overlay(&self) -> Option<Overlay> {
         let instances = self.instances.get();
         debug!("[Taskbar] overlay() with {} instances", instances.len());
 
-        let status = if instances.is_empty() {
-            "No apps running".to_string()
-        } else {
-            instances
-                .iter()
-                .map(|info| {
-                    let marker = if info.is_focused { ">" } else { " " };
-                    format!("{}[{}]", marker, info.name)
-                })
-                .collect::<Vec<_>>()
-                .join(" ")
-        };
+        let buttons: Vec<_> = instances
+            .iter()
+            .map(|info| {
+                let label = if info.is_focused {
+                    format!(">{}", info.name)
+                } else {
+                    info.name.to_string()
+                };
+                let btn_id = format!("taskbar-{}", info.id);
+                let instance_id = info.id;
+                (label, btn_id, instance_id)
+            })
+            .collect();
 
         let element = page! {
-            row (gap: 1) style (bg: surface) {
+            row (gap: 1, width: fill, overflow: hidden) style (bg: surface) {
                 text (content: " Taskbar |") style (fg: muted)
-                text (content: {status}) style (fg: primary)
+                for (label, btn_id, instance_id) in buttons {
+                    button (label: {label}, id: {btn_id}) on_activate: on_taskbar_click(instance_id)
+                }
             }
         };
 
