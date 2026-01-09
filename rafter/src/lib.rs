@@ -28,7 +28,7 @@ pub use app_context::{
     ErrorSender,
 };
 pub use event::{Event, FocusChanged, InstanceClosed, InstanceSpawned};
-pub use handler_context::{Handler, HandlerContext, HandlerRegistry, WidgetHandlers};
+pub use handler_context::{EventData, Handler, HandlerContext, HandlerRegistry, WidgetHandlers};
 pub use global_context::{
     ArcEvent, DataStore, GlobalContext, GlobalModalRequest, InstanceCommand, InstanceQuery,
     RequestTarget,

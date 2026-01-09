@@ -3,7 +3,7 @@
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 
-use crate::macros::page::ast::{Attr, AttrValue, ElementNode};
+use crate::macros::page::ast::{Attr, AttrValue, ElementNode, HandlerArg, HandlerAttr};
 
 use super::generate_view_node;
 use super::handler;
@@ -32,7 +32,11 @@ fn generate_container(elem: &ElementNode, constructor: TokenStream) -> TokenStre
     let transition_call = transition::generate_transitions(&elem.transition_attrs);
     let children: Vec<_> = elem.children.iter().map(generate_view_node).collect();
 
-    if children.is_empty() {
+    // Check if there are any handlers to register
+    let has_handlers = !elem.handlers.is_empty();
+
+    // Build the base element
+    let element_build = if children.is_empty() {
         quote! {
             #constructor
                 #(#layout_calls)*
@@ -53,7 +57,84 @@ fn generate_container(elem: &ElementNode, constructor: TokenStream) -> TokenStre
                     __children
                 })
         }
+    };
+
+    // If there are handlers, wrap in a block that registers them
+    if has_handlers {
+        let handler_registrations = generate_container_handler_registrations(&elem.handlers);
+        quote! {
+            {
+                let __elem = #element_build;
+                #handler_registrations
+                __elem
+            }
+        }
+    } else {
+        element_build
     }
+}
+
+/// Generate handler registrations for container elements (col/row/box)
+fn generate_container_handler_registrations(handlers: &[HandlerAttr]) -> TokenStream {
+    let registrations: Vec<TokenStream> = handlers
+        .iter()
+        .map(|h| {
+            let event_str = h.event.to_string();
+            let handler_name = &h.handler;
+            let wrapper_method = format_ident!("__wrap_{}", handler_name);
+
+            // Collect non-context arguments
+            let expr_args: Vec<_> = h
+                .args
+                .iter()
+                .filter_map(|arg| match arg {
+                    HandlerArg::Expr(expr) => Some(expr),
+                    HandlerArg::Context(_) => None,
+                })
+                .collect();
+
+            // Generate argument captures
+            let arg_captures: Vec<TokenStream> = expr_args
+                .iter()
+                .enumerate()
+                .map(|(i, expr)| {
+                    let arg_name = format_ident!("__arg{}", i);
+                    quote! { let #arg_name = (#expr).clone(); }
+                })
+                .collect();
+
+            // Generate argument passes to wrapper
+            let arg_passes: Vec<TokenStream> = (0..expr_args.len())
+                .map(|i| {
+                    let arg_name = format_ident!("__arg{}", i);
+                    quote! { #arg_name.clone() }
+                })
+                .collect();
+
+            // Build the wrapper call
+            let wrapper_call = if arg_passes.is_empty() {
+                quote! { __self.#wrapper_method(__hx); }
+            } else {
+                quote! { __self.#wrapper_method(#(#arg_passes),*, __hx); }
+            };
+
+            quote! {
+                {
+                    let __self = self.clone();
+                    #(#arg_captures)*
+                    self.__handler_registry.register(
+                        &__elem.id,
+                        #event_str,
+                        std::sync::Arc::new(move |__hx: &rafter::HandlerContext| {
+                            #wrapper_call
+                        }),
+                    );
+                }
+            }
+        })
+        .collect();
+
+    quote! { #(#registrations)* }
 }
 
 /// Generate a text element using the Text widget

@@ -215,6 +215,9 @@ pub fn extract_handler_info(name: &Ident, sig: &Signature) -> HandlerInfo {
             } else if ty_str.contains("ModalContext") {
                 contexts.modal_context = true;
                 contexts.param_order.push(ContextParam::Modal);
+            } else if ty_str.contains("EventData") {
+                contexts.event_data = true;
+                contexts.param_order.push(ContextParam::Event);
             } else {
                 // Non-context argument - capture for wrapper generation
                 let pat = &pat_type.pat;
@@ -400,6 +403,7 @@ pub enum ContextParam {
     App,
     Global,
     Modal,
+    Event,
 }
 
 /// Handler parameter requirements for the new context architecture.
@@ -413,6 +417,7 @@ pub struct HandlerContexts {
     pub app_context: bool,
     pub global_context: bool,
     pub modal_context: bool,
+    pub event_data: bool,
     /// Order of context parameters in the handler signature
     pub param_order: Vec<ContextParam>,
 }
@@ -912,6 +917,7 @@ pub fn generate_closure_for_keybind(
                         ContextParam::App => quote! { let #ctx_name = __hx.cx().clone(); },
                         ContextParam::Global => quote! { let #ctx_name = __hx.gx().clone(); },
                         ContextParam::Modal => quote! { let #ctx_name = __hx.mx().clone(); },
+                        ContextParam::Event => quote! { let #ctx_name = __hx.event().clone(); },
                     }
                 })
                 .collect();
@@ -1349,6 +1355,7 @@ fn generate_single_wrapper(handler: &HandlerInfo) -> TokenStream {
                 ContextParam::App => quote! { let #ctx_name = __hx.cx().clone(); },
                 ContextParam::Global => quote! { let #ctx_name = __hx.gx().clone(); },
                 ContextParam::Modal => quote! { let #ctx_name = __hx.mx().clone(); },
+                ContextParam::Event => quote! { let #ctx_name = __hx.event().clone(); },
             }
         })
         .collect();

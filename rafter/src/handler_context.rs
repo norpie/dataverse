@@ -119,12 +119,19 @@ impl EventData {
 
     /// Check if scroll position is near the bottom.
     ///
-    /// Returns true if within `threshold` pixels of the bottom, or if not a Scroll event.
-    pub fn is_near_bottom(&self, threshold: u16) -> bool {
+    /// `threshold` is a percentage (0.0 to 1.0) of remaining scroll distance.
+    /// For example, 0.8 means "trigger when 80% scrolled" (20% remaining).
+    ///
+    /// Returns false if not a Scroll event.
+    pub fn is_near_bottom(&self, threshold: f32) -> bool {
         match self {
             EventData::Scroll { offset_y, content_height, viewport_height, .. } => {
                 let max_scroll = content_height.saturating_sub(*viewport_height);
-                *offset_y + threshold >= max_scroll
+                if max_scroll == 0 {
+                    return true; // No scrolling needed, we're at the bottom
+                }
+                let progress = *offset_y as f32 / max_scroll as f32;
+                progress >= threshold
             }
             _ => false,
         }
@@ -132,10 +139,20 @@ impl EventData {
 
     /// Check if scroll position is near the top.
     ///
-    /// Returns true if within `threshold` pixels of the top, or if not a Scroll event.
-    pub fn is_near_top(&self, threshold: u16) -> bool {
+    /// `threshold` is a percentage (0.0 to 1.0). For example, 0.2 means
+    /// "trigger when less than 20% scrolled".
+    ///
+    /// Returns false if not a Scroll event.
+    pub fn is_near_top(&self, threshold: f32) -> bool {
         match self {
-            EventData::Scroll { offset_y, .. } => *offset_y <= threshold,
+            EventData::Scroll { offset_y, content_height, viewport_height, .. } => {
+                let max_scroll = content_height.saturating_sub(*viewport_height);
+                if max_scroll == 0 {
+                    return true; // No scrolling needed
+                }
+                let progress = *offset_y as f32 / max_scroll as f32;
+                progress <= threshold
+            }
             _ => false,
         }
     }
