@@ -349,6 +349,31 @@ impl Runtime {
             log::trace!("[runtime] === FRAME START ===");
             terminal.render(&root)?;
 
+            // 9b. Dispatch on_layout handlers for elements that have them
+            {
+                let layout = terminal.layout();
+                let reg = registry.read().unwrap();
+                if let Some(instance) = reg.focused_instance() {
+                    let cx = instance.app_context();
+                    let handlers = instance.handlers();
+                    for (id, rect) in layout.iter_rects() {
+                        if let Some(handler) = handlers.get(id, "on_layout") {
+                            let hx = crate::HandlerContext::for_app_with_event(
+                                &cx,
+                                gx,
+                                crate::handler_context::EventData::Layout {
+                                    x: rect.x,
+                                    y: rect.y,
+                                    width: rect.width,
+                                    height: rect.height,
+                                },
+                            );
+                            handler(&hx);
+                        }
+                    }
+                }
+            }
+
             // 10. Update toast phases (AFTER render so animation captures off-screen position first)
             let now = Instant::now();
             for toast in active_toasts.iter_mut() {
