@@ -441,12 +441,15 @@ impl Runtime {
             let layout = terminal.layout();
 
             // 14. Process scroll requests (needs layout)
+            let mut focus_scroll_changes: Vec<tuidom::ScrollChange> = Vec::new();
             {
                 let reg = registry.read().unwrap();
                 if let Some(instance) = reg.focused_instance() {
                     let cx = instance.app_context();
                     for target_id in cx.take_scroll_requests() {
-                        scroll_to_element(&root, layout, scroll, &target_id);
+                        if let Some(change) = scroll_to_element(&root, layout, scroll, &target_id) {
+                            focus_scroll_changes.push(change);
+                        }
                     }
                 }
             }
@@ -463,7 +466,9 @@ impl Runtime {
             // 17b. Scroll focused element into view
             for event in &events {
                 if let tuidom::Event::Focus { target } = event {
-                    scroll_to_element(&root, layout, scroll, target);
+                    if let Some(change) = scroll_to_element(&root, layout, scroll, target) {
+                        focus_scroll_changes.push(change);
+                    }
                 }
             }
 
@@ -471,7 +476,9 @@ impl Runtime {
             let events = text_inputs.process_events(&events, &root, layout);
 
             // 19. Process scroll events (wheel scrolling)
-            let scroll_changes = scroll.process_events(&events, &root, layout);
+            let mut scroll_changes = scroll.process_events(&events, &root, layout);
+            // Include focus-triggered scroll changes
+            scroll_changes.extend(focus_scroll_changes);
 
             // 19b. Dispatch on_scroll handlers for elements that scrolled
             if !scroll_changes.is_empty() {
@@ -971,27 +978,21 @@ fn sync_text_inputs(element: &Element, text_inputs: &mut TextInputState) {
 // =============================================================================
 
 /// Scroll to bring an element into view.
+/// Returns a ScrollChange if scrolling occurred.
 fn scroll_to_element(
     root: &Element,
     layout: &LayoutResult,
     scroll: &mut ScrollState,
     target_id: &str,
-) {
+) -> Option<tuidom::ScrollChange> {
     // Find scrollable ancestor
-    let Some(scrollable_id) = find_scrollable_ancestor(root, target_id) else {
-        return;
-    };
+    let scrollable_id = find_scrollable_ancestor(root, target_id)?;
 
     // Get target rect and scrollable viewport
-    let Some(target_rect) = layout.get(target_id) else {
-        return;
-    };
-    let Some(viewport_rect) = layout.get(&scrollable_id) else {
-        return;
-    };
-    let Some((_, viewport_height)) = layout.viewport_size(&scrollable_id) else {
-        return;
-    };
+    let target_rect = layout.get(target_id)?;
+    let viewport_rect = layout.get(&scrollable_id)?;
+    let (viewport_width, viewport_height) = layout.viewport_size(&scrollable_id)?;
+    let (content_width, content_height) = layout.content_size(&scrollable_id)?;
 
     let current = scroll.get(&scrollable_id);
 
@@ -1013,5 +1014,16 @@ fn scroll_to_element(
 
     if new_y != current.y {
         scroll.set(&scrollable_id, current.x, new_y);
+        Some(tuidom::ScrollChange {
+            element_id: scrollable_id,
+            offset_x: current.x,
+            offset_y: new_y,
+            content_width,
+            content_height,
+            viewport_width,
+            viewport_height,
+        })
+    } else {
+        None
     }
 }
