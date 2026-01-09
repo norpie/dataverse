@@ -289,6 +289,7 @@ impl<'a, T: Clone + PartialEq + Send + Sync + 'static> Select<HasState<'a, T>> {
                     .width(tuidom::Size::Fill)
                     .focusable(true)
                     .clickable(true)
+                    .style_focused(Style::new().background(tuidom::Color::var("accent")))
                     .child(text_elem);
 
                 options_col = options_col.child(opt_elem);
