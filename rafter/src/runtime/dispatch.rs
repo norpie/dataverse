@@ -254,6 +254,27 @@ impl<'a> EventDispatcher<'a> {
 
         match event {
             Event::Key { key, modifiers, target } => {
+                // Enter key triggers on_activate on focused element (like click)
+                if *key == tuidom::Key::Enter && modifiers.none() {
+                    if let Some(target_id) = target {
+                        // First check app instance handlers
+                        if let Some(handler) = handlers.get(target_id, "on_activate") {
+                            handler(&hx);
+                            return Some(DispatchResult::HandledByWidget(WidgetResult::Activated));
+                        }
+
+                        // Then check system handlers
+                        for system in self.systems {
+                            let system_handlers = system.handlers();
+                            if let Some(handler) = system_handlers.get(target_id, "on_activate") {
+                                let system_hx = HandlerContext::for_system(self.gx);
+                                handler(&system_hx);
+                                return Some(DispatchResult::HandledByWidget(WidgetResult::Activated));
+                            }
+                        }
+                    }
+                }
+
                 // Dispatch to focused widget (if any)
                 if let Some(target_id) = target {
                     let result = dispatch_key_to_instance(instance, *key, *modifiers, self.layout);
