@@ -17,6 +17,10 @@ pub struct InputColors {
     pub border: Color,
     pub border_focus: Color,
     pub placeholder: Color,
+    pub cursor_fg: Color,
+    pub cursor_bg: Color,
+    pub selection_fg: Color,
+    pub selection_bg: Color,
 }
 
 #[theme]
@@ -146,10 +150,14 @@ pub fn default_theme() -> RafterTheme {
         },
 
         input: InputColors {
-            background: Color::oklch(0.1, 0.01, 280.0),
-            border: Color::oklch(0.3, 0.02, 280.0),
-            border_focus: Color::oklch(0.6, 0.15, 280.0),
-            placeholder: Color::oklch(0.5, 0.02, 280.0),
+            background: Color::var("surface").darken(0.02),
+            border: Color::var("surface").lighten(0.1),
+            border_focus: Color::var("accent").darken(0.2),
+            placeholder: Color::var("text.muted"),
+            cursor_fg: Color::var("text.inverted"),
+            cursor_bg: Color::var("text.primary"),
+            selection_fg: Color::var("text.inverted"),
+            selection_bg: Color::var("accent"),
         },
 
         text: TextColors {

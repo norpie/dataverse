@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use tuidom::{Element, Style, Transitions};
+use tuidom::{Color, Element, Style, Transitions};
 
 use crate::state::State;
 use crate::{HandlerRegistry, WidgetHandlers};
@@ -153,17 +153,21 @@ impl<'a> Input<HasState<'a>> {
             elem = elem.placeholder(placeholder);
         }
 
-        if let Some(style) = self.style.clone() {
-            elem = elem.style(style);
-        }
-
-        if let Some(style) = self.style_focused.clone() {
-            elem = elem.style_focused(style);
-        }
-
-        if let Some(style) = self.style_disabled.clone() {
-            elem = elem.style_disabled(style);
-        }
+        let style = self
+            .style
+            .clone()
+            .unwrap_or_else(|| Style::new().background(Color::var("input.background")));
+        let focused_style = self
+            .style_focused
+            .clone()
+            .unwrap_or_else(|| Style::new().background(Color::var("input.background").lighten(0.05)));
+        let disabled_style = self
+            .style_disabled
+            .clone()
+            .unwrap_or_else(|| Style::new().background(Color::var("surface").darken(0.05)));
+        elem = elem.style(style);
+        elem = elem.style_focused(focused_style);
+        elem = elem.style_disabled(disabled_style);
 
         if let Some(transitions) = self.transitions.clone() {
             elem = elem.transitions(transitions);

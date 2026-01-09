@@ -609,16 +609,16 @@ fn render_text_input(
     );
     let bg = background.as_ref().map(|c| oklch_cache.get(c));
 
-    // Cursor style: bright background, dark foreground
-    let cursor_fg = Oklch::new(0.15, 0.0, 0.0);
-    let cursor_bg = Some(Oklch::new(0.85, 0.0, 0.0));
+    // Cursor style from theme
+    let cursor_fg = oklch_cache.get(&Color::var("input.cursor_fg"));
+    let cursor_bg = Some(oklch_cache.get(&Color::var("input.cursor_bg")));
 
-    // Selection style: medium contrast
-    let selection_fg = Oklch::new(0.95, 0.0, 0.0);
-    let selection_bg = Some(Oklch::new(0.4, 0.1, 220.0));
+    // Selection style from theme
+    let selection_fg = oklch_cache.get(&Color::var("input.selection_fg"));
+    let selection_bg = Some(oklch_cache.get(&Color::var("input.selection_bg")));
 
-    // Placeholder style: dimmed
-    let placeholder_fg = Oklch::new(0.5, 0.0, 0.0);
+    // Placeholder style from theme
+    let placeholder_fg = oklch_cache.get(&Color::var("input.placeholder"));
 
     let border_size = if element.style.border == crate::types::Border::None {
         0
