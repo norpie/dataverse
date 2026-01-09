@@ -240,9 +240,15 @@ impl FocusState {
 
                         MouseEventKind::Moved => {
                             // Focus follows mouse - check if we're over a focusable element
-                            if let Some(focusable_target) = hit_test_focusable(layout, root, x, y) {
+                            let focusable_target = hit_test_focusable(layout, root, x, y);
+                            log::trace!(
+                                "[focus] MouseMove at ({}, {}), focusable_target={:?}, current_focus={:?}",
+                                x, y, focusable_target, self.focused
+                            );
+                            if let Some(focusable_target) = focusable_target {
                                 // Only change focus if different
                                 if self.focused.as_ref() != Some(&focusable_target) {
+                                    log::debug!("[focus] Changing focus from {:?} to {}", self.focused, focusable_target);
                                     if let Some(old) = self.focused.take() {
                                         events.push(Event::Blur { target: old, new_target: Some(focusable_target.clone()) });
                                     }
