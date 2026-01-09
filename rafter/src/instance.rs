@@ -216,6 +216,12 @@ pub trait AnyAppInstance: Send + Sync {
     /// Call the app's on_start lifecycle method.
     fn on_start(&self) -> Pin<Box<dyn Future<Output = ()> + Send + '_>>;
 
+    /// Call the app's on_foreground lifecycle method.
+    fn on_foreground(&self) -> Pin<Box<dyn Future<Output = ()> + Send + '_>>;
+
+    /// Call the app's on_background lifecycle method.
+    fn on_background(&self) -> Pin<Box<dyn Future<Output = ()> + Send + '_>>;
+
     // Event/Request Dispatch
 
     /// Check if this instance has a handler for the given event type.
@@ -373,6 +379,14 @@ impl<A: App> AnyAppInstance for AppInstance<A> {
 
     fn on_start(&self) -> Pin<Box<dyn Future<Output = ()> + Send + '_>> {
         Box::pin(self.app.on_start())
+    }
+
+    fn on_foreground(&self) -> Pin<Box<dyn Future<Output = ()> + Send + '_>> {
+        Box::pin(self.app.on_foreground())
+    }
+
+    fn on_background(&self) -> Pin<Box<dyn Future<Output = ()> + Send + '_>> {
+        Box::pin(self.app.on_background())
     }
 
     fn has_event_handler(&self, event_type: TypeId) -> bool {

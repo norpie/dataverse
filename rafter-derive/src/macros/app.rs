@@ -17,6 +17,7 @@ struct AppAttrs {
     name: Option<String>,
     singleton: bool,
     on_panic: Option<Ident>,
+    on_blur: Option<Ident>,
 }
 
 impl AppAttrs {
@@ -25,6 +26,7 @@ impl AppAttrs {
             name: None,
             singleton: false,
             on_panic: None,
+            on_blur: None,
         };
 
         if !attr.is_empty() {
@@ -45,6 +47,17 @@ impl AppAttrs {
                         ));
                     }
                     attrs.on_panic = Some(ident);
+                } else if meta.path.is_ident("on_blur") {
+                    meta.input.parse::<Token![=]>()?;
+                    let ident: Ident = meta.input.parse()?;
+                    let valid = ["Continue", "Sleep", "Close"];
+                    if !valid.contains(&ident.to_string().as_str()) {
+                        return Err(syn::Error::new(
+                            ident.span(),
+                            format!("expected one of: {}", valid.join(", ")),
+                        ));
+                    }
+                    attrs.on_blur = Some(ident);
                 } else {
                     return Err(meta.error("unknown app attribute"));
                 }
@@ -182,6 +195,11 @@ fn generate_metadata(name: &Ident, attrs: &AppAttrs, fields: &FieldsNamed) -> To
         None => quote! { rafter::PanicBehavior::Close },
     };
 
+    let blur_policy = match &attrs.on_blur {
+        Some(ident) => quote! { rafter::BlurPolicy::#ident },
+        None => quote! { rafter::BlurPolicy::Continue },
+    };
+
     // Fields for dirty checking (all non-skipped fields)
     let dirty_fields: Vec<_> = fields
         .named
@@ -220,7 +238,7 @@ fn generate_metadata(name: &Ident, attrs: &AppAttrs, fields: &FieldsNamed) -> To
             pub fn config() -> rafter::AppConfig {
                 rafter::AppConfig {
                     name: #config_name,
-                    blur_on_background: false,
+                    on_blur: #blur_policy,
                     max_instances: #max_instances,
                     panic_behavior: PANIC_BEHAVIOR,
                 }

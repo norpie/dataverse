@@ -22,7 +22,7 @@ mod wakeup;
 mod widget;
 pub mod widgets;
 
-pub use app::{App, AppConfig, PanicBehavior};
+pub use app::{App, AppConfig, BlurPolicy, PanicBehavior};
 pub use app_context::{
     extract_panic_message, AppContext, AppError, AppErrorKind, AppModalRequest, ErrorReceiver,
     ErrorSender,

@@ -28,7 +28,7 @@ use crate::registration::AnySystem;
 use crate::system::System;
 use crate::toast::Toast;
 use crate::wakeup::{channel as wakeup_channel, WakeupReceiver};
-use crate::{App, AppContext, GlobalContext};
+use crate::{App, AppContext, BlurPolicy, GlobalContext};
 
 use dispatch::AnyModal;
 
@@ -652,8 +652,68 @@ impl Runtime {
                 }
 
                 InstanceCommand::Focus { id } => {
-                    let mut reg = registry.write().unwrap();
-                    reg.focus(id);
+                    // Get old focused instance before changing focus
+                    let old_focused = {
+                        let reg = registry.read().unwrap();
+                        reg.focused()
+                    };
+
+                    // Change focus
+                    {
+                        let mut reg = registry.write().unwrap();
+                        reg.focus(id);
+                    }
+
+                    // Apply blur policy to old instance
+                    let mut to_close = None;
+                    if let Some(old_id) = old_focused {
+                        if old_id != id {
+                            // Get blur policy
+                            let blur_policy = {
+                                let reg = registry.read().unwrap();
+                                reg.get(old_id).map(|i| i.config().on_blur)
+                            };
+
+                            // Call on_background lifecycle hook
+                            {
+                                let reg = registry.read().unwrap();
+                                if let Some(instance) = reg.get(old_id) {
+                                    instance.on_background().await;
+                                }
+                            }
+
+                            // Apply blur policy
+                            match blur_policy {
+                                Some(BlurPolicy::Sleep) => {
+                                    let reg = registry.read().unwrap();
+                                    if let Some(instance) = reg.get(old_id) {
+                                        instance.set_sleeping(true);
+                                    }
+                                }
+                                Some(BlurPolicy::Close) => {
+                                    to_close = Some(old_id);
+                                }
+                                _ => {}
+                            }
+                        }
+                    }
+
+                    // Wake new instance if it was sleeping and call on_foreground
+                    {
+                        let reg = registry.read().unwrap();
+                        if let Some(instance) = reg.get(id) {
+                            if instance.is_sleeping() {
+                                instance.set_sleeping(false);
+                            }
+                            instance.on_foreground().await;
+                        }
+                    }
+
+                    // Close old instance if BlurPolicy::Close
+                    if let Some(close_id) = to_close {
+                        let mut reg = registry.write().unwrap();
+                        reg.close(close_id);
+                    }
                 }
 
                 InstanceCommand::PublishEvent { event } => {

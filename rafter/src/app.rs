@@ -20,8 +20,8 @@ use crate::{AppContext, GlobalContext, HandlerRegistry, KeybindClosures, WakeupS
 pub struct AppConfig {
     /// Display name.
     pub name: &'static str,
-    /// Whether to blur the app when it loses focus.
-    pub blur_on_background: bool,
+    /// Behavior when this app loses focus.
+    pub on_blur: BlurPolicy,
     /// Maximum number of instances (None = unlimited).
     pub max_instances: Option<usize>,
     /// Panic behavior.
@@ -32,7 +32,7 @@ impl Default for AppConfig {
     fn default() -> Self {
         Self {
             name: "App",
-            blur_on_background: false,
+            on_blur: BlurPolicy::Continue,
             max_instances: None,
             panic_behavior: PanicBehavior::default(),
         }
@@ -49,6 +49,18 @@ pub enum PanicBehavior {
     Restart,
     /// Ignore the panic and continue.
     Ignore,
+}
+
+/// Behavior when an app instance loses focus.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum BlurPolicy {
+    /// Keep running in background (default).
+    #[default]
+    Continue,
+    /// Pause event delivery, enter dormant state.
+    Sleep,
+    /// Close the instance when losing focus.
+    Close,
 }
 
 /// Trait that all apps must implement.
