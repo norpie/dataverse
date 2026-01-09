@@ -273,7 +273,7 @@ impl Runtime {
             }
 
             // 2. Process pending commands
-            self.process_commands(registry, gx).await?;
+            self.process_commands(registry, systems, gx).await?;
 
             // 3. Process modal requests from focused app and clean up closed modals
             {
@@ -620,6 +620,7 @@ impl Runtime {
     async fn process_commands(
         &self,
         registry: &Arc<RwLock<InstanceRegistry>>,
+        systems: &[Box<dyn AnySystem>],
         gx: &GlobalContext,
     ) -> Result<(), RuntimeError> {
         let commands = gx.take_instance_commands();
@@ -717,21 +718,38 @@ impl Runtime {
                 }
 
                 InstanceCommand::PublishEvent { event } => {
-                    let reg = registry.read().unwrap();
                     let event_type = event.type_id();
-                    log::debug!("[PublishEvent] event_type={:?}, instances={}", event_type, reg.len());
 
-                    for instance in reg.iter() {
-                        let has_handler = instance.has_event_handler(event_type);
+                    // Dispatch to app instances
+                    {
+                        let reg = registry.read().unwrap();
+                        log::debug!("[PublishEvent] event_type={:?}, instances={}", event_type, reg.len());
+
+                        for instance in reg.iter() {
+                            let has_handler = instance.has_event_handler(event_type);
+                            log::debug!(
+                                "[PublishEvent] instance={} sleeping={} has_handler={}",
+                                instance.config().name, instance.is_sleeping(), has_handler
+                            );
+                            if !instance.is_sleeping() && has_handler {
+                                // Create AppContext for this instance
+                                let cx = AppContext::new(instance.id(), gx.clone(), instance.config().name);
+                                let handled = instance.dispatch_event(event_type, event.as_ref(), &cx, gx);
+                                log::debug!("[PublishEvent] dispatched to {}, handled={}", instance.config().name, handled);
+                            }
+                        }
+                    }
+
+                    // Dispatch to systems
+                    for system in systems.iter() {
+                        let has_handler = system.has_event_handler(event_type);
                         log::debug!(
-                            "[PublishEvent] instance={} sleeping={} has_handler={}",
-                            instance.config().name, instance.is_sleeping(), has_handler
+                            "[PublishEvent] system={} has_handler={}",
+                            system.name(), has_handler
                         );
-                        if !instance.is_sleeping() && has_handler {
-                            // Create AppContext for this instance
-                            let cx = AppContext::new(instance.id(), gx.clone(), instance.config().name);
-                            let handled = instance.dispatch_event(event_type, event.as_ref(), &cx, gx);
-                            log::debug!("[PublishEvent] dispatched to {}, handled={}", instance.config().name, handled);
+                        if has_handler {
+                            let handled = system.dispatch_event(event_type, event.as_ref(), gx);
+                            log::debug!("[PublishEvent] dispatched to system {}, handled={}", system.name(), handled);
                         }
                     }
                 }

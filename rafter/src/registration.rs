@@ -89,6 +89,15 @@ pub trait AnySystem: Send + Sync {
     fn on_init(&self);
     /// Install wakeup sender.
     fn install_wakeup(&self, sender: WakeupSender);
+    /// Check if this system has a handler for the given event type.
+    fn has_event_handler(&self, event_type: std::any::TypeId) -> bool;
+    /// Dispatch an event to this system.
+    fn dispatch_event(
+        &self,
+        event_type: std::any::TypeId,
+        event: &(dyn std::any::Any + Send + Sync),
+        gx: &GlobalContext,
+    ) -> bool;
 }
 
 impl<T: System> AnySystem for T {
@@ -114,5 +123,18 @@ impl<T: System> AnySystem for T {
 
     fn install_wakeup(&self, sender: WakeupSender) {
         System::install_wakeup(self, sender)
+    }
+
+    fn has_event_handler(&self, event_type: std::any::TypeId) -> bool {
+        System::has_event_handler(self, event_type)
+    }
+
+    fn dispatch_event(
+        &self,
+        event_type: std::any::TypeId,
+        event: &(dyn std::any::Any + Send + Sync),
+        gx: &GlobalContext,
+    ) -> bool {
+        System::dispatch_event(self, event_type, event, gx)
     }
 }
