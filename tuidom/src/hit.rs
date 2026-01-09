@@ -37,6 +37,15 @@ pub fn hit_test_focusable(layout: &LayoutResult, root: &Element, x: u16, y: u16)
     best_hit(hits)
 }
 
+/// Find the scrollable element at the given coordinates.
+/// Returns None if no scrollable element contains the point.
+/// Respects z-index ordering.
+pub fn hit_test_scrollable(layout: &LayoutResult, root: &Element, x: u16, y: u16) -> Option<String> {
+    let mut hits = Vec::new();
+    collect_hits(layout, root, x, y, 0, 0, &mut hits, |el| el.scrollable);
+    best_hit(hits)
+}
+
 /// Select the best hit: highest z-index, then deepest in tree.
 fn best_hit(mut hits: Vec<Hit>) -> Option<String> {
     if hits.is_empty() {

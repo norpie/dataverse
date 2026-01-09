@@ -270,7 +270,7 @@ impl FocusState {
                         }
 
                         MouseEventKind::ScrollUp => {
-                            let target = crate::hit::hit_test(layout, root, x, y);
+                            let target = crate::hit::hit_test_scrollable(layout, root, x, y);
                             events.push(Event::Scroll {
                                 target,
                                 x,
@@ -281,7 +281,7 @@ impl FocusState {
                         }
 
                         MouseEventKind::ScrollDown => {
-                            let target = crate::hit::hit_test(layout, root, x, y);
+                            let target = crate::hit::hit_test_scrollable(layout, root, x, y);
                             events.push(Event::Scroll {
                                 target,
                                 x,
@@ -292,7 +292,7 @@ impl FocusState {
                         }
 
                         MouseEventKind::ScrollLeft => {
-                            let target = crate::hit::hit_test(layout, root, x, y);
+                            let target = crate::hit::hit_test_scrollable(layout, root, x, y);
                             events.push(Event::Scroll {
                                 target,
                                 x,
@@ -303,7 +303,7 @@ impl FocusState {
                         }
 
                         MouseEventKind::ScrollRight => {
-                            let target = crate::hit::hit_test(layout, root, x, y);
+                            let target = crate::hit::hit_test_scrollable(layout, root, x, y);
                             events.push(Event::Scroll {
                                 target,
                                 x,

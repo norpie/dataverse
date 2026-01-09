@@ -77,6 +77,7 @@ pub struct Element {
     pub focusable: bool,
     pub clickable: bool,
     pub draggable: bool,
+    pub scrollable: bool,
     /// When true, this element captures keyboard input (for text fields).
     /// Arrow keys will move cursor instead of focus, etc.
     pub captures_input: bool,
@@ -133,6 +134,7 @@ impl Default for Element {
             focusable: false,
             clickable: false,
             draggable: false,
+            scrollable: false,
             captures_input: false,
             focused: false,
             disabled: false,
@@ -390,6 +392,11 @@ impl Element {
 
     pub fn draggable(mut self, draggable: bool) -> Self {
         self.draggable = draggable;
+        self
+    }
+
+    pub fn scrollable(mut self, scrollable: bool) -> Self {
+        self.scrollable = scrollable;
         self
     }
 
