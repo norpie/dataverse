@@ -24,7 +24,7 @@ use enrich::enrich_elements;
 
 use crate::global_context::{DataStore, InstanceCommand, InstanceQuery, RequestTarget};
 use crate::instance::{AnyAppInstance, AppInstance, InstanceId, InstanceRegistry, RequestError};
-use crate::registration::AnySystem;
+use crate::registration::{registered_systems, AnySystem};
 use crate::system::System;
 use crate::toast::Toast;
 use crate::wakeup::{channel as wakeup_channel, WakeupReceiver};
@@ -193,8 +193,14 @@ impl Runtime {
         let registry_query = RegistryQuery(Arc::clone(&registry));
         gx.set_registry(Arc::new(registry_query));
 
-        // Initialize systems (take ownership from self)
+        // Initialize systems (merge manually added with auto-registered)
         let mut systems: Vec<Box<dyn AnySystem>> = std::mem::take(&mut self.systems);
+
+        // Add auto-registered systems from inventory
+        for reg in registered_systems() {
+            systems.push((reg.factory)());
+        }
+
         for system in &systems {
             system.on_init();
             system.install_wakeup(wakeup_tx.clone());
