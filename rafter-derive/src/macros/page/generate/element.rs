@@ -40,12 +40,18 @@ fn generate_container(elem: &ElementNode, constructor: TokenStream) -> TokenStre
                 #transition_call
         }
     } else {
+        // Use IntoPageChildren trait to flatten for-loop results
         quote! {
             #constructor
                 #(#layout_calls)*
                 #style_call
                 #transition_call
-                .children(vec![#(#children),*])
+                .children({
+                    use rafter::IntoPageChildren;
+                    let mut __children: Vec<tuidom::Element> = Vec::new();
+                    #(__children.extend(rafter::IntoPageChildren::into_page_children(#children));)*
+                    __children
+                })
         }
     }
 }

@@ -63,3 +63,25 @@ pub use rafter_derive::{
     app, app_impl, event_handler, handler, keybinds, modal, modal_impl, page, request_handler,
     system, system_impl, theme, Event, Request,
 };
+
+// =============================================================================
+// Page Macro Helpers
+// =============================================================================
+
+/// Trait for types that can be converted to page children.
+/// Used by the page! macro to support both single elements and for-loop results.
+pub trait IntoPageChildren {
+    fn into_page_children(self) -> Vec<tuidom::Element>;
+}
+
+impl IntoPageChildren for tuidom::Element {
+    fn into_page_children(self) -> Vec<tuidom::Element> {
+        vec![self]
+    }
+}
+
+impl IntoPageChildren for Vec<tuidom::Element> {
+    fn into_page_children(self) -> Vec<tuidom::Element> {
+        self
+    }
+}

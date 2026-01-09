@@ -32,14 +32,13 @@ fn generate_for(node: &ForNode) -> TokenStream {
     let iter = &node.iter;
     let body: Vec<_> = node.body.iter().map(generate_view_node).collect();
 
-    // For loops produce a column containing all generated elements
-    quote! {
-        tuidom::Element::col().children(
-            (#iter).into_iter().flat_map(|#pat| {
-                vec![#(#body),*]
-            }).collect::<Vec<_>>()
-        )
-    }
+    // Use __page_spread marker - will be detected and flattened by parent
+    quote! {{
+        let __page_spread: Vec<tuidom::Element> = (#iter).into_iter().flat_map(|#pat| {
+            std::vec![#(#body),*]
+        }).collect();
+        __page_spread
+    }}
 }
 
 /// Generate code for an if statement
