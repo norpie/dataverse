@@ -10,3 +10,5 @@ rafter/perf.data.old
 CLAUDE.md
 tuidom/docs/book
 **/*.old
+flamegraph.svg
+perf.data
