@@ -551,6 +551,8 @@ async fn main() {
     if let Err(e) = Runtime::new()
         .expect("Failed to create runtime")
         .data(api_client)
+        .system(Taskbar::default())
+        .system(GlobalKeys::default())
         .run(AppA::default())
         .await
     {
