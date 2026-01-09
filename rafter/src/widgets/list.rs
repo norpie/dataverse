@@ -127,6 +127,10 @@ pub struct List<S = NeedsState> {
     item_style_selected: Option<Style>,
     item_style_focused: Option<Style>,
     transitions: Option<Transitions>,
+    /// Fixed item height for O(1) virtualization.
+    /// When set, the layout engine can calculate visible ranges without
+    /// iterating all children.
+    item_height: Option<u16>,
 }
 
 impl Default for List<NeedsState> {
@@ -146,6 +150,7 @@ impl List<NeedsState> {
             item_style_selected: None,
             item_style_focused: None,
             transitions: None,
+            item_height: None,
         }
     }
 
@@ -159,6 +164,7 @@ impl List<NeedsState> {
             item_style_selected: self.item_style_selected,
             item_style_focused: self.item_style_focused,
             transitions: self.transitions,
+            item_height: self.item_height,
         }
     }
 }
@@ -197,6 +203,18 @@ impl<S> List<S> {
     /// Set transitions.
     pub fn transitions(mut self, t: Transitions) -> Self {
         self.transitions = Some(t);
+        self
+    }
+
+    /// Set fixed item height for O(1) virtualization.
+    ///
+    /// When all items have the same height, this enables the layout engine
+    /// to calculate visible ranges without iterating all children.
+    /// This dramatically improves performance for lists with thousands of items.
+    ///
+    /// The height should include any vertical padding/margins on the item row.
+    pub fn item_height(mut self, height: u16) -> Self {
+        self.item_height = Some(height);
         self
     }
 }
@@ -292,6 +310,9 @@ impl<'a, T: ListItem> List<HasListState<'a, T>> {
         }
         if let Some(transitions) = self.transitions {
             container = container.transitions(transitions);
+        }
+        if let Some(height) = self.item_height {
+            container = container.item_height(height);
         }
 
         container

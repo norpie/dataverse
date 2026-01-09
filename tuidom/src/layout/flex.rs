@@ -6,6 +6,32 @@ use crate::element::{Content, Element};
 use crate::text::display_width;
 use crate::types::{Align, Direction, Overflow, Position, Size, Wrap};
 
+// =============================================================================
+// Virtualization Constants
+// =============================================================================
+
+/// Minimum number of children before virtualization kicks in.
+/// Below this threshold, the overhead of visibility calculation isn't worth it.
+const VIRTUALIZATION_THRESHOLD: usize = 20;
+
+/// Number of extra items to layout above/below visible area.
+/// Provides buffer for smooth scrolling without visual pop-in.
+const VIRTUALIZATION_BUFFER: usize = 5;
+
+// =============================================================================
+// Scroll Context for Virtualization
+// =============================================================================
+
+/// Scroll context passed down from scrollable ancestors.
+/// Allows children to virtualize even if they're not scrollable themselves.
+#[derive(Debug, Clone, Copy)]
+struct ScrollContext {
+    /// Vertical scroll offset from the scrollable ancestor.
+    scroll_y: u16,
+    /// Viewport height of the scrollable ancestor.
+    viewport_height: u16,
+}
+
 /// Layout results containing element rects and content sizes.
 #[derive(Debug, Default, Clone)]
 pub struct LayoutResult {
@@ -71,7 +97,7 @@ impl LayoutResult {
 
 pub fn layout(element: &Element, available: Rect, animation: &AnimationState) -> LayoutResult {
     let mut result = LayoutResult::new();
-    layout_element(element, available, &mut result, animation);
+    layout_element(element, available, &mut result, animation, None);
     result
 }
 
@@ -80,12 +106,13 @@ fn layout_element(
     available: Rect,
     result: &mut LayoutResult,
     animation: &AnimationState,
+    scroll_ctx: Option<ScrollContext>,
 ) {
     // Handle absolute positioning
     if element.position == Position::Absolute {
         let rect = layout_absolute(element, available);
         result.insert(element.id.clone(), rect);
-        layout_children(element, rect, result, animation);
+        layout_children(element, rect, result, animation, scroll_ctx);
         return;
     }
 
@@ -115,7 +142,7 @@ fn layout_element(
     }
 
     result.insert(element.id.clone(), rect);
-    layout_children(element, rect, result, animation);
+    layout_children(element, rect, result, animation, scroll_ctx);
 }
 
 /// Layout an absolutely positioned element within its containing block.
@@ -173,13 +200,14 @@ fn layout_children(
     rect: Rect,
     result: &mut LayoutResult,
     animation: &AnimationState,
+    scroll_ctx: Option<ScrollContext>,
 ) {
     // Handle Frames content - only layout current frame
     if let Content::Frames { children, .. } = &element.content {
         let frame_idx = animation.current_frame(&element.id);
         if let Some(frame) = children.get(frame_idx) {
             // Layout the current frame as a single child filling the container
-            layout_element(frame, rect, result, animation);
+            layout_element(frame, rect, result, animation, scroll_ctx);
         }
         return;
     }
@@ -223,6 +251,8 @@ fn layout_children(
         Overflow::Scroll => (1, 1), // Always show both scrollbars
         Overflow::Auto => {
             // Smart reservation: only reserve space for scrollbars that are needed
+            // Note: compute_content_size calls estimate_size which has O(1) fast path
+            // when child elements have item_height set
             let (content_width, content_height) =
                 compute_content_size(&flow_children, inner_no_scroll, is_row, element.gap);
 
@@ -250,6 +280,82 @@ fn layout_children(
         element.padding.left + border_size,
     );
 
+    let (scroll_x, scroll_y) = element.scroll_offset;
+
+    // Determine scroll context for children:
+    // - If this element is scrollable, create new scroll context
+    // - Otherwise, inherit from parent
+    let is_scrollable = element.overflow == Overflow::Scroll || element.overflow == Overflow::Auto;
+    let child_scroll_ctx = if is_scrollable {
+        Some(ScrollContext {
+            scroll_y,
+            viewport_height: inner.height,
+        })
+    } else {
+        scroll_ctx
+    };
+
+    // Check if we should use virtualized layout
+    // Can virtualize if: this element is scrollable OR has scroll context from ancestor
+    let effective_scroll_ctx = if is_scrollable {
+        Some(ScrollContext {
+            scroll_y,
+            viewport_height: inner.height,
+        })
+    } else {
+        scroll_ctx
+    };
+
+    if should_virtualize(element, flow_children.len(), effective_scroll_ctx) {
+        let ctx = effective_scroll_ctx.unwrap(); // Safe: should_virtualize ensures this
+
+        // Virtualized path: only fully layout visible children
+        // Returns content size calculated during position estimation
+        let (content_width, content_height) = layout_children_virtualized(
+            element,
+            &flow_children,
+            inner,
+            ctx.scroll_y,
+            ctx.viewport_height,
+            element.gap,
+            result,
+            animation,
+            child_scroll_ctx,
+        );
+
+        // Set content size for scroll calculations (only if this element is scrollable)
+        if is_scrollable {
+            result.set_content_size(
+                element.id.clone(),
+                content_width,
+                content_height,
+                inner.width,
+                inner.height,
+            );
+        }
+
+        // Apply scroll offset to visible children only (others don't have rects)
+        if is_scrollable && (scroll_x > 0 || scroll_y > 0) {
+            for child in &flow_children {
+                apply_scroll_offset_recursive(child, scroll_x, scroll_y, result);
+            }
+        }
+
+        // Layout absolute children (not virtualized)
+        for child in &absolute_children {
+            layout_element(child, rect, result, animation, child_scroll_ctx);
+        }
+
+        if is_scrollable && (scroll_x > 0 || scroll_y > 0) {
+            for child in &absolute_children {
+                apply_scroll_offset_recursive(child, scroll_x, scroll_y, result);
+            }
+        }
+
+        return;
+    }
+
+    // Non-virtualized path (original code)
     let main_size = if is_row { inner.width } else { inner.height };
     let cross_size = if is_row { inner.height } else { inner.width };
 
@@ -274,6 +380,7 @@ fn layout_children(
             is_row,
             result,
             animation,
+            child_scroll_ctx,
         );
         cross_offset += line_cross_size + element.gap;
     }
@@ -293,7 +400,6 @@ fn layout_children(
     }
 
     // Apply scroll offset to all flow children
-    let (scroll_x, scroll_y) = element.scroll_offset;
     if scroll_x > 0 || scroll_y > 0 {
         for child in &flow_children {
             apply_scroll_offset_recursive(child, scroll_x, scroll_y, result);
@@ -302,7 +408,7 @@ fn layout_children(
 
     // Layout absolute children (they position themselves relative to container)
     for child in &absolute_children {
-        layout_element(child, rect, result, animation);
+        layout_element(child, rect, result, animation, child_scroll_ctx);
     }
 
     // Apply scroll offset to absolute children too (so dropdowns follow their anchors)
@@ -363,7 +469,9 @@ fn compute_content_size(
     }
 }
 
-/// Apply scroll offset to an element and all its descendants
+/// Apply scroll offset to an element and all its descendants.
+/// Only recurses into children that are present in the layout result
+/// (virtualized off-screen elements won't have their children laid out).
 fn apply_scroll_offset_recursive(
     element: &Element,
     scroll_x: u16,
@@ -377,7 +485,11 @@ fn apply_scroll_offset_recursive(
 
     if let Content::Children(children) = &element.content {
         for child in children {
-            apply_scroll_offset_recursive(child, scroll_x, scroll_y, result);
+            // Only recurse if child was laid out (virtualized off-screen children
+            // have a rect but their descendants don't)
+            if result.get(&child.id).is_some() {
+                apply_scroll_offset_recursive(child, scroll_x, scroll_y, result);
+            }
         }
     }
 }
@@ -446,6 +558,7 @@ fn layout_line(
     is_row: bool,
     result: &mut LayoutResult,
     animation: &AnimationState,
+    scroll_ctx: Option<ScrollContext>,
 ) -> u16 {
     if line.is_empty() {
         return 0;
@@ -640,7 +753,7 @@ fn layout_line(
         }
 
         result.insert(child.id.clone(), child_rect);
-        layout_children(child, child_rect, result, animation);
+        layout_children(child, child_rect, result, animation, scroll_ctx);
 
         main_offset += margin_before + main + margin_after + between_gap;
     }
@@ -750,6 +863,19 @@ fn estimate_size(element: &Element, is_width: bool) -> u16 {
                 || element.direction == Direction::Column && !is_width
             {
                 // Sum along main axis
+                // O(1) fast path: use item_height hint for column height estimation
+                if !is_width && element.direction == Direction::Column {
+                    if let Some(item_height) = element.item_height {
+                        let child_count = children.len();
+                        let stride = item_height.saturating_add(element.gap) as u32;
+                        return padding
+                            + border_size
+                            + scrollbar_size
+                            + (child_count as u32 * stride).saturating_sub(element.gap as u32)
+                                as u16;
+                    }
+                }
+                // O(n) fallback
                 let gap_total = element.gap * (children.len().saturating_sub(1)) as u16;
                 children
                     .iter()
@@ -793,4 +919,206 @@ fn estimate_size(element: &Element, is_width: bool) -> u16 {
     };
 
     content_size + padding + border_size + scrollbar_size
+}
+
+// =============================================================================
+// Virtualization
+// =============================================================================
+
+/// Check if a container should use virtualized layout.
+/// Returns true for column containers with enough children that have scroll context
+/// (either from this element being scrollable, or inherited from scrollable ancestor).
+fn should_virtualize(
+    element: &Element,
+    child_count: usize,
+    scroll_ctx: Option<ScrollContext>,
+) -> bool {
+    let has_scroll_context = scroll_ctx.is_some();
+    let is_column = element.direction == Direction::Column;
+    let no_wrap = element.wrap == Wrap::NoWrap;
+    let enough_children = child_count >= VIRTUALIZATION_THRESHOLD;
+
+    has_scroll_context && is_column && no_wrap && enough_children
+}
+
+/// Calculate which children are visible given scroll position and viewport.
+/// Returns (first_visible_index, last_visible_index, total_content_height).
+/// Includes VIRTUALIZATION_BUFFER items above and below.
+///
+/// When `fixed_item_height` is Some, uses O(1) calculation.
+/// Otherwise falls back to O(n) position estimation.
+fn compute_visible_range(
+    children: &[&Element],
+    scroll_y: u16,
+    viewport_height: u16,
+    gap: u16,
+    fixed_item_height: Option<u16>,
+) -> (usize, usize, u16) {
+    if children.is_empty() {
+        return (0, 0, 0);
+    }
+
+    let child_count = children.len();
+
+    // O(1) path: fixed item height known
+    if let Some(item_height) = fixed_item_height {
+        let item_stride = item_height.saturating_add(gap) as u32;
+        let total_height = if child_count > 0 {
+            // total = n * item_height + (n-1) * gap = n * stride - gap
+            (child_count as u32 * item_stride).saturating_sub(gap as u32) as u16
+        } else {
+            0
+        };
+
+        if item_stride == 0 {
+            return (0, child_count, total_height);
+        }
+
+        // First visible: first child whose bottom edge is past scroll_y
+        // Child i has bottom at (i+1) * stride - gap
+        // We want (i+1) * stride - gap > scroll_y
+        // i+1 > (scroll_y + gap) / stride
+        // i > (scroll_y + gap) / stride - 1
+        let first_visible = if scroll_y == 0 {
+            0
+        } else {
+            (scroll_y as u32 / item_stride) as usize
+        };
+
+        // Last visible: first child whose top edge is past viewport bottom
+        // Child i has top at i * stride
+        // We want i * stride >= viewport_bottom
+        let viewport_bottom = scroll_y.saturating_add(viewport_height) as u32;
+        let last_visible = ((viewport_bottom + item_stride - 1) / item_stride) as usize;
+
+        // Apply buffer
+        let start = first_visible.saturating_sub(VIRTUALIZATION_BUFFER);
+        let end = (last_visible + VIRTUALIZATION_BUFFER).min(child_count);
+
+        log::debug!(
+            "[virtualize-O1] children={} item_height={} scroll_y={} viewport={} -> visible={}..{}",
+            child_count,
+            item_height,
+            scroll_y,
+            viewport_height,
+            start,
+            end
+        );
+
+        return (start, end, total_height);
+    }
+
+    // O(n) fallback: estimate each child's height
+    let mut offset = 0u16;
+    let mut first_visible = 0;
+    let mut last_visible = child_count;
+    let viewport_bottom = scroll_y.saturating_add(viewport_height);
+    let mut found_first = false;
+    let mut found_last = false;
+
+    for (i, child) in children.iter().enumerate() {
+        let height = estimate_child_height(child);
+        let bottom = offset.saturating_add(height);
+
+        if !found_first && bottom > scroll_y {
+            first_visible = i;
+            found_first = true;
+        }
+
+        if !found_last && offset >= viewport_bottom {
+            last_visible = i;
+            found_last = true;
+            // Can't break early - need total height
+        }
+
+        offset = bottom;
+        if i < child_count - 1 {
+            offset = offset.saturating_add(gap);
+        }
+    }
+
+    let total_height = offset;
+
+    // Apply buffer
+    let start = first_visible.saturating_sub(VIRTUALIZATION_BUFFER);
+    let end = (last_visible + VIRTUALIZATION_BUFFER).min(child_count);
+
+    (start, end, total_height)
+}
+
+/// Estimate a child's height including its margins.
+fn estimate_child_height(child: &Element) -> u16 {
+    let base_height = estimate_size(child, false); // false = height
+    let margin_height = child.margin.top + child.margin.bottom;
+    base_height + margin_height
+}
+
+/// Layout children with virtualization - only fully layout visible items.
+/// Off-screen items are skipped entirely (no rects inserted).
+/// Returns (content_width, content_height) for scroll calculations.
+#[allow(clippy::too_many_arguments)]
+fn layout_children_virtualized(
+    element: &Element,
+    flow_children: &[&Element],
+    inner: Rect,
+    scroll_y: u16,
+    viewport_height: u16,
+    gap: u16,
+    result: &mut LayoutResult,
+    animation: &AnimationState,
+    scroll_ctx: Option<ScrollContext>,
+) -> (u16, u16) {
+    let fixed_item_height = element.item_height;
+    let (visible_start, visible_end, total_height) =
+        compute_visible_range(flow_children, scroll_y, viewport_height, gap, fixed_item_height);
+
+    log::debug!(
+        "[virtualize] id={} children={} visible={}..{} scroll_y={} viewport={} content_height={} fixed_height={:?}",
+        element.id,
+        flow_children.len(),
+        visible_start,
+        visible_end,
+        scroll_y,
+        viewport_height,
+        total_height,
+        fixed_item_height
+    );
+
+    // Layout ONLY visible children - skip off-screen entirely
+    for i in visible_start..visible_end {
+        let child = flow_children[i];
+
+        // Calculate y offset for this child
+        let y_offset = if let Some(item_height) = fixed_item_height {
+            // O(1): fixed stride
+            let stride = item_height.saturating_add(gap);
+            (i as u16).saturating_mul(stride)
+        } else {
+            // O(n) fallback: sum up heights of preceding children
+            // This is only called for visible children, so bounded by visible count
+            let mut offset = 0u16;
+            for j in 0..i {
+                offset = offset
+                    .saturating_add(estimate_child_height(flow_children[j]))
+                    .saturating_add(gap);
+            }
+            offset
+        };
+
+        let child_height = fixed_item_height.unwrap_or_else(|| {
+            estimate_child_height(child).saturating_sub(child.margin.top + child.margin.bottom)
+        });
+
+        // Calculate child rect
+        let child_x = inner.x + child.margin.left;
+        let child_y = inner.y + y_offset + child.margin.top;
+        let child_width = inner.width.saturating_sub(child.margin.left + child.margin.right);
+
+        let child_rect = Rect::new(child_x, child_y, child_width, child_height);
+        result.insert(child.id.clone(), child_rect);
+        layout_children(child, child_rect, result, animation, scroll_ctx);
+    }
+
+    // Content width is just the inner width for column layout
+    (inner.width, total_height)
 }

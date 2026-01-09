@@ -233,6 +233,11 @@ fn collect_elements<'a>(
     match &element.content {
         Content::Children(children) => {
             for child in children {
+                // Skip children that weren't laid out (off-screen in virtualized containers).
+                // The parent has a rect, but virtualized off-screen children's descendants don't.
+                if layout.get(&child.id).is_none() {
+                    continue;
+                }
                 order = collect_elements(
                     child,
                     layout,
@@ -249,16 +254,19 @@ fn collect_elements<'a>(
             // Only collect the current frame
             let frame_idx = animation.current_frame(&element.id);
             if let Some(child) = children.get(frame_idx) {
-                order = collect_elements(
-                    child,
-                    layout,
-                    list,
-                    order,
-                    effective_z,
-                    child_clip,
-                    cumulative_offset,
-                    animation,
-                );
+                // Skip if not laid out
+                if layout.get(&child.id).is_some() {
+                    order = collect_elements(
+                        child,
+                        layout,
+                        list,
+                        order,
+                        effective_z,
+                        child_clip,
+                        cumulative_offset,
+                        animation,
+                    );
+                }
             }
         }
         _ => {}

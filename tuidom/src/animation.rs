@@ -244,8 +244,9 @@ impl AnimationState {
         }
 
         // Recurse into children
+        // Skip children of virtualized containers (item_height set)
         match &element.content {
-            Content::Children(children) => {
+            Content::Children(children) if element.item_height.is_none() => {
                 for child in children {
                     self.check_position_changes(child, layout, now);
                 }
@@ -390,8 +391,10 @@ impl AnimationState {
         self.snapshots.insert(id.clone(), current);
 
         // Recurse into children
+        // Skip children of virtualized containers (item_height set) - they typically
+        // don't have transitions and would cause O(n) traversal of all list items
         match &element.content {
-            Content::Children(children) => {
+            Content::Children(children) if element.item_height.is_none() => {
                 for child in children {
                     self.update_element(child, now);
                 }

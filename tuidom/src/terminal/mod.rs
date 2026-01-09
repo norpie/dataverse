@@ -11,7 +11,7 @@ use crossterm::{
     terminal,
 };
 
-use crate::animation::{collect_element_ids, AnimationState};
+use crate::animation::AnimationState;
 use crate::buffer::Buffer;
 use crate::element::Element;
 use crate::layout::{layout, LayoutResult, Rect};
@@ -184,7 +184,13 @@ impl Terminal {
         std::mem::swap(&mut self.current_buffer, &mut self.previous_buffer);
 
         // Cleanup animation state for removed elements
-        let current_ids = collect_element_ids(root);
+        // Use layout result IDs (O(visible)) instead of traversing element tree (O(n))
+        // With virtualization, only visible elements are in the layout result
+        let current_ids: std::collections::HashSet<String> = self
+            .last_layout
+            .iter_rects()
+            .map(|(id, _)| id.clone())
+            .collect();
         self.animation.cleanup(&current_ids);
         let t_cleanup = Instant::now();
 

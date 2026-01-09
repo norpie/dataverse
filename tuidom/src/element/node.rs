@@ -58,6 +58,12 @@ pub struct Element {
     pub overflow: Overflow,
     pub scroll_offset: (u16, u16),
 
+    // Virtualization hint
+    /// Fixed height for all children (enables O(1) virtualization).
+    /// When set, the layout engine can calculate visible ranges without
+    /// iterating all children. Set via List widget's `item_height()` method.
+    pub item_height: Option<u16>,
+
     // Visual
     pub style: Style,
     pub transitions: Transitions,
@@ -118,6 +124,7 @@ impl Default for Element {
             align_self: None,
             overflow: Overflow::Visible,
             scroll_offset: (0, 0),
+            item_height: None,
             style: Style::default(),
             transitions: Transitions::default(),
             backdrop: Backdrop::None,
@@ -332,6 +339,14 @@ impl Element {
 
     pub fn scroll_offset(mut self, x: u16, y: u16) -> Self {
         self.scroll_offset = (x, y);
+        self
+    }
+
+    /// Set fixed item height for virtualization optimization.
+    /// When all children have the same height, this enables O(1) visible
+    /// range calculation instead of O(n).
+    pub fn item_height(mut self, height: u16) -> Self {
+        self.item_height = Some(height);
         self
     }
 
