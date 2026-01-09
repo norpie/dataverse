@@ -127,10 +127,9 @@ impl PerfListExample {
                     text (content: {format!("[{} items]", count)})
                 }
 
-                // Scrollable list
-                // item_height: 1 enables O(1) virtualization (each row is 1 line)
+                // Scrollable list (virtualization is automatic)
                 box_ (id: "perf-scroll", height: fill, width: fill, overflow: auto) {
-                    list (state: self.items, id: "perf-list", item_height: 1)
+                    list (state: self.items, id: "perf-list")
                 }
 
                 // Footer
