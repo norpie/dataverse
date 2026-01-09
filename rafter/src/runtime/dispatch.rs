@@ -272,12 +272,27 @@ impl<'a> EventDispatcher<'a> {
                         "dispatch_to_widgets: looking up handler for target={}, event=on_activate",
                         target_id
                     );
+
+                    // First check app instance handlers
                     if let Some(handler) = handlers.get(target_id, "on_activate") {
-                        log::debug!("dispatch_to_widgets: found handler, calling");
+                        log::debug!("dispatch_to_widgets: found app handler, calling");
                         handler(&hx);
                         log::debug!("dispatch_to_widgets: handler returned");
                         return Some(DispatchResult::HandledByWidget(WidgetResult::Activated));
                     }
+
+                    // Then check system handlers (for overlay buttons)
+                    for system in self.systems {
+                        let system_handlers = system.handlers();
+                        if let Some(handler) = system_handlers.get(target_id, "on_activate") {
+                            log::debug!("dispatch_to_widgets: found system handler for {}, calling", system.name());
+                            let system_hx = HandlerContext::for_system(self.gx);
+                            handler(&system_hx);
+                            log::debug!("dispatch_to_widgets: system handler returned");
+                            return Some(DispatchResult::HandledByWidget(WidgetResult::Activated));
+                        }
+                    }
+
                     log::debug!("dispatch_to_widgets: no handler found");
                 }
             }

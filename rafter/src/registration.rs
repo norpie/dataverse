@@ -83,6 +83,8 @@ pub trait AnySystem: Send + Sync {
     fn name(&self) -> &'static str;
     /// Get the system's keybinds (closure-based).
     fn keybinds(&self) -> KeybindClosures;
+    /// Get the handler registry for widget events.
+    fn handlers(&self) -> &crate::HandlerRegistry;
     /// Get the system's overlay.
     fn overlay(&self) -> Option<Overlay>;
     /// Called on initialization.
@@ -111,6 +113,10 @@ impl<T: System> AnySystem for T {
 
     fn keybinds(&self) -> KeybindClosures {
         System::keybinds(self)
+    }
+
+    fn handlers(&self) -> &crate::HandlerRegistry {
+        System::handlers(self)
     }
 
     fn overlay(&self) -> Option<Overlay> {
