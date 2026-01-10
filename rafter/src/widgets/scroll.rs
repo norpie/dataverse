@@ -438,6 +438,7 @@ impl Scrollbar {
             .width(Size::Fixed(1))
             .height(Size::Fill)
             .clickable(true)
+            .z_index(10) // Ensure scrollbar is on top for hit-testing
             .children(children)
     }
 

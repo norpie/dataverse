@@ -167,6 +167,10 @@ pub struct TableState<T: TableRow> {
 
     /// Currently focused row key (for syncing focus styling across frozen/scrollable panels).
     pub focused_key: Option<T::Key>,
+
+    /// Whether the horizontal scrollbar is visible (detected at layout time).
+    /// Used to add a matching spacer on the frozen side.
+    pub has_horizontal_scrollbar: bool,
 }
 
 impl<T: TableRow> Default for TableState<T> {
@@ -184,6 +188,7 @@ impl<T: TableRow> Default for TableState<T> {
             drag_grab_offset: None,
             horizontal_scroll_offset: 0,
             focused_key: None,
+            has_horizontal_scrollbar: false,
         }
     }
 }
@@ -299,6 +304,19 @@ impl<T: TableRow> TableState<T> {
     /// Get scrollable columns (after frozen columns).
     pub fn scrollable_columns(&self) -> &[Column] {
         &self.columns[self.frozen_count..]
+    }
+
+    /// Calculate the total fixed width of scrollable columns.
+    /// Returns None if any column uses Flex or Auto (width depends on viewport).
+    pub fn scrollable_columns_fixed_width(&self) -> Option<u16> {
+        let mut total: u16 = 0;
+        for col in self.scrollable_columns() {
+            match col.width {
+                ColumnWidth::Fixed(w) => total = total.saturating_add(w),
+                ColumnWidth::Flex(_) | ColumnWidth::Auto => return None,
+            }
+        }
+        Some(total)
     }
 
     /// Check if there are frozen columns.
@@ -654,12 +672,26 @@ impl<'a, T: TableRow> Table<HasTableState<'a, T>> {
 
             register_scrollbar_handlers(&scrollbar_id, registry, state);
 
+            // Wrap scrollbar in column with header-height spacer so it aligns with body
+            let scrollbar_wrapper = if self.show_header {
+                Element::col()
+                    .width(Size::Fixed(1))
+                    .height(Size::Fill)
+                    .child(Element::box_().width(Size::Fixed(1)).height(Size::Fixed(1))) // header spacer
+                    .child(scrollbar)
+            } else {
+                Element::col()
+                    .width(Size::Fixed(1))
+                    .height(Size::Fill)
+                    .child(scrollbar)
+            };
+
             Element::row()
                 .id(table_id)
                 .width(Size::Fill)
                 .height(Size::Fill)
                 .child(content)
-                .child(scrollbar)
+                .child(scrollbar_wrapper)
         } else {
             content.id(table_id)
         }
@@ -785,7 +817,7 @@ impl<'a, T: TableRow> Table<HasTableState<'a, T>> {
             .overflow_y(Overflow::Hidden)
             .child(scrollable_content);
 
-        // Register scroll handlers on both panels
+        // Register scroll handlers on both body elements (they have .scrollable(true))
         self.register_scroll_handlers(
             &frozen_body_id,
             &frozen_panel_id,
@@ -795,7 +827,7 @@ impl<'a, T: TableRow> Table<HasTableState<'a, T>> {
             "frozen",
         );
         self.register_scroll_handlers(
-            &scrollable_panel_id,
+            &scrollable_body_id,
             &scrollable_panel_id,
             registry,
             state,
@@ -803,8 +835,17 @@ impl<'a, T: TableRow> Table<HasTableState<'a, T>> {
             "scrollable",
         );
 
+        // Register layout handler on scrollable panel to detect horizontal scrollbar
+        // (compares content width with viewport width)
+        self.register_scrollbar_detection_handler(
+            &scrollable_panel_id,
+            registry,
+            state,
+            current.scrollable_columns_fixed_width(),
+        );
+
         // Register layout handler on the scrollable body (not panel) to get exact row area height
-        // The body's height already excludes header and scrollbar
+        // The body's height already excludes the scrollbar (panel handles that), so don't subtract
         self.register_layout_handler(&scrollable_body_id, registry, state, false);
 
         // Build frozen panel (header + body + spacer for horizontal scrollbar)
@@ -816,7 +857,7 @@ impl<'a, T: TableRow> Table<HasTableState<'a, T>> {
 
         // Add spacer at bottom to match horizontal scrollbar on scrollable side
         // This prevents the last frozen row from "peeking out" below the scrollable area
-        if !scrollable_columns.is_empty() {
+        if current.has_horizontal_scrollbar {
             let scrollbar_spacer = Element::box_()
                 .id(format!("{}-frozen-scrollbar-spacer", table_id))
                 .width(Size::Fill)
@@ -855,12 +896,26 @@ impl<'a, T: TableRow> Table<HasTableState<'a, T>> {
 
             register_scrollbar_handlers(&scrollbar_id, registry, state);
 
+            // Wrap scrollbar in column with header-height spacer so it aligns with body
+            let scrollbar_wrapper = if self.show_header {
+                Element::col()
+                    .width(Size::Fixed(1))
+                    .height(Size::Fill)
+                    .child(Element::box_().width(Size::Fixed(1)).height(Size::Fixed(1))) // header spacer
+                    .child(scrollbar)
+            } else {
+                Element::col()
+                    .width(Size::Fixed(1))
+                    .height(Size::Fill)
+                    .child(scrollbar)
+            };
+
             Element::row()
                 .id(table_id)
                 .width(Size::Fill)
                 .height(Size::Fill)
                 .child(main_content)
-                .child(scrollbar)
+                .child(scrollbar_wrapper)
         } else {
             main_content.id(table_id)
         }
@@ -1245,6 +1300,38 @@ impl<'a, T: TableRow> Table<HasTableState<'a, T>> {
                     };
                     state_clone.update(|s| {
                         s.scroll.set_viewport(viewport_height);
+                    });
+                }
+            }),
+        );
+    }
+
+    /// Register handler to detect if horizontal scrollbar is visible.
+    /// Updates `has_horizontal_scrollbar` in state based on content_width > viewport_width.
+    fn register_scrollbar_detection_handler(
+        &self,
+        panel_id: &str,
+        registry: &HandlerRegistry,
+        state: &State<TableState<T>>,
+        content_width: Option<u16>,
+    ) {
+        // Only register if we know the fixed content width
+        let Some(content_width) = content_width else {
+            return;
+        };
+
+        let state_clone = state.clone();
+        registry.register(
+            panel_id,
+            "on_layout",
+            Arc::new(move |hx| {
+                if let Some((_, _, width, _)) = hx.event().layout() {
+                    // Horizontal scrollbar appears when content is wider than viewport
+                    let needs_scrollbar = content_width > width;
+                    state_clone.update(|s| {
+                        if s.has_horizontal_scrollbar != needs_scrollbar {
+                            s.has_horizontal_scrollbar = needs_scrollbar;
+                        }
                     });
                 }
             }),
