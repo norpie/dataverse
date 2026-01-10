@@ -1,14 +1,16 @@
-pub fn add(left: u64, right: u64) -> u64 {
-    left + right
-}
+//! Dataverse API client library
+//!
+//! A Rust async client library for Microsoft Dynamics 365 Dataverse Web API (v9.2).
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+pub mod api;
+pub mod auth;
+pub mod cache;
+pub mod error;
+pub mod index;
+pub mod model;
+pub mod rate_limit;
+pub mod stream;
 
-    #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
-    }
-}
+mod client;
+
+pub use client::*;

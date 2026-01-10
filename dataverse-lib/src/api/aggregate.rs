@@ -1,0 +1,1 @@
+//! FetchXML aggregation queries

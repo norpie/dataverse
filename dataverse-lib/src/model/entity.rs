@@ -1,0 +1,1 @@
+//! Entity enum (Logical/Set)

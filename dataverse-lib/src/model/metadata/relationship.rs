@@ -1,0 +1,1 @@
+//! Relationship metadata types

@@ -1,0 +1,1 @@
+//! NavigationProperty wrapper type

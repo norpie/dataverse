@@ -1,0 +1,1 @@
+//! FileReference and ImageReference types
