@@ -39,6 +39,7 @@ pub mod radio;
 pub mod scroll;
 pub mod select;
 pub mod selection;
+pub mod table;
 pub mod text;
 pub mod tree;
 
@@ -53,5 +54,6 @@ pub use radio::{RadioGroup, RadioState};
 pub use scroll::{Orientation, Scrollbar, ScrollbarStyle, ScrollRequest, ScrollState};
 pub use select::{Select, SelectState};
 pub use selection::{Selection, SelectionMode};
+pub use table::{Column, ColumnWidth, Table, TableRow, TableState};
 pub use text::Text;
 pub use tree::{Tree, TreeItem, TreeNode, TreeState};

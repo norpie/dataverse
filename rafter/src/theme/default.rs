@@ -90,6 +90,13 @@ pub struct AutocompleteColors {
 }
 
 #[theme]
+pub struct TableColors {
+    pub row_focused: Color,
+    pub row_selected: Color,
+    pub header_bg: Color,
+}
+
+#[theme]
 pub struct RafterTheme {
     // Core colors
     pub background: Color,
@@ -130,6 +137,8 @@ pub struct RafterTheme {
     pub collapsible: CollapsibleColors,
     #[group]
     pub autocomplete: AutocompleteColors,
+    #[group]
+    pub table: TableColors,
 }
 
 /// Create the default rafter theme.
@@ -222,6 +231,12 @@ pub fn default_theme() -> RafterTheme {
             disabled: Color::var("surface").darken(0.1),
             dropdown_bg: Color::var("surface"),
             item_focused: Color::var("accent"),
+        },
+
+        table: TableColors {
+            row_focused: Color::var("accent"),
+            row_selected: Color::var("accent").darken(0.3),
+            header_bg: Color::var("surface").lighten(0.1),
         },
     }
 }
