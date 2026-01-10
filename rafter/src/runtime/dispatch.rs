@@ -317,13 +317,15 @@ impl<'a> EventDispatcher<'a> {
                     }
                 }
 
-                // Up/Down arrow keys dispatch to on_key_up/on_key_down handlers
-                // (Used by List widget for boundary scrolling)
+                // Arrow keys dispatch to on_key_up/down/left/right handlers
+                // (Used by List/Tree widgets for boundary scrolling and expand/collapse)
                 if modifiers.none() {
                     if let Some(target_id) = target {
                         let handler_name = match key {
                             tuidom::Key::Up => Some("on_key_up"),
                             tuidom::Key::Down => Some("on_key_down"),
+                            tuidom::Key::Left => Some("on_key_left"),
+                            tuidom::Key::Right => Some("on_key_right"),
                             _ => None,
                         };
                         if let Some(name) = handler_name {
@@ -333,7 +335,11 @@ impl<'a> EventDispatcher<'a> {
                                 if let Some(panic_result) = call_app_and_check(&handler, &hx, instance.config().name, instance.id()) {
                                     return Some(panic_result);
                                 }
-                                // Don't return - let focus navigation continue
+                                // For Left/Right, consume the event (don't let focus nav continue)
+                                // For Up/Down, let focus navigation continue after handler
+                                if matches!(key, tuidom::Key::Left | tuidom::Key::Right) {
+                                    return Some(DispatchResult::HandledByWidget(WidgetResult::Handled));
+                                }
                             } else {
                                 log::debug!("dispatch_to_widgets: no {} handler found for {}", name, target_id);
                             }

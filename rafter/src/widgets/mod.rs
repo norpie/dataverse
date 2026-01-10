@@ -40,6 +40,7 @@ pub mod scroll;
 pub mod select;
 pub mod selection;
 pub mod text;
+pub mod tree;
 
 pub use autocomplete::{Autocomplete, AutocompleteState};
 pub use button::Button;
@@ -53,3 +54,4 @@ pub use scroll::{Orientation, Scrollbar, ScrollbarStyle, ScrollRequest, ScrollSt
 pub use select::{Select, SelectState};
 pub use selection::{Selection, SelectionMode};
 pub use text::Text;
+pub use tree::{Tree, TreeItem, TreeNode, TreeState};

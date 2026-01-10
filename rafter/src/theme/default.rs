@@ -59,6 +59,12 @@ pub struct ListColors {
 }
 
 #[theme]
+pub struct TreeColors {
+    pub node_focused: Color,
+    pub node_selected: Color,
+}
+
+#[theme]
 pub struct RadioColors {
     pub focused: Color,
     pub disabled: Color,
@@ -114,6 +120,8 @@ pub struct RafterTheme {
     pub select: SelectColors,
     #[group]
     pub list: ListColors,
+    #[group]
+    pub tree: TreeColors,
     #[group]
     pub radio: RadioColors,
     #[group]
@@ -188,6 +196,11 @@ pub fn default_theme() -> RafterTheme {
         list: ListColors {
             item_focused: Color::var("accent"),
             item_selected: Color::var("accent").darken(0.3),
+        },
+
+        tree: TreeColors {
+            node_focused: Color::var("accent"),
+            node_selected: Color::var("accent").darken(0.3),
         },
 
         radio: RadioColors {
