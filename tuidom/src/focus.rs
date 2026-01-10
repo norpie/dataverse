@@ -4,7 +4,7 @@ use crate::element::{find_element, Content, Element};
 use crate::event::{Event, Key, Modifiers, NavDirection, ScrollAction};
 use crate::hit::hit_test_focusable;
 use crate::layout::{LayoutResult, Rect};
-use crate::scroll::find_scrollable_ancestor_with_type;
+use crate::scroll::{find_scrollable_ancestor, find_scrollable_ancestor_with_type};
 
 /// Tracks which element is currently focused and processes events.
 #[derive(Debug, Default)]
@@ -101,6 +101,8 @@ impl FocusState {
     /// Focus the nearest focusable element in the given direction.
     /// Returns the newly focused element ID if focus changed.
     /// Higher z-index elements are prioritized (e.g., dropdown overlays).
+    /// Elements within the same scrollable container are preferred to avoid
+    /// jumping to frozen/fixed elements that may be visually closer.
     pub fn focus_direction(
         &mut self,
         direction: NavDirection,
@@ -108,24 +110,57 @@ impl FocusState {
         layout: &LayoutResult,
     ) -> Option<String> {
         let current_id = self.focused.as_ref()?;
-        let current_rect = layout.get(current_id)?;
+        // Use absolute screen position for cross-container navigation
+        let current_rect = get_absolute_rect(current_id, layout, root)?;
 
         let focusable = collect_focusable_with_z(root);
 
-        // Find the best candidate in the given direction
-        // Score is (negative z_index, spatial_score) so higher z-index wins, then closer spatial
+        // Find scrollable ancestor of current element (if any)
+        let current_scrollable = find_scrollable_ancestor(root, current_id);
+        log::debug!(
+            "[focus_direction] current={} direction={:?} scrollable_ancestor={:?} abs_rect={:?}",
+            current_id, direction, current_scrollable, current_rect
+        );
+
+        // Score candidates, preferring those in the same scrollable container
+        // Score tuple: (not_same_container, negative_z_index, spatial_score)
+        // - not_same_container: 0 if same container, 1 if different (prefer same)
+        // - negative_z_index: higher z-index sorts first
+        // - spatial_score: closer is better
         let best = focusable
             .iter()
             .filter(|(id, _)| id != current_id)
             .filter_map(|(id, z_index)| {
-                let rect = layout.get(id)?;
-                let spatial_score = direction_score(current_rect, rect, direction)?;
-                // Negative z_index so higher z-index sorts first (lower score = better)
-                Some((id, (-(*z_index as i32), spatial_score)))
+                // Use absolute screen position for cross-container navigation
+                let rect = get_absolute_rect(id, layout, root)?;
+                let spatial_score = direction_score(&current_rect, &rect, direction)?;
+
+                // Check if candidate is in the same scrollable container
+                let candidate_scrollable = find_scrollable_ancestor(root, id);
+                let same_container = match (&current_scrollable, &candidate_scrollable) {
+                    (Some(a), Some(b)) => a == b,
+                    (None, None) => true, // Both not in scrollable = same "container"
+                    _ => false,
+                };
+                let container_penalty = if same_container { 0 } else { 1 };
+
+                log::debug!(
+                    "[focus_direction]   candidate={} scrollable={:?} same_container={} penalty={} spatial={:.2} abs_rect={:?}",
+                    id, candidate_scrollable, same_container, container_penalty, spatial_score, rect
+                );
+
+                Some((id, (container_penalty, -(*z_index as i32), spatial_score)))
             })
             .min_by(|(_, a), (_, b)| {
-                a.0.cmp(&b.0).then_with(|| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal))
+                a.0.cmp(&b.0)
+                    .then_with(|| a.1.cmp(&b.1))
+                    .then_with(|| a.2.partial_cmp(&b.2).unwrap_or(std::cmp::Ordering::Equal))
             })?;
+
+        log::debug!(
+            "[focus_direction] best={} score=({}, {}, {:.2})",
+            best.0, (best.1).0, (best.1).1, (best.1).2
+        );
 
         let new_focus = best.0.clone();
         if self.focused.as_ref() != Some(&new_focus) {
@@ -461,6 +496,51 @@ fn collect_focusable_with_z_recursive(element: &Element, inherited_z: i16, resul
             collect_focusable_with_z_recursive(child, effective_z, result);
         }
     }
+}
+
+/// Get the absolute screen position of an element, accounting for scroll container offset.
+/// If the element is inside a scroll container, its layout position may be relative to the
+/// container's content area on the scrolling axis. We add the container's screen position
+/// only for the axis that scrolls.
+fn get_absolute_rect(
+    element_id: &str,
+    layout: &LayoutResult,
+    root: &Element,
+) -> Option<Rect> {
+    let rect = layout.get(element_id)?;
+
+    // Find the scrollable ancestor (if any)
+    if let Some(scrollable_id) = find_scrollable_ancestor(root, element_id) {
+        // Get the scrollable container's screen position and overflow settings
+        if let Some(container_rect) = layout.get(&scrollable_id) {
+            // Find the container element to check its overflow settings
+            if let Some(container_el) = find_element(root, &scrollable_id) {
+                let scrolls_x = container_el.overflow_x == crate::types::Overflow::Scroll
+                    || container_el.overflow_x == crate::types::Overflow::Auto;
+                let scrolls_y = container_el.overflow_y == crate::types::Overflow::Scroll
+                    || container_el.overflow_y == crate::types::Overflow::Auto
+                    || container_el.scrollable;
+
+                // Only add container offset for axes that scroll
+                // (non-scrolling axes already have absolute positions)
+                let abs_x = if scrolls_x {
+                    container_rect.x + rect.x
+                } else {
+                    rect.x
+                };
+                let abs_y = if scrolls_y {
+                    container_rect.y + rect.y
+                } else {
+                    rect.y
+                };
+
+                return Some(Rect::new(abs_x, abs_y, rect.width, rect.height));
+            }
+        }
+    }
+
+    // No scroll container, position is already absolute
+    Some(*rect)
 }
 
 /// Score how good a candidate is for the given direction.

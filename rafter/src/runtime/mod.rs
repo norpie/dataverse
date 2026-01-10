@@ -1118,7 +1118,7 @@ fn sync_text_inputs(element: &Element, text_inputs: &mut TextInputState) {
 // Scroll To Element
 // =============================================================================
 
-/// Scroll to bring an element into view.
+/// Scroll to bring an element into view (both horizontally and vertically).
 /// Returns a ScrollChange if scrolling occurred.
 fn scroll_to_element(
     root: &Element,
@@ -1137,11 +1137,16 @@ fn scroll_to_element(
 
     let current = scroll.get(&scrollable_id);
 
-    // Calculate target position relative to scrollable content
+    // Calculate target position relative to scrollable content (vertical)
     let target_top = target_rect.y.saturating_sub(viewport_rect.y) + current.y;
     let target_bottom = target_top + target_rect.height;
 
-    // Compute new scroll offset to bring target into view
+    // Calculate target position relative to scrollable content (horizontal)
+    // target_rect.x is already relative to scroll content for horizontal scroll containers
+    let target_left = target_rect.x;
+    let target_right = target_left + target_rect.width;
+
+    // Compute new vertical scroll offset to bring target into view
     let new_y = if target_top < current.y {
         // Target is above viewport - scroll up
         target_top
@@ -1149,15 +1154,27 @@ fn scroll_to_element(
         // Target is below viewport - scroll down
         target_bottom.saturating_sub(viewport_height)
     } else {
-        // Already visible
+        // Already visible vertically
         current.y
     };
 
-    if new_y != current.y {
-        scroll.set(&scrollable_id, current.x, new_y);
+    // Compute new horizontal scroll offset to bring target into view
+    let new_x = if target_left < current.x {
+        // Target is left of viewport - scroll left
+        target_left
+    } else if target_right > current.x + viewport_width {
+        // Target is right of viewport - scroll right
+        target_right.saturating_sub(viewport_width)
+    } else {
+        // Already visible horizontally
+        current.x
+    };
+
+    if new_x != current.x || new_y != current.y {
+        scroll.set(&scrollable_id, new_x, new_y);
         Some(tuidom::ScrollChange {
             element_id: scrollable_id,
-            offset_x: current.x,
+            offset_x: new_x,
             offset_y: new_y,
             content_width,
             content_height,
