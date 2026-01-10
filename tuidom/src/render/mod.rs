@@ -333,22 +333,15 @@ fn render_single_element_timed(
     };
 
     // Apply cumulative position offset (includes this element's animation + ancestors')
-    let rect = if layout_offset != (0, 0) {
-        if element.id.starts_with("__toast") {
-            log::debug!(
-                "[render] {} applying layout_offset ({}, {}) to layout pos ({}, {})",
-                element.id, layout_offset.0, layout_offset.1, layout_rect.x, layout_rect.y
-            );
-        }
-        Rect::new(
-            (layout_rect.x as i16 + layout_offset.0).max(0) as u16,
-            (layout_rect.y as i16 + layout_offset.1).max(0) as u16,
-            layout_rect.width,
-            layout_rect.height,
-        )
-    } else {
-        *layout_rect
-    };
+    // Also apply inherited scroll offset - shifts element position when ancestors scroll
+    let scroll_offset_x = inherited_scroll.0 as i16;
+    let scroll_offset_y = inherited_scroll.1 as i16;
+    let rect = Rect::new(
+        (layout_rect.x as i16 + layout_offset.0 - scroll_offset_x).max(0) as u16,
+        (layout_rect.y as i16 + layout_offset.1 - scroll_offset_y).max(0) as u16,
+        layout_rect.width,
+        layout_rect.height,
+    );
 
     // If we have a clip rect, intersect with element rect
     let visible_rect = match clip {
@@ -470,7 +463,7 @@ fn render_text(
     rect: Rect,
     buf: &mut Buffer,
     clip: Option<Rect>,
-    inherited_scroll: (u16, u16),
+    _inherited_scroll: (u16, u16),
     animation: &AnimationState,
     oklch_cache: &mut OklchCache,
 ) {
@@ -513,7 +506,8 @@ fn render_text(
     }
 
     let max_width = inner.width as usize;
-    let scroll_x = inherited_scroll.0;
+    // Note: horizontal scroll is now applied to element position in render_element,
+    // so we don't need to handle it here for text content
 
     // Get lines based on wrap mode
     let lines: Vec<String> = match element.text_wrap {
@@ -567,14 +561,8 @@ fn render_text(
                 continue;
             }
 
-            // Skip characters that are fully scrolled off the left edge
-            if logical_x + ch_w as u16 <= scroll_x {
-                logical_x += ch_w as u16;
-                continue;
-            }
-
-            // Calculate render position: shift left by scroll_x amount
-            let render_x = inner.x + x_offset + logical_x.saturating_sub(scroll_x);
+            // Calculate render position within element bounds
+            let render_x = inner.x + x_offset + logical_x;
 
             // Check if we have room for the full character width
             if render_x + ch_w as u16 > inner.right() {
