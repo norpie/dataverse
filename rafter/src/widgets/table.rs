@@ -620,8 +620,8 @@ impl<'a, T: TableRow> Table<HasTableState<'a, T>> {
         // Register scroll handlers
         self.register_scroll_handlers(&body_id, &content_id, registry, state, table_id, "row");
 
-        // Register layout handler
-        self.register_layout_handler(&body_id, registry, state);
+        // Register layout handler (no horizontal scrollbar in simple table)
+        self.register_layout_handler(&body_id, registry, state, false);
 
         // Build content column (header + body)
         let mut content_children = Vec::new();
@@ -803,15 +803,26 @@ impl<'a, T: TableRow> Table<HasTableState<'a, T>> {
             "scrollable",
         );
 
-        // Register layout handler on the scrollable panel
-        self.register_layout_handler(&scrollable_panel_id, registry, state);
+        // Register layout handler on the scrollable body (not panel) to get exact row area height
+        // The body's height already excludes header and scrollbar
+        self.register_layout_handler(&scrollable_body_id, registry, state, false);
 
-        // Build frozen panel (header + body)
+        // Build frozen panel (header + body + spacer for horizontal scrollbar)
         let mut frozen_panel_children = Vec::new();
         if let Some(h) = frozen_header {
             frozen_panel_children.push(h);
         }
         frozen_panel_children.push(frozen_body);
+
+        // Add spacer at bottom to match horizontal scrollbar on scrollable side
+        // This prevents the last frozen row from "peeking out" below the scrollable area
+        if !scrollable_columns.is_empty() {
+            let scrollbar_spacer = Element::box_()
+                .id(format!("{}-frozen-scrollbar-spacer", table_id))
+                .width(Size::Fill)
+                .height(Size::Fixed(1));
+            frozen_panel_children.push(scrollbar_spacer);
+        }
 
         let frozen_panel = Element::col()
             .id(&frozen_panel_id)
@@ -1217,6 +1228,7 @@ impl<'a, T: TableRow> Table<HasTableState<'a, T>> {
         body_id: &str,
         registry: &HandlerRegistry,
         state: &State<TableState<T>>,
+        has_horizontal_scrollbar: bool,
     ) {
         let state_clone = state.clone();
         registry.register(
@@ -1224,8 +1236,15 @@ impl<'a, T: TableRow> Table<HasTableState<'a, T>> {
             "on_layout",
             Arc::new(move |hx| {
                 if let Some((_, _, _, height)) = hx.event().layout() {
+                    // Subtract 1 for horizontal scrollbar when it exists
+                    // (horizontal scrollbar takes 1 row at bottom)
+                    let viewport_height = if has_horizontal_scrollbar {
+                        height.saturating_sub(1)
+                    } else {
+                        height
+                    };
                     state_clone.update(|s| {
-                        s.scroll.set_viewport(height);
+                        s.scroll.set_viewport(viewport_height);
                     });
                 }
             }),
