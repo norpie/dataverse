@@ -369,6 +369,17 @@ fn render_single_element_timed(
     // Render background if set (only within visible area)
     if let Some(bg) = background {
         let oklch = oklch_cache.get(&bg);
+        // Debug logging for focused rows
+        if element.id.contains("-scrollable-") || element.id.contains("-frozen-") {
+            log::debug!(
+                "[render-bg] id={} layout=({},{},{},{}) render=({},{},{},{}) visible=({},{},{},{}) bg={:?}",
+                element.id,
+                layout_rect.x, layout_rect.y, layout_rect.width, layout_rect.height,
+                rect.x, rect.y, rect.width, rect.height,
+                visible_rect.x, visible_rect.y, visible_rect.width, visible_rect.height,
+                oklch
+            );
+        }
         fill_rect(buf, visible_rect, Some(oklch));
     }
     let t2 = Instant::now();

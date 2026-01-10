@@ -610,6 +610,12 @@ fn layout_line(
     let total_with_gaps = total_base + gap_total;
     let remaining = main_size as i32 - total_with_gaps as i32;
 
+    // Check if parent allows overflow in the main axis direction.
+    // For rows, main axis is horizontal (check overflow_x).
+    // For columns, main axis is vertical (check overflow_y).
+    let main_overflow = if is_row { parent.overflow_x } else { parent.overflow_y };
+    let allow_main_overflow = main_overflow == Overflow::Scroll || main_overflow == Overflow::Auto;
+
     // Second pass: apply flex grow or shrink
     let mut final_sizes: Vec<u16> = Vec::with_capacity(line.len());
 
@@ -627,8 +633,8 @@ fn layout_line(
             // Grow: distribute extra space proportionally
             let grow_amount = (remaining as u32 * flex_grow as u32 / total_flex_grow as u32) as u16;
             base + grow_amount
-        } else if remaining < 0 && total_flex_shrink > 0 {
-            // Shrink: reduce size proportionally
+        } else if remaining < 0 && total_flex_shrink > 0 && !allow_main_overflow {
+            // Shrink: reduce size proportionally (but not if parent allows overflow)
             let shrink_amount =
                 ((-remaining) as u32 * child.flex_shrink as u32 / total_flex_shrink as u32) as u16;
             base.saturating_sub(shrink_amount)
@@ -698,17 +704,29 @@ fn layout_line(
         let cross_available =
             available_cross.saturating_sub(cross_margin_before + cross_margin_after);
 
+        // Check if parent allows overflow in the cross axis direction.
+        // For rows, cross axis is vertical (check overflow_y).
+        // For columns, cross axis is horizontal (check overflow_x).
+        let cross_overflow = if is_row { parent.overflow_y } else { parent.overflow_x };
+        let allow_cross_overflow = cross_overflow == Overflow::Scroll || cross_overflow == Overflow::Auto;
+
         let cross = match child_cross_size {
-            Size::Fixed(n) => n.min(cross_available),
+            Size::Fixed(n) => {
+                if allow_cross_overflow { n } else { n.min(cross_available) }
+            }
             Size::Fill | Size::Flex(_) => cross_available,
             Size::Auto => {
                 if child_align == Align::Stretch {
                     cross_available
                 } else {
-                    estimate_size(child, !is_row).min(cross_available)
+                    let estimated = estimate_size(child, !is_row);
+                    if allow_cross_overflow { estimated } else { estimated.min(cross_available) }
                 }
             }
-            Size::Percent(p) => ((available_cross as f32 * p) as u16).min(cross_available),
+            Size::Percent(p) => {
+                let pct = (available_cross as f32 * p) as u16;
+                if allow_cross_overflow { pct } else { pct.min(cross_available) }
+            }
         };
 
         // Apply min/max on cross axis
