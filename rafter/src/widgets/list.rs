@@ -11,7 +11,9 @@ use tuidom::{Color, Element, Overflow, Size, Style, Transitions};
 use crate::state::State;
 use crate::{HandlerRegistry, WidgetHandlers};
 
-use super::scroll::{ScrollRequest, ScrollState, Scrollbar};
+use super::scroll::{
+    register_scrollbar_handlers, ScrollRequest, ScrollState, ScrollableWidgetState, Scrollbar,
+};
 use super::selection::{Selection, SelectionMode};
 
 // =============================================================================
@@ -232,6 +234,33 @@ impl<T: ListItem> ListState<T> {
     /// Get the index of the first visible item based on current scroll offset.
     pub fn first_visible_index(&self) -> usize {
         self.item_at_offset(self.scroll.offset)
+    }
+}
+
+// Implement ScrollableWidgetState for ListState to use shared scrollbar handlers
+impl<T: ListItem> ScrollableWidgetState for ListState<T> {
+    fn scroll(&self) -> &ScrollState {
+        &self.scroll
+    }
+
+    fn scroll_mut(&mut self) -> &mut ScrollState {
+        &mut self.scroll
+    }
+
+    fn scrollbar_rect(&self) -> Option<(u16, u16, u16, u16)> {
+        self.scrollbar_rect
+    }
+
+    fn set_scrollbar_rect(&mut self, rect: Option<(u16, u16, u16, u16)>) {
+        self.scrollbar_rect = rect;
+    }
+
+    fn drag_grab_offset(&self) -> Option<u16> {
+        self.drag_grab_offset
+    }
+
+    fn set_drag_grab_offset(&mut self, offset: Option<u16>) {
+        self.drag_grab_offset = offset;
     }
 }
 
@@ -567,162 +596,7 @@ impl<'a, T: ListItem> List<HasListState<'a, T>> {
                 .build();
 
             // Register scrollbar handlers for click/drag scrolling
-            {
-                // on_layout: store scrollbar rect for position calculations
-                let state_clone = state.clone();
-                registry.register(
-                    &scrollbar_id,
-                    "on_layout",
-                    Arc::new(move |hx| {
-                        if let Some((x, y, width, height)) = hx.event().layout() {
-                            state_clone.update(|s| {
-                                s.scrollbar_rect = Some((x, y, width, height));
-                            });
-                        }
-                    }),
-                );
-
-                // on_activate: click on scrollbar - detect thumb vs track
-                let state_clone = state.clone();
-                registry.register(
-                    &scrollbar_id,
-                    "on_activate",
-                    Arc::new(move |hx| {
-                        if let Some((_, click_y)) = hx.event().click_position() {
-                            let current = state_clone.get();
-                            if let Some((_, track_y, _, track_height)) = current.scrollbar_rect {
-                                if track_height > 0 {
-                                    let content_size = current.scroll.content_height;
-                                    let viewport = current.scroll.viewport;
-                                    let max_offset = current.scroll.max_offset();
-                                    let current_offset = current.scroll.offset;
-
-                                    // Calculate thumb size and position (same as Scrollbar::build)
-                                    let thumb_size = if content_size == 0 {
-                                        track_height
-                                    } else {
-                                        let ratio = viewport as f32 / content_size as f32;
-                                        ((ratio * track_height as f32).round() as u16).clamp(1, track_height)
-                                    };
-
-                                    let thumb_pos = if max_offset == 0 {
-                                        0
-                                    } else {
-                                        let progress = current_offset as f32 / max_offset as f32;
-                                        let available_space = track_height.saturating_sub(thumb_size);
-                                        (progress * available_space as f32).round() as u16
-                                    };
-
-                                    let thumb_screen_start = track_y + thumb_pos;
-                                    let thumb_screen_end = thumb_screen_start + thumb_size;
-
-                                    // Check if click is on thumb or track
-                                    if click_y >= thumb_screen_start && click_y < thumb_screen_end {
-                                        // Clicked on thumb - just store grab offset, don't scroll
-                                        let grab_offset = click_y - thumb_screen_start;
-                                        log::debug!("[List::scrollbar] clicked on thumb, grab_offset={}", grab_offset);
-                                        state_clone.update(|s| {
-                                            s.drag_grab_offset = Some(grab_offset);
-                                        });
-                                    } else {
-                                        // Clicked on track - calculate proportional grab offset
-                                        let relative_y = click_y.saturating_sub(track_y);
-                                        let track_ratio = relative_y as f32 / track_height.max(1) as f32;
-                                        let grab_offset = ((track_ratio * thumb_size as f32).round() as u16)
-                                            .min(thumb_size.saturating_sub(1));
-
-                                        let scroll_range = track_height.saturating_sub(thumb_size);
-
-                                        // Calculate scroll position from click using grab offset
-                                        let thumb_start = click_y.saturating_sub(grab_offset);
-                                        let clamped_thumb_start = thumb_start.clamp(track_y, track_y + scroll_range);
-                                        let thumb_pos_in_track = clamped_thumb_start.saturating_sub(track_y);
-
-                                        // Convert thumb position to scroll offset
-                                        let new_offset = if scroll_range == 0 {
-                                            0
-                                        } else {
-                                            ((thumb_pos_in_track as u32 * max_offset as u32 + scroll_range as u32 / 2)
-                                                / scroll_range as u32)
-                                                .min(max_offset as u32) as u16
-                                        };
-
-                                        log::debug!("[List::scrollbar] clicked on track at y={}, grab_offset={}, new_offset={}",
-                                            click_y, grab_offset, new_offset);
-                                        state_clone.update(|s| {
-                                            s.scroll.offset = new_offset;
-                                            s.drag_grab_offset = Some(grab_offset);
-                                        });
-                                    }
-                                }
-                            }
-                        }
-                    }),
-                );
-
-                // on_drag: drag to scroll using grab offset
-                let state_clone = state.clone();
-                registry.register(
-                    &scrollbar_id,
-                    "on_drag",
-                    Arc::new(move |hx| {
-                        if let Some((_, drag_y)) = hx.event().drag_position() {
-                            let current = state_clone.get();
-                            if let Some((_, track_y, _, track_height)) = current.scrollbar_rect {
-                                if track_height > 0 {
-                                    let content_size = current.scroll.content_height;
-                                    let viewport = current.scroll.viewport;
-                                    let max_offset = current.scroll.max_offset();
-                                    let grab_offset = current.drag_grab_offset.unwrap_or(0);
-
-                                    // Calculate thumb size
-                                    let thumb_size = if content_size == 0 {
-                                        track_height
-                                    } else {
-                                        let ratio = viewport as f32 / content_size as f32;
-                                        ((ratio * track_height as f32).round() as u16).clamp(1, track_height)
-                                    };
-
-                                    let scroll_range = track_height.saturating_sub(thumb_size);
-
-                                    // Calculate thumb position from drag position and grab offset
-                                    let thumb_start = drag_y.saturating_sub(grab_offset);
-                                    let clamped_thumb_start = thumb_start.clamp(track_y, track_y + scroll_range);
-                                    let thumb_pos_in_track = clamped_thumb_start.saturating_sub(track_y);
-
-                                    // Convert thumb position to scroll offset
-                                    let new_offset = if scroll_range == 0 {
-                                        0
-                                    } else {
-                                        ((thumb_pos_in_track as u32 * max_offset as u32 + scroll_range as u32 / 2)
-                                            / scroll_range as u32)
-                                            .min(max_offset as u32) as u16
-                                    };
-
-                                    log::debug!("[List::scrollbar] drag at y={}, grab_offset={}, new_offset={}",
-                                        drag_y, grab_offset, new_offset);
-                                    state_clone.update(|s| {
-                                        s.scroll.offset = new_offset;
-                                    });
-                                }
-                            }
-                        }
-                    }),
-                );
-
-                // on_release: clear grab offset when drag ends
-                let state_clone = state.clone();
-                registry.register(
-                    &scrollbar_id,
-                    "on_release",
-                    Arc::new(move |_hx| {
-                        log::debug!("[List::scrollbar] release, clearing grab offset");
-                        state_clone.update(|s| {
-                            s.drag_grab_offset = None;
-                        });
-                    }),
-                );
-            }
+            register_scrollbar_handlers(&scrollbar_id, registry, state);
 
             log::debug!("[List::build] Build complete (with scrollbar)");
             Element::row()
