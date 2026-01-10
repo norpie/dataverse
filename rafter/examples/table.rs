@@ -167,6 +167,14 @@ impl TableExample {
         }
     }
 
+    #[handler]
+    async fn header_activated(&self, gx: &GlobalContext) {
+        let state = self.users.get();
+        if let Some(column_id) = &state.last_header_activated {
+            gx.toast(Toast::info(format!("Header clicked: {}", column_id)));
+        }
+    }
+
     fn element(&self) -> Element {
         let message = self.message.get();
 
@@ -187,6 +195,7 @@ impl TableExample {
                     table (state: self.users, id: "user-table")
                         on_select: row_selected()
                         on_activate: row_activated()
+                        on_header_activate: header_activated()
                 }
 
                 // Footer

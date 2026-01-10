@@ -171,6 +171,9 @@ pub struct TableState<T: TableRow> {
     /// Whether the horizontal scrollbar is visible (detected at layout time).
     /// Used to add a matching spacer on the frozen side.
     pub has_horizontal_scrollbar: bool,
+
+    /// The ID of the last activated header column. Set before on_header_activate is called.
+    pub last_header_activated: Option<String>,
 }
 
 impl<T: TableRow> Default for TableState<T> {
@@ -189,6 +192,7 @@ impl<T: TableRow> Default for TableState<T> {
             horizontal_scroll_offset: 0,
             focused_key: None,
             has_horizontal_scrollbar: false,
+            last_header_activated: None,
         }
     }
 }
@@ -597,7 +601,7 @@ impl<'a, T: TableRow> Table<HasTableState<'a, T>> {
 
         // Build header row
         let header = if self.show_header {
-            Some(self.build_header_row(&current.columns, &header_id))
+            Some(self.build_header_row(&current.columns, &header_id, registry, handlers, state))
         } else {
             None
         };
@@ -722,14 +726,14 @@ impl<'a, T: TableRow> Table<HasTableState<'a, T>> {
 
         // Build frozen header
         let frozen_header = if self.show_header {
-            Some(self.build_header_row(frozen_columns, &frozen_header_id))
+            Some(self.build_header_row(frozen_columns, &frozen_header_id, registry, handlers, state))
         } else {
             None
         };
 
         // Build scrollable header row (will be inside same scroll container as body)
         let scrollable_header = if self.show_header {
-            Some(self.build_header_row(scrollable_columns, &scrollable_header_id))
+            Some(self.build_header_row(scrollable_columns, &scrollable_header_id, registry, handlers, state))
         } else {
             None
         };
@@ -922,10 +926,18 @@ impl<'a, T: TableRow> Table<HasTableState<'a, T>> {
     }
 
     /// Build a header row for the given columns.
-    fn build_header_row(&self, columns: &[Column], header_id: &str) -> Element {
+    fn build_header_row(
+        &self,
+        columns: &[Column],
+        header_id: &str,
+        registry: &HandlerRegistry,
+        handlers: &WidgetHandlers,
+        state: &State<TableState<T>>,
+    ) -> Element {
         let mut row = Element::row().id(header_id).width(Size::Auto);
 
         for col in columns {
+            let cell_id = format!("{}-{}", header_id, col.id);
             let cell_width = match &col.width {
                 ColumnWidth::Fixed(w) => Size::Fixed(*w),
                 ColumnWidth::Flex(w) => Size::Flex(*w),
@@ -933,9 +945,12 @@ impl<'a, T: TableRow> Table<HasTableState<'a, T>> {
             };
 
             let mut cell = Element::box_()
+                .id(&cell_id)
                 .width(cell_width)
                 .height(Size::Fixed(1))
                 .flex_shrink(0) // Don't shrink fixed-width columns
+                .clickable(true)
+                .focusable(true)
                 .child(Element::text(&col.header));
 
             if let Some(ref style) = self.header_style {
@@ -945,6 +960,33 @@ impl<'a, T: TableRow> Table<HasTableState<'a, T>> {
                     Style::new()
                         .background(Color::var("table.header_bg"))
                         .bold(),
+                );
+            }
+
+            // Apply focused style for header cells
+            cell = cell.style_focused(
+                Style::new()
+                    .background(Color::var("table.header_focused"))
+                    .foreground(Color::var("text.inverted")),
+            );
+
+            // Register on_activate handler for header cell
+            {
+                let state_clone = state.clone();
+                let col_id = col.id.clone();
+                let on_header_activate = handlers.get("on_header_activate").cloned();
+
+                registry.register(
+                    &cell_id,
+                    "on_activate",
+                    Arc::new(move |hx| {
+                        state_clone.update(|s| {
+                            s.last_header_activated = Some(col_id.clone());
+                        });
+                        if let Some(ref handler) = on_header_activate {
+                            handler(hx);
+                        }
+                    }),
                 );
             }
 

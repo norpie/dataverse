@@ -94,6 +94,7 @@ pub struct TableColors {
     pub row_focused: Color,
     pub row_selected: Color,
     pub header_bg: Color,
+    pub header_focused: Color,
 }
 
 #[theme]
@@ -237,6 +238,7 @@ pub fn default_theme() -> RafterTheme {
             row_focused: Color::var("accent"),
             row_selected: Color::var("accent").darken(0.3),
             header_bg: Color::var("surface").lighten(0.1),
+            header_focused: Color::var("accent"),
         },
     }
 }
