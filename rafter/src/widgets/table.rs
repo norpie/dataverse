@@ -695,7 +695,7 @@ impl<'a, T: TableRow> Table<HasTableState<'a, T>> {
             None
         };
 
-        // Build scrollable header
+        // Build scrollable header row (will be inside same scroll container as body)
         let scrollable_header = if self.show_header {
             Some(self.build_header_row(scrollable_columns, &scrollable_header_id))
         } else {
@@ -754,17 +754,38 @@ impl<'a, T: TableRow> Table<HasTableState<'a, T>> {
             .scrollable(true) // Enable scroll events for Page/Home/End
             .children(frozen_rows);
 
-        // Build scrollable body (horizontal scroll)
-        let scrollable_body = Element::col()
+        // Build scrollable body rows container (vertical scroll events, no extra clipping)
+        let scrollable_body_rows = Element::col()
             .id(&scrollable_body_id)
+            .width(Size::Auto)
+            .height(Size::Fill)
+            .scrollable(true)
+            .children(scrollable_rows);
+
+        // Build scrollable content column (header + body rows, scrolls together horizontally)
+        let scrollable_content_id = format!("{}-scrollable-content", table_id);
+        let mut scrollable_content_children = Vec::new();
+        if let Some(h) = scrollable_header {
+            scrollable_content_children.push(h);
+        }
+        scrollable_content_children.push(scrollable_body_rows);
+
+        let scrollable_content = Element::col()
+            .id(&scrollable_content_id)
+            .width(Size::Auto)
+            .height(Size::Fill)
+            .children(scrollable_content_children);
+
+        // Build scrollable panel (single horizontal scroll container for header + body)
+        let scrollable_panel = Element::box_()
+            .id(&scrollable_panel_id)
             .width(Size::Fill)
             .height(Size::Fill)
             .overflow_x(Overflow::Auto)
             .overflow_y(Overflow::Hidden)
-            .scrollable(true)
-            .children(scrollable_rows);
+            .child(scrollable_content);
 
-        // Register scroll handlers on both bodies
+        // Register scroll handlers on both panels
         self.register_scroll_handlers(
             &frozen_body_id,
             &frozen_panel_id,
@@ -774,7 +795,7 @@ impl<'a, T: TableRow> Table<HasTableState<'a, T>> {
             "frozen",
         );
         self.register_scroll_handlers(
-            &scrollable_body_id,
+            &scrollable_panel_id,
             &scrollable_panel_id,
             registry,
             state,
@@ -782,12 +803,8 @@ impl<'a, T: TableRow> Table<HasTableState<'a, T>> {
             "scrollable",
         );
 
-        // Register layout handler (only need one - they share scroll state)
-        self.register_layout_handler(&scrollable_body_id, registry, state);
-
-        // Note: Horizontal scroll sync for header would require tuidom support
-        // for programmatic scroll positioning. For now, the scrollable header
-        // and body scroll independently (horizontal scroll via overflow_x: Auto).
+        // Register layout handler on the scrollable panel
+        self.register_layout_handler(&scrollable_panel_id, registry, state);
 
         // Build frozen panel (header + body)
         let mut frozen_panel_children = Vec::new();
@@ -801,19 +818,6 @@ impl<'a, T: TableRow> Table<HasTableState<'a, T>> {
             .width(Size::Auto)
             .height(Size::Fill)
             .children(frozen_panel_children);
-
-        // Build scrollable panel (header + body)
-        let mut scrollable_panel_children = Vec::new();
-        if let Some(h) = scrollable_header {
-            scrollable_panel_children.push(h);
-        }
-        scrollable_panel_children.push(scrollable_body);
-
-        let scrollable_panel = Element::col()
-            .id(&scrollable_panel_id)
-            .width(Size::Fill)
-            .height(Size::Fill)
-            .children(scrollable_panel_children);
 
         // Build main container
         let mut main_content = Element::row()
@@ -1144,10 +1148,22 @@ impl<'a, T: TableRow> Table<HasTableState<'a, T>> {
             body_id,
             "on_scroll",
             Arc::new(move |hx| {
-                // Mouse wheel: delta
-                if let Some((_, delta_y)) = hx.event().scroll_delta() {
+                // Scrollbar drag: absolute offset (for header sync)
+                if let Some((offset_x, _offset_y)) = hx.event().scroll_offset() {
                     state_clone.update(|s| {
+                        s.horizontal_scroll_offset = offset_x;
+                    });
+                }
+                // Mouse wheel: delta (vertical and horizontal)
+                else if let Some((delta_x, delta_y)) = hx.event().scroll_delta() {
+                    state_clone.update(|s| {
+                        // Vertical scroll
                         s.scroll.scroll_by(delta_y);
+                        // Horizontal scroll - track offset for header sync
+                        if delta_x != 0 {
+                            let new_offset = (s.horizontal_scroll_offset as i32 + delta_x as i32).max(0);
+                            s.horizontal_scroll_offset = new_offset as u16;
+                        }
                     });
                 }
                 // Page Up/Down/Home/End

@@ -82,7 +82,7 @@ fn enrich_elements_inner(
         && !element.scrollable;
     let scroll_y = if use_tuidom_scroll_y { offset.y } else { 0 };
 
-    // Always log for elements with horizontal scroll enabled
+    // Log for debugging
     if use_tuidom_scroll_x {
         log::debug!("[enrich] {} use_tuidom_scroll_x=true offset=({},{}) setting scroll_offset=({},{})",
             element.id, offset.x, offset.y, scroll_x, scroll_y);

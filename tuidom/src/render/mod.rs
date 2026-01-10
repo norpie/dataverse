@@ -318,7 +318,7 @@ fn render_single_element_timed(
     buf: &mut Buffer,
     clip: Option<Rect>,
     layout_offset: (i16, i16),
-    inherited_scroll: (u16, u16),
+    _inherited_scroll: (u16, u16),
     animation: &AnimationState,
     stats: &mut RenderStats,
     oklch_cache: &mut OklchCache,
@@ -333,12 +333,11 @@ fn render_single_element_timed(
     };
 
     // Apply cumulative position offset (includes this element's animation + ancestors')
-    // Also apply inherited scroll offset - shifts element position when ancestors scroll
-    let scroll_offset_x = inherited_scroll.0 as i16;
-    let scroll_offset_y = inherited_scroll.1 as i16;
+    // Note: Scroll offset is already applied during layout (apply_scroll_offset_recursive),
+    // so we don't apply it again here. The layout positions are already scroll-adjusted.
     let rect = Rect::new(
-        (layout_rect.x as i16 + layout_offset.0 - scroll_offset_x).max(0) as u16,
-        (layout_rect.y as i16 + layout_offset.1 - scroll_offset_y).max(0) as u16,
+        (layout_rect.x as i16 + layout_offset.0).max(0) as u16,
+        (layout_rect.y as i16 + layout_offset.1).max(0) as u16,
         layout_rect.width,
         layout_rect.height,
     );
@@ -384,7 +383,7 @@ fn render_single_element_timed(
     match &element.content {
         Content::None | Content::Children(_) | Content::Frames { .. } => {}
         Content::Text(text) => {
-            render_text(text, element, rect, buf, clip, inherited_scroll, animation, oklch_cache);
+            render_text(text, element, rect, buf, clip, (0, 0), animation, oklch_cache);
         }
         Content::TextInput {
             value,

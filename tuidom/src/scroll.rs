@@ -485,14 +485,16 @@ impl ScrollState {
     /// Process raw crossterm events for scrollbar dragging.
     /// This should be called BEFORE FocusState::process_events so that
     /// scrollbar interactions don't propagate as click events.
-    /// Returns events that were NOT consumed by scrollbar interaction.
+    /// Returns (unconsumed_events, scroll_changes) - events not consumed by scrollbar
+    /// interaction and any scroll position changes from scrollbar drag.
     pub fn process_raw_events(
         &mut self,
         events: &[CrosstermEvent],
         root: &Element,
         layout: &LayoutResult,
-    ) -> Vec<CrosstermEvent> {
+    ) -> (Vec<CrosstermEvent>, Vec<ScrollChange>) {
         let mut unconsumed = Vec::new();
+        let mut changes = Vec::new();
 
         for event in events {
             match event {
@@ -524,10 +526,27 @@ impl ScrollState {
                                 if hit.thumb_offset.is_none() {
                                     let scroll_pos = hit.geom.scroll_from_drag(click_pos, grab_offset);
                                     let current = self.get(&element_id);
-                                    if hit.is_vertical {
-                                        self.set(&element_id, current.x, scroll_pos);
+                                    let (new_x, new_y) = if hit.is_vertical {
+                                        (current.x, scroll_pos)
                                     } else {
-                                        self.set(&element_id, scroll_pos, current.y);
+                                        (scroll_pos, current.y)
+                                    };
+                                    self.set(&element_id, new_x, new_y);
+
+                                    // Generate scroll change for handlers
+                                    if let (Some((cw, ch)), Some((vw, vh))) = (
+                                        layout.content_size(&element_id),
+                                        layout.viewport_size(&element_id),
+                                    ) {
+                                        changes.push(ScrollChange {
+                                            element_id: element_id.clone(),
+                                            offset_x: new_x,
+                                            offset_y: new_y,
+                                            content_width: cw,
+                                            content_height: ch,
+                                            viewport_width: vw,
+                                            viewport_height: vh,
+                                        });
                                     }
                                 }
                                 // Consume this event - don't let it become a click
@@ -550,11 +569,33 @@ impl ScrollState {
                                 let current = self.get(&drag.element_id);
                                 log::debug!("[scroll-drag] Drag: is_vertical={} mouse_pos={} scroll_pos={} current=({},{})",
                                     drag.is_vertical, mouse_pos, scroll_pos, current.x, current.y);
-                                if drag.is_vertical {
-                                    self.set(&drag.element_id, current.x, scroll_pos);
+
+                                let (new_x, new_y) = if drag.is_vertical {
+                                    (current.x, scroll_pos)
                                 } else {
                                     log::debug!("[scroll-drag] Setting horizontal scroll to {} for {}", scroll_pos, drag.element_id);
-                                    self.set(&drag.element_id, scroll_pos, current.y);
+                                    (scroll_pos, current.y)
+                                };
+
+                                // Only update and generate change if position actually changed
+                                if new_x != current.x || new_y != current.y {
+                                    self.set(&drag.element_id, new_x, new_y);
+
+                                    // Generate scroll change for handlers
+                                    if let (Some((cw, ch)), Some((vw, vh))) = (
+                                        layout.content_size(&drag.element_id),
+                                        layout.viewport_size(&drag.element_id),
+                                    ) {
+                                        changes.push(ScrollChange {
+                                            element_id: drag.element_id.clone(),
+                                            offset_x: new_x,
+                                            offset_y: new_y,
+                                            content_width: cw,
+                                            content_height: ch,
+                                            viewport_width: vw,
+                                            viewport_height: vh,
+                                        });
+                                    }
                                 }
                                 // Consume this event
                                 continue;
@@ -570,7 +611,7 @@ impl ScrollState {
             unconsumed.push(event.clone());
         }
 
-        unconsumed
+        (unconsumed, changes)
     }
 
     /// Check if a point hits any scrollbar in the element tree.

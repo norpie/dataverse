@@ -504,7 +504,7 @@ impl Runtime {
             sync_text_inputs(&root, text_inputs);
 
             // 16. Process scrollbar drag events (before focus so clicks on scrollbar don't propagate)
-            let raw_events = scroll.process_raw_events(&raw_events, &root, layout);
+            let (raw_events, scrollbar_changes) = scroll.process_raw_events(&raw_events, &root, layout);
 
             // 17. Process focus events (Tab navigation, focus-follows-mouse)
             let events = focus.process_events(&raw_events, &root, layout);
@@ -523,8 +523,9 @@ impl Runtime {
 
             // 19. Process scroll events (wheel scrolling)
             let mut scroll_changes = scroll.process_events(&events, &root, layout);
-            // Include focus-triggered scroll changes
+            // Include focus-triggered scroll changes and scrollbar drag changes
             scroll_changes.extend(focus_scroll_changes);
+            scroll_changes.extend(scrollbar_changes);
 
             // 19b. Dispatch on_scroll handlers for elements that scrolled
             if !scroll_changes.is_empty() {
