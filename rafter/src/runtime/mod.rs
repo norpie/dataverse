@@ -828,6 +828,7 @@ impl Runtime {
                     .top(0)
                     .width(Size::Fill)
                     .height(Size::Fill)
+                    .z_index(1000)
                     .backdrop(Backdrop::Dim(0.5))
                     .justify(Justify::Center)
                     .align(Align::Center)
@@ -843,6 +844,7 @@ impl Runtime {
                     .top(0)
                     .width(Size::Fill)
                     .height(Size::Fill)
+                    .z_index(1000)
                     .backdrop(Backdrop::Dim(0.5))
                     .child(
                         modal_content
