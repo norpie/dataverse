@@ -52,6 +52,24 @@ impl Entity {
     pub fn needs_resolution(&self) -> bool {
         matches!(self, Self::Logical(_))
     }
+
+    /// Returns the entity set name for use in API URLs.
+    ///
+    /// # Panics
+    ///
+    /// Panics if this is a `Logical` variant. Use `Entity::Set` directly
+    /// or resolve the logical name via metadata first.
+    pub fn set_name(&self) -> &str {
+        match self {
+            Self::Set(name) => name,
+            Self::Logical(name) => {
+                panic!(
+                    "Entity::Logical('{}') requires metadata resolution. Use Entity::Set or resolve via metadata.",
+                    name
+                )
+            }
+        }
+    }
 }
 
 impl std::fmt::Display for Entity {

@@ -35,6 +35,13 @@ impl<T> Response<T> {
         }
     }
 
+    /// Creates a new response for fresh data (cache not involved).
+    ///
+    /// This is an alias for [`new`](Self::new).
+    pub fn fresh(data: T) -> Self {
+        Self::new(data)
+    }
+
     /// Creates a new response indicating a cache miss (fresh fetch, now cached).
     pub fn cache_miss(data: T, cached_at: DateTime<Utc>, expires_at: DateTime<Utc>) -> Self {
         Self {

@@ -33,17 +33,17 @@ use crate::error::Error;
 /// ```
 #[derive(Clone)]
 pub struct DataverseClient {
-    inner: Arc<DataverseClientInner>,
+    pub(crate) inner: Arc<DataverseClientInner>,
 }
 
-struct DataverseClientInner {
-    base_url: String,
-    api_version: String,
-    token_provider: Arc<dyn TokenProvider>,
-    http_client: Client,
-    timeout: Option<Duration>,
-    cache: Option<Arc<dyn CacheProvider>>,
-    cache_config: CacheConfig,
+pub(crate) struct DataverseClientInner {
+    pub(crate) base_url: String,
+    pub(crate) api_version: String,
+    pub(crate) token_provider: Arc<dyn TokenProvider>,
+    pub(crate) http_client: Client,
+    pub(crate) timeout: Option<Duration>,
+    pub(crate) cache: Option<Arc<dyn CacheProvider>>,
+    pub(crate) cache_config: CacheConfig,
 }
 
 impl DataverseClient {
