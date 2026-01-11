@@ -37,9 +37,9 @@ pub struct CacheConfig {
 impl Default for CacheConfig {
     fn default() -> Self {
         Self {
-            metadata_ttl: Duration::from_secs(3600),  // 1 hour
-            query_ttl: Duration::from_secs(300),      // 5 minutes
-            record_ttl: Duration::from_secs(300),     // 5 minutes
+            metadata_ttl: Duration::from_secs(3600), // 1 hour
+            query_ttl: Duration::from_secs(300),     // 5 minutes
+            record_ttl: Duration::from_secs(300),    // 5 minutes
         }
     }
 }

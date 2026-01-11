@@ -54,7 +54,11 @@ impl ApiError {
     }
 
     /// Creates a new HTTP error with Dataverse error details.
-    pub fn http_with_detail(status: u16, message: impl Into<String>, detail: DataverseErrorDetail) -> Self {
+    pub fn http_with_detail(
+        status: u16,
+        message: impl Into<String>,
+        detail: DataverseErrorDetail,
+    ) -> Self {
         Self::Http {
             status,
             message: message.into(),

@@ -106,7 +106,6 @@ impl<T> Response<T> {
     }
 }
 
-
 /// Cache status for a response.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CacheStatus {

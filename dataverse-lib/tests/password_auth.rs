@@ -55,8 +55,8 @@ mod confidential_client {
     #[tokio::test]
     #[ignore = "requires real credentials in .env file"]
     async fn test_authenticate() {
-        let (client_id, client_secret, username, password, url) =
-            load_confidential_env().expect("Missing required environment variables. See module docs.");
+        let (client_id, client_secret, username, password, url) = load_confidential_env()
+            .expect("Missing required environment variables. See module docs.");
 
         let flow = PasswordFlow::new(&client_id, &client_secret, &username, &password);
 
@@ -65,8 +65,14 @@ mod confidential_client {
             .await
             .expect("Authentication failed");
 
-        assert!(!token.access_token.is_empty(), "Access token should not be empty");
-        assert!(token.expires_at.is_some(), "Token should have expiration time");
+        assert!(
+            !token.access_token.is_empty(),
+            "Access token should not be empty"
+        );
+        assert!(
+            token.expires_at.is_some(),
+            "Token should have expiration time"
+        );
 
         println!("Successfully authenticated!");
         println!("Token expires at: {:?}", token.expires_at);
@@ -76,8 +82,8 @@ mod confidential_client {
     #[tokio::test]
     #[ignore = "requires real credentials in .env file"]
     async fn test_authenticate_and_refresh() {
-        let (client_id, client_secret, username, password, url) =
-            load_confidential_env().expect("Missing required environment variables. See module docs.");
+        let (client_id, client_secret, username, password, url) = load_confidential_env()
+            .expect("Missing required environment variables. See module docs.");
 
         let flow = PasswordFlow::new(&client_id, &client_secret, &username, &password);
 
@@ -99,8 +105,14 @@ mod confidential_client {
             .await
             .expect("Token refresh failed");
 
-        assert!(!refreshed_token.access_token.is_empty(), "Refreshed token should not be empty");
-        assert!(refreshed_token.expires_at.is_some(), "Refreshed token should have expiration time");
+        assert!(
+            !refreshed_token.access_token.is_empty(),
+            "Refreshed token should not be empty"
+        );
+        assert!(
+            refreshed_token.expires_at.is_some(),
+            "Refreshed token should have expiration time"
+        );
         assert_ne!(
             token.access_token, refreshed_token.access_token,
             "Refreshed token should be different"
@@ -113,10 +125,15 @@ mod confidential_client {
     #[tokio::test]
     #[ignore = "requires real credentials in .env file"]
     async fn test_invalid_credentials() {
-        let (client_id, client_secret, _username, _password, url) =
-            load_confidential_env().expect("Missing required environment variables. See module docs.");
+        let (client_id, client_secret, _username, _password, url) = load_confidential_env()
+            .expect("Missing required environment variables. See module docs.");
 
-        let flow = PasswordFlow::new(&client_id, &client_secret, "invalid@example.com", "wrongpassword");
+        let flow = PasswordFlow::new(
+            &client_id,
+            &client_secret,
+            "invalid@example.com",
+            "wrongpassword",
+        );
 
         let result = flow.authenticate(&url).await;
 
@@ -145,8 +162,14 @@ mod public_client {
             .await
             .expect("Authentication failed");
 
-        assert!(!token.access_token.is_empty(), "Access token should not be empty");
-        assert!(token.expires_at.is_some(), "Token should have expiration time");
+        assert!(
+            !token.access_token.is_empty(),
+            "Access token should not be empty"
+        );
+        assert!(
+            token.expires_at.is_some(),
+            "Token should have expiration time"
+        );
 
         println!("Successfully authenticated!");
         println!("Token expires at: {:?}", token.expires_at);
@@ -179,8 +202,14 @@ mod public_client {
             .await
             .expect("Token refresh failed");
 
-        assert!(!refreshed_token.access_token.is_empty(), "Refreshed token should not be empty");
-        assert!(refreshed_token.expires_at.is_some(), "Refreshed token should have expiration time");
+        assert!(
+            !refreshed_token.access_token.is_empty(),
+            "Refreshed token should not be empty"
+        );
+        assert!(
+            refreshed_token.expires_at.is_some(),
+            "Refreshed token should have expiration time"
+        );
         assert_ne!(
             token.access_token, refreshed_token.access_token,
             "Refreshed token should be different"
@@ -196,7 +225,12 @@ mod public_client {
         let (client_id, tenant_id, _username, _password, url) =
             load_public_env().expect("Missing required environment variables. See module docs.");
 
-        let flow = PublicClientPasswordFlow::new(&client_id, &tenant_id, "invalid@example.com", "wrongpassword");
+        let flow = PublicClientPasswordFlow::new(
+            &client_id,
+            &tenant_id,
+            "invalid@example.com",
+            "wrongpassword",
+        );
 
         let result = flow.authenticate(&url).await;
 

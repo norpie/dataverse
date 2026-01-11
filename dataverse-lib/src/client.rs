@@ -68,7 +68,11 @@ impl DataverseClient {
             .get_token(&self.inner.base_url)
             .await?;
 
-        let mut request = self.inner.http_client.get(&url).bearer_auth(&token.access_token);
+        let mut request = self
+            .inner
+            .http_client
+            .get(&url)
+            .bearer_auth(&token.access_token);
 
         if let Some(timeout) = self.inner.timeout {
             request = request.timeout(timeout);

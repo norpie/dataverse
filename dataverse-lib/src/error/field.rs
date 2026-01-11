@@ -25,7 +25,11 @@ impl FieldError {
     }
 
     /// Creates a new type mismatch error.
-    pub fn type_mismatch(field: impl Into<String>, expected: &'static str, actual: &'static str) -> Self {
+    pub fn type_mismatch(
+        field: impl Into<String>,
+        expected: &'static str,
+        actual: &'static str,
+    ) -> Self {
         Self::TypeMismatch {
             field: field.into(),
             expected,

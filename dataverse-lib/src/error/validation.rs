@@ -22,7 +22,11 @@ impl FieldValidationError {
     }
 
     /// Creates a new field validation error with an error code.
-    pub fn with_code(field: impl Into<String>, message: impl Into<String>, code: impl Into<String>) -> Self {
+    pub fn with_code(
+        field: impl Into<String>,
+        message: impl Into<String>,
+        code: impl Into<String>,
+    ) -> Self {
         Self {
             field: field.into(),
             message: message.into(),

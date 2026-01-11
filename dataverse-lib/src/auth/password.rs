@@ -94,20 +94,16 @@ impl PasswordFlowInner {
         self.handle_response(response).await
     }
 
-    async fn handle_response(
-        &self,
-        response: reqwest::Response,
-    ) -> Result<AccessToken, AuthError> {
+    async fn handle_response(&self, response: reqwest::Response) -> Result<AccessToken, AuthError> {
         if response.status().is_success() {
             let token_response: TokenResponse = response.json().await?;
             Ok(token_response.into_access_token())
         } else {
-            let error_response: ErrorResponse = response.json().await.unwrap_or_else(|_| {
-                ErrorResponse {
+            let error_response: ErrorResponse =
+                response.json().await.unwrap_or_else(|_| ErrorResponse {
                     error: "unknown".to_string(),
                     error_description: None,
-                }
-            });
+                });
             Err(map_error_response(error_response))
         }
     }
@@ -300,7 +296,10 @@ impl std::fmt::Debug for PasswordFlowInner {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("PasswordFlowInner")
             .field("client_id", &self.client_id)
-            .field("client_secret", &self.client_secret.as_ref().map(|_| "[REDACTED]"))
+            .field(
+                "client_secret",
+                &self.client_secret.as_ref().map(|_| "[REDACTED]"),
+            )
             .field("tenant", &self.tenant)
             .field("username", &self.username)
             .field("password", &"[REDACTED]")
@@ -377,11 +376,11 @@ fn map_error_response(error: ErrorResponse) -> AuthError {
             if description.contains("AADSTS50126") {
                 // Invalid username or password
                 AuthError::InvalidCredentials
-            } else if description.contains("AADSTS700082")
-                || description.contains("AADSTS50173")
-            {
+            } else if description.contains("AADSTS700082") || description.contains("AADSTS50173") {
                 // Refresh token expired
-                AuthError::TokenExpired { message: description }
+                AuthError::TokenExpired {
+                    message: description,
+                }
             } else {
                 AuthError::InvalidCredentials
             }
@@ -396,7 +395,9 @@ fn map_error_response(error: ErrorResponse) -> AuthError {
         _ => {
             if description.contains("AADSTS90002") || description.contains("AADSTS90014") {
                 // Tenant not found
-                AuthError::InvalidTenant { tenant: description }
+                AuthError::InvalidTenant {
+                    tenant: description,
+                }
             } else {
                 AuthError::Parse(description)
             }
