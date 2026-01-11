@@ -167,10 +167,16 @@ impl Button {
             elem = elem.transitions(transitions);
         }
 
-        // Only register handler if not disabled
+        // Only register handlers if not disabled
         if !self.disabled {
             if let Some(handler) = handlers.get("on_activate") {
                 registry.register(&id, "on_activate", handler.clone());
+            }
+            if let Some(handler) = handlers.get("on_focus") {
+                registry.register(&id, "on_focus", handler.clone());
+            }
+            if let Some(handler) = handlers.get("on_blur") {
+                registry.register(&id, "on_blur", handler.clone());
             }
         }
 
