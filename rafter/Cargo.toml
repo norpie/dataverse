@@ -20,5 +20,9 @@ uuid = { version = "1", features = ["v4", "serde"] }
 serde = { version = "1", features = ["derive"] }
 nucleo-matcher = "0.3"
 
+[[example]]
+name = "modals"
+path = "examples/modals/main.rs"
+
 [lints]
 workspace = true
