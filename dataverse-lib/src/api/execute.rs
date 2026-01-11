@@ -16,6 +16,7 @@ use super::crud::Expand;
 use super::crud::Operation;
 use super::crud::OperationOptions;
 use super::crud::UpsertResult;
+use super::query::fetchxml::FetchBuilder;
 use super::query::odata::QueryBuilder;
 use crate::DataverseClient;
 use crate::error::ApiError;
@@ -926,6 +927,40 @@ impl DataverseClient {
     /// ```
     pub fn query(&self, entity: Entity) -> QueryBuilder<'_> {
         QueryBuilder::new(self, entity)
+    }
+
+    /// Creates a FetchXML query for the specified entity.
+    ///
+    /// Returns a builder that can be configured and executed.
+    ///
+    /// FetchXML provides more advanced querying capabilities than OData,
+    /// including complex aggregations and multi-level joins.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// use dataverse_lib::api::query::{Filter, OrderBy};
+    /// use dataverse_lib::api::query::fetchxml::LinkType;
+    ///
+    /// let mut pages = client.fetch(Entity::logical("account"))
+    ///     .select(&["name", "revenue"])
+    ///     .filter(Filter::gt("revenue", 1000000))
+    ///     .link_entity("contact", "contactid", "primarycontactid", |link| {
+    ///         link.alias("pc")
+    ///             .select(&["fullname"])
+    ///             .link_type(LinkType::Outer)
+    ///     })
+    ///     .into_async_iter();
+    ///
+    /// while let Some(page) = pages.next().await {
+    ///     let page = page?;
+    ///     for record in page.records() {
+    ///         println!("{:?}", record);
+    ///     }
+    /// }
+    /// ```
+    pub fn fetch(&self, entity: Entity) -> FetchBuilder<'_> {
+        FetchBuilder::new(self, entity)
     }
 }
 
