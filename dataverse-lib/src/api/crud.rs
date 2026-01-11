@@ -199,6 +199,7 @@ pub enum Operation {
         id: Uuid,
         select: Vec<String>,
         expand: Vec<Expand>,
+        options: OperationOptions,
     },
 
     /// Update an existing record.
@@ -298,6 +299,7 @@ impl Op {
             id,
             select: Vec::new(),
             expand: Vec::new(),
+            options: OperationOptions::default(),
         }
     }
 
@@ -475,6 +477,7 @@ pub struct RetrieveBuilder {
     id: Uuid,
     select: Vec<String>,
     expand: Vec<Expand>,
+    options: OperationOptions,
 }
 
 impl RetrieveBuilder {
@@ -495,6 +498,18 @@ impl RetrieveBuilder {
         self
     }
 
+    /// Bypasses custom plugins for this operation.
+    pub fn bypass_plugins(mut self) -> Self {
+        self.options.bypass_plugins = true;
+        self
+    }
+
+    /// Bypasses Power Automate flows for this operation.
+    pub fn bypass_flows(mut self) -> Self {
+        self.options.bypass_flows = true;
+        self
+    }
+
     /// Builds the operation.
     pub fn build(self) -> Operation {
         Operation::Retrieve {
@@ -502,6 +517,7 @@ impl RetrieveBuilder {
             id: self.id,
             select: self.select,
             expand: self.expand,
+            options: self.options,
         }
     }
 }
@@ -928,10 +944,18 @@ pub enum CreateResult {
 
 impl CreateResult {
     /// Returns the ID of the created record.
-    pub fn id(&self) -> Uuid {
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the record variant doesn't contain an ID.
+    pub fn id(&self) -> Result<Uuid, crate::error::Error> {
         match self {
-            CreateResult::Id(id) => *id,
-            CreateResult::Record(record) => record.id().expect("Created record must have ID"),
+            CreateResult::Id(id) => Ok(*id),
+            CreateResult::Record(record) => record.id().ok_or_else(|| {
+                crate::error::Error::InvalidOperation(
+                    "Created record does not contain an ID".to_string(),
+                )
+            }),
         }
     }
 
@@ -958,7 +982,12 @@ pub enum UpsertResult {
     /// A new record was created.
     Created(CreateResult),
     /// An existing record was updated.
-    Updated(Option<Record>),
+    Updated {
+        /// The ID of the updated record.
+        id: Uuid,
+        /// The record, if `return_record()` was set.
+        record: Option<Record>,
+    },
 }
 
 impl UpsertResult {
@@ -969,15 +998,18 @@ impl UpsertResult {
 
     /// Returns true if an existing record was updated.
     pub fn is_updated(&self) -> bool {
-        matches!(self, UpsertResult::Updated(_))
+        matches!(self, UpsertResult::Updated { .. })
     }
 
     /// Returns the ID of the created/updated record.
-    pub fn id(&self) -> Option<Uuid> {
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if a created record doesn't contain an ID.
+    pub fn id(&self) -> Result<Uuid, crate::error::Error> {
         match self {
-            UpsertResult::Created(result) => Some(result.id()),
-            UpsertResult::Updated(Some(record)) => record.id(),
-            UpsertResult::Updated(None) => None,
+            UpsertResult::Created(result) => result.id(),
+            UpsertResult::Updated { id, .. } => Ok(*id),
         }
     }
 
@@ -985,7 +1017,7 @@ impl UpsertResult {
     pub fn record(&self) -> Option<&Record> {
         match self {
             UpsertResult::Created(result) => result.record(),
-            UpsertResult::Updated(record) => record.as_ref(),
+            UpsertResult::Updated { record, .. } => record.as_ref(),
         }
     }
 }

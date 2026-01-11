@@ -50,8 +50,9 @@ impl DataverseClient {
                 id,
                 select,
                 expand,
+                options,
             } => {
-                let result = self.execute_retrieve(entity, id, select, expand).await?;
+                let result = self.execute_retrieve(entity, id, select, expand, options).await?;
                 Ok(OperationResult::Retrieve(result))
             }
             Operation::Update {
@@ -152,7 +153,7 @@ impl DataverseClient {
         record: Record,
         options: OperationOptions,
     ) -> Result<CreateResult, Error> {
-        let entity_set = entity.set_name();
+        let entity_set = self.resolve_entity(&entity).await?;
         let url = self.build_url(&format!("/{}", entity_set));
 
         let mut headers = self.default_headers();
@@ -160,9 +161,8 @@ impl DataverseClient {
 
         if options.return_record {
             headers.insert("Prefer", HeaderValue::from_static("return=representation"));
-            if !options.select.is_empty() {
-                // Add $select to URL for returned fields
-            }
+            // TODO: Add $select query parameter when options.select is non-empty
+            // Requires OData URL builder - see dataverse-lib.md plan
         }
 
         let body = serde_json::to_string(&record).map_err(|e| Error::Serialization(e))?;
@@ -198,8 +198,9 @@ impl DataverseClient {
         id: Uuid,
         select: Vec<String>,
         expand: Vec<Expand>,
+        options: OperationOptions,
     ) -> Result<Response<Record>, Error> {
-        let entity_set = entity.set_name();
+        let entity_set = self.resolve_entity(&entity).await?;
         let mut url = format!("/{}({})", entity_set, id);
 
         // Build query parameters
@@ -225,11 +226,11 @@ impl DataverseClient {
             "Prefer",
             HeaderValue::from_static("odata.include-annotations=\"*\""),
         );
+        self.apply_options_headers(&mut headers, &options);
 
         let response = self.request(Method::GET, &full_url, headers, None).await?;
         let record: Record = response.json().await.map_err(ApiError::from)?;
 
-        // TODO: Integrate with cache
         Ok(Response::fresh(record))
     }
 
@@ -240,14 +241,16 @@ impl DataverseClient {
         record: Record,
         options: OperationOptions,
     ) -> Result<Option<Record>, Error> {
-        let entity_set = entity.set_name();
+        let entity_set = self.resolve_entity(&entity).await?;
         let url = self.build_url(&format!("/{}({})", entity_set, id));
 
         let mut headers = self.default_headers();
         self.apply_options_headers(&mut headers, &options);
 
         if let Some(ref etag) = options.if_match {
-            headers.insert("If-Match", HeaderValue::from_str(etag).unwrap());
+            let header_value = HeaderValue::from_str(etag)
+                .map_err(|_| Error::InvalidOperation(format!("Invalid etag value: {}", etag)))?;
+            headers.insert("If-Match", header_value);
         }
 
         if options.return_record {
@@ -274,14 +277,16 @@ impl DataverseClient {
         id: Uuid,
         options: OperationOptions,
     ) -> Result<(), Error> {
-        let entity_set = entity.set_name();
+        let entity_set = self.resolve_entity(&entity).await?;
         let url = self.build_url(&format!("/{}({})", entity_set, id));
 
         let mut headers = self.default_headers();
         self.apply_options_headers(&mut headers, &options);
 
         if let Some(ref etag) = options.if_match {
-            headers.insert("If-Match", HeaderValue::from_str(etag).unwrap());
+            let header_value = HeaderValue::from_str(etag)
+                .map_err(|_| Error::InvalidOperation(format!("Invalid etag value: {}", etag)))?;
+            headers.insert("If-Match", header_value);
         }
 
         self.request(Method::DELETE, &url, headers, None).await?;
@@ -295,7 +300,7 @@ impl DataverseClient {
         record: Record,
         options: OperationOptions,
     ) -> Result<UpsertResult, Error> {
-        let entity_set = entity.set_name();
+        let entity_set = self.resolve_entity(&entity).await?;
         let url = self.build_url(&format!("/{}({})", entity_set, id));
 
         let mut headers = self.default_headers();
@@ -304,7 +309,9 @@ impl DataverseClient {
         if options.if_none_match {
             headers.insert("If-None-Match", HeaderValue::from_static("*"));
         } else if let Some(ref etag) = options.if_match {
-            headers.insert("If-Match", HeaderValue::from_str(etag).unwrap());
+            let header_value = HeaderValue::from_str(etag)
+                .map_err(|_| Error::InvalidOperation(format!("Invalid etag value: {}", etag)))?;
+            headers.insert("If-Match", header_value);
         }
 
         if options.return_record {
@@ -336,9 +343,9 @@ impl DataverseClient {
             // Existing record updated
             if options.return_record {
                 let record: Record = response.json().await.map_err(ApiError::from)?;
-                Ok(UpsertResult::Updated(Some(record)))
+                Ok(UpsertResult::Updated { id, record: Some(record) })
             } else {
-                Ok(UpsertResult::Updated(None))
+                Ok(UpsertResult::Updated { id, record: None })
             }
         }
     }
@@ -352,8 +359,8 @@ impl DataverseClient {
         target_id: Uuid,
         options: OperationOptions,
     ) -> Result<(), Error> {
-        let entity_set = entity.set_name();
-        let target_set = target_entity.set_name();
+        let entity_set = self.resolve_entity(&entity).await?;
+        let target_set = self.resolve_entity(&target_entity).await?;
 
         // The relationship name is used as the collection-valued navigation property
         // The actual URL format is: POST /{entity}({id})/{relationship}/$ref
@@ -363,7 +370,7 @@ impl DataverseClient {
         self.apply_options_headers(&mut headers, &options);
 
         let body = json!({
-            "@odata.id": format!("{}({})", target_set, target_id)
+            "@odata.id": self.build_url(&format!("/{}({})", target_set, target_id))
         });
 
         self.request(Method::POST, &url, headers, Some(body.to_string()))
@@ -379,7 +386,7 @@ impl DataverseClient {
         target_id: Uuid,
         options: OperationOptions,
     ) -> Result<(), Error> {
-        let entity_set = entity.set_name();
+        let entity_set = self.resolve_entity(&entity).await?;
         let url = self.build_url(&format!(
             "/{}({})/{}({})/$ref",
             entity_set, id, relationship, target_id
@@ -401,15 +408,15 @@ impl DataverseClient {
         target_id: Uuid,
         options: OperationOptions,
     ) -> Result<(), Error> {
-        let entity_set = entity.set_name();
-        let target_set = target_entity.set_name();
+        let entity_set = self.resolve_entity(&entity).await?;
+        let target_set = self.resolve_entity(&target_entity).await?;
         let url = self.build_url(&format!("/{}({})/{}/$ref", entity_set, id, nav_property));
 
         let mut headers = self.default_headers();
         self.apply_options_headers(&mut headers, &options);
 
         let body = json!({
-            "@odata.id": format!("{}({})", target_set, target_id)
+            "@odata.id": self.build_url(&format!("/{}({})", target_set, target_id))
         });
 
         self.request(Method::PUT, &url, headers, Some(body.to_string()))
@@ -424,7 +431,7 @@ impl DataverseClient {
         nav_property: &str,
         options: OperationOptions,
     ) -> Result<(), Error> {
-        let entity_set = entity.set_name();
+        let entity_set = self.resolve_entity(&entity).await?;
         let url = self.build_url(&format!("/{}({})/{}/$ref", entity_set, id, nav_property));
 
         let mut headers = self.default_headers();
@@ -437,6 +444,17 @@ impl DataverseClient {
     // =========================================================================
     // Helper methods
     // =========================================================================
+
+    /// Resolves an Entity to its entity set name for use in API URLs.
+    ///
+    /// - For `Entity::Set`, returns the name directly.
+    /// - For `Entity::Logical`, fetches metadata to resolve the entity set name.
+    async fn resolve_entity(&self, entity: &Entity) -> Result<String, Error> {
+        match entity {
+            Entity::Set(name) => Ok(name.clone()),
+            Entity::Logical(logical_name) => self.resolve_entity_set_name(logical_name).await,
+        }
+    }
 
     fn build_url(&self, path: &str) -> String {
         format!(
@@ -525,10 +543,14 @@ pub enum OperationResult {
 
 impl OperationResult {
     /// Returns the created ID if this was a Create operation.
-    pub fn created_id(&self) -> Option<Uuid> {
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the created record doesn't contain an ID.
+    pub fn created_id(&self) -> Result<Option<Uuid>, Error> {
         match self {
-            OperationResult::Create(result) => Some(result.id()),
-            _ => None,
+            OperationResult::Create(result) => Ok(Some(result.id()?)),
+            _ => Ok(None),
         }
     }
 
@@ -539,7 +561,7 @@ impl OperationResult {
             OperationResult::Create(CreateResult::Record(r)) => Some(r),
             OperationResult::Update(Some(r)) => Some(r),
             OperationResult::Upsert(UpsertResult::Created(CreateResult::Record(r))) => Some(r),
-            OperationResult::Upsert(UpsertResult::Updated(Some(r))) => Some(r),
+            OperationResult::Upsert(UpsertResult::Updated { record: Some(r), .. }) => Some(r),
             _ => None,
         }
     }
@@ -604,6 +626,7 @@ impl DataverseClient {
             id,
             select: Vec::new(),
             expand: Vec::new(),
+            options: OperationOptions::default(),
         }
     }
 
@@ -855,6 +878,7 @@ pub struct ClientRetrieveBuilder<'a> {
     id: Uuid,
     select: Vec<String>,
     expand: Vec<Expand>,
+    options: OperationOptions,
 }
 
 impl<'a> ClientRetrieveBuilder<'a> {
@@ -874,6 +898,18 @@ impl<'a> ClientRetrieveBuilder<'a> {
         self.expand.push(expand);
         self
     }
+
+    /// Skip custom plugin execution.
+    pub fn bypass_plugins(mut self) -> Self {
+        self.options.bypass_plugins = true;
+        self
+    }
+
+    /// Skip Power Automate flows.
+    pub fn bypass_flows(mut self) -> Self {
+        self.options.bypass_flows = true;
+        self
+    }
 }
 
 impl<'a> std::future::IntoFuture for ClientRetrieveBuilder<'a> {
@@ -884,7 +920,7 @@ impl<'a> std::future::IntoFuture for ClientRetrieveBuilder<'a> {
     fn into_future(self) -> Self::IntoFuture {
         Box::pin(async move {
             self.client
-                .execute_retrieve(self.entity, self.id, self.select, self.expand)
+                .execute_retrieve(self.entity, self.id, self.select, self.expand, self.options)
                 .await
         })
     }
@@ -897,6 +933,7 @@ impl<'a> From<ClientRetrieveBuilder<'a>> for Operation {
             id: builder.id,
             select: builder.select,
             expand: builder.expand,
+            options: builder.options,
         }
     }
 }
