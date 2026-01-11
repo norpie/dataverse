@@ -1,4 +1,6 @@
+mod modals;
 mod systems;
+mod widgets;
 
 use std::fs::File;
 
@@ -6,6 +8,8 @@ use rafter::page;
 use rafter::prelude::*;
 use rafter::widgets::Text;
 use simplelog::{Config, LevelFilter, WriteLogger};
+
+use widgets::Spinner;
 
 #[app]
 struct DataverseTui {}
@@ -15,9 +19,10 @@ impl DataverseTui {
     fn element(&self) -> Element {
         page! {
             column (padding: 2, gap: 1) style (bg: background) {
-                text (content: "Dataverse TUI") style (bold, fg: primary)
+                text (content: "Dataverse TUI") style (bold, fg: accent)
                 text (content: "Press Ctrl+P to open launcher") style (fg: muted)
                 text (content: "Press Ctrl+Q to quit") style (fg: muted)
+                spinner (id: "main-spinner")
             }
         }
     }
