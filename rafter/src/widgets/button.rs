@@ -30,6 +30,7 @@ pub struct Button {
     hint: Option<String>,
     id: Option<String>,
     disabled: bool,
+    ghost: bool,
     style: Option<Style>,
     style_focused: Option<Style>,
     style_disabled: Option<Style>,
@@ -65,6 +66,14 @@ impl Button {
     /// Disabled buttons are not focusable, not clickable, and don't register handlers.
     pub fn disabled(mut self) -> Self {
         self.disabled = true;
+        self
+    }
+
+    /// Make this a ghost button.
+    ///
+    /// Ghost buttons are transparent (no background) and don't change style on hover/focus.
+    pub fn ghost(mut self) -> Self {
+        self.ghost = true;
         self
     }
 
@@ -117,18 +126,26 @@ impl Button {
             .clickable(!self.disabled)
             .disabled(self.disabled);
 
-        let style = self
-            .style
-            .unwrap_or_else(|| Style::new().background(Color::var("button.normal")));
-        let focused_style = self
-            .style_focused
-            .unwrap_or_else(|| Style::new().background(Color::var("button.hover")));
-        let disabled_style = self
-            .style_disabled
-            .unwrap_or_else(|| Style::new().background(Color::var("button.disabled")));
-        elem = elem.style(style);
-        elem = elem.style_focused(focused_style);
-        elem = elem.style_disabled(disabled_style);
+        if self.ghost {
+            // Ghost buttons: no background, no style changes on hover/focus
+            if let Some(style) = self.style {
+                elem = elem.style(style);
+            }
+        } else {
+            // Normal buttons: themed background with hover/focus styles
+            let style = self
+                .style
+                .unwrap_or_else(|| Style::new().background(Color::var("button.normal")));
+            let focused_style = self
+                .style_focused
+                .unwrap_or_else(|| Style::new().background(Color::var("button.hover")));
+            let disabled_style = self
+                .style_disabled
+                .unwrap_or_else(|| Style::new().background(Color::var("button.disabled")));
+            elem = elem.style(style);
+            elem = elem.style_focused(focused_style);
+            elem = elem.style_disabled(disabled_style);
+        }
         if let Some(transitions) = self.transitions {
             elem = elem.transitions(transitions);
         }
