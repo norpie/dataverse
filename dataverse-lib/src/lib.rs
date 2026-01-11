@@ -9,8 +9,11 @@ pub mod error;
 pub mod index;
 pub mod model;
 pub mod rate_limit;
+pub mod response;
 pub mod stream;
 
 mod client;
 
 pub use client::*;
+pub use response::CacheStatus;
+pub use response::Response;
