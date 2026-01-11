@@ -12,3 +12,4 @@ tuidom/docs/book
 **/*.old
 flamegraph.svg
 perf.data
+.env
