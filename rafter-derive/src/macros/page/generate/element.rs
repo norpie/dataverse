@@ -406,6 +406,10 @@ fn generate_attr_value(value: &AttrValue) -> TokenStream {
 }
 
 /// Generate edges call (padding/margin)
+///
+/// Supports:
+/// - Single value: `padding: 2` -> `Edges::all(2)`
+/// - Tuple (vertical, horizontal): `padding: (1, 2)` -> `Edges::symmetric(1, 2)`
 fn generate_edges_call(method: &str, value: &AttrValue) -> TokenStream {
     let method_ident = syn::Ident::new(method, proc_macro2::Span::call_site());
 
@@ -415,6 +419,14 @@ fn generate_edges_call(method: &str, value: &AttrValue) -> TokenStream {
             quote! { .#method_ident(tuidom::Edges::all(#val)) }
         }
         AttrValue::Expr(expr) => {
+            // Check if it's a tuple expression (vertical, horizontal)
+            if let syn::Expr::Tuple(tuple) = expr {
+                if tuple.elems.len() == 2 {
+                    let vertical = &tuple.elems[0];
+                    let horizontal = &tuple.elems[1];
+                    return quote! { .#method_ident(tuidom::Edges::symmetric(#vertical as u16, #horizontal as u16)) };
+                }
+            }
             quote! { .#method_ident(tuidom::Edges::all(#expr as u16)) }
         }
         _ => {

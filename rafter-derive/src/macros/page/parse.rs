@@ -1,7 +1,7 @@
 //! Parsing logic for the page! macro.
 
 use syn::parse::{Parse, ParseStream};
-use syn::token::Brace;
+use syn::token::{Brace, Paren};
 use syn::{braced, parenthesized, Expr, Ident, Pat, Token};
 
 use super::ast::{
@@ -199,6 +199,20 @@ fn parse_attr_value(input: ParseStream) -> syn::Result<AttrValue> {
         braced!(content in input);
         let expr: Expr = content.parse()?;
         return Ok(AttrValue::Expr(expr));
+    }
+
+    // Check for tuple expression (e.g., (1, 2) for symmetric padding)
+    if input.peek(Paren) {
+        let content;
+        parenthesized!(content in input);
+        let exprs: syn::punctuated::Punctuated<Expr, Token![,]> =
+            content.parse_terminated(Expr::parse, Token![,])?;
+        let tuple = syn::ExprTuple {
+            attrs: vec![],
+            paren_token: syn::token::Paren::default(),
+            elems: exprs,
+        };
+        return Ok(AttrValue::Expr(Expr::Tuple(tuple)));
     }
 
     // Check for literal
