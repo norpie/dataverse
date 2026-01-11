@@ -73,6 +73,7 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
     let mut request_handlers: Vec<RequestHandlerMethod> = Vec::new();
     let mut page_methods: Vec<PageMethod> = Vec::new();
     let mut has_element = false;
+    let mut has_title = false;
     let mut has_on_start = false;
     let mut has_on_foreground = false;
     let mut has_on_background = false;
@@ -157,6 +158,9 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
         if method.is_named("element") {
             has_element = true;
         }
+        if method.is_named("title") {
+            has_title = true;
+        }
         if method.is_named("on_start") {
             has_on_start = true;
         }
@@ -199,6 +203,16 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
         generate_keybinds_closures_impl(&keybinds_methods, &handler_contexts, &type_name);
     let element_impl = generate_element_impl(has_element, &self_ty);
     let config_impl = generate_config_impl(&type_name);
+
+    let title_impl = if has_title {
+        quote! {
+            fn title(&self) -> String {
+                #self_ty::title(self)
+            }
+        }
+    } else {
+        quote! {}
+    };
 
     // Generate handlers() method
     let handlers_impl = quote! {
@@ -267,6 +281,7 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
 
         impl #impl_generics rafter::App for #self_ty {
             #config_impl
+            #title_impl
             #keybinds_impl
             #handlers_impl
             #element_impl
