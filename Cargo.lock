@@ -439,6 +439,14 @@ dependencies = [
 [[package]]
 name = "dataverse-tui"
 version = "0.1.0"
+dependencies = [
+ "inventory",
+ "log",
+ "rafter",
+ "simplelog",
+ "tokio",
+ "tuidom",
+]
 
 [[package]]
 name = "deranged"
