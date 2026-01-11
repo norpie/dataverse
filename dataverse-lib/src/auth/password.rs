@@ -1,9 +1,11 @@
 //! Password flow utilities (Resource Owner Password Credentials)
 
+use async_trait::async_trait;
 use chrono::Duration;
 use chrono::Utc;
 use serde::Deserialize;
 
+use super::auto_refresh::AuthFlow;
 use super::AccessToken;
 use crate::error::AuthError;
 
@@ -402,5 +404,31 @@ fn map_error_response(error: ErrorResponse) -> AuthError {
                 AuthError::Parse(description)
             }
         }
+    }
+}
+
+// =============================================================================
+// AuthFlow implementations
+// =============================================================================
+
+#[async_trait]
+impl AuthFlow for PasswordFlow {
+    async fn authenticate(&self, resource: &str) -> Result<AccessToken, AuthError> {
+        self.authenticate(resource).await
+    }
+
+    async fn refresh(&self, resource: &str, refresh_token: &str) -> Result<AccessToken, AuthError> {
+        self.refresh(resource, refresh_token).await
+    }
+}
+
+#[async_trait]
+impl AuthFlow for PublicClientPasswordFlow {
+    async fn authenticate(&self, resource: &str) -> Result<AccessToken, AuthError> {
+        self.authenticate(resource).await
+    }
+
+    async fn refresh(&self, resource: &str, refresh_token: &str) -> Result<AccessToken, AuthError> {
+        self.refresh(resource, refresh_token).await
     }
 }
