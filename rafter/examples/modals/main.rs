@@ -239,9 +239,44 @@ impl ModalShowcase {
                 }
 
                 // Footer
-                text (content: "Press Q to quit") style (fg: muted)
+                column (gap: 1) {
+                    text (content: "Press Q to quit") style (fg: muted)
+                    text (content: "Global modals (via System): Ctrl+G = Global Confirm, Ctrl+T = Global Input") style (fg: muted)
+                }
             }
         }
+    }
+}
+
+// ============================================================================
+// Global Modal System
+// ============================================================================
+
+use rafter::system_impl;
+
+#[rafter::system]
+struct GlobalModalSystem;
+
+#[system_impl]
+impl GlobalModalSystem {
+    #[keybinds]
+    fn keys() {
+        bind("ctrl+g", show_global_confirm);
+        bind("ctrl+t", show_global_input);
+    }
+
+    #[handler]
+    async fn show_global_confirm(&self, gx: &GlobalContext) {
+        let result = gx.modal(ConfirmModal::new("This is a GLOBAL modal!")).await;
+        log::info!("Global confirm result: {}", result);
+    }
+
+    #[handler]
+    async fn show_global_input(&self, gx: &GlobalContext) {
+        let result = gx
+            .modal(InputModal::with_prompt("Global input (works from anywhere):"))
+            .await;
+        log::info!("Global input result: {:?}", result);
     }
 }
 
@@ -252,6 +287,7 @@ async fn main() {
     WriteLogger::init(LevelFilter::Debug, Config::default(), log_file)
         .expect("Failed to initialize logger");
 
+    // GlobalModalSystem is auto-registered via inventory from #[system] macro
     if let Err(e) = Runtime::new()
         .expect("Failed to create runtime")
         .run(ModalShowcase::default())
