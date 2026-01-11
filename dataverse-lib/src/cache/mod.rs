@@ -6,9 +6,11 @@
 
 mod config;
 mod memory;
+mod sqlite;
 
 pub use config::*;
 pub use memory::*;
+pub use sqlite::*;
 
 use async_trait::async_trait;
 use chrono::DateTime;
