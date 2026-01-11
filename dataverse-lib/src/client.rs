@@ -7,6 +7,9 @@ use reqwest::Client;
 use serde::Deserialize;
 
 use crate::auth::TokenProvider;
+use crate::cache::CacheConfig;
+use crate::cache::CacheProvider;
+use crate::cache::InMemoryCache;
 use crate::error::ApiError;
 use crate::error::Error;
 
@@ -39,6 +42,8 @@ struct DataverseClientInner {
     token_provider: Arc<dyn TokenProvider>,
     http_client: Client,
     timeout: Option<Duration>,
+    cache: Option<Arc<dyn CacheProvider>>,
+    cache_config: CacheConfig,
 }
 
 impl DataverseClient {
@@ -95,6 +100,21 @@ impl DataverseClient {
     pub fn api_version(&self) -> &str {
         &self.inner.api_version
     }
+
+    /// Returns a reference to the cache provider, if caching is enabled.
+    pub fn cache(&self) -> Option<&dyn CacheProvider> {
+        self.inner.cache.as_deref()
+    }
+
+    /// Returns the cache configuration.
+    pub fn cache_config(&self) -> &CacheConfig {
+        &self.inner.cache_config
+    }
+
+    /// Returns `true` if caching is enabled.
+    pub fn has_cache(&self) -> bool {
+        self.inner.cache.is_some()
+    }
 }
 
 /// Response from the WhoAmI request.
@@ -128,6 +148,11 @@ pub struct Set<T>(T);
 /// - `url` - The Dataverse environment URL
 /// - `token_provider` - A [`TokenProvider`] implementation
 ///
+/// # Caching
+///
+/// By default, an in-memory cache is enabled. Use `.no_cache()` to disable,
+/// or `.cache()` to provide a custom cache implementation.
+///
 /// # Example
 ///
 /// ```ignore
@@ -145,6 +170,9 @@ pub struct DataverseClientBuilder<Url, Provider> {
     timeout: Option<Duration>,
     connect_timeout: Option<Duration>,
     http_client: Option<Client>,
+    cache: Option<Arc<dyn CacheProvider>>,
+    cache_disabled: bool,
+    cache_config: CacheConfig,
 }
 
 impl DataverseClientBuilder<Missing, Missing> {
@@ -157,6 +185,9 @@ impl DataverseClientBuilder<Missing, Missing> {
             timeout: None,
             connect_timeout: None,
             http_client: None,
+            cache: None,
+            cache_disabled: false,
+            cache_config: CacheConfig::default(),
         }
     }
 }
@@ -183,6 +214,9 @@ impl<P> DataverseClientBuilder<Missing, P> {
             timeout: self.timeout,
             connect_timeout: self.connect_timeout,
             http_client: self.http_client,
+            cache: self.cache,
+            cache_disabled: self.cache_disabled,
+            cache_config: self.cache_config,
         }
     }
 }
@@ -200,6 +234,9 @@ impl<U> DataverseClientBuilder<U, Missing> {
             timeout: self.timeout,
             connect_timeout: self.connect_timeout,
             http_client: self.http_client,
+            cache: self.cache,
+            cache_disabled: self.cache_disabled,
+            cache_config: self.cache_config,
         }
     }
 }
@@ -234,6 +271,31 @@ impl<U, P> DataverseClientBuilder<U, P> {
         self.http_client = Some(client);
         self
     }
+
+    /// Sets a custom cache provider.
+    ///
+    /// By default, an in-memory cache is used. Use this to provide
+    /// a different implementation (e.g., SQLite-backed cache).
+    pub fn cache<C: CacheProvider + 'static>(mut self, cache: C) -> Self {
+        self.cache = Some(Arc::new(cache));
+        self.cache_disabled = false;
+        self
+    }
+
+    /// Disables caching entirely.
+    ///
+    /// By default, an in-memory cache is enabled.
+    pub fn no_cache(mut self) -> Self {
+        self.cache = None;
+        self.cache_disabled = true;
+        self
+    }
+
+    /// Sets the cache configuration (TTL settings).
+    pub fn cache_config(mut self, config: CacheConfig) -> Self {
+        self.cache_config = config;
+        self
+    }
 }
 
 impl DataverseClientBuilder<Set<String>, Set<Arc<dyn TokenProvider>>> {
@@ -249,6 +311,14 @@ impl DataverseClientBuilder<Set<String>, Set<Arc<dyn TokenProvider>>> {
             builder.build().expect("Failed to build HTTP client")
         });
 
+        // Use provided cache, or default to InMemoryCache unless disabled
+        let cache = if self.cache_disabled {
+            None
+        } else {
+            self.cache
+                .or_else(|| Some(Arc::new(InMemoryCache::new()) as Arc<dyn CacheProvider>))
+        };
+
         DataverseClient {
             inner: Arc::new(DataverseClientInner {
                 base_url: self.url.0,
@@ -256,6 +326,8 @@ impl DataverseClientBuilder<Set<String>, Set<Arc<dyn TokenProvider>>> {
                 token_provider: self.token_provider.0,
                 http_client,
                 timeout: self.timeout,
+                cache,
+                cache_config: self.cache_config,
             }),
         }
     }

@@ -4,8 +4,10 @@
 //! serialized data with TTL support. Used by the Dataverse client for
 //! metadata and query result caching.
 
+mod config;
 mod memory;
 
+pub use config::*;
 pub use memory::*;
 
 use async_trait::async_trait;
