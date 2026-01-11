@@ -693,6 +693,8 @@ impl Runtime {
         // Collect edge overlays (top, bottom, left, right)
         let mut top_overlays: Vec<Element> = Vec::new();
         let mut bottom_overlays: Vec<Element> = Vec::new();
+        let mut left_overlays: Vec<Element> = Vec::new();
+        let mut right_overlays: Vec<Element> = Vec::new();
 
         for system in systems {
             if let Some(overlay) = system.overlay() {
@@ -703,9 +705,11 @@ impl Runtime {
                     crate::system::OverlayPosition::Bottom { height } => {
                         bottom_overlays.push(overlay.element.height(Size::Fixed(height)));
                     }
-                    crate::system::OverlayPosition::Left { .. }
-                    | crate::system::OverlayPosition::Right { .. } => {
-                        // TODO: Handle left/right overlays
+                    crate::system::OverlayPosition::Left { width } => {
+                        left_overlays.push(overlay.element.width(Size::Fixed(width)));
+                    }
+                    crate::system::OverlayPosition::Right { width } => {
+                        right_overlays.push(overlay.element.width(Size::Fixed(width)));
                     }
                     crate::system::OverlayPosition::Absolute { x, y, .. } => {
                         // Absolute overlays rendered later
@@ -726,6 +730,14 @@ impl Runtime {
             root = root.child(overlay);
         }
 
+        // Build middle section: left overlays + app content + right overlays
+        let mut middle_row = Element::row().width(Size::Fill).height(Size::Fill);
+
+        // Add left overlays
+        for overlay in left_overlays {
+            middle_row = middle_row.child(overlay.height(Size::Fill));
+        }
+
         // Add focused app content
         {
             let reg = registry.read().unwrap();
@@ -733,9 +745,16 @@ impl Runtime {
                 log::debug!("[runtime] Calling instance.element() for {}", instance.config().name);
                 let app_element = instance.element();
                 log::debug!("[runtime] instance.element() returned");
-                root = root.child(app_element.width(Size::Fill).height(Size::Fill));
+                middle_row = middle_row.child(app_element.width(Size::Fill).height(Size::Fill));
             }
         }
+
+        // Add right overlays
+        for overlay in right_overlays {
+            middle_row = middle_row.child(overlay.height(Size::Fill));
+        }
+
+        root = root.child(middle_row);
 
         // Add bottom overlays
         for overlay in bottom_overlays {
