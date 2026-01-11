@@ -12,6 +12,9 @@ use crate::cache::CacheProvider;
 use crate::cache::InMemoryCache;
 use crate::error::ApiError;
 use crate::error::Error;
+use crate::rate_limit::ConcurrencyLimiter;
+use crate::rate_limit::RateLimiter;
+use crate::rate_limit::RetryConfig;
 
 /// The main client for interacting with the Dataverse Web API.
 ///
@@ -44,6 +47,9 @@ pub(crate) struct DataverseClientInner {
     pub(crate) timeout: Option<Duration>,
     pub(crate) cache: Option<Arc<dyn CacheProvider>>,
     pub(crate) cache_config: CacheConfig,
+    pub(crate) concurrency_limiter: ConcurrencyLimiter,
+    pub(crate) rate_limiter: RateLimiter,
+    pub(crate) retry_config: RetryConfig,
 }
 
 impl DataverseClient {
@@ -177,6 +183,9 @@ pub struct DataverseClientBuilder<Url, Provider> {
     cache: Option<Arc<dyn CacheProvider>>,
     cache_disabled: bool,
     cache_config: CacheConfig,
+    concurrency_limiter: Option<ConcurrencyLimiter>,
+    rate_limiter: Option<RateLimiter>,
+    retry_config: RetryConfig,
 }
 
 impl DataverseClientBuilder<Missing, Missing> {
@@ -192,6 +201,9 @@ impl DataverseClientBuilder<Missing, Missing> {
             cache: None,
             cache_disabled: false,
             cache_config: CacheConfig::default(),
+            concurrency_limiter: None,
+            rate_limiter: None,
+            retry_config: RetryConfig::default(),
         }
     }
 }
@@ -221,6 +233,9 @@ impl<P> DataverseClientBuilder<Missing, P> {
             cache: self.cache,
             cache_disabled: self.cache_disabled,
             cache_config: self.cache_config,
+            concurrency_limiter: self.concurrency_limiter,
+            rate_limiter: self.rate_limiter,
+            retry_config: self.retry_config,
         }
     }
 }
@@ -241,6 +256,9 @@ impl<U> DataverseClientBuilder<U, Missing> {
             cache: self.cache,
             cache_disabled: self.cache_disabled,
             cache_config: self.cache_config,
+            concurrency_limiter: self.concurrency_limiter,
+            rate_limiter: self.rate_limiter,
+            retry_config: self.retry_config,
         }
     }
 }
@@ -300,6 +318,43 @@ impl<U, P> DataverseClientBuilder<U, P> {
         self.cache_config = config;
         self
     }
+
+    /// Sets a custom concurrency limit.
+    ///
+    /// Default is 52 (Dataverse's concurrent request limit per user).
+    pub fn concurrency_limit(mut self, limit: usize) -> Self {
+        self.concurrency_limiter = Some(ConcurrencyLimiter::new(limit));
+        self
+    }
+
+    /// Sets a custom rate limit.
+    ///
+    /// Default is 6000 requests per 5 minutes (Dataverse's service protection limit).
+    pub fn rate_limit(mut self, capacity: u32, window: Duration) -> Self {
+        self.rate_limiter = Some(RateLimiter::new(capacity, window));
+        self
+    }
+
+    /// Uses a shared rate limiter.
+    ///
+    /// Useful when multiple clients share the same user credentials
+    /// and should share the rate limit quota.
+    pub fn shared_rate_limiter(mut self, limiter: RateLimiter) -> Self {
+        self.rate_limiter = Some(limiter);
+        self
+    }
+
+    /// Sets the retry configuration.
+    pub fn retry_config(mut self, config: RetryConfig) -> Self {
+        self.retry_config = config;
+        self
+    }
+
+    /// Disables automatic retry.
+    pub fn no_retry(mut self) -> Self {
+        self.retry_config = RetryConfig::no_retry();
+        self
+    }
 }
 
 impl DataverseClientBuilder<Set<String>, Set<Arc<dyn TokenProvider>>> {
@@ -332,6 +387,9 @@ impl DataverseClientBuilder<Set<String>, Set<Arc<dyn TokenProvider>>> {
                 timeout: self.timeout,
                 cache,
                 cache_config: self.cache_config,
+                concurrency_limiter: self.concurrency_limiter.unwrap_or_default(),
+                rate_limiter: self.rate_limiter.unwrap_or_default(),
+                retry_config: self.retry_config,
             }),
         }
     }

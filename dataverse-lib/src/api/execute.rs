@@ -2,6 +2,8 @@
 //!
 //! This module contains the HTTP execution logic for CRUD operations.
 
+use std::time::Duration;
+
 use reqwest::Method;
 use reqwest::StatusCode;
 use reqwest::header::HeaderMap;
@@ -489,6 +491,100 @@ impl DataverseClient {
         headers: HeaderMap,
         body: Option<String>,
     ) -> Result<reqwest::Response, Error> {
+        // Acquire concurrency permit (held for entire request lifecycle including retries)
+        let _permit = self.inner.concurrency_limiter.acquire().await;
+
+        let retry_config = &self.inner.retry_config;
+        let mut attempts = 0;
+        let mut delay = retry_config.initial_delay;
+
+        loop {
+            // Acquire rate limit slot
+            self.inner.rate_limiter.acquire().await;
+
+            // Send request
+            let result = self
+                .send_request_inner(method.clone(), url, headers.clone(), body.clone())
+                .await;
+
+            match result {
+                Ok(response) => {
+                    let status = response.status();
+
+                    // Handle 429 Too Many Requests
+                    if status.as_u16() == 429 {
+                        if !retry_config.retry_on_429 || attempts >= retry_config.max_retries {
+                            let retry_after = parse_retry_after(&response);
+                            return Err(Error::RateLimit { retry_after });
+                        }
+
+                        let wait = parse_retry_after(&response).unwrap_or(delay);
+                        tokio::time::sleep(wait).await;
+                        attempts += 1;
+                        continue;
+                    }
+
+                    // Handle 5xx server errors
+                    if status.is_server_error() {
+                        if !retry_config.retry_on_5xx || attempts >= retry_config.max_retries {
+                            let status_code = status.as_u16();
+                            let body = response.text().await.unwrap_or_default();
+                            return Err(Error::Api(ApiError::Http {
+                                status: status_code,
+                                message: body,
+                                code: None,
+                                inner: None,
+                            }));
+                        }
+
+                        tokio::time::sleep(delay).await;
+                        delay = (delay * 2).min(retry_config.max_delay);
+                        attempts += 1;
+                        continue;
+                    }
+
+                    // Success or client error (4xx except 429)
+                    if status.is_success() {
+                        return Ok(response);
+                    } else {
+                        let status_code = status.as_u16();
+                        let body = response.text().await.unwrap_or_default();
+                        return Err(Error::Api(ApiError::Http {
+                            status: status_code,
+                            message: body,
+                            code: None,
+                            inner: None,
+                        }));
+                    }
+                }
+                Err(e) => {
+                    // Handle network errors
+                    let is_network = matches!(&e, Error::Api(ApiError::Network(_)));
+
+                    if is_network
+                        && retry_config.retry_on_network
+                        && attempts < retry_config.max_retries
+                    {
+                        tokio::time::sleep(delay).await;
+                        delay = (delay * 2).min(retry_config.max_delay);
+                        attempts += 1;
+                        continue;
+                    }
+
+                    return Err(e);
+                }
+            }
+        }
+    }
+
+    /// Inner request method without retry logic.
+    async fn send_request_inner(
+        &self,
+        method: Method,
+        url: &str,
+        headers: HeaderMap,
+        body: Option<String>,
+    ) -> Result<reqwest::Response, Error> {
         let token = self
             .inner
             .token_provider
@@ -502,29 +598,28 @@ impl DataverseClient {
             .headers(headers)
             .bearer_auth(&token.access_token);
 
-        if let Some(body) = body {
-            request = request.body(body);
-        }
-
         if let Some(timeout) = self.inner.timeout {
             request = request.timeout(timeout);
         }
 
-        let response = request.send().await.map_err(ApiError::from)?;
-
-        if response.status().is_success() {
-            Ok(response)
-        } else {
-            let status = response.status().as_u16();
-            let body = response.text().await.unwrap_or_default();
-            Err(Error::Api(ApiError::Http {
-                status,
-                message: body,
-                code: None,
-                inner: None,
-            }))
+        if let Some(body) = body {
+            request = request.body(body);
         }
+
+        request.send().await.map_err(|e| Error::Api(ApiError::from(e)))
     }
+}
+
+/// Parses the Retry-After header value (seconds).
+fn parse_retry_after(response: &reqwest::Response) -> Option<Duration> {
+    response
+        .headers()
+        .get("Retry-After")?
+        .to_str()
+        .ok()?
+        .parse::<u64>()
+        .ok()
+        .map(Duration::from_secs)
 }
 
 /// Result of executing an operation.
