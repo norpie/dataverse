@@ -16,6 +16,7 @@ use super::crud::Expand;
 use super::crud::Operation;
 use super::crud::OperationOptions;
 use super::crud::UpsertResult;
+use super::aggregate::AggregateBuilder;
 use super::query::fetchxml::FetchBuilder;
 use super::query::odata::QueryBuilder;
 use crate::DataverseClient;
@@ -961,6 +962,37 @@ impl DataverseClient {
     /// ```
     pub fn fetch(&self, entity: Entity) -> FetchBuilder<'_> {
         FetchBuilder::new(self, entity)
+    }
+
+    /// Creates an aggregation query for the specified entity.
+    ///
+    /// Returns a builder that can be configured and executed.
+    ///
+    /// Aggregation queries use FetchXML internally, as it's the only
+    /// query language in Dataverse that supports aggregations.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// use dataverse_lib::api::query::Filter;
+    ///
+    /// let results = client.aggregate(Entity::logical("opportunity"))
+    ///     .group_by("ownerid", "owner")
+    ///     .sum("estimatedvalue", "total_value")
+    ///     .count("opportunityid", "count")
+    ///     .filter(Filter::eq("statecode", 0))
+    ///     .execute()
+    ///     .await?;
+    ///
+    /// for result in results {
+    ///     println!("Owner: {:?}, Total: {:?}, Count: {:?}",
+    ///         result.get("owner"),
+    ///         result.get("total_value"),
+    ///         result.get("count"));
+    /// }
+    /// ```
+    pub fn aggregate(&self, entity: Entity) -> AggregateBuilder<'_> {
+        AggregateBuilder::new(self, entity)
     }
 }
 
