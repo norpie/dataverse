@@ -16,6 +16,7 @@ use super::crud::Expand;
 use super::crud::Operation;
 use super::crud::OperationOptions;
 use super::crud::UpsertResult;
+use super::query::odata::QueryBuilder;
 use crate::DataverseClient;
 use crate::error::ApiError;
 use crate::error::Error;
@@ -484,13 +485,17 @@ impl DataverseClient {
         }
     }
 
-    async fn request(
+    /// Makes an HTTP request with rate limiting and retry logic.
+    ///
+    /// This is the low-level request method used by all API operations.
+    pub(crate) async fn request(
         &self,
         method: Method,
         url: &str,
-        headers: HeaderMap,
+        headers: impl Into<Option<HeaderMap>>,
         body: Option<String>,
     ) -> Result<reqwest::Response, Error> {
+        let headers = headers.into().unwrap_or_default();
         // Acquire concurrency permit (held for entire request lifecycle including retries)
         let _permit = self.inner.concurrency_limiter.acquire().await;
 
@@ -895,6 +900,32 @@ impl DataverseClient {
             nav_property: nav_property.into(),
             options: OperationOptions::default(),
         }
+    }
+
+    /// Creates an OData query for the specified entity.
+    ///
+    /// Returns a builder that can be configured and executed.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// use dataverse_lib::api::query::{Filter, OrderBy};
+    ///
+    /// let mut pages = client.query(Entity::logical("account"))
+    ///     .select(&["name", "revenue"])
+    ///     .filter(Filter::gt("revenue", 1000000))
+    ///     .order_by(OrderBy::desc("revenue"))
+    ///     .into_async_iter();
+    ///
+    /// while let Some(page) = pages.next().await {
+    ///     let page = page?;
+    ///     for record in page.records() {
+    ///         println!("{:?}", record);
+    ///     }
+    /// }
+    /// ```
+    pub fn query(&self, entity: Entity) -> QueryBuilder<'_> {
+        QueryBuilder::new(self, entity)
     }
 }
 
