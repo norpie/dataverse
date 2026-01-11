@@ -35,6 +35,7 @@ pub struct Button {
     style_focused: Option<Style>,
     style_disabled: Option<Style>,
     transitions: Option<Transitions>,
+    children: Vec<Element>,
 }
 
 impl Button {
@@ -101,23 +102,39 @@ impl Button {
         self
     }
 
+    /// Set the button children (overrides label/hint).
+    pub fn children(mut self, children: Vec<Element>) -> Self {
+        self.children = children;
+        self
+    }
+
     /// Build the button element.
     ///
     /// Registers the `on_activate` handler if provided and not disabled.
     pub fn build(self, registry: &HandlerRegistry, handlers: &WidgetHandlers) -> Element {
-        let label = self.label.unwrap_or_default();
         let id = self.id.unwrap_or_else(|| "button".into());
 
-        // Build content: either just label, or label + hint
-        let content = if let Some(hint) = &self.hint {
-            Element::row()
-                .gap(1)
-                .child(Element::text(&label))
-                .child(
-                    Element::text(hint).style(Style::new().foreground(Color::var("text.muted"))),
-                )
+        // Build content: children if provided, otherwise label/hint
+        let content = if !self.children.is_empty() {
+            // Use provided children
+            if self.children.len() == 1 {
+                self.children.into_iter().next().unwrap()
+            } else {
+                Element::row().children(self.children)
+            }
         } else {
-            Element::text(&label)
+            // Fall back to label/hint
+            let label = self.label.unwrap_or_default();
+            if let Some(hint) = &self.hint {
+                Element::row()
+                    .gap(1)
+                    .child(Element::text(&label))
+                    .child(
+                        Element::text(hint).style(Style::new().foreground(Color::var("text.muted"))),
+                    )
+            } else {
+                Element::text(&label)
+            }
         };
 
         let mut elem = content
