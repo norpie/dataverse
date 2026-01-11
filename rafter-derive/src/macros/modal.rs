@@ -1,12 +1,192 @@
 //! The `#[modal]` attribute macro for defining modal structs.
 //!
-//! Similar to #[app] but simpler - no registration, no wakeup.
+//! Supports attributes:
+//! - `#[modal]` - default centered position, auto size
+//! - `#[modal(size = Sm)]` - small size preset
+//! - `#[modal(size = Md)]` - medium size preset
+//! - `#[modal(size = Lg)]` - large size preset
+//! - `#[modal(size = Fixed { width: 40, height: 10 })]` - fixed size
+//! - `#[modal(size = Proportional { width: 0.5, height: 0.3 })]` - proportional size
+//! - `#[modal(position = At { x: 5, y: 3 })]` - absolute position
+//! - `#[modal(position = Centered)]` - centered (default)
 
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 use syn::{DeriveInput, Field, Fields, FieldsNamed, Ident, parse2};
 
 use super::fields::{has_state_skip, has_widget_attribute, is_resource_type};
+
+/// Parsed modal size from attributes.
+#[derive(Debug, Clone)]
+enum ModalSize {
+    Auto,
+    Sm,
+    Md,
+    Lg,
+    Fixed { width: u16, height: u16 },
+    Proportional { width: f32, height: f32 },
+}
+
+/// Parsed modal position from attributes.
+#[derive(Debug, Clone)]
+enum ModalPosition {
+    Centered,
+    At { x: u16, y: u16 },
+}
+
+/// Parsed attributes for #[modal].
+struct ModalAttrs {
+    size: Option<ModalSize>,
+    position: Option<ModalPosition>,
+}
+
+impl ModalAttrs {
+    fn parse(attr: TokenStream) -> syn::Result<Self> {
+        let mut size: Option<ModalSize> = None;
+        let mut position: Option<ModalPosition> = None;
+
+        if attr.is_empty() {
+            return Ok(Self { size, position });
+        }
+
+        let parser = syn::meta::parser(|meta| {
+            if meta.path.is_ident("size") {
+                // Parse: size = Sm or size = Fixed { width: 40, height: 10 }
+                let _eq: syn::Token![=] = meta.input.parse()?;
+                let ident: syn::Ident = meta.input.parse()?;
+
+                match ident.to_string().as_str() {
+                    "Auto" => size = Some(ModalSize::Auto),
+                    "Sm" => size = Some(ModalSize::Sm),
+                    "Md" => size = Some(ModalSize::Md),
+                    "Lg" => size = Some(ModalSize::Lg),
+                    "Fixed" => {
+                        // Parse: Fixed { width: N, height: N }
+                        let content;
+                        syn::braced!(content in meta.input);
+                        let mut width: Option<u16> = None;
+                        let mut height: Option<u16> = None;
+
+                        while !content.is_empty() {
+                            let field: syn::Ident = content.parse()?;
+                            let _colon: syn::Token![:] = content.parse()?;
+                            let value: syn::LitInt = content.parse()?;
+
+                            if field == "width" {
+                                width = Some(value.base10_parse()?);
+                            } else if field == "height" {
+                                height = Some(value.base10_parse()?);
+                            }
+
+                            if content.peek(syn::Token![,]) {
+                                let _comma: syn::Token![,] = content.parse()?;
+                            }
+                        }
+
+                        size = Some(ModalSize::Fixed {
+                            width: width.unwrap_or(40),
+                            height: height.unwrap_or(10),
+                        });
+                    }
+                    "Proportional" => {
+                        // Parse: Proportional { width: 0.5, height: 0.3 }
+                        let content;
+                        syn::braced!(content in meta.input);
+                        let mut width: Option<f32> = None;
+                        let mut height: Option<f32> = None;
+
+                        while !content.is_empty() {
+                            let field: syn::Ident = content.parse()?;
+                            let _colon: syn::Token![:] = content.parse()?;
+                            let value: syn::LitFloat = content.parse()?;
+
+                            if field == "width" {
+                                width = Some(value.base10_parse()?);
+                            } else if field == "height" {
+                                height = Some(value.base10_parse()?);
+                            }
+
+                            if content.peek(syn::Token![,]) {
+                                let _comma: syn::Token![,] = content.parse()?;
+                            }
+                        }
+
+                        size = Some(ModalSize::Proportional {
+                            width: width.unwrap_or(0.5),
+                            height: height.unwrap_or(0.5),
+                        });
+                    }
+                    _ => {}
+                }
+            } else if meta.path.is_ident("position") {
+                // Parse: position = Centered or position = At { x: 5, y: 3 }
+                let _eq: syn::Token![=] = meta.input.parse()?;
+                let ident: syn::Ident = meta.input.parse()?;
+
+                match ident.to_string().as_str() {
+                    "Centered" => position = Some(ModalPosition::Centered),
+                    "At" => {
+                        // Parse: At { x: N, y: N }
+                        let content;
+                        syn::braced!(content in meta.input);
+                        let mut x: Option<u16> = None;
+                        let mut y: Option<u16> = None;
+
+                        while !content.is_empty() {
+                            let field: syn::Ident = content.parse()?;
+                            let _colon: syn::Token![:] = content.parse()?;
+                            let value: syn::LitInt = content.parse()?;
+
+                            if field == "x" {
+                                x = Some(value.base10_parse()?);
+                            } else if field == "y" {
+                                y = Some(value.base10_parse()?);
+                            }
+
+                            if content.peek(syn::Token![,]) {
+                                let _comma: syn::Token![,] = content.parse()?;
+                            }
+                        }
+
+                        position = Some(ModalPosition::At {
+                            x: x.unwrap_or(0),
+                            y: y.unwrap_or(0),
+                        });
+                    }
+                    _ => {}
+                }
+            }
+            Ok(())
+        });
+
+        syn::parse::Parser::parse2(parser, attr)?;
+        Ok(Self { size, position })
+    }
+}
+
+/// Generate size constant.
+fn generate_size_const(size: &ModalSize) -> TokenStream {
+    match size {
+        ModalSize::Auto => quote! { rafter::ModalSize::Auto },
+        ModalSize::Sm => quote! { rafter::ModalSize::Sm },
+        ModalSize::Md => quote! { rafter::ModalSize::Md },
+        ModalSize::Lg => quote! { rafter::ModalSize::Lg },
+        ModalSize::Fixed { width, height } => {
+            quote! { rafter::ModalSize::Fixed { width: #width, height: #height } }
+        }
+        ModalSize::Proportional { width, height } => {
+            quote! { rafter::ModalSize::Proportional { width: #width, height: #height } }
+        }
+    }
+}
+
+/// Generate position constant.
+fn generate_position_const(position: &ModalPosition) -> TokenStream {
+    match position {
+        ModalPosition::Centered => quote! { rafter::ModalPosition::Centered },
+        ModalPosition::At { x, y } => quote! { rafter::ModalPosition::At { x: #x, y: #y } },
+    }
+}
 
 /// Transform a field, wrapping in State<T> if needed.
 fn transform_field(field: &Field) -> TokenStream {
@@ -120,7 +300,11 @@ fn generate_clone_impl(name: &Ident, fields: Option<&FieldsNamed>) -> TokenStrea
 }
 
 /// Generate metadata module for #[modal_impl].
-fn generate_metadata(name: &Ident, fields: Option<&FieldsNamed>) -> TokenStream {
+fn generate_metadata(
+    name: &Ident,
+    fields: Option<&FieldsNamed>,
+    attrs: &ModalAttrs,
+) -> TokenStream {
     let metadata_name = format_ident!(
         "__rafter_modal_metadata_{}",
         name.to_string().to_lowercase()
@@ -136,11 +320,52 @@ fn generate_metadata(name: &Ident, fields: Option<&FieldsNamed>) -> TokenStream 
         })
         .unwrap_or_default();
 
+    // Generate size function - returns the configured size or default
+    let size_fn = match &attrs.size {
+        Some(s) => {
+            let size = generate_size_const(s);
+            quote! {
+                pub fn size() -> rafter::ModalSize {
+                    #size
+                }
+            }
+        }
+        None => {
+            quote! {
+                pub fn size() -> rafter::ModalSize {
+                    rafter::ModalSize::Auto
+                }
+            }
+        }
+    };
+
+    // Generate position function - returns the configured position or default
+    let position_fn = match &attrs.position {
+        Some(p) => {
+            let pos = generate_position_const(p);
+            quote! {
+                pub fn position() -> rafter::ModalPosition {
+                    #pos
+                }
+            }
+        }
+        None => {
+            quote! {
+                pub fn position() -> rafter::ModalPosition {
+                    rafter::ModalPosition::Centered
+                }
+            }
+        }
+    };
+
     quote! {
         #[doc(hidden)]
         #[allow(non_snake_case)]
         pub mod #metadata_name {
             use super::*;
+
+            #size_fn
+            #position_fn
 
             pub fn is_dirty(modal: &#name) -> bool {
                 false #(|| modal.#dirty_fields.is_dirty())*
@@ -153,7 +378,12 @@ fn generate_metadata(name: &Ident, fields: Option<&FieldsNamed>) -> TokenStream 
     }
 }
 
-pub fn expand(_attr: TokenStream, item: TokenStream) -> TokenStream {
+pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
+    let attrs = match ModalAttrs::parse(attr) {
+        Ok(a) => a,
+        Err(e) => return e.to_compile_error(),
+    };
+
     let input: DeriveInput = match parse2(item) {
         Ok(i) => i,
         Err(e) => return e.to_compile_error(),
@@ -185,7 +415,7 @@ pub fn expand(_attr: TokenStream, item: TokenStream) -> TokenStream {
 
     let default_impl = generate_default_impl(name, fields);
     let clone_impl = generate_clone_impl(name, fields);
-    let metadata = generate_metadata(name, fields);
+    let metadata = generate_metadata(name, fields, &attrs);
 
     if let Some(fields) = fields {
         let transformed_fields: Vec<_> = fields.named.iter().map(transform_field).collect();

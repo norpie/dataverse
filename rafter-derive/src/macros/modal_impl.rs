@@ -24,17 +24,16 @@ impl ModalImplAttrs {
         let mut result_type = None;
 
         if !attr.is_empty() {
-            // Parse: Result = SomeType
-            let meta: syn::Meta = parse2(attr)?;
-            if let syn::Meta::NameValue(nv) = meta
-                && nv.path.is_ident("Result")
-                && let syn::Expr::Path(expr_path) = &nv.value
-            {
-                result_type = Some(Type::Path(syn::TypePath {
-                    qself: None,
-                    path: expr_path.path.clone(),
-                }));
-            }
+            // Parse: Result = Type (where Type can include generics like Option<String>)
+            let parser = syn::meta::parser(|meta| {
+                if meta.path.is_ident("Result") {
+                    let _eq: syn::Token![=] = meta.input.parse()?;
+                    let ty: Type = meta.input.parse()?;
+                    result_type = Some(ty);
+                }
+                Ok(())
+            });
+            syn::parse::Parser::parse2(parser, attr)?;
         }
 
         Ok(Self { result_type })
@@ -199,25 +198,40 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
     };
 
     // Generate position method
+    // Priority: user-defined method > attribute from #[modal] > trait default
     let position_impl = if has_position {
+        // User defined position() method
         quote! {
             fn position(&self) -> rafter::ModalPosition {
                 #self_ty::position(self)
             }
         }
     } else {
-        quote! {}
+        // Use attribute from #[modal] if available, otherwise trait default
+        // We generate code that checks at compile time via the HAS_POSITION const
+        quote! {
+            fn position(&self) -> rafter::ModalPosition {
+                #metadata_mod::position()
+            }
+        }
     };
 
     // Generate size method
+    // Priority: user-defined method > attribute from #[modal] > trait default
     let size_impl = if has_size {
+        // User defined size() method
         quote! {
             fn size(&self) -> rafter::ModalSize {
                 #self_ty::size(self)
             }
         }
     } else {
-        quote! {}
+        // Use attribute from #[modal] if available, otherwise trait default
+        quote! {
+            fn size(&self) -> rafter::ModalSize {
+                #metadata_mod::size()
+            }
+        }
     };
 
     // Generate on_start method
