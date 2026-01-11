@@ -16,6 +16,10 @@ use crate::{HandlerRegistry, WidgetHandlers};
 ///     style (bg: primary)
 ///     on_activate: my_handler()
 ///
+/// // Button with keybind hint:
+/// button (label: "No", hint: "n", id: "no")
+///     on_activate: cancel()
+///
 /// // Disabled button:
 /// button (label: "Loading...", id: "btn", disabled)
 ///     style (bg: muted)
@@ -23,6 +27,7 @@ use crate::{HandlerRegistry, WidgetHandlers};
 #[derive(Clone, Debug, Default)]
 pub struct Button {
     label: Option<String>,
+    hint: Option<String>,
     id: Option<String>,
     disabled: bool,
     style: Option<Style>,
@@ -40,6 +45,12 @@ impl Button {
     /// Set the button label.
     pub fn label(mut self, label: impl Into<String>) -> Self {
         self.label = Some(label.into());
+        self
+    }
+
+    /// Set the button hint (keybind displayed in dimmed color).
+    pub fn hint(mut self, hint: impl Into<String>) -> Self {
+        self.hint = Some(hint.into());
         self
     }
 
@@ -88,7 +99,19 @@ impl Button {
         let label = self.label.unwrap_or_default();
         let id = self.id.unwrap_or_else(|| "button".into());
 
-        let mut elem = Element::text(&label)
+        // Build content: either just label, or label + hint
+        let content = if let Some(hint) = &self.hint {
+            Element::row()
+                .gap(1)
+                .child(Element::text(&label))
+                .child(
+                    Element::text(hint).style(Style::new().foreground(Color::var("text.muted"))),
+                )
+        } else {
+            Element::text(&label)
+        };
+
+        let mut elem = content
             .id(&id)
             .focusable(!self.disabled)
             .clickable(!self.disabled)
