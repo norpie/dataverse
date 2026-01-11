@@ -421,6 +421,16 @@ impl<'a> HandlerContext<'a> {
         }
     }
 
+    /// Create a HandlerContext for system handlers with event data.
+    pub fn for_system_with_event(gx: &'a GlobalContext, event: EventData) -> Self {
+        Self {
+            cx: None,
+            gx,
+            modal_context: None,
+            event_data: event,
+        }
+    }
+
     /// Get the app context.
     ///
     /// # Panics

@@ -582,7 +582,10 @@ impl<'a> EventDispatcher<'a> {
 
             // Focus events: dispatch to on_focus handlers
             Event::Focus { target } => {
+                log::debug!("dispatch_to_widgets: Focus event, target={}", target);
+                // First check app instance handlers
                 if let Some(handler) = handlers.get(target, "on_focus") {
+                    log::debug!("dispatch_to_widgets: found app on_focus handler for {}", target);
                     let hx_with_event = HandlerContext::for_app_with_event(
                         &cx,
                         self.gx,
@@ -591,11 +594,26 @@ impl<'a> EventDispatcher<'a> {
                     if let Some(panic_result) = call_app_and_check(&handler, &hx_with_event, instance.config().name, instance.id()) {
                         return Some(panic_result);
                     }
+                } else {
+                    // Then check system handlers
+                    for system in self.systems {
+                        let system_handlers = system.handlers();
+                        if let Some(handler) = system_handlers.get(target, "on_focus") {
+                            log::debug!("dispatch_to_widgets: found system on_focus handler for {} in {}", target, system.name());
+                            let system_hx = HandlerContext::for_system_with_event(self.gx, EventData::Focus);
+                            if let Some(panic_result) = call_and_check(&handler, &system_hx) {
+                                return Some(panic_result);
+                            }
+                            break;
+                        }
+                    }
+                    log::debug!("dispatch_to_widgets: no on_focus handler found for {}", target);
                 }
             }
 
             // Blur events: dispatch to on_blur handlers with new_target info
             Event::Blur { target, new_target } => {
+                // First check app instance handlers
                 if let Some(handler) = handlers.get(target, "on_blur") {
                     let hx_with_event = HandlerContext::for_app_with_event(
                         &cx,
@@ -606,6 +624,23 @@ impl<'a> EventDispatcher<'a> {
                     );
                     if let Some(panic_result) = call_app_and_check(&handler, &hx_with_event, instance.config().name, instance.id()) {
                         return Some(panic_result);
+                    }
+                } else {
+                    // Then check system handlers
+                    for system in self.systems {
+                        let system_handlers = system.handlers();
+                        if let Some(handler) = system_handlers.get(target, "on_blur") {
+                            let system_hx = HandlerContext::for_system_with_event(
+                                self.gx,
+                                EventData::Blur {
+                                    new_target: new_target.clone(),
+                                },
+                            );
+                            if let Some(panic_result) = call_and_check(&handler, &system_hx) {
+                                return Some(panic_result);
+                            }
+                            break;
+                        }
                     }
                 }
             }
