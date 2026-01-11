@@ -831,6 +831,27 @@ pub fn generate_name_impl(type_name: &Ident) -> TokenStream {
     }
 }
 
+/// Generate an async lifecycle method implementation (on_start, on_foreground, etc.)
+///
+/// If `has_method` is true, generates a delegation to `Self::method_name(self)`.
+/// If false, returns empty TokenStream (uses trait default).
+pub fn generate_async_lifecycle_impl(
+    method_name: &str,
+    has_method: bool,
+    self_ty: &Type,
+) -> TokenStream {
+    if !has_method {
+        return quote! {};
+    }
+
+    let method_ident = format_ident!("{}", method_name);
+    quote! {
+        fn #method_ident(&self) -> impl std::future::Future<Output = ()> + Send {
+            #self_ty::#method_ident(self)
+        }
+    }
+}
+
 /// Generate config trait method implementation using metadata module
 pub fn generate_config_impl(type_name: &Ident) -> TokenStream {
     let metadata_mod = app_metadata_mod(type_name);

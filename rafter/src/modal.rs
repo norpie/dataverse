@@ -3,6 +3,7 @@
 //! Modals are overlay views that capture input until closed.
 //! They return a result to the caller.
 
+use std::future::Future;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 
@@ -111,6 +112,11 @@ pub trait Modal: Clone + Send + Sync + 'static {
 
     /// Render the modal's content.
     fn element(&self) -> Element;
+
+    /// Called once when the modal starts.
+    fn on_start(&self) -> impl Future<Output = ()> + Send {
+        async {}
+    }
 
     /// Get the modal's keybinds (closure-based).
     fn keybinds(&self) -> KeybindClosures {

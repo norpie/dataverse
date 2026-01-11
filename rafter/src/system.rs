@@ -109,8 +109,10 @@ pub trait System: Clone + Send + Sync + 'static {
         None
     }
 
-    /// Called once when the system is initialized.
-    fn on_init(&self) {}
+    /// Called once when the system starts.
+    fn on_start(&self) -> impl Future<Output = ()> + Send {
+        async {}
+    }
 
     // =========================================================================
     // State Management

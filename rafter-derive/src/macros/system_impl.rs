@@ -9,10 +9,10 @@ use syn::parse2;
 use super::impl_common::{
     DispatchContextType, EventHandlerMethod, HandlerContexts, HandlerInfo, KeybindScope,
     KeybindsMethod, PageMethod, PartialImplBlock, RequestHandlerMethod,
-    extract_handler_info, generate_event_dispatch, generate_handler_wrappers,
-    generate_keybinds_closures_impl, generate_request_dispatch, get_type_name,
-    parse_event_handler_metadata, parse_request_handler_metadata, reconstruct_method,
-    reconstruct_method_stripped, system_metadata_mod,
+    extract_handler_info, generate_async_lifecycle_impl, generate_event_dispatch,
+    generate_handler_wrappers, generate_keybinds_closures_impl, generate_request_dispatch,
+    get_type_name, parse_event_handler_metadata, parse_request_handler_metadata,
+    reconstruct_method, reconstruct_method_stripped, system_metadata_mod,
 };
 
 pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
@@ -45,7 +45,7 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
     let mut request_handlers: Vec<RequestHandlerMethod> = Vec::new();
     let mut page_methods: Vec<PageMethod> = Vec::new();
     let mut has_element = false;
-    let mut has_on_init = false;
+    let mut has_on_start = false;
     let mut has_overlay = false;
 
     // Reconstructed methods for the impl block
@@ -119,8 +119,8 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
         if method.is_named("element") {
             has_element = true;
         }
-        if method.is_named("on_init") {
-            has_on_init = true;
+        if method.is_named("on_start") {
+            has_on_start = true;
         }
         if method.is_named("overlay") {
             has_overlay = true;
@@ -171,16 +171,8 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
         quote! {}
     };
 
-    // Generate on_init method
-    let on_init_impl = if has_on_init {
-        quote! {
-            fn on_init(&self) {
-                #self_ty::on_init(self)
-            }
-        }
-    } else {
-        quote! {}
-    };
+    // Generate on_start method
+    let on_start_impl = generate_async_lifecycle_impl("on_start", has_on_start, &self_ty);
 
     // Generate dirty methods and wakeup installation
     let dirty_impl = quote! {
@@ -225,7 +217,7 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
             #keybinds_impl
             #handlers_impl
             #overlay_impl
-            #on_init_impl
+            #on_start_impl
             #dirty_impl
             #event_dispatch_impl
             #request_dispatch_impl

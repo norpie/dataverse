@@ -8,9 +8,9 @@ use syn::{AngleBracketedGenericArguments, GenericArgument, PathArguments, Type, 
 
 use super::impl_common::{
     HandlerContexts, HandlerInfo, KeybindScope, KeybindsMethod, PageMethod, PartialImplBlock,
-    extract_handler_info, generate_element_impl, generate_handler_wrappers,
-    generate_keybinds_closures_impl, generate_name_impl, get_type_name, modal_metadata_mod,
-    reconstruct_method_stripped,
+    extract_handler_info, generate_async_lifecycle_impl, generate_element_impl,
+    generate_handler_wrappers, generate_keybinds_closures_impl, generate_name_impl,
+    get_type_name, modal_metadata_mod, reconstruct_method_stripped,
 };
 
 /// Attributes for the #[modal_impl] macro
@@ -91,6 +91,7 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
     let mut has_element = false;
     let mut has_position = false;
     let mut has_size = false;
+    let mut has_on_start = false;
     let mut inferred_result_type: Option<Type> = None;
 
     // Reconstructed methods for the impl block
@@ -158,6 +159,9 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
         if method.is_named("size") {
             has_size = true;
         }
+        if method.is_named("on_start") {
+            has_on_start = true;
+        }
 
         // Add to reconstructed methods (with custom attrs stripped)
         reconstructed_methods.push(reconstruct_method_stripped(method));
@@ -216,6 +220,9 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
         quote! {}
     };
 
+    // Generate on_start method
+    let on_start_impl = generate_async_lifecycle_impl("on_start", has_on_start, &self_ty);
+
     // Generate dirty methods
     let dirty_impl = quote! {
         fn is_dirty(&self) -> bool {
@@ -249,6 +256,7 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
             #name_impl
             #position_impl
             #size_impl
+            #on_start_impl
             #keybinds_impl
             #handlers_impl
             #element_impl

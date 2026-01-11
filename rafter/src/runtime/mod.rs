@@ -202,7 +202,7 @@ impl Runtime {
         }
 
         for system in &systems {
-            system.on_init();
+            system.on_start().await;
             system.install_wakeup(wakeup_tx.clone());
         }
 
@@ -293,15 +293,25 @@ impl Runtime {
             self.process_commands(registry, systems, gx).await?;
 
             // 3. Process modal requests from focused app and clean up closed modals
+            // Take modal request outside the lock so we can await on_start
+            let modal_request = {
+                let reg = registry.read().unwrap();
+                reg.focused_instance()
+                    .and_then(|i| i.app_context().take_modal_request())
+            };
+            if let Some(request) = modal_request {
+                // Call on_start before pushing
+                request.entry.on_start().await;
+                // Re-acquire lock to push
+                let reg = registry.read().unwrap();
+                if let Some(instance) = reg.focused_instance() {
+                    instance.push_modal(request.entry);
+                }
+            }
+            // Clean up closed modals
             {
                 let reg = registry.read().unwrap();
                 if let Some(instance) = reg.focused_instance() {
-                    // Push any new modal requests
-                    let cx = instance.app_context();
-                    if let Some(request) = cx.take_modal_request() {
-                        instance.push_modal(request.entry);
-                    }
-                    // Pop closed modals so they don't render
                     if let Ok(mut modals) = instance.modals().write() {
                         while modals.last().map(|m| m.is_closed()).unwrap_or(false) {
                             modals.pop();

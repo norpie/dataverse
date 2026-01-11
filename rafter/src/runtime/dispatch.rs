@@ -8,6 +8,8 @@
 //! 5. Focused widget (for key events)
 //! 6. Target widget (for mouse events)
 
+use std::future::Future;
+use std::pin::Pin;
 use std::sync::{Arc, RwLock};
 
 use tuidom::{Event, Key, LayoutResult, Modifiers};
@@ -623,6 +625,8 @@ fn dispatch_widget_result(
 pub trait AnyModal: Send + Sync {
     /// Check if the modal is closed.
     fn is_closed(&self) -> bool;
+    /// Called once when the modal starts.
+    fn on_start(&self) -> Pin<Box<dyn Future<Output = ()> + Send + '_>>;
     /// Get the modal's keybinds (closure-based).
     fn keybinds(&self) -> crate::KeybindClosures;
     /// Get the handler registry for widget events.
@@ -636,6 +640,10 @@ pub trait AnyModal: Send + Sync {
 impl<M: Modal> AnyModal for ModalEntry<M> {
     fn is_closed(&self) -> bool {
         ModalEntry::is_closed(self)
+    }
+
+    fn on_start(&self) -> Pin<Box<dyn Future<Output = ()> + Send + '_>> {
+        Box::pin(Modal::on_start(&self.modal))
     }
 
     fn keybinds(&self) -> crate::KeybindClosures {

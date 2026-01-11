@@ -9,11 +9,11 @@ use syn::{Attribute, parse2};
 use super::impl_common::{
     DispatchContextType, EventHandlerMethod, HandlerContexts, HandlerInfo, KeybindScope,
     KeybindsMethod, PageMethod, PartialImplBlock, RequestHandlerMethod, app_metadata_mod,
-    detect_handler_contexts_from_sig, extract_handler_info, generate_config_impl,
-    generate_element_impl, generate_event_dispatch, generate_handler_wrappers,
-    generate_keybinds_closures_impl, generate_request_dispatch, get_type_name,
-    parse_event_handler_metadata, parse_request_handler_metadata, reconstruct_method,
-    reconstruct_method_stripped,
+    detect_handler_contexts_from_sig, extract_handler_info, generate_async_lifecycle_impl,
+    generate_config_impl, generate_element_impl, generate_event_dispatch,
+    generate_handler_wrappers, generate_keybinds_closures_impl, generate_request_dispatch,
+    get_type_name, parse_event_handler_metadata, parse_request_handler_metadata,
+    reconstruct_method, reconstruct_method_stripped,
 };
 
 /// Parse keybinds scope from attributes
@@ -208,45 +208,10 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
     };
 
     // Generate lifecycle methods
-    let on_start_impl = if has_on_start {
-        quote! {
-            fn on_start(&self) -> impl std::future::Future<Output = ()> + Send {
-                #self_ty::on_start(self)
-            }
-        }
-    } else {
-        quote! {}
-    };
-
-    let on_foreground_impl = if has_on_foreground {
-        quote! {
-            fn on_foreground(&self) -> impl std::future::Future<Output = ()> + Send {
-                #self_ty::on_foreground(self)
-            }
-        }
-    } else {
-        quote! {}
-    };
-
-    let on_background_impl = if has_on_background {
-        quote! {
-            fn on_background(&self) -> impl std::future::Future<Output = ()> + Send {
-                #self_ty::on_background(self)
-            }
-        }
-    } else {
-        quote! {}
-    };
-
-    let on_close_impl = if has_on_close {
-        quote! {
-            fn on_close(&self) -> impl std::future::Future<Output = ()> + Send {
-                #self_ty::on_close(self)
-            }
-        }
-    } else {
-        quote! {}
-    };
+    let on_start_impl = generate_async_lifecycle_impl("on_start", has_on_start, &self_ty);
+    let on_foreground_impl = generate_async_lifecycle_impl("on_foreground", has_on_foreground, &self_ty);
+    let on_background_impl = generate_async_lifecycle_impl("on_background", has_on_background, &self_ty);
+    let on_close_impl = generate_async_lifecycle_impl("on_close", has_on_close, &self_ty);
 
     let current_page_impl = if has_current_page {
         quote! {

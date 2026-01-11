@@ -127,8 +127,8 @@ struct Taskbar {
 
 #[system_impl]
 impl Taskbar {
-    fn on_init(&self) {
-        info!("[Taskbar] on_init");
+    async fn on_start(&self) {
+        info!("[Taskbar] on_start");
     }
 
     #[event_handler]
