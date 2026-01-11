@@ -320,6 +320,15 @@ impl Runtime {
                 }
             }
 
+            // 3b. Process global modal requests and clean up closed global modals
+            if let Some(request) = gx.take_modal_request() {
+                request.entry.on_start().await;
+                global_modals.push(request.entry);
+            }
+            while global_modals.last().map(|m| m.is_closed()).unwrap_or(false) {
+                global_modals.pop();
+            }
+
             // 4. Collect new toasts
             for toast in gx.take_toasts() {
                 let duration = toast.duration;
@@ -340,7 +349,7 @@ impl Runtime {
 
             // 6. Build UI
             log::debug!("[runtime] Building root element...");
-            let mut root = self.build_root_element(registry, systems, active_toasts);
+            let mut root = self.build_root_element(registry, systems, active_toasts, global_modals);
             log::debug!("[runtime] Root element built successfully");
 
             // 7. Process cursor position requests (before enrichment uses TextInputState)
@@ -675,6 +684,7 @@ impl Runtime {
         registry: &Arc<RwLock<InstanceRegistry>>,
         systems: &[Box<dyn AnySystem>],
         active_toasts: &[ActiveToast],
+        global_modals: &[Box<dyn AnyModal>],
     ) -> Element {
         use tuidom::{Position, Size};
 
@@ -732,28 +742,28 @@ impl Runtime {
             root = root.child(overlay);
         }
 
-        // Add app modals (centered overlay with dim backdrop)
+        // Add app modals (overlay with dim backdrop)
         {
             let reg = registry.read().unwrap();
             if let Some(instance) = reg.focused_instance() {
                 let modals = instance.modals().read().unwrap();
                 if let Some(modal) = modals.last() {
-                    use tuidom::{Align, Backdrop, Justify, Position, Size};
-                    // Center the modal on screen with dimmed backdrop
-                    let modal_wrapper = Element::col()
-                        .id("__modal__")
-                        .position(Position::Absolute)
-                        .left(0)
-                        .top(0)
-                        .width(Size::Fill)
-                        .height(Size::Fill)
-                        .backdrop(Backdrop::Dim(0.5))
-                        .justify(Justify::Center)
-                        .align(Align::Center)
-                        .child(modal.element());
+                    let modal_wrapper = Self::build_modal_wrapper(
+                        "__modal__",
+                        modal.as_ref(),
+                    );
                     root = root.child(modal_wrapper);
                 }
             }
+        }
+
+        // Add global modals (highest z-order, overlays everything including app modals)
+        if let Some(modal) = global_modals.last() {
+            let modal_wrapper = Self::build_modal_wrapper(
+                "__global_modal__",
+                modal.as_ref(),
+            );
+            root = root.child(modal_wrapper);
         }
 
         // Add toasts (absolute positioned, stacked from bottom-right)
@@ -763,6 +773,66 @@ impl Runtime {
         }
 
         root
+    }
+
+    /// Build a modal wrapper element with proper size and position.
+    fn build_modal_wrapper(id: &str, modal: &dyn AnyModal) -> Element {
+        use tuidom::{Align, Backdrop, Justify, Position, Size};
+
+        let modal_size = modal.size();
+        let modal_position = modal.position();
+
+        // Convert ModalSize to tuidom Size
+        let (width, height) = match modal_size {
+            crate::ModalSize::Auto => (Size::Auto, Size::Auto),
+            crate::ModalSize::Sm => (Size::Percent(0.3), Size::Percent(0.3)),
+            crate::ModalSize::Md => (Size::Percent(0.5), Size::Percent(0.5)),
+            crate::ModalSize::Lg => (Size::Percent(0.8), Size::Percent(0.8)),
+            crate::ModalSize::Fixed { width, height } => {
+                (Size::Fixed(width), Size::Fixed(height))
+            }
+            crate::ModalSize::Proportional { width, height } => {
+                (Size::Percent(width), Size::Percent(height))
+            }
+        };
+
+        // Get the modal content element and apply size
+        let modal_content = modal.element().width(width).height(height);
+
+        // Build wrapper based on position
+        match modal_position {
+            crate::ModalPosition::Centered => {
+                Element::col()
+                    .id(id)
+                    .position(Position::Absolute)
+                    .left(0)
+                    .top(0)
+                    .width(Size::Fill)
+                    .height(Size::Fill)
+                    .backdrop(Backdrop::Dim(0.5))
+                    .justify(Justify::Center)
+                    .align(Align::Center)
+                    .child(modal_content)
+            }
+            crate::ModalPosition::At { x, y } => {
+                // For absolute positioning, we still need the full-screen backdrop
+                // but position the modal content at specific coordinates
+                Element::col()
+                    .id(id)
+                    .position(Position::Absolute)
+                    .left(0)
+                    .top(0)
+                    .width(Size::Fill)
+                    .height(Size::Fill)
+                    .backdrop(Backdrop::Dim(0.5))
+                    .child(
+                        modal_content
+                            .position(Position::Absolute)
+                            .left(x as i16)
+                            .top(y as i16),
+                    )
+            }
+        }
     }
 
     /// Build the toast container element.

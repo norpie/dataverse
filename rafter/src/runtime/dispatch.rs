@@ -143,13 +143,145 @@ impl<'a> EventDispatcher<'a> {
     // Modal Dispatch
     // =========================================================================
 
+    /// Dispatch an event to a modal's widgets.
+    ///
+    /// This handles keybinds, clicks, text input, and other widget events for modals.
+    /// Returns Some(DispatchResult) if the modal captures the event (which it always does).
+    fn dispatch_event_to_modal(
+        &self,
+        modal: &dyn AnyModal,
+        event: &Event,
+        cx: &AppContext,
+        mx: &(dyn std::any::Any + Send + Sync),
+        app_info: Option<(&str, crate::InstanceId)>,
+    ) -> Option<DispatchResult> {
+        let handlers = modal.handlers();
+        let keybinds = modal.keybinds();
+
+        // Helper to call handler with optional app info for error reporting
+        let call = |handler: &Handler, hx: &HandlerContext| -> Option<DispatchResult> {
+            if let Some((app_name, instance_id)) = app_info {
+                call_app_and_check(handler, hx, app_name, instance_id)
+            } else {
+                call_and_check(handler, hx)
+            }
+        };
+
+        match event {
+            Event::Key { key, modifiers, target } => {
+                // First try keybinds
+                if let Some(handler) = keybinds.match_key(*key, *modifiers) {
+                    let hx = HandlerContext::for_modal_any(cx, self.gx, mx);
+                    if let Some(panic_result) = call(&handler, &hx) {
+                        return Some(panic_result);
+                    }
+                    return Some(DispatchResult::HandledByModal);
+                }
+
+                // Enter key triggers on_activate on focused widget
+                if *key == Key::Enter {
+                    if let Some(target_id) = target {
+                        if let Some(handler) = handlers.get(target_id, "on_activate") {
+                            let hx = HandlerContext::for_modal_any(cx, self.gx, mx);
+                            if let Some(panic_result) = call(&handler, &hx) {
+                                return Some(panic_result);
+                            }
+                            return Some(DispatchResult::HandledByModal);
+                        }
+                    }
+                }
+            }
+
+            Event::Click { target, x, y, .. } => {
+                if let Some(target_id) = target {
+                    if let Some(handler) = handlers.get(target_id, "on_activate") {
+                        let hx = HandlerContext::for_modal_any_with_event(
+                            cx,
+                            self.gx,
+                            mx,
+                            EventData::Click { x: *x, y: *y },
+                        );
+                        if let Some(panic_result) = call(&handler, &hx) {
+                            return Some(panic_result);
+                        }
+                        return Some(DispatchResult::HandledByModal);
+                    }
+                }
+            }
+
+            Event::Change { target, text } => {
+                if let Some(handler) = handlers.get(target, "on_change") {
+                    let hx = HandlerContext::for_modal_any_with_event(
+                        cx,
+                        self.gx,
+                        mx,
+                        EventData::Change { text: text.clone() },
+                    );
+                    if let Some(panic_result) = call(&handler, &hx) {
+                        return Some(panic_result);
+                    }
+                    return Some(DispatchResult::HandledByModal);
+                }
+            }
+
+            Event::Submit { target } => {
+                if let Some(handler) = handlers.get(target, "on_submit") {
+                    let hx = HandlerContext::for_modal_any_with_event(
+                        cx,
+                        self.gx,
+                        mx,
+                        EventData::Submit,
+                    );
+                    if let Some(panic_result) = call(&handler, &hx) {
+                        return Some(panic_result);
+                    }
+                    return Some(DispatchResult::HandledByModal);
+                }
+            }
+
+            Event::Focus { target } => {
+                if let Some(handler) = handlers.get(target, "on_focus") {
+                    let hx = HandlerContext::for_modal_any_with_event(
+                        cx,
+                        self.gx,
+                        mx,
+                        EventData::Focus,
+                    );
+                    if let Some(panic_result) = call(&handler, &hx) {
+                        return Some(panic_result);
+                    }
+                }
+            }
+
+            Event::Blur { target, new_target } => {
+                if let Some(handler) = handlers.get(target, "on_blur") {
+                    let hx = HandlerContext::for_modal_any_with_event(
+                        cx,
+                        self.gx,
+                        mx,
+                        EventData::Blur { new_target: new_target.clone() },
+                    );
+                    if let Some(panic_result) = call(&handler, &hx) {
+                        return Some(panic_result);
+                    }
+                }
+            }
+
+            // Other events are captured but not dispatched to widgets
+            _ => {}
+        }
+
+        // Modal captures all input even if no handler matched
+        Some(DispatchResult::HandledByModal)
+    }
+
     fn dispatch_to_global_modals(&mut self, event: &Event) -> Option<DispatchResult> {
         if self.global_modals.is_empty() {
             return None;
         }
 
         // Get the topmost modal
-        let modal = self.global_modals.last_mut()?;
+        let modal = self.global_modals.last()?;
 
         // Check if modal is closed
         if modal.is_closed() {
@@ -157,22 +289,11 @@ impl<'a> EventDispatcher<'a> {
             return None;
         }
 
-        // Dispatch to modal's keybinds
-        if let Event::Key { key, modifiers, .. } = event {
-            let keybinds = modal.keybinds();
-            if let Some(handler) = keybinds.match_key(*key, *modifiers) {
-                // Create a default AppContext for global modals
-                let cx = AppContext::default();
-                let hx = HandlerContext::for_app(&cx, self.gx);
-                if let Some(panic_result) = call_and_check(&handler, &hx) {
-                    return Some(panic_result);
-                }
-                return Some(DispatchResult::HandledByModal);
-            }
-        }
+        // Create a default AppContext for global modals
+        let cx = AppContext::default();
+        let mx = modal.modal_context();
 
-        // Modal captures all input even if not handled
-        Some(DispatchResult::HandledByModal)
+        self.dispatch_event_to_modal(modal.as_ref(), event, &cx, mx, None)
     }
 
     fn dispatch_to_app_modals(&mut self, event: &Event) -> Option<DispatchResult> {
@@ -193,31 +314,12 @@ impl<'a> EventDispatcher<'a> {
         }
 
         // Get the topmost modal
-        let modal = modals.last_mut()?;
+        let modal = modals.last()?;
+        let cx = instance.app_context();
+        let mx = modal.modal_context();
+        let app_info = Some((instance.config().name, instance.id()));
 
-        // Dispatch to modal's keybinds
-        if let Event::Key { key, modifiers, .. } = event {
-            let keybinds = modal.keybinds();
-            log::debug!(
-                "dispatch_to_app_modals: key={:?}, keybinds_count={}",
-                key,
-                keybinds.len()
-            );
-            if let Some(handler) = keybinds.match_key(*key, *modifiers) {
-                log::debug!("dispatch_to_app_modals: matched, calling handler");
-                let cx = instance.app_context();
-                let mx = modal.modal_context();
-                let hx = HandlerContext::for_modal_any(&cx, self.gx, mx);
-                if let Some(panic_result) = call_app_and_check(&handler, &hx, instance.config().name, instance.id()) {
-                    return Some(panic_result);
-                }
-                return Some(DispatchResult::HandledByModal);
-            }
-            log::debug!("dispatch_to_app_modals: no keybind matched");
-        }
-
-        // Modal captures all input even if not handled
-        Some(DispatchResult::HandledByModal)
+        self.dispatch_event_to_modal(modal.as_ref(), event, &cx, mx, app_info)
     }
 
     // =========================================================================
@@ -635,6 +737,10 @@ pub trait AnyModal: Send + Sync {
     fn element(&self) -> tuidom::Element;
     /// Get the modal context as a type-erased reference.
     fn modal_context(&self) -> &(dyn std::any::Any + Send + Sync);
+    /// Get the modal's size configuration.
+    fn size(&self) -> crate::ModalSize;
+    /// Get the modal's position configuration.
+    fn position(&self) -> crate::ModalPosition;
 }
 
 impl<M: Modal> AnyModal for ModalEntry<M> {
@@ -660,6 +766,14 @@ impl<M: Modal> AnyModal for ModalEntry<M> {
 
     fn modal_context(&self) -> &(dyn std::any::Any + Send + Sync) {
         ModalEntry::context(self)
+    }
+
+    fn size(&self) -> crate::ModalSize {
+        self.modal.size()
+    }
+
+    fn position(&self) -> crate::ModalPosition {
+        self.modal.position()
     }
 }
 

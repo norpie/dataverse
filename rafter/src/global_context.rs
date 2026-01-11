@@ -125,7 +125,7 @@ pub enum InstanceCommand {
 /// A request to open a global modal.
 pub struct GlobalModalRequest {
     /// The type-erased modal entry.
-    pub entry: Box<dyn Any + Send + Sync>,
+    pub entry: Box<dyn crate::runtime::dispatch::AnyModal>,
 }
 
 // =============================================================================
