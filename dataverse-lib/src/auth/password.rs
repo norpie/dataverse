@@ -1,11 +1,11 @@
 //! Password flow utilities (Resource Owner Password Credentials)
 
 use async_trait::async_trait;
-use chrono::Duration;
-use chrono::Utc;
-use serde::Deserialize;
 
 use super::auto_refresh::AuthFlow;
+use super::common::map_error_response;
+use super::common::ErrorResponse;
+use super::common::TokenResponse;
 use super::AccessToken;
 use crate::error::AuthError;
 
@@ -307,103 +307,6 @@ impl std::fmt::Debug for PasswordFlowInner {
             .field("password", &"[REDACTED]")
             .field("use_v2", &self.use_v2)
             .finish()
-    }
-}
-
-/// Token response from Azure AD.
-#[derive(Debug, Deserialize)]
-struct TokenResponse {
-    access_token: String,
-    #[serde(default, deserialize_with = "deserialize_expires_in")]
-    expires_in: Option<u64>,
-    #[serde(default)]
-    refresh_token: Option<String>,
-}
-
-/// Deserializes `expires_in` which can be either a number or a string.
-fn deserialize_expires_in<'de, D>(deserializer: D) -> Result<Option<u64>, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    use serde::de::Error;
-
-    #[derive(Deserialize)]
-    #[serde(untagged)]
-    enum StringOrNumber {
-        String(String),
-        Number(u64),
-    }
-
-    match Option::<StringOrNumber>::deserialize(deserializer)? {
-        None => Ok(None),
-        Some(StringOrNumber::Number(n)) => Ok(Some(n)),
-        Some(StringOrNumber::String(s)) => s
-            .parse::<u64>()
-            .map(Some)
-            .map_err(|_| D::Error::custom(format!("invalid expires_in value: {}", s))),
-    }
-}
-
-impl TokenResponse {
-    fn into_access_token(self) -> AccessToken {
-        let expires_at = self
-            .expires_in
-            .map(|secs| Utc::now() + Duration::seconds(secs as i64));
-
-        match self.refresh_token {
-            Some(refresh) => AccessToken::with_refresh(self.access_token, expires_at, refresh),
-            None => match expires_at {
-                Some(exp) => AccessToken::with_expiry(self.access_token, exp),
-                None => AccessToken::new(self.access_token),
-            },
-        }
-    }
-}
-
-/// Error response from Azure AD.
-#[derive(Debug, Deserialize)]
-struct ErrorResponse {
-    error: String,
-    error_description: Option<String>,
-}
-
-/// Maps Azure AD error codes to AuthError variants.
-fn map_error_response(error: ErrorResponse) -> AuthError {
-    let description = error
-        .error_description
-        .unwrap_or_else(|| error.error.clone());
-
-    match error.error.as_str() {
-        "invalid_grant" => {
-            if description.contains("AADSTS50126") {
-                // Invalid username or password
-                AuthError::InvalidCredentials
-            } else if description.contains("AADSTS700082") || description.contains("AADSTS50173") {
-                // Refresh token expired
-                AuthError::TokenExpired {
-                    message: description,
-                }
-            } else {
-                AuthError::InvalidCredentials
-            }
-        }
-        "invalid_client" => AuthError::InvalidClient {
-            client_id: description,
-        },
-        "unauthorized_client" => AuthError::InvalidClient {
-            client_id: description,
-        },
-        "invalid_request" => AuthError::Parse(description),
-        _ => {
-            if description.contains("AADSTS90002") || description.contains("AADSTS90014") {
-                // Tenant not found
-                AuthError::InvalidTenant {
-                    tenant: description,
-                }
-            } else {
-                AuthError::Parse(description)
-            }
-        }
     }
 }
 
