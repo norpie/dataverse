@@ -21,6 +21,7 @@
 
 use uuid::Uuid;
 
+use crate::api::query::odata::ExpandBuilder;
 use crate::model::Entity;
 use crate::model::Record;
 
@@ -80,103 +81,6 @@ impl OperationOptions {
 }
 
 // =============================================================================
-// Expand configuration for Retrieve
-// =============================================================================
-
-/// Configuration for expanding a navigation property in a retrieve operation.
-#[derive(Debug, Clone)]
-pub struct Expand {
-    /// The navigation property to expand.
-    pub nav_property: String,
-    /// Fields to select from the expanded entity.
-    pub select: Vec<String>,
-    /// Nested expands.
-    pub expand: Vec<Expand>,
-    /// Filter for collection-valued navigation properties.
-    pub filter: Option<String>,
-    /// Order by for collection-valued navigation properties.
-    pub order_by: Option<String>,
-    /// Top N for collection-valued navigation properties.
-    pub top: Option<usize>,
-}
-
-impl Expand {
-    /// Creates a new expand for a navigation property.
-    pub fn new(nav_property: impl Into<String>) -> Self {
-        Self {
-            nav_property: nav_property.into(),
-            select: Vec::new(),
-            expand: Vec::new(),
-            filter: None,
-            order_by: None,
-            top: None,
-        }
-    }
-
-    /// Sets the fields to select.
-    pub fn select(mut self, fields: &[&str]) -> Self {
-        self.select = fields.iter().map(|s| s.to_string()).collect();
-        self
-    }
-
-    /// Adds a nested expand.
-    pub fn expand(mut self, expand: Expand) -> Self {
-        self.expand.push(expand);
-        self
-    }
-
-    /// Sets a filter (for collection-valued navigation properties).
-    pub fn filter(mut self, filter: impl Into<String>) -> Self {
-        self.filter = Some(filter.into());
-        self
-    }
-
-    /// Sets order by (for collection-valued navigation properties).
-    pub fn order_by(mut self, order_by: impl Into<String>) -> Self {
-        self.order_by = Some(order_by.into());
-        self
-    }
-
-    /// Sets top N (for collection-valued navigation properties).
-    pub fn top(mut self, n: usize) -> Self {
-        self.top = Some(n);
-        self
-    }
-
-    /// Builds the OData $expand query string for this expand.
-    pub(crate) fn to_odata_string(&self) -> String {
-        let mut parts = Vec::new();
-
-        if !self.select.is_empty() {
-            parts.push(format!("$select={}", self.select.join(",")));
-        }
-
-        if let Some(ref filter) = self.filter {
-            parts.push(format!("$filter={}", filter));
-        }
-
-        if let Some(ref order_by) = self.order_by {
-            parts.push(format!("$orderby={}", order_by));
-        }
-
-        if let Some(top) = self.top {
-            parts.push(format!("$top={}", top));
-        }
-
-        if !self.expand.is_empty() {
-            let nested: Vec<String> = self.expand.iter().map(|e| e.to_odata_string()).collect();
-            parts.push(format!("$expand={}", nested.join(",")));
-        }
-
-        if parts.is_empty() {
-            self.nav_property.clone()
-        } else {
-            format!("{}({})", self.nav_property, parts.join(";"))
-        }
-    }
-}
-
-// =============================================================================
 // Operation enum
 // =============================================================================
 
@@ -198,7 +102,7 @@ pub enum Operation {
         entity: Entity,
         id: Uuid,
         select: Vec<String>,
-        expand: Vec<Expand>,
+        expand: Vec<ExpandBuilder>,
         options: OperationOptions,
     },
 
@@ -476,7 +380,7 @@ pub struct RetrieveBuilder {
     entity: Entity,
     id: Uuid,
     select: Vec<String>,
-    expand: Vec<Expand>,
+    expand: Vec<ExpandBuilder>,
     options: OperationOptions,
 }
 
@@ -491,9 +395,9 @@ impl RetrieveBuilder {
     pub fn expand(
         mut self,
         nav_property: impl Into<String>,
-        configure: impl FnOnce(Expand) -> Expand,
+        configure: impl FnOnce(ExpandBuilder) -> ExpandBuilder,
     ) -> Self {
-        let expand = configure(Expand::new(nav_property));
+        let expand = configure(ExpandBuilder::new(nav_property));
         self.expand.push(expand);
         self
     }

@@ -9,6 +9,7 @@ use crate::DataverseClient;
 
 use super::expand::ExpandBuilder;
 use super::pages::ODataPages;
+use super::url::build_select_expand_params;
 use super::url::odata_filter_to_string;
 use super::url::order_to_odata;
 
@@ -142,9 +143,10 @@ impl<'a> QueryBuilder<'a> {
 
         let mut params = Vec::new();
 
-        // $select
-        if !self.select.is_empty() {
-            params.push(format!("$select={}", self.select.join(",")));
+        // $select and $expand (using shared helper)
+        let select_expand = build_select_expand_params(&self.select, &self.expands);
+        if !select_expand.is_empty() {
+            params.push(select_expand);
         }
 
         // $filter
@@ -160,12 +162,6 @@ impl<'a> QueryBuilder<'a> {
         // $top
         if let Some(top) = self.top {
             params.push(format!("$top={}", top));
-        }
-
-        // $expand
-        if !self.expands.is_empty() {
-            let expand_clauses: Vec<_> = self.expands.iter().map(|e| e.to_odata()).collect();
-            params.push(format!("$expand={}", expand_clauses.join(",")));
         }
 
         // $count

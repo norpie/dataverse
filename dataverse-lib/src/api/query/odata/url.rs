@@ -1,10 +1,30 @@
 //! OData URL and query string generation.
 
+use super::expand::ExpandBuilder;
 use crate::api::query::Direction;
 use crate::api::query::Filter;
 use crate::api::query::ODataFilter;
 use crate::api::query::OrderBy;
 use crate::model::Value;
+
+/// Builds the `$select` and `$expand` query parameters.
+///
+/// Returns the query string portion (without leading `?`), or empty string if no params.
+/// Used by both CRUD operations (for `return_record`) and query operations.
+pub fn build_select_expand_params(select: &[String], expand: &[ExpandBuilder]) -> String {
+    let mut params = Vec::new();
+
+    if !select.is_empty() {
+        params.push(format!("$select={}", select.join(",")));
+    }
+
+    if !expand.is_empty() {
+        let expand_clauses: Vec<_> = expand.iter().map(|e| e.to_odata()).collect();
+        params.push(format!("$expand={}", expand_clauses.join(",")));
+    }
+
+    params.join("&")
+}
 
 /// Converts an `ODataFilter` to an OData `$filter` expression.
 ///

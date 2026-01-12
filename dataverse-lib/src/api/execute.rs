@@ -12,13 +12,14 @@ use serde_json::json;
 use uuid::Uuid;
 
 use super::crud::CreateResult;
-use super::crud::Expand;
 use super::crud::Operation;
 use super::crud::OperationOptions;
 use super::crud::UpsertResult;
 use super::aggregate::AggregateBuilder;
 use super::query::fetchxml::FetchBuilder;
+use super::query::odata::ExpandBuilder;
 use super::query::odata::QueryBuilder;
+use super::query::odata::url::build_select_expand_params;
 use crate::DataverseClient;
 use crate::error::ApiError;
 use crate::error::Error;
@@ -159,21 +160,24 @@ impl DataverseClient {
         options: OperationOptions,
     ) -> Result<CreateResult, Error> {
         let entity_set = self.resolve_entity(&entity).await?;
-        let url = self.build_url(&format!("/{}", entity_set));
+        let mut url = format!("/{}", entity_set);
 
         let mut headers = self.default_headers();
         self.apply_options_headers(&mut headers, &options);
 
         if options.return_record {
             headers.insert("Prefer", HeaderValue::from_static("return=representation"));
-            // TODO: Add $select query parameter when options.select is non-empty
-            // Requires OData URL builder - see dataverse-lib.md plan
+            // Add $select query parameter when options.select is non-empty
+            if !options.select.is_empty() {
+                url.push_str(&format!("?$select={}", options.select.join(",")));
+            }
         }
 
+        let full_url = self.build_url(&url);
         let body = serde_json::to_string(&record).map_err(|e| Error::Serialization(e))?;
 
         let response = self
-            .request(Method::POST, &url, headers, Some(body))
+            .request(Method::POST, &full_url, headers, Some(body))
             .await?;
 
         if options.return_record {
@@ -202,27 +206,17 @@ impl DataverseClient {
         entity: Entity,
         id: Uuid,
         select: Vec<String>,
-        expand: Vec<Expand>,
+        expand: Vec<ExpandBuilder>,
         options: OperationOptions,
     ) -> Result<Response<Record>, Error> {
         let entity_set = self.resolve_entity(&entity).await?;
         let mut url = format!("/{}({})", entity_set, id);
 
-        // Build query parameters
-        let mut query_parts = Vec::new();
-
-        if !select.is_empty() {
-            query_parts.push(format!("$select={}", select.join(",")));
-        }
-
-        if !expand.is_empty() {
-            let expand_str: Vec<String> = expand.iter().map(|e| e.to_odata_string()).collect();
-            query_parts.push(format!("$expand={}", expand_str.join(",")));
-        }
-
-        if !query_parts.is_empty() {
+        // Build query parameters using shared helper
+        let query_params = build_select_expand_params(&select, &expand);
+        if !query_params.is_empty() {
             url.push('?');
-            url.push_str(&query_parts.join("&"));
+            url.push_str(&query_params);
         }
 
         let full_url = self.build_url(&url);
@@ -247,7 +241,7 @@ impl DataverseClient {
         options: OperationOptions,
     ) -> Result<Option<Record>, Error> {
         let entity_set = self.resolve_entity(&entity).await?;
-        let url = self.build_url(&format!("/{}({})", entity_set, id));
+        let mut url = format!("/{}({})", entity_set, id);
 
         let mut headers = self.default_headers();
         self.apply_options_headers(&mut headers, &options);
@@ -260,12 +254,17 @@ impl DataverseClient {
 
         if options.return_record {
             headers.insert("Prefer", HeaderValue::from_static("return=representation"));
+            // Add $select query parameter when options.select is non-empty
+            if !options.select.is_empty() {
+                url.push_str(&format!("?$select={}", options.select.join(",")));
+            }
         }
 
+        let full_url = self.build_url(&url);
         let body = serde_json::to_string(&record).map_err(|e| Error::Serialization(e))?;
 
         let response = self
-            .request(Method::PATCH, &url, headers, Some(body))
+            .request(Method::PATCH, &full_url, headers, Some(body))
             .await?;
 
         if options.return_record {
@@ -306,7 +305,7 @@ impl DataverseClient {
         options: OperationOptions,
     ) -> Result<UpsertResult, Error> {
         let entity_set = self.resolve_entity(&entity).await?;
-        let url = self.build_url(&format!("/{}({})", entity_set, id));
+        let mut url = format!("/{}({})", entity_set, id);
 
         let mut headers = self.default_headers();
         self.apply_options_headers(&mut headers, &options);
@@ -321,12 +320,17 @@ impl DataverseClient {
 
         if options.return_record {
             headers.insert("Prefer", HeaderValue::from_static("return=representation"));
+            // Add $select query parameter when options.select is non-empty
+            if !options.select.is_empty() {
+                url.push_str(&format!("?$select={}", options.select.join(",")));
+            }
         }
 
+        let full_url = self.build_url(&url);
         let body = serde_json::to_string(&record).map_err(|e| Error::Serialization(e))?;
 
         let response = self
-            .request(Method::PATCH, &url, headers, Some(body))
+            .request(Method::PATCH, &full_url, headers, Some(body))
             .await?;
 
         let status = response.status();
@@ -1076,7 +1080,7 @@ pub struct ClientRetrieveBuilder<'a> {
     entity: Entity,
     id: Uuid,
     select: Vec<String>,
-    expand: Vec<Expand>,
+    expand: Vec<ExpandBuilder>,
     options: OperationOptions,
 }
 
@@ -1091,9 +1095,9 @@ impl<'a> ClientRetrieveBuilder<'a> {
     pub fn expand(
         mut self,
         nav_property: impl Into<String>,
-        configure: impl FnOnce(Expand) -> Expand,
+        configure: impl FnOnce(ExpandBuilder) -> ExpandBuilder,
     ) -> Self {
-        let expand = configure(Expand::new(nav_property));
+        let expand = configure(ExpandBuilder::new(nav_property));
         self.expand.push(expand);
         self
     }
