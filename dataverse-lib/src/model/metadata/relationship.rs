@@ -3,6 +3,79 @@
 use serde::Deserialize;
 use serde::Serialize;
 
+/// Unified relationship metadata enum.
+///
+/// Wraps both one-to-many and many-to-many relationships for APIs that
+/// return mixed relationship types.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum RelationshipMetadata {
+    /// A one-to-many (or many-to-one) relationship.
+    OneToMany(OneToManyRelationship),
+    /// A many-to-many relationship.
+    ManyToMany(ManyToManyRelationship),
+}
+
+impl RelationshipMetadata {
+    /// Returns the schema name of the relationship.
+    pub fn schema_name(&self) -> &str {
+        match self {
+            Self::OneToMany(r) => &r.schema_name,
+            Self::ManyToMany(r) => &r.schema_name,
+        }
+    }
+
+    /// Returns the metadata ID of the relationship.
+    pub fn metadata_id(&self) -> uuid::Uuid {
+        match self {
+            Self::OneToMany(r) => r.metadata_id,
+            Self::ManyToMany(r) => r.metadata_id,
+        }
+    }
+
+    /// Returns true if this is a one-to-many relationship.
+    pub fn is_one_to_many(&self) -> bool {
+        matches!(self, Self::OneToMany(_))
+    }
+
+    /// Returns true if this is a many-to-many relationship.
+    pub fn is_many_to_many(&self) -> bool {
+        matches!(self, Self::ManyToMany(_))
+    }
+
+    /// Returns the inner one-to-many relationship, if this is one.
+    pub fn as_one_to_many(&self) -> Option<&OneToManyRelationship> {
+        match self {
+            Self::OneToMany(r) => Some(r),
+            _ => None,
+        }
+    }
+
+    /// Returns the inner many-to-many relationship, if this is one.
+    pub fn as_many_to_many(&self) -> Option<&ManyToManyRelationship> {
+        match self {
+            Self::ManyToMany(r) => Some(r),
+            _ => None,
+        }
+    }
+
+    /// Converts into the inner one-to-many relationship, if this is one.
+    pub fn into_one_to_many(self) -> Option<OneToManyRelationship> {
+        match self {
+            Self::OneToMany(r) => Some(r),
+            _ => None,
+        }
+    }
+
+    /// Converts into the inner many-to-many relationship, if this is one.
+    pub fn into_many_to_many(self) -> Option<ManyToManyRelationship> {
+        match self {
+            Self::ManyToMany(r) => Some(r),
+            _ => None,
+        }
+    }
+}
+
 /// Metadata for a one-to-many (or many-to-one) relationship.
 ///
 /// This is used for both `OneToManyRelationships` and `ManyToOneRelationships`

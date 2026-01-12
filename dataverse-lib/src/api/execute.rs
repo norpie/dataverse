@@ -22,6 +22,8 @@ use super::crud::Operation;
 use super::crud::OperationOptions;
 use super::crud::UpsertResult;
 use super::aggregate::AggregateBuilder;
+use super::metadata::entity::fetch_entity_core;
+use super::metadata::MetadataClient;
 use super::query::fetchxml::FetchBuilder;
 use super::query::odata::ExpandBuilder;
 use super::query::odata::QueryBuilder;
@@ -469,6 +471,37 @@ impl DataverseClient {
             Entity::Set(name) => Ok(name.clone()),
             Entity::Logical(logical_name) => self.resolve_entity_set_name(logical_name).await,
         }
+    }
+
+    /// Resolves an entity logical name to its entity set name.
+    ///
+    /// This is used internally by CRUD operations to build API URLs.
+    /// Uses cached metadata if available, otherwise fetches minimal metadata.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the entity doesn't exist or the API call fails.
+    pub async fn resolve_entity_set_name(&self, logical_name: &str) -> Result<String, Error> {
+        let core = fetch_entity_core(self, logical_name, false).await?;
+        Ok(core.entity_set_name)
+    }
+
+    /// Returns a metadata client for querying entity/attribute/relationship metadata.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// // Fetch entity metadata
+    /// let entity = client.metadata().entity("account").await?;
+    ///
+    /// // Fetch with cache bypass
+    /// let entity = client.metadata().entity("account").bypass_cache().await?;
+    ///
+    /// // Fetch all attributes for an entity
+    /// let attrs = client.metadata().attributes("account").await?;
+    /// ```
+    pub fn metadata(&self) -> MetadataClient<'_> {
+        MetadataClient::new(self)
     }
 
     fn build_url(&self, path: &str) -> String {
