@@ -11,6 +11,12 @@ use reqwest::header::HeaderValue;
 use serde_json::json;
 use uuid::Uuid;
 
+use super::batch::Batch;
+use super::batch::BatchResults;
+use super::batch::ChangesetBuilder;
+use super::batch::multipart::build_batch_body;
+use super::batch::multipart::generate_boundary;
+use super::batch::response::extract_boundary;
 use super::crud::CreateResult;
 use super::crud::Operation;
 use super::crud::OperationOptions;
@@ -998,6 +1004,101 @@ impl DataverseClient {
     pub fn aggregate(&self, entity: Entity) -> AggregateBuilder<'_> {
         AggregateBuilder::new(self, entity)
     }
+
+    /// Creates a batch request builder.
+    ///
+    /// Batch requests allow multiple operations to be executed in a single
+    /// HTTP request, reducing round-trips to the server.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// use dataverse_lib::api::Op;
+    ///
+    /// let results = client.batch()
+    ///     .bypass_plugins()           // batch-level setting
+    ///     .continue_on_error()        // don't stop on first failure
+    ///     .add(Op::create(Entity::set("accounts"), record1))
+    ///     .add(Op::create(Entity::set("accounts"), record2))
+    ///     .add(Op::delete(Entity::set("tasks"), old_task_id))
+    ///     .execute()
+    ///     .await?;
+    ///
+    /// for (index, result) in results.iter().enumerate() {
+    ///     println!("Operation {}: {:?}", index, result);
+    /// }
+    /// ```
+    ///
+    /// # Changesets (Transactions)
+    ///
+    /// Use changesets to group operations that should succeed or fail together:
+    ///
+    /// ```ignore
+    /// let results = client.batch()
+    ///     .changeset(|cs| {
+    ///         let account_ref = cs.add(Op::create(Entity::set("accounts"), account));
+    ///         cs.add(Op::create(Entity::set("contacts"), contact
+    ///             .bind_ref("parentcustomerid", "accounts", &account_ref)));
+    ///     })
+    ///     .execute()
+    ///     .await?;
+    /// ```
+    pub fn batch(&self) -> ClientBatchBuilder<'_> {
+        ClientBatchBuilder {
+            client: self,
+            batch: Batch::new(),
+        }
+    }
+
+    /// Executes a batch request.
+    async fn execute_batch(&self, batch: Batch) -> Result<BatchResults, Error> {
+        batch.validate()?;
+
+        let batch_boundary = generate_boundary("batch");
+        let url = self.build_url("/$batch");
+
+        let body = build_batch_body(&batch, &self.build_url(""), &batch_boundary);
+
+        let mut headers = HeaderMap::new();
+        headers.insert("OData-MaxVersion", HeaderValue::from_static("4.0"));
+        headers.insert("OData-Version", HeaderValue::from_static("4.0"));
+        headers.insert("Accept", HeaderValue::from_static("application/json"));
+
+        let content_type = format!("multipart/mixed; boundary={}", batch_boundary);
+        headers.insert(
+            "Content-Type",
+            HeaderValue::from_str(&content_type)
+                .map_err(|_| Error::InvalidOperation("Invalid boundary".to_string()))?,
+        );
+
+        if batch.options.continue_on_error {
+            headers.insert("Prefer", HeaderValue::from_static("odata.continue-on-error"));
+        }
+
+        // Add batch-level bypass headers
+        for (name, value) in batch.options.bypass_headers() {
+            if let Ok(header_value) = HeaderValue::from_str(value) {
+                headers.insert(name, header_value);
+            }
+        }
+
+        let response = self.request(Method::POST, &url, headers, Some(body)).await?;
+
+        // Extract boundary from response Content-Type
+        let response_content_type = response
+            .headers()
+            .get("Content-Type")
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("");
+
+        let response_boundary = extract_boundary(response_content_type).ok_or_else(|| {
+            Error::InvalidOperation("Missing boundary in batch response".to_string())
+        })?;
+
+        let response_body = response.text().await.map_err(ApiError::from)?;
+
+        BatchResults::parse(&response_body, &response_boundary)
+    }
 }
 
 // =============================================================================
@@ -1568,5 +1669,74 @@ impl<'a> From<ClientClearLookupBuilder<'a>> for Operation {
             nav_property: builder.nav_property,
             options: builder.options,
         }
+    }
+}
+
+/// Batch builder bound to a client.
+pub struct ClientBatchBuilder<'a> {
+    client: &'a DataverseClient,
+    batch: Batch,
+}
+
+impl<'a> ClientBatchBuilder<'a> {
+    /// Continue processing operations after a failure.
+    ///
+    /// By default, processing stops at the first error. With this enabled,
+    /// all operations are attempted and individual errors are returned.
+    pub fn continue_on_error(mut self) -> Self {
+        self.batch = self.batch.continue_on_error();
+        self
+    }
+
+    /// Skip custom plugin execution for all operations.
+    pub fn bypass_plugins(mut self) -> Self {
+        self.batch = self.batch.bypass_plugins();
+        self
+    }
+
+    /// Skip Power Automate flows for all operations.
+    pub fn bypass_flows(mut self) -> Self {
+        self.batch = self.batch.bypass_flows();
+        self
+    }
+
+    /// Skip synchronous business logic for all operations.
+    pub fn bypass_sync_logic(mut self) -> Self {
+        self.batch = self.batch.bypass_sync_logic();
+        self
+    }
+
+    /// Skip duplicate detection for all operations.
+    pub fn suppress_duplicate_detection(mut self) -> Self {
+        self.batch = self.batch.suppress_duplicate_detection();
+        self
+    }
+
+    /// Request the record in responses for create/update operations.
+    pub fn return_record(mut self) -> Self {
+        self.batch = self.batch.return_record();
+        self
+    }
+
+    /// Adds a standalone operation to the batch.
+    pub fn add(mut self, op: impl Into<Operation>) -> Self {
+        self.batch = self.batch.add(op);
+        self
+    }
+
+    /// Adds a transactional changeset to the batch.
+    ///
+    /// All operations in the changeset succeed or fail together.
+    pub fn changeset<F>(mut self, build: F) -> Self
+    where
+        F: FnOnce(&mut ChangesetBuilder),
+    {
+        self.batch = self.batch.changeset(build);
+        self
+    }
+
+    /// Executes the batch.
+    pub async fn execute(self) -> Result<BatchResults, Error> {
+        self.client.execute_batch(self.batch).await
     }
 }

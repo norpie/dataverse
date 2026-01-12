@@ -15,6 +15,7 @@ use super::types::ImageReference;
 use super::types::Money;
 use super::types::MultiSelectOptionSetValue;
 use super::types::OptionSetValue;
+use crate::api::ContentIdRef;
 use crate::error::FieldError;
 
 /// A dynamic entity record from Dataverse.
@@ -168,6 +169,30 @@ impl Record {
     /// Sets a formatted value.
     pub fn set_formatted(&mut self, field: impl Into<String>, value: impl Into<String>) {
         self.formatted_values.insert(field.into(), value.into());
+    }
+
+    /// Binds a lookup field to a ContentIdRef for batch references.
+    ///
+    /// Used within changesets to reference the result of an earlier operation.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// let record = Record::new("contact")
+    ///     .set("firstname", "John")
+    ///     .bind_ref("parentcustomerid", "accounts", &account_ref);
+    /// ```
+    pub fn bind_ref(
+        mut self,
+        field: impl Into<String>,
+        entity_set: &str,
+        reference: &ContentIdRef,
+    ) -> Self {
+        // Format: field@odata.bind = "entity_set/$N"
+        let bind_key = format!("{}@odata.bind", field.into());
+        let bind_value = format!("{}/{}", entity_set, reference.as_ref_string());
+        self.fields.insert(bind_key, Value::String(bind_value));
+        self
     }
 
     // =========================================================================

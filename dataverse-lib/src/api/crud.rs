@@ -167,6 +167,38 @@ pub enum Operation {
     },
 }
 
+impl Operation {
+    /// Sets the content-id for this operation (used by batch).
+    pub(crate) fn set_content_id(&mut self, id: String) {
+        match self {
+            Operation::Create { options, .. } => options.content_id = Some(id),
+            Operation::Retrieve { options, .. } => options.content_id = Some(id),
+            Operation::Update { options, .. } => options.content_id = Some(id),
+            Operation::Delete { options, .. } => options.content_id = Some(id),
+            Operation::Upsert { options, .. } => options.content_id = Some(id),
+            Operation::Associate { options, .. } => options.content_id = Some(id),
+            Operation::Disassociate { options, .. } => options.content_id = Some(id),
+            Operation::SetLookup { options, .. } => options.content_id = Some(id),
+            Operation::ClearLookup { options, .. } => options.content_id = Some(id),
+        }
+    }
+
+    /// Returns the content-id for this operation, if set.
+    pub(crate) fn content_id(&self) -> Option<&str> {
+        match self {
+            Operation::Create { options, .. } => options.content_id.as_deref(),
+            Operation::Retrieve { options, .. } => options.content_id.as_deref(),
+            Operation::Update { options, .. } => options.content_id.as_deref(),
+            Operation::Delete { options, .. } => options.content_id.as_deref(),
+            Operation::Upsert { options, .. } => options.content_id.as_deref(),
+            Operation::Associate { options, .. } => options.content_id.as_deref(),
+            Operation::Disassociate { options, .. } => options.content_id.as_deref(),
+            Operation::SetLookup { options, .. } => options.content_id.as_deref(),
+            Operation::ClearLookup { options, .. } => options.content_id.as_deref(),
+        }
+    }
+}
+
 // =============================================================================
 // Op helper for building operations
 // =============================================================================
