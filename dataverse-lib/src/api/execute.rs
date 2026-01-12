@@ -1033,6 +1033,12 @@ impl<'a> ClientCreateBuilder<'a> {
         self
     }
 
+    /// Skip synchronous business logic.
+    pub fn bypass_sync_logic(mut self) -> Self {
+        self.options.bypass_sync_logic = true;
+        self
+    }
+
     /// Skip duplicate detection.
     pub fn suppress_duplicate_detection(mut self) -> Self {
         self.options.suppress_duplicate_detection = true;
@@ -1170,6 +1176,12 @@ impl<'a> ClientUpdateBuilder<'a> {
         self.options.bypass_flows = true;
         self
     }
+
+    /// Skip synchronous business logic.
+    pub fn bypass_sync_logic(mut self) -> Self {
+        self.options.bypass_sync_logic = true;
+        self
+    }
 }
 
 impl<'a> std::future::IntoFuture for ClientUpdateBuilder<'a> {
@@ -1221,6 +1233,12 @@ impl<'a> ClientDeleteBuilder<'a> {
     /// Skip Power Automate flows.
     pub fn bypass_flows(mut self) -> Self {
         self.options.bypass_flows = true;
+        self
+    }
+
+    /// Skip synchronous business logic.
+    pub fn bypass_sync_logic(mut self) -> Self {
+        self.options.bypass_sync_logic = true;
         self
     }
 }
@@ -1292,6 +1310,12 @@ impl<'a> ClientUpsertBuilder<'a> {
     /// Skip Power Automate flows.
     pub fn bypass_flows(mut self) -> Self {
         self.options.bypass_flows = true;
+        self
+    }
+
+    /// Skip synchronous business logic.
+    pub fn bypass_sync_logic(mut self) -> Self {
+        self.options.bypass_sync_logic = true;
         self
     }
 }
