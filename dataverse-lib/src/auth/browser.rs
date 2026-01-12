@@ -221,6 +221,11 @@ pub struct PendingBrowserAuth {
 }
 
 impl PendingBrowserAuth {
+    /// Open the authorization URL in the default browser.
+    pub fn open_browser(&self) -> std::io::Result<()> {
+        open::that(&self.auth_url)
+    }
+
     /// Wait for the browser callback and exchange the code for a token.
     pub async fn wait(self) -> Result<AccessToken, AuthError> {
         let code = self.wait_for_callback().await?;
@@ -301,6 +306,7 @@ impl PendingBrowserAuth {
                     Response::builder()
                         .status(status)
                         .header("Content-Type", "text/html")
+                        .header("Connection", "close")
                         .body(Full::new(Bytes::from(html)))
                         .unwrap(),
                 )

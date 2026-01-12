@@ -161,6 +161,13 @@ pub struct DeviceCodeInfo {
     pub message: String,
 }
 
+impl DeviceCodeInfo {
+    /// Open the verification URL in the default browser.
+    pub fn open_browser(&self) -> std::io::Result<()> {
+        open::that(&self.verification_url)
+    }
+}
+
 // =============================================================================
 // PendingDeviceAuth
 // =============================================================================
