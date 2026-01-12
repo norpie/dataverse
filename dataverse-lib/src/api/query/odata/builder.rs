@@ -1,6 +1,6 @@
 //! OData query builder.
 
-use crate::api::query::Filter;
+use crate::api::query::ODataFilter;
 use crate::api::query::OrderBy;
 use crate::error::Error;
 use crate::model::Entity;
@@ -9,7 +9,7 @@ use crate::DataverseClient;
 
 use super::expand::ExpandBuilder;
 use super::pages::ODataPages;
-use super::url::filter_to_odata;
+use super::url::odata_filter_to_string;
 use super::url::order_to_odata;
 
 /// Builder for constructing OData queries.
@@ -36,7 +36,7 @@ pub struct QueryBuilder<'a> {
     client: &'a DataverseClient,
     entity: Entity,
     select: Vec<String>,
-    filter: Option<Filter>,
+    filter: Option<ODataFilter>,
     order_by: Option<OrderBy>,
     top: Option<usize>,
     page_size: Option<usize>,
@@ -69,8 +69,10 @@ impl<'a> QueryBuilder<'a> {
     }
 
     /// Adds a filter condition.
-    pub fn filter(mut self, filter: Filter) -> Self {
-        self.filter = Some(filter);
+    ///
+    /// Accepts both [`Filter`] and [`ODataFilter`] (for negated filters).
+    pub fn filter(mut self, filter: impl Into<ODataFilter>) -> Self {
+        self.filter = Some(filter.into());
         self
     }
 
@@ -147,7 +149,7 @@ impl<'a> QueryBuilder<'a> {
 
         // $filter
         if let Some(ref filter) = self.filter {
-            params.push(format!("$filter={}", filter_to_odata(filter)));
+            params.push(format!("$filter={}", odata_filter_to_string(filter)));
         }
 
         // $orderby
@@ -245,7 +247,7 @@ impl<'a> QueryBuilder<'a> {
 
         // Only $filter is supported with $count
         if let Some(ref filter) = self.filter {
-            url.push_str(&format!("?$filter={}", filter_to_odata(filter)));
+            url.push_str(&format!("?$filter={}", odata_filter_to_string(filter)));
         }
 
         let response: reqwest::Response = self

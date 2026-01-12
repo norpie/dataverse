@@ -21,6 +21,7 @@ mod order;
 mod page;
 
 pub use filter::Filter;
+pub use filter::ODataFilter;
 pub use order::Direction;
 pub use order::OrderBy;
 pub use page::Page;

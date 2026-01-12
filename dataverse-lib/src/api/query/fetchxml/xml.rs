@@ -106,14 +106,6 @@ pub fn filter_to_fetchxml(filter: &Filter) -> String {
             let conditions: Vec<_> = filters.iter().map(filter_to_fetchxml).collect();
             format!(r#"<filter type="or">{}</filter>"#, conditions.join(""))
         }
-        Filter::Not(inner) => {
-            // FetchXML doesn't have a direct NOT operator, we wrap in a filter
-            // with negated conditions where possible
-            format!(
-                r#"<filter type="and"><condition operator="not">{}</condition></filter>"#,
-                filter_to_fetchxml(inner)
-            )
-        }
         Filter::Raw(raw) => raw.clone(),
     }
 }

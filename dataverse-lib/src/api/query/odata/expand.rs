@@ -1,9 +1,11 @@
 //! OData $expand builder for nested navigation properties.
 
+#[cfg(test)]
 use crate::api::query::Filter;
+use crate::api::query::ODataFilter;
 use crate::api::query::OrderBy;
 
-use super::url::filter_to_odata;
+use super::url::odata_filter_to_string;
 use super::url::order_to_odata;
 
 /// Builder for constructing OData `$expand` clauses.
@@ -25,7 +27,7 @@ pub struct ExpandBuilder {
     /// Fields to select from the expanded entity.
     select: Vec<String>,
     /// Filter to apply to the expanded records.
-    filter: Option<Filter>,
+    filter: Option<ODataFilter>,
     /// Ordering for the expanded records.
     order_by: Option<OrderBy>,
     /// Maximum number of expanded records to return.
@@ -54,8 +56,10 @@ impl ExpandBuilder {
     }
 
     /// Adds a filter condition to the expanded records.
-    pub fn filter(mut self, filter: Filter) -> Self {
-        self.filter = Some(filter);
+    ///
+    /// Accepts both [`Filter`] and [`ODataFilter`] (for negated filters).
+    pub fn filter(mut self, filter: impl Into<ODataFilter>) -> Self {
+        self.filter = Some(filter.into());
         self
     }
 
@@ -109,7 +113,7 @@ impl ExpandBuilder {
 
         // $filter
         if let Some(ref filter) = self.filter {
-            parts.push(format!("$filter={}", filter_to_odata(filter)));
+            parts.push(format!("$filter={}", odata_filter_to_string(filter)));
         }
 
         // $orderby

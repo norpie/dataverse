@@ -4,8 +4,11 @@ use crate::model::Value;
 
 /// A filter condition for querying records.
 ///
-/// Filters can be combined using logical operators (`And`, `Or`, `Not`) to build
-/// complex query conditions. Both OData and FetchXML queries use this same type.
+/// Filters can be combined using logical operators (`And`, `Or`) to build
+/// complex query conditions. Both OData and FetchXML queries use this type.
+///
+/// For negation (`NOT`), use [`Filter::not()`] which returns an [`ODataFilter`].
+/// Negation is only supported in OData queries, not FetchXML.
 ///
 /// # Example
 ///
@@ -24,6 +27,9 @@ use crate::model::Value;
 /// // Using combinators
 /// let filter = Filter::eq("statecode", 0)
 ///     .and_also(Filter::gt("revenue", 1_000_000));
+///
+/// // Negation (OData only)
+/// let filter = Filter::eq("statecode", 0).not();
 /// ```
 #[derive(Debug, Clone, PartialEq)]
 pub enum Filter {
@@ -53,8 +59,6 @@ pub enum Filter {
     And(Vec<Filter>),
     /// Logical OR of multiple filters.
     Or(Vec<Filter>),
-    /// Logical NOT of a filter.
-    Not(Box<Filter>),
     /// Raw OData/FetchXML filter string (escape hatch).
     Raw(String),
 }
@@ -125,11 +129,6 @@ impl Filter {
         Filter::Or(filters.into_iter().collect())
     }
 
-    /// Creates a logical NOT of a filter.
-    pub fn not(filter: Filter) -> Self {
-        Filter::Not(Box::new(filter))
-    }
-
     /// Creates a raw filter string (escape hatch).
     ///
     /// Use this when you need to write a filter that isn't supported by the
@@ -176,5 +175,70 @@ impl Filter {
             }
             _ => Filter::Or(vec![self, other]),
         }
+    }
+
+    /// Negates this filter (OData only).
+    ///
+    /// Returns an [`ODataFilter`] which can only be used with OData queries,
+    /// not FetchXML. This is enforced at compile time.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use dataverse_lib::api::query::Filter;
+    ///
+    /// // Negate a simple condition
+    /// let filter = Filter::eq("statecode", 0).not();
+    ///
+    /// // Negate a complex expression
+    /// let filter = Filter::and([
+    ///     Filter::eq("statecode", 0),
+    ///     Filter::gt("revenue", 1_000_000),
+    /// ]).not();
+    /// ```
+    pub fn not(self) -> ODataFilter {
+        ODataFilter::Not(Box::new(ODataFilter::Base(self)))
+    }
+}
+
+/// A filter that supports negation (OData only).
+///
+/// This type is returned by [`Filter::not()`] and can only be used with
+/// OData queries (`QueryBuilder`), not FetchXML queries (`FetchBuilder`).
+/// This restriction is enforced at compile time.
+///
+/// # Example
+///
+/// ```ignore
+/// // Works with OData
+/// client.query(entity)
+///     .filter(Filter::eq("statecode", 0).not())
+///     .execute().await?;
+///
+/// // Compile error with FetchXML
+/// client.fetch(entity)
+///     .filter(Filter::eq("statecode", 0).not())  // Error: expected Filter, found ODataFilter
+///     .execute().await?;
+/// ```
+#[derive(Debug, Clone, PartialEq)]
+pub enum ODataFilter {
+    /// A regular filter (no negation).
+    Base(Filter),
+    /// A negated filter: `not (filter)`.
+    Not(Box<ODataFilter>),
+}
+
+impl ODataFilter {
+    /// Negates this filter.
+    ///
+    /// Can be chained for double negation (though rarely useful).
+    pub fn not(self) -> ODataFilter {
+        ODataFilter::Not(Box::new(self))
+    }
+}
+
+impl From<Filter> for ODataFilter {
+    fn from(filter: Filter) -> Self {
+        ODataFilter::Base(filter)
     }
 }

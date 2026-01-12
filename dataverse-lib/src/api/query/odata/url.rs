@@ -1,9 +1,20 @@
 //! OData URL and query string generation.
 
-use crate::api::query::Filter;
-use crate::api::query::OrderBy;
 use crate::api::query::Direction;
+use crate::api::query::Filter;
+use crate::api::query::ODataFilter;
+use crate::api::query::OrderBy;
 use crate::model::Value;
+
+/// Converts an `ODataFilter` to an OData `$filter` expression.
+///
+/// This handles both regular filters and negated filters.
+pub fn odata_filter_to_string(filter: &ODataFilter) -> String {
+    match filter {
+        ODataFilter::Base(f) => filter_to_odata(f),
+        ODataFilter::Not(inner) => format!("not ({})", odata_filter_to_string(inner)),
+    }
+}
 
 /// Converts a `Filter` to an OData `$filter` expression.
 pub fn filter_to_odata(filter: &Filter) -> String {
@@ -39,7 +50,6 @@ pub fn filter_to_odata(filter: &Filter) -> String {
             let parts: Vec<_> = filters.iter().map(filter_to_odata).collect();
             format!("({})", parts.join(" or "))
         }
-        Filter::Not(inner) => format!("not ({})", filter_to_odata(inner)),
         Filter::Raw(raw) => raw.clone(),
     }
 }
@@ -157,5 +167,33 @@ mod tests {
     #[test]
     fn test_escape_string() {
         assert_eq!(escape_string("O'Brien"), "'O''Brien'");
+    }
+
+    #[test]
+    fn test_negated_filter() {
+        let filter = Filter::eq("statecode", 0i32).not();
+        assert_eq!(odata_filter_to_string(&filter), "not (statecode eq 0)");
+    }
+
+    #[test]
+    fn test_double_negated_filter() {
+        let filter = Filter::eq("statecode", 0i32).not().not();
+        assert_eq!(
+            odata_filter_to_string(&filter),
+            "not (not (statecode eq 0))"
+        );
+    }
+
+    #[test]
+    fn test_negated_combined_filter() {
+        let filter = Filter::and([
+            Filter::eq("statecode", 0i32),
+            Filter::gt("revenue", 1000000i32),
+        ])
+        .not();
+        assert_eq!(
+            odata_filter_to_string(&filter),
+            "not ((statecode eq 0 and revenue gt 1000000))"
+        );
     }
 }
