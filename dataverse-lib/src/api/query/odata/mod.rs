@@ -25,8 +25,11 @@
 mod builder;
 mod expand;
 mod pages;
+mod related;
 pub(crate) mod url;
 
 pub use builder::QueryBuilder;
 pub use expand::ExpandBuilder;
 pub use pages::ODataPages;
+pub use related::RelatedPages;
+pub use related::RelatedQueryBuilder;

@@ -27,6 +27,7 @@ use super::metadata::MetadataClient;
 use super::query::fetchxml::FetchBuilder;
 use super::query::odata::ExpandBuilder;
 use super::query::odata::QueryBuilder;
+use super::query::odata::RelatedQueryBuilder;
 use super::query::odata::url::build_select_expand_params;
 use crate::DataverseClient;
 use crate::error::ApiError;
@@ -504,7 +505,7 @@ impl DataverseClient {
         MetadataClient::new(self)
     }
 
-    fn build_url(&self, path: &str) -> String {
+    pub(crate) fn build_url(&self, path: &str) -> String {
         format!(
             "{}/api/data/{}{}",
             self.inner.base_url.trim_end_matches('/'),
@@ -1036,6 +1037,39 @@ impl DataverseClient {
     /// ```
     pub fn aggregate(&self, entity: Entity) -> AggregateBuilder<'_> {
         AggregateBuilder::new(self, entity)
+    }
+
+    /// Queries records related through a navigation property.
+    ///
+    /// Returns a builder that can be configured and executed.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// // Query contacts related to an account
+    /// let mut pages = client.related(
+    ///     Entity::set("accounts"), account_id,
+    ///     "contact_customer_accounts",
+    /// )
+    /// .select(&["fullname", "emailaddress1"])
+    /// .filter(Filter::eq("statecode", 0))
+    /// .order_by(OrderBy::asc("fullname"))
+    /// .into_async_iter();
+    ///
+    /// while let Some(page) = pages.next().await {
+    ///     let page = page?;
+    ///     for record in page.records() {
+    ///         println!("{:?}", record);
+    ///     }
+    /// }
+    /// ```
+    pub fn related(
+        &self,
+        entity: Entity,
+        id: Uuid,
+        nav_property: impl Into<String>,
+    ) -> RelatedQueryBuilder<'_> {
+        RelatedQueryBuilder::new(self, entity, id, nav_property)
     }
 
     /// Creates a batch request builder.
