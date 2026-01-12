@@ -3,6 +3,8 @@ use rafter::prelude::*;
 use rafter::widgets::{SelectionMode, Text, Tree, TreeItem, TreeNode, TreeState};
 use tuidom::Element;
 
+use crate::TestApp;
+
 /// A launcher entry (category or app).
 #[derive(Clone, Debug)]
 pub struct LauncherEntry {
@@ -69,6 +71,7 @@ fn create_launcher_tree() -> Vec<TreeNode<LauncherEntry>> {
                 TreeNode::leaf(app("settings", "Settings")),
                 TreeNode::leaf(app("connections", "Connections")),
                 TreeNode::leaf(app("logs", "Logs")),
+                TreeNode::leaf(app("test", "Test")),
             ],
         ),
         TreeNode::branch(
@@ -157,7 +160,14 @@ impl Launcher {
         let result = gx.modal(LauncherModal::default()).await;
 
         if let Some(selected) = result {
-            gx.toast(Toast::info(format!("Selected: {}", selected)));
+            match selected.as_str() {
+                "test" => {
+                    let _ = gx.spawn_and_focus(TestApp::default());
+                }
+                _ => {
+                    gx.toast(Toast::info(format!("App not implemented: {}", selected)));
+                }
+            }
         }
     }
 }

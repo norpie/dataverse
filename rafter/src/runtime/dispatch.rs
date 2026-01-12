@@ -331,8 +331,17 @@ impl<'a> EventDispatcher<'a> {
             return None;
         };
 
+        log::debug!(
+            "dispatch_to_system_keybinds: key={:?}, modifiers={:?}",
+            key, modifiers
+        );
+
         for system in self.systems {
             let keybinds = system.keybinds();
+            log::debug!(
+                "dispatch_to_system_keybinds: checking system keybinds, count={}",
+                keybinds.len()
+            );
             if let Some(handler) = keybinds.match_key(*key, *modifiers) {
                 let hx = HandlerContext::for_system(self.gx);
                 if let Some(panic_result) = call_and_check(&handler, &hx) {
