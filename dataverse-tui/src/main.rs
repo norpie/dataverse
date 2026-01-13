@@ -14,6 +14,7 @@ use rafter::prelude::*;
 use rafter::widgets::Text;
 use simplelog::{Config, LevelFilter, WriteLogger};
 
+use client_manager::ClientManager;
 use widgets::Spinner;
 
 #[app(name = "Dataverse", singleton)]
@@ -89,10 +90,12 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
 
     let settings = init_settings().await?;
     let credentials = init_credentials().await?;
+    let client_manager = ClientManager::new(credentials.clone());
 
     Runtime::new()?
         .data(settings)
         .data(credentials)
+        .data(client_manager)
         .run(DataverseTui::default())
         .await?;
 
