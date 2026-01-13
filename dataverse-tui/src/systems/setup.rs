@@ -3,6 +3,7 @@
 use rafter::prelude::*;
 
 use crate::client_manager::ClientManager;
+use crate::modals::SetupModal;
 
 /// System that triggers initial setup when no accounts exist.
 #[system]
@@ -14,8 +15,7 @@ impl SetupSystem {
     async fn check_setup(&self, gx: &GlobalContext) {
         let client_manager = gx.data::<ClientManager>();
         if !client_manager.has_accounts().await {
-            // TODO: Launch SetupModal instead
-            gx.toast(Toast::warning("No accounts configured. Setup modal should be triggered."));
+            let _result = gx.modal(SetupModal::default()).await;
         }
     }
 }

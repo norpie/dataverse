@@ -449,13 +449,16 @@ dependencies = [
  "directories",
  "inventory",
  "log",
+ "open",
  "rafter",
  "rusqlite",
  "serde",
  "simplelog",
  "thiserror 2.0.17",
  "tokio",
+ "tokio-util",
  "tuidom",
+ "url",
 ]
 
 [[package]]
