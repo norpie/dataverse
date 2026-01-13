@@ -48,6 +48,11 @@ pub fn settings_db() -> Option<PathBuf> {
     data_dir().map(|dir| dir.join("settings.db"))
 }
 
+/// Get the path to the credentials database.
+pub fn credentials_db() -> Option<PathBuf> {
+    data_dir().map(|dir| dir.join("credentials.db"))
+}
+
 /// Get the path to the latest log file.
 pub fn log_file() -> Option<PathBuf> {
     cache_dir().map(|dir| dir.join("latest.log"))

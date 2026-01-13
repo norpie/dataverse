@@ -1,3 +1,4 @@
+mod credentials;
 mod modals;
 mod paths;
 mod settings;
@@ -85,9 +86,11 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     init_logging()?;
 
     let settings = init_settings().await?;
+    let credentials = init_credentials().await?;
 
     Runtime::new()?
         .data(settings)
+        .data(credentials)
         .run(DataverseTui::default())
         .await?;
 
@@ -116,4 +119,10 @@ async fn init_settings() -> Result<settings::SettingsProvider, settings::Setting
     let settings_path = paths::settings_db().unwrap_or_else(|| "settings.db".into());
     let backend = settings::SqliteBackend::new(&settings_path).await?;
     Ok(settings::SettingsProvider::new(backend))
+}
+
+async fn init_credentials() -> Result<credentials::CredentialsProvider, credentials::CredentialsError> {
+    let creds_path = paths::credentials_db().unwrap_or_else(|| "credentials.db".into());
+    let backend = credentials::SqliteCredentialsBackend::new(&creds_path).await?;
+    Ok(credentials::CredentialsProvider::new(backend))
 }
