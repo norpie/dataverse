@@ -1,11 +1,9 @@
 //! Registration types for inventory-based auto-discovery.
 
-use std::future::Future;
-use std::pin::Pin;
-
 use crate::app::App;
 use crate::instance::{AnyAppInstance, AppInstance};
 use crate::keybinds::KeybindClosures;
+use crate::lifecycle::LifecycleHooks;
 use crate::system::{Overlay, System};
 use crate::wakeup::WakeupSender;
 use crate::GlobalContext;
@@ -90,8 +88,8 @@ pub trait AnySystem: Send + Sync {
     fn handlers(&self) -> &crate::HandlerRegistry;
     /// Get the system's overlay.
     fn overlay(&self) -> Option<Overlay>;
-    /// Called once when the system starts.
-    fn on_start(&self) -> Pin<Box<dyn Future<Output = ()> + Send + '_>>;
+    /// Get lifecycle hook closures.
+    fn lifecycle_hooks(&self) -> LifecycleHooks;
     /// Install wakeup sender.
     fn install_wakeup(&self, sender: WakeupSender);
     /// Check if this system has a handler for the given event type.
@@ -126,8 +124,8 @@ impl<T: System> AnySystem for T {
         System::overlay(self)
     }
 
-    fn on_start(&self) -> Pin<Box<dyn Future<Output = ()> + Send + '_>> {
-        Box::pin(System::on_start(self))
+    fn lifecycle_hooks(&self) -> LifecycleHooks {
+        System::lifecycle_hooks(self)
     }
 
     fn install_wakeup(&self, sender: WakeupSender) {

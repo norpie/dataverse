@@ -7,6 +7,7 @@ mod global_context;
 mod handler_context;
 mod instance;
 pub mod keybinds;
+mod lifecycle;
 mod modal;
 pub mod prelude;
 mod registration;
@@ -41,7 +42,8 @@ pub use keybinds::{
     parse_key_string, HandlerId, KeyCombo, Keybind, KeybindClosures, KeybindEntry, KeybindError,
     KeybindInfo, KeybindScope, Keybinds, ParseKeyError,
 };
-pub use modal::{Modal, ModalContext, ModalEntry, ModalPosition, ModalSize};
+pub use lifecycle::LifecycleHooks;
+pub use modal::{Modal, ModalContext, ModalEntry, ModalKind, ModalPosition, ModalSize, SystemModal};
 pub use registration::{
     registered_apps, registered_systems, AnySystem, AppRegistration, CloneableApp,
     SystemRegistration,

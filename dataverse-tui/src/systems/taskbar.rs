@@ -145,6 +145,7 @@ impl Taskbar {
         }
     }
 
+    #[on_start]
     async fn on_start(&self) {
         // Initialize with placeholder values
         self.queue.set(QueueStatus {

@@ -25,6 +25,7 @@ struct TestApp {
 
 #[app_impl]
 impl TestApp {
+    #[on_start]
     async fn on_start(&self) {
         let id = SystemTime::now()
             .duration_since(UNIX_EPOCH)

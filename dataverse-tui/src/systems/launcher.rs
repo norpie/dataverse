@@ -88,6 +88,7 @@ struct LauncherModal {
 
 #[modal_impl]
 impl LauncherModal {
+    #[on_start]
     async fn on_start(&self) {
         let tree = create_launcher_tree();
         self.entries.set(

@@ -29,7 +29,7 @@ use crate::system::System;
 use crate::toast::Toast;
 use crate::wakeup::{channel as wakeup_channel, WakeupReceiver};
 use crate::event::{FocusChanged, InstanceClosed, InstanceSpawned};
-use crate::{App, AppContext, BlurPolicy, GlobalContext};
+use crate::{App, AppContext, BlurPolicy, GlobalContext, HandlerContext};
 
 use dispatch::AnyModal;
 
@@ -202,7 +202,8 @@ impl Runtime {
         }
 
         for system in &systems {
-            system.on_start().await;
+            let hx = HandlerContext::for_system(&gx);
+            system.lifecycle_hooks().call_on_start(&hx);
             system.install_wakeup(wakeup_tx.clone());
         }
 
@@ -213,7 +214,9 @@ impl Runtime {
         instance.install_wakeup(wakeup_tx.clone(), &gx);
 
         // Call on_start lifecycle method
-        instance.on_start().await;
+        let cx = instance.app_context();
+        let hx = HandlerContext::for_app(&cx, &gx);
+        instance.lifecycle_hooks().call_on_start(&hx);
 
         {
             let mut reg = registry.write().unwrap();
@@ -301,7 +304,22 @@ impl Runtime {
             };
             if let Some(request) = modal_request {
                 // Call on_start before pushing
-                request.entry.on_start().await;
+                // Use appropriate context based on modal kind
+                match request.entry.kind() {
+                    crate::ModalKind::App => {
+                        let reg = registry.read().unwrap();
+                        if let Some(instance) = reg.focused_instance() {
+                            let cx = instance.app_context();
+                            let hx = HandlerContext::for_modal_any(&cx, gx, request.entry.modal_context());
+                            request.entry.lifecycle_hooks().call_on_start(&hx);
+                        }
+                    }
+                    crate::ModalKind::System => {
+                        // System modals don't get AppContext even when spawned from an app
+                        let hx = HandlerContext::for_system_modal(gx, request.entry.modal_context());
+                        request.entry.lifecycle_hooks().call_on_start(&hx);
+                    }
+                }
                 // Re-acquire lock to push
                 let reg = registry.read().unwrap();
                 if let Some(instance) = reg.focused_instance() {
@@ -322,7 +340,9 @@ impl Runtime {
 
             // 3b. Process global modal requests and clean up closed global modals
             if let Some(request) = gx.take_modal_request() {
-                request.entry.on_start().await;
+                // Global modals don't have app context, use system modal context
+                let hx = HandlerContext::for_system_modal(gx, request.entry.modal_context());
+                request.entry.lifecycle_hooks().call_on_start(&hx);
                 global_modals.push(request.entry);
             }
             while global_modals.last().map(|m| m.is_closed()).unwrap_or(false) {
@@ -925,7 +945,11 @@ impl Runtime {
                     }
 
                     // Call on_start lifecycle method
-                    instance.on_start().await;
+                    {
+                        let cx = instance.app_context();
+                        let hx = HandlerContext::for_app(&cx, gx);
+                        instance.lifecycle_hooks().call_on_start(&hx);
+                    }
 
                     {
                         let mut reg = registry.write().unwrap();
@@ -984,7 +1008,9 @@ impl Runtime {
                             {
                                 let reg = registry.read().unwrap();
                                 if let Some(instance) = reg.get(old_id) {
-                                    instance.on_background().await;
+                                    let cx = instance.app_context();
+                                    let hx = HandlerContext::for_app(&cx, gx);
+                                    instance.lifecycle_hooks().call_on_background(&hx);
                                 }
                             }
 
@@ -1011,7 +1037,9 @@ impl Runtime {
                             if instance.is_sleeping() {
                                 instance.set_sleeping(false);
                             }
-                            instance.on_foreground().await;
+                            let cx = instance.app_context();
+                            let hx = HandlerContext::for_app(&cx, gx);
+                            instance.lifecycle_hooks().call_on_foreground(&hx);
                         }
                     }
 

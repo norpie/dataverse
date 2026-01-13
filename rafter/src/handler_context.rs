@@ -431,6 +431,35 @@ impl<'a> HandlerContext<'a> {
         }
     }
 
+    /// Create a HandlerContext for system modals (no app context, but has modal context).
+    ///
+    /// System modals only have access to GlobalContext and ModalContext.
+    pub fn for_system_modal(
+        gx: &'a GlobalContext,
+        mx: &'a (dyn std::any::Any + Send + Sync),
+    ) -> Self {
+        Self {
+            cx: None,
+            gx,
+            modal_context: Some(mx),
+            event_data: EventData::None,
+        }
+    }
+
+    /// Create a HandlerContext for system modals with event data.
+    pub fn for_system_modal_with_event(
+        gx: &'a GlobalContext,
+        mx: &'a (dyn std::any::Any + Send + Sync),
+        event: EventData,
+    ) -> Self {
+        Self {
+            cx: None,
+            gx,
+            modal_context: Some(mx),
+            event_data: event,
+        }
+    }
+
     /// Get the app context.
     ///
     /// # Panics

@@ -15,6 +15,7 @@ use uuid::Uuid;
 use crate::app::{App, AppConfig};
 use crate::global_context::InstanceQuery;
 use crate::keybinds::KeybindClosures;
+use crate::lifecycle::LifecycleHooks;
 use crate::wakeup::WakeupSender;
 use crate::{AppContext, GlobalContext, HandlerRegistry};
 
@@ -216,14 +217,8 @@ pub trait AnyAppInstance: Send + Sync {
     /// Install wakeup sender on all State fields and AppContext.
     fn install_wakeup(&self, sender: WakeupSender, gx: &GlobalContext);
 
-    /// Call the app's on_start lifecycle method.
-    fn on_start(&self) -> Pin<Box<dyn Future<Output = ()> + Send + '_>>;
-
-    /// Call the app's on_foreground lifecycle method.
-    fn on_foreground(&self) -> Pin<Box<dyn Future<Output = ()> + Send + '_>>;
-
-    /// Call the app's on_background lifecycle method.
-    fn on_background(&self) -> Pin<Box<dyn Future<Output = ()> + Send + '_>>;
+    /// Get lifecycle hook closures.
+    fn lifecycle_hooks(&self) -> LifecycleHooks;
 
     // Event/Request Dispatch
 
@@ -387,16 +382,8 @@ impl<A: App> AnyAppInstance for AppInstance<A> {
         }
     }
 
-    fn on_start(&self) -> Pin<Box<dyn Future<Output = ()> + Send + '_>> {
-        Box::pin(self.app.on_start())
-    }
-
-    fn on_foreground(&self) -> Pin<Box<dyn Future<Output = ()> + Send + '_>> {
-        Box::pin(self.app.on_foreground())
-    }
-
-    fn on_background(&self) -> Pin<Box<dyn Future<Output = ()> + Send + '_>> {
-        Box::pin(self.app.on_background())
+    fn lifecycle_hooks(&self) -> LifecycleHooks {
+        self.app.lifecycle_hooks()
     }
 
     fn has_event_handler(&self, event_type: TypeId) -> bool {

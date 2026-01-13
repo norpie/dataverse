@@ -7,36 +7,63 @@ use quote::quote;
 use syn::{AngleBracketedGenericArguments, GenericArgument, PathArguments, Type, parse2};
 
 use super::impl_common::{
-    HandlerContexts, HandlerInfo, KeybindScope, KeybindsMethod, PageMethod, PartialImplBlock,
-    extract_handler_info, generate_async_lifecycle_impl, generate_element_impl,
-    generate_handler_wrappers, generate_keybinds_closures_impl, generate_name_impl,
-    get_type_name, modal_metadata_mod, reconstruct_method_stripped,
+    HandlerContexts, HandlerInfo, KeybindScope, KeybindsMethod, LifecycleContext,
+    LifecycleHooksDefined, LifecycleHookInfo, PageMethod, PartialImplBlock, extract_handler_info,
+    extract_lifecycle_hook_info, generate_element_impl, generate_handler_wrappers,
+    generate_keybinds_closures_impl, generate_lifecycle_hooks_impl, generate_name_impl,
+    get_type_name, modal_metadata_mod, reconstruct_method_stripped, validate_lifecycle_hook_contexts,
 };
+
+/// Modal kind for compile-time context checking.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+enum ModalKindAttr {
+    /// App-scoped modal (default) - has access to AppContext.
+    #[default]
+    App,
+    /// System modal - only has access to GlobalContext.
+    System,
+}
 
 /// Attributes for the #[modal_impl] macro
 struct ModalImplAttrs {
     /// The result type for this modal
     result_type: Option<Type>,
+    /// The modal kind (App or System)
+    kind: ModalKindAttr,
 }
 
 impl ModalImplAttrs {
     fn parse(attr: TokenStream) -> syn::Result<Self> {
         let mut result_type = None;
+        let mut kind = ModalKindAttr::default();
 
         if !attr.is_empty() {
-            // Parse: Result = Type (where Type can include generics like Option<String>)
+            // Parse: Result = Type, kind = System/App
             let parser = syn::meta::parser(|meta| {
                 if meta.path.is_ident("Result") {
                     let _eq: syn::Token![=] = meta.input.parse()?;
                     let ty: Type = meta.input.parse()?;
                     result_type = Some(ty);
+                } else if meta.path.is_ident("kind") {
+                    let _eq: syn::Token![=] = meta.input.parse()?;
+                    let ident: syn::Ident = meta.input.parse()?;
+                    match ident.to_string().as_str() {
+                        "System" => kind = ModalKindAttr::System,
+                        "App" => kind = ModalKindAttr::App,
+                        _ => {
+                            return Err(syn::Error::new_spanned(
+                                ident,
+                                "Expected 'App' or 'System'",
+                            ))
+                        }
+                    }
                 }
                 Ok(())
             });
             syn::parse::Parser::parse2(parser, attr)?;
         }
 
-        Ok(Self { result_type })
+        Ok(Self { result_type, kind })
     }
 }
 
@@ -87,10 +114,10 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
     let mut handler_contexts: HashMap<String, HandlerContexts> = HashMap::new();
     let mut handler_infos: Vec<HandlerInfo> = Vec::new();
     let mut page_methods: Vec<PageMethod> = Vec::new();
+    let mut lifecycle_hooks = LifecycleHooksDefined::default();
     let mut has_element = false;
     let mut has_position = false;
     let mut has_size = false;
-    let mut has_on_start = false;
     let mut inferred_result_type: Option<Type> = None;
 
     // Reconstructed methods for the impl block
@@ -113,6 +140,16 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
         // Check for handler method
         if method.has_attr("handler") {
             let handler_info = extract_handler_info(&method.sig.ident, &method.sig);
+
+            // For system modals, validate that handlers don't use AppContext
+            if attrs.kind == ModalKindAttr::System && handler_info.contexts.app_context {
+                return syn::Error::new_spanned(
+                    &method.sig,
+                    "System modal handlers cannot use AppContext. System modals only have access to GlobalContext and ModalContext.",
+                )
+                .to_compile_error();
+            }
+
             handler_contexts.insert(method.sig.ident.to_string(), handler_info.contexts.clone());
             handler_infos.push(handler_info);
 
@@ -148,6 +185,40 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
             });
         }
 
+        // Check for lifecycle hook attributes
+        let lifecycle_context = match attrs.kind {
+            ModalKindAttr::App => LifecycleContext::AppModal,
+            ModalKindAttr::System => LifecycleContext::SystemModal,
+        };
+        if method.has_attr("on_start") {
+            let hook_info = extract_lifecycle_hook_info(&method.sig);
+            if let Err(e) = validate_lifecycle_hook_contexts(&hook_info, lifecycle_context, &method.sig) {
+                return e.to_compile_error();
+            }
+            lifecycle_hooks.on_start.push(hook_info);
+        }
+        if method.has_attr("on_foreground") {
+            let hook_info = extract_lifecycle_hook_info(&method.sig);
+            if let Err(e) = validate_lifecycle_hook_contexts(&hook_info, lifecycle_context, &method.sig) {
+                return e.to_compile_error();
+            }
+            lifecycle_hooks.on_foreground.push(hook_info);
+        }
+        if method.has_attr("on_background") {
+            let hook_info = extract_lifecycle_hook_info(&method.sig);
+            if let Err(e) = validate_lifecycle_hook_contexts(&hook_info, lifecycle_context, &method.sig) {
+                return e.to_compile_error();
+            }
+            lifecycle_hooks.on_background.push(hook_info);
+        }
+        if method.has_attr("on_close") {
+            let hook_info = extract_lifecycle_hook_info(&method.sig);
+            if let Err(e) = validate_lifecycle_hook_contexts(&hook_info, lifecycle_context, &method.sig) {
+                return e.to_compile_error();
+            }
+            lifecycle_hooks.on_close.push(hook_info);
+        }
+
         // Check special methods using is_named()
         if method.is_named("element") {
             has_element = true;
@@ -157,9 +228,6 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
         }
         if method.is_named("size") {
             has_size = true;
-        }
-        if method.is_named("on_start") {
-            has_on_start = true;
         }
 
         // Add to reconstructed methods (with custom attrs stripped)
@@ -234,8 +302,29 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
         }
     };
 
-    // Generate on_start method
-    let on_start_impl = generate_async_lifecycle_impl("on_start", has_on_start, &self_ty);
+    // Generate kind method
+    let kind_impl = match attrs.kind {
+        ModalKindAttr::App => quote! {
+            fn kind(&self) -> rafter::ModalKind {
+                rafter::ModalKind::App
+            }
+        },
+        ModalKindAttr::System => quote! {
+            fn kind(&self) -> rafter::ModalKind {
+                rafter::ModalKind::System
+            }
+        },
+    };
+
+    // Generate lifecycle_hooks method
+    let lifecycle_hooks_impl = generate_lifecycle_hooks_impl(
+        &lifecycle_hooks,
+        match attrs.kind {
+            ModalKindAttr::App => LifecycleContext::AppModal,
+            ModalKindAttr::System => LifecycleContext::SystemModal,
+        },
+        &self_ty,
+    );
 
     // Generate dirty methods
     let dirty_impl = quote! {
@@ -255,6 +344,15 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
     let impl_generics = &partial_impl.generics;
     let impl_attrs = &partial_impl.attrs;
 
+    // Generate SystemModal impl for system modals
+    let system_modal_impl = if attrs.kind == ModalKindAttr::System {
+        quote! {
+            impl #impl_generics rafter::SystemModal for #self_ty {}
+        }
+    } else {
+        quote! {}
+    };
+
     quote! {
         #(#impl_attrs)*
         impl #impl_generics #self_ty {
@@ -268,13 +366,16 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
             type Result = #result_type;
 
             #name_impl
+            #kind_impl
             #position_impl
             #size_impl
-            #on_start_impl
+            #lifecycle_hooks_impl
             #keybinds_impl
             #handlers_impl
             #element_impl
             #dirty_impl
         }
+
+        #system_modal_impl
     }
 }

@@ -8,11 +8,12 @@ use syn::parse2;
 
 use super::impl_common::{
     DispatchContextType, EventHandlerMethod, HandlerContexts, HandlerInfo, KeybindScope,
-    KeybindsMethod, PageMethod, PartialImplBlock, RequestHandlerMethod,
-    extract_handler_info, generate_async_lifecycle_impl, generate_event_dispatch,
-    generate_handler_wrappers, generate_keybinds_closures_impl, generate_request_dispatch,
-    get_type_name, parse_event_handler_metadata, parse_request_handler_metadata,
-    reconstruct_method, reconstruct_method_stripped, system_metadata_mod,
+    KeybindsMethod, LifecycleContext, LifecycleHooksDefined, LifecycleHookInfo, PageMethod,
+    PartialImplBlock, RequestHandlerMethod, extract_handler_info, extract_lifecycle_hook_info,
+    generate_event_dispatch, generate_handler_wrappers, generate_keybinds_closures_impl,
+    generate_lifecycle_hooks_impl, generate_request_dispatch, get_type_name,
+    parse_event_handler_metadata, parse_request_handler_metadata, reconstruct_method,
+    reconstruct_method_stripped, system_metadata_mod, validate_lifecycle_hook_contexts,
 };
 
 pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
@@ -44,8 +45,8 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
     let mut event_handlers: Vec<EventHandlerMethod> = Vec::new();
     let mut request_handlers: Vec<RequestHandlerMethod> = Vec::new();
     let mut page_methods: Vec<PageMethod> = Vec::new();
+    let mut lifecycle_hooks = LifecycleHooksDefined::default();
     let mut has_element = false;
-    let mut has_on_start = false;
     let mut has_overlay = false;
 
     // Reconstructed methods for the impl block
@@ -115,12 +116,39 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
             });
         }
 
+        // Check for lifecycle hook attributes
+        if method.has_attr("on_start") {
+            let hook_info = extract_lifecycle_hook_info(&method.sig);
+            if let Err(e) = validate_lifecycle_hook_contexts(&hook_info, LifecycleContext::System, &method.sig) {
+                return e.to_compile_error();
+            }
+            lifecycle_hooks.on_start.push(hook_info);
+        }
+        if method.has_attr("on_foreground") {
+            let hook_info = extract_lifecycle_hook_info(&method.sig);
+            if let Err(e) = validate_lifecycle_hook_contexts(&hook_info, LifecycleContext::System, &method.sig) {
+                return e.to_compile_error();
+            }
+            lifecycle_hooks.on_foreground.push(hook_info);
+        }
+        if method.has_attr("on_background") {
+            let hook_info = extract_lifecycle_hook_info(&method.sig);
+            if let Err(e) = validate_lifecycle_hook_contexts(&hook_info, LifecycleContext::System, &method.sig) {
+                return e.to_compile_error();
+            }
+            lifecycle_hooks.on_background.push(hook_info);
+        }
+        if method.has_attr("on_close") {
+            let hook_info = extract_lifecycle_hook_info(&method.sig);
+            if let Err(e) = validate_lifecycle_hook_contexts(&hook_info, LifecycleContext::System, &method.sig) {
+                return e.to_compile_error();
+            }
+            lifecycle_hooks.on_close.push(hook_info);
+        }
+
         // Check special methods using is_named()
         if method.is_named("element") {
             has_element = true;
-        }
-        if method.is_named("on_start") {
-            has_on_start = true;
         }
         if method.is_named("overlay") {
             has_overlay = true;
@@ -171,8 +199,12 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
         quote! {}
     };
 
-    // Generate on_start method
-    let on_start_impl = generate_async_lifecycle_impl("on_start", has_on_start, &self_ty);
+    // Generate lifecycle_hooks method
+    let lifecycle_hooks_impl = generate_lifecycle_hooks_impl(
+        &lifecycle_hooks,
+        LifecycleContext::System,
+        &self_ty,
+    );
 
     // Generate dirty methods and wakeup installation
     let dirty_impl = quote! {
@@ -217,7 +249,7 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
             #keybinds_impl
             #handlers_impl
             #overlay_impl
-            #on_start_impl
+            #lifecycle_hooks_impl
             #dirty_impl
             #event_dispatch_impl
             #request_dispatch_impl

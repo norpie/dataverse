@@ -140,6 +140,10 @@ const CUSTOM_ATTRS: &[&str] = &[
     "event_handler",
     "request_handler",
     "page",
+    "on_start",
+    "on_foreground",
+    "on_background",
+    "on_close",
 ];
 
 /// Strip custom attributes from a PartialMethod and return as TokenStream
@@ -831,25 +835,170 @@ pub fn generate_name_impl(type_name: &Ident) -> TokenStream {
     }
 }
 
-/// Generate an async lifecycle method implementation (on_start, on_foreground, etc.)
+/// What contexts are available for lifecycle hooks.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LifecycleContext {
+    /// App context: has cx and gx available
+    App,
+    /// System context: only gx available
+    System,
+    /// App modal context: has cx, gx, and mx available
+    AppModal,
+    /// System modal context: has gx and mx available
+    SystemModal,
+}
+
+/// Information about a single lifecycle hook method.
+#[derive(Debug, Clone)]
+pub struct LifecycleHookInfo {
+    /// The method name (can be anything, not tied to hook type)
+    pub method_name: Ident,
+    /// Which contexts the method requests (from signature inspection)
+    pub contexts: HandlerContexts,
+}
+
+/// All lifecycle hooks defined on a component.
+#[derive(Debug, Clone, Default)]
+pub struct LifecycleHooksDefined {
+    pub on_start: Vec<LifecycleHookInfo>,
+    pub on_foreground: Vec<LifecycleHookInfo>,
+    pub on_background: Vec<LifecycleHookInfo>,
+    pub on_close: Vec<LifecycleHookInfo>,
+}
+
+/// Generate a single lifecycle hook call within a closure.
 ///
-/// If `has_method` is true, generates a delegation to `Self::method_name(self)`.
-/// If false, returns empty TokenStream (uses trait default).
-pub fn generate_async_lifecycle_impl(
-    method_name: &str,
-    has_method: bool,
+/// Generates the code to call one method with its requested parameters.
+fn generate_lifecycle_hook_call(
+    hook: &LifecycleHookInfo,
     self_ty: &Type,
 ) -> TokenStream {
-    if !has_method {
+    let method_ident = &hook.method_name;
+
+    // Generate context clones and refs based on what the method requests
+    let context_clones: Vec<TokenStream> = hook
+        .contexts
+        .param_order
+        .iter()
+        .enumerate()
+        .map(|(i, param)| {
+            let ctx_name = format_ident!("__ctx{}", i);
+            match param {
+                ContextParam::App => quote! { let #ctx_name = hx.cx().clone(); },
+                ContextParam::Global => quote! { let #ctx_name = hx.gx().clone(); },
+                ContextParam::Modal => quote! { let #ctx_name = hx.mx().clone(); },
+                ContextParam::Event => quote! { let #ctx_name = hx.event().clone(); },
+            }
+        })
+        .collect();
+
+    let context_refs: Vec<TokenStream> = (0..hook.contexts.param_order.len())
+        .map(|i| {
+            let ctx_name = format_ident!("__ctx{}", i);
+            quote! { &#ctx_name }
+        })
+        .collect();
+
+    quote! {
+        {
+            let __self = __self.clone();
+            #(#context_clones)*
+            tokio::spawn(async move {
+                #self_ty::#method_ident(&__self, #(#context_refs),*).await;
+            });
+        }
+    }
+}
+
+/// Generate a closure that calls all hooks of one type.
+fn generate_lifecycle_closure_for_hooks(
+    hooks: &[LifecycleHookInfo],
+    field_name: &str,
+    self_ty: &Type,
+) -> TokenStream {
+    if hooks.is_empty() {
         return quote! {};
     }
 
-    let method_ident = format_ident!("{}", method_name);
+    let field_ident = format_ident!("{}", field_name);
+    let hook_calls: Vec<TokenStream> = hooks
+        .iter()
+        .map(|hook| generate_lifecycle_hook_call(hook, self_ty))
+        .collect();
+
     quote! {
-        fn #method_ident(&self) -> impl std::future::Future<Output = ()> + Send {
-            #self_ty::#method_ident(self)
+        {
+            let __self = self.clone();
+            hooks.#field_ident = Some(std::sync::Arc::new(move |hx: &rafter::HandlerContext| {
+                let __self = __self.clone();
+                #(#hook_calls)*
+            }));
         }
     }
+}
+
+/// Generate the lifecycle_hooks() method implementation.
+pub fn generate_lifecycle_hooks_impl(
+    hooks: &LifecycleHooksDefined,
+    _context: LifecycleContext, // Used for validation in the macro, not here
+    self_ty: &Type,
+) -> TokenStream {
+    let on_start = generate_lifecycle_closure_for_hooks(&hooks.on_start, "on_start", self_ty);
+    let on_foreground = generate_lifecycle_closure_for_hooks(&hooks.on_foreground, "on_foreground", self_ty);
+    let on_background = generate_lifecycle_closure_for_hooks(&hooks.on_background, "on_background", self_ty);
+    let on_close = generate_lifecycle_closure_for_hooks(&hooks.on_close, "on_close", self_ty);
+
+    quote! {
+        fn lifecycle_hooks(&self) -> rafter::LifecycleHooks {
+            let mut hooks = rafter::LifecycleHooks::new();
+            #on_start
+            #on_foreground
+            #on_background
+            #on_close
+            hooks
+        }
+    }
+}
+
+/// Extract lifecycle hook info from a method signature.
+///
+/// Returns the method name and which contexts it requests.
+pub fn extract_lifecycle_hook_info(sig: &Signature) -> LifecycleHookInfo {
+    LifecycleHookInfo {
+        method_name: sig.ident.clone(),
+        contexts: detect_handler_contexts_from_sig(sig),
+    }
+}
+
+/// Validate that a lifecycle hook doesn't request unavailable contexts.
+///
+/// Returns an error if the hook requests contexts that aren't available
+/// in the given lifecycle context.
+pub fn validate_lifecycle_hook_contexts(
+    hook: &LifecycleHookInfo,
+    available: LifecycleContext,
+    sig: &Signature,
+) -> Result<(), syn::Error> {
+    let has_app = matches!(available, LifecycleContext::App | LifecycleContext::AppModal);
+    let has_modal = matches!(available, LifecycleContext::AppModal | LifecycleContext::SystemModal);
+
+    // Check for AppContext when not available
+    if hook.contexts.app_context && !has_app {
+        return Err(syn::Error::new_spanned(
+            sig,
+            "This lifecycle hook cannot use AppContext. Only GlobalContext is available in this context.",
+        ));
+    }
+
+    // Check for ModalContext when not available
+    if hook.contexts.modal_context && !has_modal {
+        return Err(syn::Error::new_spanned(
+            sig,
+            "This lifecycle hook cannot use ModalContext. ModalContext is only available in modal lifecycle hooks.",
+        ));
+    }
+
+    Ok(())
 }
 
 /// Generate config trait method implementation using metadata module

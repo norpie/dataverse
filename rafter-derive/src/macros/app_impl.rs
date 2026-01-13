@@ -8,12 +8,13 @@ use syn::{Attribute, parse2};
 
 use super::impl_common::{
     DispatchContextType, EventHandlerMethod, HandlerContexts, HandlerInfo, KeybindScope,
-    KeybindsMethod, PageMethod, PartialImplBlock, RequestHandlerMethod, app_metadata_mod,
-    detect_handler_contexts_from_sig, extract_handler_info, generate_async_lifecycle_impl,
-    generate_config_impl, generate_element_impl, generate_event_dispatch,
-    generate_handler_wrappers, generate_keybinds_closures_impl, generate_request_dispatch,
-    get_type_name, parse_event_handler_metadata, parse_request_handler_metadata,
-    reconstruct_method, reconstruct_method_stripped,
+    KeybindsMethod, LifecycleContext, LifecycleHooksDefined, LifecycleHookInfo, PageMethod,
+    PartialImplBlock, RequestHandlerMethod, app_metadata_mod, extract_handler_info,
+    extract_lifecycle_hook_info, generate_config_impl, generate_element_impl,
+    generate_event_dispatch, generate_handler_wrappers, generate_keybinds_closures_impl,
+    generate_lifecycle_hooks_impl, generate_request_dispatch, get_type_name,
+    parse_event_handler_metadata, parse_request_handler_metadata, reconstruct_method,
+    reconstruct_method_stripped, validate_lifecycle_hook_contexts,
 };
 
 /// Parse keybinds scope from attributes
@@ -72,12 +73,9 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
     let mut event_handlers: Vec<EventHandlerMethod> = Vec::new();
     let mut request_handlers: Vec<RequestHandlerMethod> = Vec::new();
     let mut page_methods: Vec<PageMethod> = Vec::new();
+    let mut lifecycle_hooks = LifecycleHooksDefined::default();
     let mut has_element = false;
     let mut has_title = false;
-    let mut has_on_start = false;
-    let mut has_on_foreground = false;
-    let mut has_on_background = false;
-    let mut has_on_close = false;
     let mut has_current_page = false;
 
     // Reconstructed methods for the impl block
@@ -154,24 +152,42 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
             });
         }
 
-        // Check lifecycle methods using is_named()
+        // Check for lifecycle hook attributes
+        if method.has_attr("on_start") {
+            let hook_info = extract_lifecycle_hook_info(&method.sig);
+            if let Err(e) = validate_lifecycle_hook_contexts(&hook_info, LifecycleContext::App, &method.sig) {
+                return e.to_compile_error();
+            }
+            lifecycle_hooks.on_start.push(hook_info);
+        }
+        if method.has_attr("on_foreground") {
+            let hook_info = extract_lifecycle_hook_info(&method.sig);
+            if let Err(e) = validate_lifecycle_hook_contexts(&hook_info, LifecycleContext::App, &method.sig) {
+                return e.to_compile_error();
+            }
+            lifecycle_hooks.on_foreground.push(hook_info);
+        }
+        if method.has_attr("on_background") {
+            let hook_info = extract_lifecycle_hook_info(&method.sig);
+            if let Err(e) = validate_lifecycle_hook_contexts(&hook_info, LifecycleContext::App, &method.sig) {
+                return e.to_compile_error();
+            }
+            lifecycle_hooks.on_background.push(hook_info);
+        }
+        if method.has_attr("on_close") {
+            let hook_info = extract_lifecycle_hook_info(&method.sig);
+            if let Err(e) = validate_lifecycle_hook_contexts(&hook_info, LifecycleContext::App, &method.sig) {
+                return e.to_compile_error();
+            }
+            lifecycle_hooks.on_close.push(hook_info);
+        }
+
+        // Check special methods using is_named()
         if method.is_named("element") {
             has_element = true;
         }
         if method.is_named("title") {
             has_title = true;
-        }
-        if method.is_named("on_start") {
-            has_on_start = true;
-        }
-        if method.is_named("on_foreground") {
-            has_on_foreground = true;
-        }
-        if method.is_named("on_background") {
-            has_on_background = true;
-        }
-        if method.is_named("on_close") {
-            has_on_close = true;
         }
         if method.is_named("current_page") {
             has_current_page = true;
@@ -221,11 +237,12 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
         }
     };
 
-    // Generate lifecycle methods
-    let on_start_impl = generate_async_lifecycle_impl("on_start", has_on_start, &self_ty);
-    let on_foreground_impl = generate_async_lifecycle_impl("on_foreground", has_on_foreground, &self_ty);
-    let on_background_impl = generate_async_lifecycle_impl("on_background", has_on_background, &self_ty);
-    let on_close_impl = generate_async_lifecycle_impl("on_close", has_on_close, &self_ty);
+    // Generate lifecycle_hooks method
+    let lifecycle_hooks_impl = generate_lifecycle_hooks_impl(
+        &lifecycle_hooks,
+        LifecycleContext::App,
+        &self_ty,
+    );
 
     let current_page_impl = if has_current_page {
         quote! {
@@ -286,10 +303,7 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
             #handlers_impl
             #element_impl
             #current_page_impl
-            #on_start_impl
-            #on_foreground_impl
-            #on_background_impl
-            #on_close_impl
+            #lifecycle_hooks_impl
             #dirty_impl
             #panic_impl
             #event_dispatch_impl

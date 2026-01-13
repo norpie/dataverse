@@ -3,14 +3,13 @@
 //! Modals are overlay views that capture input until closed.
 //! They return a result to the caller.
 
-use std::future::Future;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 
 use tokio::sync::oneshot;
 use tuidom::Element;
 
-use crate::{HandlerRegistry, KeybindClosures};
+use crate::{HandlerRegistry, KeybindClosures, LifecycleHooks};
 
 /// Modal position configuration.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
@@ -39,6 +38,29 @@ pub enum ModalSize {
     /// Proportional to screen size (0.0 - 1.0).
     Proportional { width: f32, height: f32 },
 }
+
+/// Modal kind - determines what context is available.
+///
+/// App modals are spawned from within an app and have access to `AppContext`.
+/// System modals are spawned globally and only have access to `GlobalContext`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ModalKind {
+    /// App-scoped modal with access to `cx`, `gx`, and `mx`.
+    #[default]
+    App,
+    /// System/global modal with access to `gx` and `mx` only.
+    System,
+}
+
+/// Marker trait for system modals.
+///
+/// System modals only have access to `GlobalContext` and `ModalContext`,
+/// not `AppContext`. Implement this trait (or use `#[modal(kind = System)]`)
+/// to indicate a modal is a system modal.
+///
+/// The macro will enforce at compile time that system modal handlers
+/// don't try to use `AppContext`.
+pub trait SystemModal: Modal {}
 
 /// Context passed to modal handlers.
 ///
@@ -100,6 +122,14 @@ pub trait Modal: Clone + Send + Sync + 'static {
         std::any::type_name::<Self>()
     }
 
+    /// Get the modal's kind (App or System).
+    ///
+    /// App modals have access to `AppContext`, `GlobalContext`, and `ModalContext`.
+    /// System modals only have access to `GlobalContext` and `ModalContext`.
+    fn kind(&self) -> ModalKind {
+        ModalKind::default()
+    }
+
     /// Get the modal's position.
     fn position(&self) -> ModalPosition {
         ModalPosition::default()
@@ -113,9 +143,11 @@ pub trait Modal: Clone + Send + Sync + 'static {
     /// Render the modal's content.
     fn element(&self) -> Element;
 
-    /// Called once when the modal starts.
-    fn on_start(&self) -> impl Future<Output = ()> + Send {
-        async {}
+    /// Get lifecycle hook closures.
+    ///
+    /// Override via `#[on_start]` attribute in `#[modal_impl]`.
+    fn lifecycle_hooks(&self) -> LifecycleHooks {
+        LifecycleHooks::new()
     }
 
     /// Get the modal's keybinds (closure-based).

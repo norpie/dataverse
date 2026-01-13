@@ -9,7 +9,7 @@ use std::pin::Pin;
 
 use tuidom::Element;
 
-use crate::{GlobalContext, HandlerRegistry, KeybindClosures, WakeupSender};
+use crate::{GlobalContext, HandlerRegistry, KeybindClosures, LifecycleHooks, WakeupSender};
 
 /// Position configuration for a system overlay.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -109,9 +109,11 @@ pub trait System: Clone + Send + Sync + 'static {
         None
     }
 
-    /// Called once when the system starts.
-    fn on_start(&self) -> impl Future<Output = ()> + Send {
-        async {}
+    /// Get lifecycle hook closures.
+    ///
+    /// Override via `#[on_start]` attribute in `#[system_impl]`.
+    fn lifecycle_hooks(&self) -> LifecycleHooks {
+        LifecycleHooks::new()
     }
 
     // =========================================================================

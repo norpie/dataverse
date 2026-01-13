@@ -8,8 +8,6 @@
 //! 5. Focused widget (for key events)
 //! 6. Target widget (for mouse events)
 
-use std::future::Future;
-use std::pin::Pin;
 use std::sync::{Arc, RwLock};
 
 use tuidom::{Event, Key, LayoutResult, Modifiers};
@@ -18,7 +16,7 @@ use crate::handler_context::{call_handler, call_handler_for_app, EventData, Hand
 use crate::instance::{AnyAppInstance, InstanceRegistry};
 use crate::modal::ModalEntry;
 use crate::registration::AnySystem;
-use crate::{AppContext, GlobalContext, Handler, HandlerContext, Modal, WidgetResult};
+use crate::{AppContext, GlobalContext, Handler, HandlerContext, LifecycleHooks, Modal, WidgetResult};
 
 /// Helper to call a handler and convert panic to DispatchResult.
 fn call_and_check(handler: &Handler, hx: &HandlerContext) -> Option<DispatchResult> {
@@ -771,8 +769,10 @@ fn dispatch_widget_result(
 pub trait AnyModal: Send + Sync {
     /// Check if the modal is closed.
     fn is_closed(&self) -> bool;
-    /// Called once when the modal starts.
-    fn on_start(&self) -> Pin<Box<dyn Future<Output = ()> + Send + '_>>;
+    /// Get the modal's kind (App or System).
+    fn kind(&self) -> crate::ModalKind;
+    /// Get lifecycle hook closures.
+    fn lifecycle_hooks(&self) -> LifecycleHooks;
     /// Get the modal's keybinds (closure-based).
     fn keybinds(&self) -> crate::KeybindClosures;
     /// Get the handler registry for widget events.
@@ -792,8 +792,12 @@ impl<M: Modal> AnyModal for ModalEntry<M> {
         ModalEntry::is_closed(self)
     }
 
-    fn on_start(&self) -> Pin<Box<dyn Future<Output = ()> + Send + '_>> {
-        Box::pin(Modal::on_start(&self.modal))
+    fn kind(&self) -> crate::ModalKind {
+        self.modal.kind()
+    }
+
+    fn lifecycle_hooks(&self) -> LifecycleHooks {
+        self.modal.lifecycle_hooks()
     }
 
     fn keybinds(&self) -> crate::KeybindClosures {

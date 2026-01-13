@@ -13,7 +13,7 @@ use std::sync::OnceLock;
 
 use tuidom::Element;
 
-use crate::{AppContext, GlobalContext, HandlerRegistry, KeybindClosures, WakeupSender};
+use crate::{AppContext, GlobalContext, HandlerRegistry, KeybindClosures, LifecycleHooks, WakeupSender};
 
 /// App configuration.
 #[derive(Debug, Clone)]
@@ -109,29 +109,17 @@ pub trait App: Clone + Send + Sync + 'static {
     // Lifecycle
     // =========================================================================
 
-    /// Called when the app starts.
-    fn on_start(&self) -> impl Future<Output = ()> + Send {
-        async {}
-    }
-
-    /// Called when the instance gains focus.
-    fn on_foreground(&self) -> impl Future<Output = ()> + Send {
-        async {}
-    }
-
-    /// Called when the instance loses focus.
-    fn on_background(&self) -> impl Future<Output = ()> + Send {
-        async {}
+    /// Get lifecycle hook closures.
+    ///
+    /// Override via `#[on_start]`, `#[on_foreground]`, `#[on_background]`,
+    /// `#[on_close]` attributes in `#[app_impl]`.
+    fn lifecycle_hooks(&self) -> LifecycleHooks {
+        LifecycleHooks::new()
     }
 
     /// Called before close. Return false to cancel.
     fn on_close_request(&self) -> bool {
         true
-    }
-
-    /// Called during cleanup after close is confirmed.
-    fn on_close(&self) -> impl Future<Output = ()> + Send {
-        async {}
     }
 
     // =========================================================================
