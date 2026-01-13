@@ -1,9 +1,9 @@
+//! Launcher modal for app selection.
+
 use rafter::page;
 use rafter::prelude::*;
 use rafter::widgets::{SelectionMode, Text, Tree, TreeItem, TreeNode, TreeState};
 use tuidom::Element;
-
-use crate::TestApp;
 
 /// A launcher entry (category or app).
 #[derive(Clone, Debug)]
@@ -82,7 +82,7 @@ fn create_launcher_tree() -> Vec<TreeNode<LauncherEntry>> {
 }
 
 #[modal(size = Lg)]
-struct LauncherModal {
+pub struct LauncherModal {
     entries: TreeState<LauncherEntry>,
 }
 
@@ -140,33 +140,6 @@ impl LauncherModal {
                         text (content: "enter") style (fg: primary)
                         text (content: "select") style (fg: muted)
                     }
-                }
-            }
-        }
-    }
-}
-
-#[system]
-pub struct Launcher;
-
-#[system_impl]
-impl Launcher {
-    #[keybinds]
-    fn keys() {
-        bind("ctrl+p", open_launcher);
-    }
-
-    #[handler]
-    async fn open_launcher(&self, gx: &GlobalContext) {
-        let result = gx.modal(LauncherModal::default()).await;
-
-        if let Some(selected) = result {
-            match selected.as_str() {
-                "test" => {
-                    let _ = gx.spawn_and_focus(TestApp::default());
-                }
-                _ => {
-                    gx.toast(Toast::info(format!("App not implemented: {}", selected)));
                 }
             }
         }

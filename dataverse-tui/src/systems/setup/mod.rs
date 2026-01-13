@@ -1,9 +1,11 @@
 //! Setup system for initial account configuration.
 
+mod modal;
+
 use rafter::prelude::*;
 
 use crate::client_manager::ClientManager;
-use crate::modals::SetupModal;
+use modal::SetupModal;
 
 /// System that triggers initial setup when no accounts exist.
 #[system]
