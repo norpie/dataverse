@@ -168,6 +168,32 @@ impl PasswordFlow {
         }
     }
 
+    /// Creates a password flow configured only for token refresh.
+    ///
+    /// Use this when you have a refresh token and only need to refresh it,
+    /// without needing to perform initial authentication.
+    ///
+    /// # Arguments
+    ///
+    /// * `client_id` - The Azure AD application (client) ID
+    /// * `client_secret` - The Azure AD application client secret
+    pub fn for_refresh(
+        client_id: impl Into<String>,
+        client_secret: impl Into<String>,
+    ) -> Self { // FIXME: needs implicit null username/password, better way?
+        Self {
+            inner: PasswordFlowInner {
+                client_id: client_id.into(),
+                client_secret: Some(client_secret.into()),
+                tenant: None, // "common"
+                username: String::new(),
+                password: String::new(),
+                use_v2: false,
+                http_client: reqwest::Client::new(),
+            },
+        }
+    }
+
     /// Authenticates using username and password credentials.
     ///
     /// # Arguments
@@ -244,6 +270,32 @@ impl PublicClientPasswordFlow {
                 tenant: Some(tenant_id.into()),
                 username: username.into(),
                 password: password.into(),
+                use_v2: true,
+                http_client: reqwest::Client::new(),
+            },
+        }
+    }
+
+    /// Creates a public client password flow configured only for token refresh.
+    ///
+    /// Use this when you have a refresh token and only need to refresh it,
+    /// without needing to perform initial authentication.
+    ///
+    /// # Arguments
+    ///
+    /// * `client_id` - The Azure AD application (client) ID
+    /// * `tenant_id` - The Azure AD tenant ID or domain
+    pub fn for_refresh(
+        client_id: impl Into<String>,
+        tenant_id: impl Into<String>,
+    ) -> Self {// FIXME: needs implicit null username/password, better way?
+        Self {
+            inner: PasswordFlowInner {
+                client_id: client_id.into(),
+                client_secret: None,
+                tenant: Some(tenant_id.into()),
+                username: String::new(),
+                password: String::new(),
                 use_v2: true,
                 http_client: reqwest::Client::new(),
             },
