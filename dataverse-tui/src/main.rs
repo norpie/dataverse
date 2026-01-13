@@ -1,3 +1,4 @@
+mod client_manager;
 mod credentials;
 mod modals;
 mod paths;
