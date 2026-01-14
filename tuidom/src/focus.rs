@@ -6,6 +6,99 @@ use crate::hit::hit_test_focusable;
 use crate::layout::{LayoutResult, Rect};
 use crate::scroll::{find_scrollable_ancestor, find_scrollable_ancestor_with_type};
 
+/// Find the active interaction scope.
+/// - If current focus is inside a scope, returns the innermost scope containing it
+/// - If no focus, returns the topmost (last in tree order) scope
+/// - If no scopes exist, returns None (global scope)
+fn find_active_scope(root: &Element, focused: Option<&str>) -> Option<String> {
+    if let Some(focused_id) = focused {
+        // Find the innermost scope containing the focused element
+        find_scope_containing(root, focused_id)
+    } else {
+        // No focus - find the topmost (last in tree order) scope
+        find_topmost_scope(root)
+    }
+}
+
+/// Find the innermost interaction_scope element that contains the given element ID.
+fn find_scope_containing(root: &Element, element_id: &str) -> Option<String> {
+    fn find_recursive(
+        element: &Element,
+        target_id: &str,
+        current_scope: Option<&str>,
+    ) -> Option<String> {
+        // Update current scope if this element is an interaction_scope
+        let scope = if element.interaction_scope {
+            Some(element.id.as_str())
+        } else {
+            current_scope
+        };
+
+        // Check if this is the target element
+        if element.id == target_id {
+            return scope.map(String::from);
+        }
+
+        // Search children
+        if let Content::Children(children) = &element.content {
+            for child in children {
+                if let Some(found) = find_recursive(child, target_id, scope) {
+                    return Some(found);
+                }
+            }
+        }
+
+        None
+    }
+
+    find_recursive(root, element_id, None)
+}
+
+/// Find the topmost (last in tree order) interaction_scope element.
+fn find_topmost_scope(root: &Element) -> Option<String> {
+    fn find_recursive(element: &Element, last_scope: &mut Option<String>) {
+        if element.interaction_scope {
+            *last_scope = Some(element.id.clone());
+        }
+
+        if let Content::Children(children) = &element.content {
+            for child in children {
+                find_recursive(child, last_scope);
+            }
+        }
+    }
+
+    let mut last_scope = None;
+    find_recursive(root, &mut last_scope);
+    last_scope
+}
+
+/// Check if an element is within (a descendant of) the given scope.
+fn is_in_scope(root: &Element, element_id: &str, scope_id: &str) -> bool {
+    fn find_in_scope(element: &Element, target_id: &str, scope_id: &str, in_scope: bool) -> bool {
+        // Check if we've entered the scope
+        let now_in_scope = in_scope || element.id == scope_id;
+
+        // If we found the target, return whether we're in scope
+        if element.id == target_id {
+            return now_in_scope;
+        }
+
+        // Search children
+        if let Content::Children(children) = &element.content {
+            for child in children {
+                if find_in_scope(child, target_id, scope_id, now_in_scope) {
+                    return true;
+                }
+            }
+        }
+
+        false
+    }
+
+    find_in_scope(root, element_id, scope_id, false)
+}
+
 /// Tracks which element is currently focused and processes events.
 #[derive(Debug, Default)]
 pub struct FocusState {
@@ -45,8 +138,10 @@ impl FocusState {
 
     /// Focus the next focusable element (Tab navigation).
     /// Returns the newly focused element ID if focus changed.
+    /// Respects interaction scopes - navigation is constrained to the active scope.
     pub fn focus_next(&mut self, root: &Element) -> Option<String> {
-        let focusable = collect_focusable(root);
+        let active_scope = find_active_scope(root, self.focused.as_deref());
+        let focusable = collect_focusable(root, active_scope.as_deref());
         if focusable.is_empty() {
             return None;
         }
@@ -72,8 +167,10 @@ impl FocusState {
 
     /// Focus the previous focusable element (Shift+Tab navigation).
     /// Returns the newly focused element ID if focus changed.
+    /// Respects interaction scopes - navigation is constrained to the active scope.
     pub fn focus_prev(&mut self, root: &Element) -> Option<String> {
-        let focusable = collect_focusable(root);
+        let active_scope = find_active_scope(root, self.focused.as_deref());
+        let focusable = collect_focusable(root, active_scope.as_deref());
         if focusable.is_empty() {
             return None;
         }
@@ -103,6 +200,7 @@ impl FocusState {
     /// Higher z-index elements are prioritized (e.g., dropdown overlays).
     /// Elements within the same scrollable container are preferred to avoid
     /// jumping to frozen/fixed elements that may be visually closer.
+    /// Respects interaction scopes - navigation is constrained to the active scope.
     pub fn focus_direction(
         &mut self,
         direction: NavDirection,
@@ -113,7 +211,8 @@ impl FocusState {
         // Use absolute screen position for cross-container navigation
         let current_rect = get_absolute_rect(current_id, layout, root)?;
 
-        let focusable = collect_focusable_with_z(root);
+        let active_scope = find_active_scope(root, self.focused.as_deref());
+        let focusable = collect_focusable_with_z(root, active_scope.as_deref());
 
         // Find scrollable ancestor of current element (if any)
         let current_scrollable = find_scrollable_ancestor(root, current_id);
@@ -353,8 +452,15 @@ impl FocusState {
                                 x, y, focusable_target, self.focused
                             );
                             if let Some(focusable_target) = focusable_target {
-                                // Only change focus if different
-                                if self.focused.as_ref() != Some(&focusable_target) {
+                                // Respect interaction scope - only focus elements within active scope
+                                let active_scope = find_active_scope(root, self.focused.as_deref());
+                                let in_scope = match &active_scope {
+                                    Some(scope_id) => is_in_scope(root, &focusable_target, scope_id),
+                                    None => true, // No active scope, all elements eligible
+                                };
+
+                                // Only change focus if different AND target is in scope
+                                if in_scope && self.focused.as_ref() != Some(&focusable_target) {
                                     log::debug!("[focus] Changing focus from {:?} to {}", self.focused, focusable_target);
                                     if let Some(old) = self.focused.take() {
                                         events.push(Event::Blur { target: old, new_target: Some(focusable_target.clone()) });
@@ -455,32 +561,53 @@ impl FocusState {
 }
 
 /// Collect all focusable element IDs in tree order.
-pub fn collect_focusable(element: &Element) -> Vec<String> {
+/// If `active_scope` is Some, only collects from within that scope.
+pub fn collect_focusable(element: &Element, active_scope: Option<&str>) -> Vec<String> {
     let mut result = Vec::new();
-    collect_focusable_recursive(element, &mut result);
+    let in_scope = active_scope.is_none(); // Start in scope if no scope specified
+    collect_focusable_recursive(element, active_scope, in_scope, &mut result);
     result
 }
 
-fn collect_focusable_recursive(element: &Element, result: &mut Vec<String>) {
-    if element.focusable {
+fn collect_focusable_recursive(
+    element: &Element,
+    active_scope: Option<&str>,
+    in_scope: bool,
+    result: &mut Vec<String>,
+) {
+    // Check if we've entered the active scope
+    let now_in_scope = in_scope || active_scope.map_or(false, |s| element.id == s);
+
+    if element.focusable && now_in_scope {
         result.push(element.id.clone());
     }
     if let Content::Children(children) = &element.content {
         for child in children {
-            collect_focusable_recursive(child, result);
+            collect_focusable_recursive(child, active_scope, now_in_scope, result);
         }
     }
 }
 
 /// Collect all focusable elements with their effective z-index.
 /// Used for keyboard navigation to prioritize higher z-index elements (overlays).
-fn collect_focusable_with_z(element: &Element) -> Vec<(String, i16)> {
+/// If `active_scope` is Some, only collects from within that scope.
+fn collect_focusable_with_z(element: &Element, active_scope: Option<&str>) -> Vec<(String, i16)> {
     let mut result = Vec::new();
-    collect_focusable_with_z_recursive(element, 0, &mut result);
+    let in_scope = active_scope.is_none(); // Start in scope if no scope specified
+    collect_focusable_with_z_recursive(element, 0, active_scope, in_scope, &mut result);
     result
 }
 
-fn collect_focusable_with_z_recursive(element: &Element, inherited_z: i16, result: &mut Vec<(String, i16)>) {
+fn collect_focusable_with_z_recursive(
+    element: &Element,
+    inherited_z: i16,
+    active_scope: Option<&str>,
+    in_scope: bool,
+    result: &mut Vec<(String, i16)>,
+) {
+    // Check if we've entered the active scope
+    let now_in_scope = in_scope || active_scope.map_or(false, |s| element.id == s);
+
     // Effective z-index: use element's z_index if set, otherwise inherit
     let effective_z = if element.z_index != 0 {
         element.z_index
@@ -488,12 +615,12 @@ fn collect_focusable_with_z_recursive(element: &Element, inherited_z: i16, resul
         inherited_z
     };
 
-    if element.focusable {
+    if element.focusable && now_in_scope {
         result.push((element.id.clone(), effective_z));
     }
     if let Content::Children(children) = &element.content {
         for child in children {
-            collect_focusable_with_z_recursive(child, effective_z, result);
+            collect_focusable_with_z_recursive(child, effective_z, active_scope, now_in_scope, result);
         }
     }
 }
