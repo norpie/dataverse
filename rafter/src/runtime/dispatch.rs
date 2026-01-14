@@ -687,6 +687,21 @@ impl<'a> EventDispatcher<'a> {
                     return Some(DispatchResult::HandledByWidget(WidgetResult::Submitted));
                 }
             }
+
+            // ScopeClick events: click on interaction_scope backdrop
+            Event::ScopeClick { target, x, y } => {
+                if let Some(handler) = handlers.get(target, "on_scope_click") {
+                    let hx_with_event = HandlerContext::for_app_with_event(
+                        &cx,
+                        self.gx,
+                        EventData::Click { x: *x, y: *y },
+                    );
+                    if let Some(panic_result) = call_app_and_check(&handler, &hx_with_event, instance.config().name, instance.id()) {
+                        return Some(panic_result);
+                    }
+                    return Some(DispatchResult::HandledByWidget(WidgetResult::Handled));
+                }
+            }
         }
 
         None

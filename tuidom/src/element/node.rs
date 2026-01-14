@@ -93,6 +93,13 @@ pub struct Element {
     pub style_focused: Option<Style>,
     pub style_disabled: Option<Style>,
 
+    // Interaction scoping
+    /// When true, this element creates an interaction scope.
+    /// - Focus navigation (Tab, arrows, mouse hover) is constrained to descendants
+    /// - Clicks outside descendants are captured (don't fall through)
+    /// - Creates a stacking context for z-index ordering
+    pub interaction_scope: bool,
+
     // Custom data storage (for handler IDs, etc.)
     pub data: HashMap<String, String>,
 }
@@ -142,6 +149,7 @@ impl Default for Element {
             disabled: false,
             style_focused: None,
             style_disabled: None,
+            interaction_scope: false,
             data: HashMap::new(),
         }
     }
@@ -418,6 +426,17 @@ impl Element {
 
     pub fn captures_input(mut self, captures: bool) -> Self {
         self.captures_input = captures;
+        self
+    }
+
+    /// Set whether this element creates an interaction scope.
+    ///
+    /// When true:
+    /// - Focus navigation is constrained to descendants
+    /// - Clicks outside descendants are captured
+    /// - Creates a stacking context for z-index ordering
+    pub fn interaction_scope(mut self, scope: bool) -> Self {
+        self.interaction_scope = scope;
         self
     }
 

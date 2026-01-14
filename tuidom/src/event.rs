@@ -76,6 +76,14 @@ pub enum Event {
     Change { target: String, text: String },
     /// Text input submitted (Enter pressed)
     Submit { target: String },
+    /// Click on an interaction_scope's backdrop area (not on a clickable descendant).
+    /// Emitted when a click lands within an interaction_scope but not on any clickable element.
+    ScopeClick {
+        /// The interaction_scope element that received the backdrop click
+        target: String,
+        x: u16,
+        y: u16,
+    },
 }
 
 /// Simplified key representation
