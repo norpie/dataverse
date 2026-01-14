@@ -42,6 +42,9 @@ impl<'a> OklchCache<'a> {
 /// A render item contains an element with its z_index, tree order, and clip rect.
 struct RenderItem<'a> {
     element: &'a Element,
+    /// Stacking context order - elements in higher scope_order render on top
+    /// regardless of z_index. Incremented each time an interaction_scope is entered.
+    scope_order: usize,
     z_index: i16,
     tree_order: usize,
     clip: Option<Rect>,
@@ -78,6 +81,7 @@ pub fn render_to_buffer(
 
     // Collect all elements with their effective z_index, tree order, and clip rects
     let mut render_list: Vec<RenderItem> = Vec::new();
+    let mut next_scope_order = 0usize;
     collect_elements(
         element,
         layout,
@@ -88,11 +92,14 @@ pub fn render_to_buffer(
         (0, 0), // Initial layout offset
         (0, 0), // Initial inherited scroll
         animation,
+        0,      // Initial scope_order (root stacking context)
+        &mut next_scope_order,
     );
     let t1 = Instant::now();
 
-    // Sort by z_index (stable sort preserves tree order for equal z_index)
-    render_list.sort_by_key(|item| (item.z_index, item.tree_order));
+    // Sort by scope_order first (stacking contexts), then z_index, then tree_order
+    // This ensures elements in later stacking contexts always render on top
+    render_list.sort_by_key(|item| (item.scope_order, item.z_index, item.tree_order));
     let t2 = Instant::now();
 
     // Track per-operation timing
@@ -137,6 +144,7 @@ pub fn render_to_buffer(
 /// Collect all elements in tree order with their effective z_index and clip rects.
 /// Children inherit their parent's z_index as a minimum (they render in the same layer or higher).
 /// Clip rects are computed based on ancestors with overflow != Visible.
+/// Stacking contexts: elements with interaction_scope=true start a new stacking context.
 fn collect_elements<'a>(
     element: &'a Element,
     layout: &LayoutResult,
@@ -147,9 +155,21 @@ fn collect_elements<'a>(
     parent_layout_offset: (i16, i16),
     parent_inherited_scroll: (u16, u16),
     animation: &AnimationState,
+    parent_scope_order: usize,
+    next_scope_order: &mut usize,
 ) -> usize {
     let mut order = tree_order;
+
+    // Check if this element creates a new stacking context
+    let scope_order = if element.interaction_scope {
+        *next_scope_order += 1;
+        *next_scope_order
+    } else {
+        parent_scope_order
+    };
+
     // Effective z_index: use element's z_index if explicitly higher, otherwise inherit parent's
+    // Within a stacking context, z_index is local (but we still inherit for children without explicit z)
     let effective_z = element.z_index.max(parent_z_index);
 
     // Calculate this element's position animation offset (if any)
@@ -233,6 +253,7 @@ fn collect_elements<'a>(
 
     list.push(RenderItem {
         element,
+        scope_order,
         z_index: effective_z,
         tree_order: order,
         clip: parent_clip, // This element is clipped by parent's clip
@@ -267,6 +288,8 @@ fn collect_elements<'a>(
                     cumulative_offset,
                     child_scroll,
                     animation,
+                    scope_order,
+                    next_scope_order,
                 );
             }
         }
@@ -286,6 +309,8 @@ fn collect_elements<'a>(
                         cumulative_offset,
                         child_scroll,
                         animation,
+                        scope_order,
+                        next_scope_order,
                     );
                 }
             }
