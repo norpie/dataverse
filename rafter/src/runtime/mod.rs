@@ -815,6 +815,7 @@ impl Runtime {
     }
 
     /// Build a modal wrapper element with proper size and position.
+    /// Uses interaction_scope for focus/click scoping and stacking context.
     fn build_modal_wrapper(id: &str, modal: &dyn AnyModal) -> Element {
         use tuidom::{Align, Backdrop, Justify, Position, Size};
 
@@ -839,6 +840,7 @@ impl Runtime {
         let modal_content = modal.element().width(width).height(height);
 
         // Build wrapper based on position
+        // interaction_scope creates stacking context (replaces z_index) and scopes focus/clicks
         match modal_position {
             crate::ModalPosition::Centered => {
                 Element::col()
@@ -848,10 +850,10 @@ impl Runtime {
                     .top(0)
                     .width(Size::Fill)
                     .height(Size::Fill)
-                    .z_index(1000)
                     .backdrop(Backdrop::Dim(0.5))
                     .justify(Justify::Center)
                     .align(Align::Center)
+                    .interaction_scope(true)
                     .child(modal_content)
             }
             crate::ModalPosition::At { x, y } => {
@@ -864,8 +866,8 @@ impl Runtime {
                     .top(0)
                     .width(Size::Fill)
                     .height(Size::Fill)
-                    .z_index(1000)
                     .backdrop(Backdrop::Dim(0.5))
+                    .interaction_scope(true)
                     .child(
                         modal_content
                             .position(Position::Absolute)
