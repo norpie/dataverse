@@ -1,16 +1,14 @@
 //! Setup modal for initial account configuration.
 
-use dataverse_lib::auth::{AccessToken, BrowserFlow};
-use dataverse_lib::error::AuthError;
+use dataverse_lib::auth::AccessToken;
 use rafter::page;
 use rafter::prelude::*;
 use rafter::widgets::{Button, Input, Text};
-use tokio_util::sync::CancellationToken;
 use url::Url;
 
 use crate::client_manager::ClientManager;
 use crate::credentials::{Account, AuthType, CachedTokens, CredentialsProvider};
-use crate::widgets::Spinner;
+use crate::modals::BrowserAuthModal;
 
 /// Wizard step for the setup modal.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -18,17 +16,15 @@ enum SetupStep {
     #[default]
     Environment,
     Account,
-    Authenticating,
     Error,
 }
 
 /// Setup modal for initial account configuration.
 ///
-/// A 4-step wizard:
+/// A 3-step wizard:
 /// 1. Environment - URL and display name
 /// 2. Account - Client ID, Tenant ID, account display name
-/// 3. Authenticating - Waiting for browser auth
-/// 4. Error - Only shown on failure
+/// 3. Error - Only shown on failure (auth via BrowserAuthModal)
 ///
 /// On success, toasts and closes with `Some(())`.
 #[modal]
@@ -45,10 +41,6 @@ pub struct SetupModal {
     client_id: String,
     tenant_id: String,
     account_display_name: String,
-
-    // Step 3: Auth
-    auth_url: String,
-    cancel_token: Option<CancellationToken>,
 }
 
 #[modal_impl(kind = System)]
@@ -95,15 +87,9 @@ impl SetupModal {
 
     #[handler]
     async fn cancel(&self, mx: &ModalContext<Option<()>>) {
-        // Cancel any pending auth
-        if let Some(token) = self.cancel_token.get() {
-            token.cancel();
-        }
-
         match self.step.get() {
             SetupStep::Environment => mx.close(None),
             SetupStep::Account => self.step.set(SetupStep::Environment),
-            SetupStep::Authenticating => self.step.set(SetupStep::Account),
             SetupStep::Error => self.step.set(SetupStep::Account),
         }
     }
@@ -124,63 +110,35 @@ impl SetupModal {
             return;
         }
 
-        // Start authentication flow
-        self.start_auth(gx, mx).await;
+        // Open browser auth modal
+        let token = gx
+            .modal(BrowserAuthModal::new(
+                self.env_url.get(),
+                self.client_id.get(),
+                self.tenant_id.get(),
+            ))
+            .await;
+
+        match token {
+            Some(access_token) => {
+                self.on_auth_success(access_token, gx, mx).await;
+            }
+            None => {
+                // User cancelled or error in BrowserAuthModal - stay on account step
+            }
+        }
     }
 
     #[handler]
     async fn retry(&self, gx: &GlobalContext, mx: &ModalContext<Option<()>>) {
         self.error.set(None);
-        self.start_auth(gx, mx).await;
+        self.step.set(SetupStep::Account);
+        self.next_step2(gx, mx).await;
     }
 
     // =========================================================================
-    // Authentication
+    // Authentication Success
     // =========================================================================
-
-    async fn start_auth(&self, gx: &GlobalContext, mx: &ModalContext<Option<()>>) {
-        let flow = BrowserFlow::new(self.client_id.get(), self.tenant_id.get());
-        let pending = match flow.start(&self.env_url.get()).await {
-            Ok(p) => p,
-            Err(e) => {
-                self.error.set(Some(e.to_string()));
-                self.step.set(SetupStep::Error);
-                return;
-            }
-        };
-
-        self.auth_url.set(pending.auth_url.clone());
-        self.step.set(SetupStep::Authenticating);
-
-        // Open browser automatically
-        let _ = pending.open_browser();
-
-        // Create fresh cancel token for this auth attempt
-        let token = CancellationToken::new();
-        self.cancel_token.set(Some(token.clone()));
-
-        match pending.wait_with_cancel(token).await {
-            Ok(access_token) => {
-                self.on_auth_success(access_token, gx, mx).await;
-            }
-            Err(AuthError::BrowserCancelled) => {
-                // User cancelled - go back to account step
-                self.step.set(SetupStep::Account);
-            }
-            Err(e) => {
-                self.error.set(Some(e.to_string()));
-                self.step.set(SetupStep::Error);
-            }
-        }
-    }
-
-    #[handler]
-    async fn open_browser(&self) {
-        let url = self.auth_url.get();
-        if !url.is_empty() {
-            let _ = open::that(&url);
-        }
-    }
 
     async fn on_auth_success(
         &self,
@@ -268,7 +226,6 @@ impl SetupModal {
         match self.step.get() {
             SetupStep::Environment => self.render_environment_step(),
             SetupStep::Account => self.render_account_step(),
-            SetupStep::Authenticating => self.render_authenticating_step(),
             SetupStep::Error => self.render_error_step(),
         }
     }
@@ -321,31 +278,6 @@ impl SetupModal {
                     button (label: "Back", hint: "esc", id: "cancel") on_activate: cancel()
                     button (label: "Next", hint: "enter", id: "next") on_activate: next_step2()
                 }
-            }
-        }
-    }
-
-    fn render_authenticating_step(&self) -> Element {
-        let auth_url = self.auth_url.get();
-
-        page! {
-            column (padding: (1, 2), gap: 1, width: fill, height: fill) style (bg: surface) {
-                text (content: "Setup - Authenticating") style (bold, fg: accent)
-                text (content: "Complete authentication in your browser.") style (fg: muted)
-
-                column (gap: 1) {
-                    text (content: "Authorization URL:") style (fg: muted)
-                    text (content: auth_url) style (fg: muted)
-                }
-
-                button (label: "Open Browser", id: "open_browser") on_activate: open_browser()
-
-                row (gap: 1) {
-                    spinner (id: "auth-spinner")
-                    text (content: "Waiting for authentication...") style (fg: muted)
-                }
-
-                button (label: "Back", hint: "esc", id: "cancel") on_activate: cancel()
             }
         }
     }

@@ -352,7 +352,7 @@ impl<'a, T: Clone + PartialEq + Send + Sync + 'static> Select<HasState<'a, T>> {
                 .width(Size::Fixed(min_width + 1)) // Account for extra padding
                 .height(Size::Fixed(dropdown_height)) // Cap height for scrolling
                 .overflow(Overflow::Auto) // Enable scrolling when content overflows
-                .z_index(100) // Render above other content
+                .z_index(10000) // Render above other content
                 .style(Style::new().background(Color::var("select.dropdown_bg")));
 
             Element::box_()
