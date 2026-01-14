@@ -71,6 +71,7 @@ Key format: lowercase, actual key name (e.g., `esc` not `Escape`, `ctrl+p` not `
 - Use `padding: (1, 2)` on content column
 - Title in bold accent color
 - Auto size for simple dialogs, `Lg` for complex ones (e.g., launcher)
+- Bottom button row should be pushed to the bottom using `justify: end` on the outer column or a spacer element
 
 ### Confirmation Dialogs
 
