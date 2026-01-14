@@ -52,6 +52,16 @@ pub fn hit_test_scrollable(layout: &LayoutResult, root: &Element, x: u16, y: u16
     best_hit(hits)
 }
 
+/// Find the topmost interaction_scope element at the given coordinates.
+/// Returns None if no interaction_scope contains the point.
+/// Respects stacking context and z-index ordering.
+pub fn hit_test_interaction_scope(layout: &LayoutResult, root: &Element, x: u16, y: u16) -> Option<String> {
+    let mut hits = Vec::new();
+    let mut next_scope_order = 1usize;
+    collect_hits(layout, root, x, y, 0, 0, 0, &mut next_scope_order, &mut hits, |el| el.interaction_scope);
+    best_hit(hits)
+}
+
 /// Select the best hit: highest scope_order, then z-index, then deepest in tree.
 fn best_hit(mut hits: Vec<Hit>) -> Option<String> {
     if hits.is_empty() {

@@ -2,7 +2,7 @@ use crossterm::event::{Event as CrosstermEvent, KeyEventKind, MouseEventKind};
 
 use crate::element::{find_element, Content, Element};
 use crate::event::{Event, Key, Modifiers, NavDirection, ScrollAction};
-use crate::hit::hit_test_focusable;
+use crate::hit::{hit_test_focusable, hit_test_interaction_scope};
 use crate::layout::{LayoutResult, Rect};
 use crate::scroll::{find_scrollable_ancestor, find_scrollable_ancestor_with_type};
 
@@ -435,9 +435,30 @@ impl FocusState {
 
                     match mouse_event.kind {
                         MouseEventKind::Down(button) => {
-                            let target = crate::hit::hit_test(layout, root, x, y);
+                            let clickable_target = crate::hit::hit_test(layout, root, x, y);
+                            let focusable_target = hit_test_focusable(layout, root, x, y);
+
+                            // Blur focus if clicking on non-focusable area
+                            if focusable_target.is_none() {
+                                if let Some(old) = self.focused.take() {
+                                    events.push(Event::Blur { target: old, new_target: None });
+                                }
+                            }
+
+                            // Check if click is within an interaction_scope but not on a clickable element
+                            // This emits ScopeClick for backdrop clicks on modals, etc.
+                            if clickable_target.is_none() {
+                                if let Some(scope_id) = hit_test_interaction_scope(layout, root, x, y) {
+                                    events.push(Event::ScopeClick {
+                                        target: scope_id,
+                                        x,
+                                        y,
+                                    });
+                                }
+                            }
+
                             events.push(Event::Click {
-                                target,
+                                target: clickable_target,
                                 x,
                                 y,
                                 button: button.into(),
