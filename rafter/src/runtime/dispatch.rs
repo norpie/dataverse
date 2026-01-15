@@ -252,6 +252,9 @@ impl<'a> EventDispatcher<'a> {
             }
 
             Event::Blur { target, new_target } => {
+                if new_target.is_none() {
+                    log::debug!("[dispatch-modal] Blur event with None new_target for target={}", target);
+                }
                 if let Some(handler) = handlers.get(target, "on_blur") {
                     let hx = HandlerContext::for_modal_any_with_event(
                         cx,
@@ -620,6 +623,9 @@ impl<'a> EventDispatcher<'a> {
 
             // Blur events: dispatch to on_blur handlers with new_target info
             Event::Blur { target, new_target } => {
+                if new_target.is_none() {
+                    log::debug!("[dispatch] Blur event with None new_target for target={}", target);
+                }
                 // First check app instance handlers
                 if let Some(handler) = handlers.get(target, "on_blur") {
                     let hx_with_event = HandlerContext::for_app_with_event(

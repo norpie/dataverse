@@ -505,8 +505,19 @@ impl<'a, T: Clone + PartialEq + Send + Sync + 'static> Autocomplete<HasState<'a,
                 .width(Size::Fixed(min_width + 1))
                 .height(Size::Fixed(dropdown_height))
                 .overflow(Overflow::Auto)
-                .z_index(100)
+                .z_index(1)
+                .interaction_scope(true) // Scope focus/clicks to dropdown
                 .style(Style::new().background(Color::var("autocomplete.dropdown_bg")));
+
+            // Register on_scope_click handler to close dropdown when clicking backdrop
+            let state_clone = state.clone();
+            registry.register(
+                &dropdown_id,
+                "on_scope_click",
+                Arc::new(move |_hx| {
+                    state_clone.update(|s| s.open = false);
+                }),
+            );
 
             Element::box_()
                 .width(Size::Fixed(min_width))

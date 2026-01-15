@@ -1273,12 +1273,14 @@ fn scroll_to_element(
     let target_bottom = target_top + target_rect.height;
 
     // Calculate target position relative to scrollable content (horizontal)
-    // target_rect.x is already relative to scroll content for horizontal scroll containers
-    let target_left = target_rect.x;
+    let target_left = target_rect.x.saturating_sub(viewport_rect.x) + current.x;
     let target_right = target_left + target_rect.width;
 
     // Compute new vertical scroll offset to bring target into view
-    let new_y = if target_top < current.y {
+    // If content fits within viewport, no scrolling needed
+    let new_y = if content_height <= viewport_height {
+        0
+    } else if target_top < current.y {
         // Target is above viewport - scroll up
         target_top
     } else if target_bottom > current.y + viewport_height {
@@ -1290,7 +1292,10 @@ fn scroll_to_element(
     };
 
     // Compute new horizontal scroll offset to bring target into view
-    let new_x = if target_left < current.x {
+    // If content fits within viewport, no scrolling needed
+    let new_x = if content_width <= viewport_width {
+        0
+    } else if target_left < current.x {
         // Target is left of viewport - scroll left
         target_left
     } else if target_right > current.x + viewport_width {

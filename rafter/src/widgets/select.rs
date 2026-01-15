@@ -244,10 +244,12 @@ impl<'a, T: Clone + PartialEq + Send + Sync + 'static> Select<HasState<'a, T>> {
         // Register toggle handler
         if !self.disabled {
             let state_clone = state.clone();
+            let toggle_id = id.clone();
             registry.register(
                 &id,
                 "on_activate",
                 Arc::new(move |_hx| {
+                    log::debug!("[select] toggle on_activate: id={}, toggling open state", toggle_id);
                     state_clone.update(|s| s.open = !s.open);
                 }),
             );
@@ -260,10 +262,15 @@ impl<'a, T: Clone + PartialEq + Send + Sync + 'static> Select<HasState<'a, T>> {
                 "on_blur",
                 Arc::new(move |hx| {
                     // Only close if focus moved outside this select widget
-                    let should_close = match hx.event().blur_target() {
+                    let blur_target = hx.event().blur_target();
+                    let should_close = match &blur_target {
                         Some(new_target) => !new_target.starts_with(&base_id),
                         None => true, // Escape or focus lost entirely
                     };
+                    log::debug!(
+                        "[select] on_blur: base_id={}, blur_target={:?}, should_close={}",
+                        base_id, blur_target, should_close
+                    );
                     if should_close {
                         state_clone.update(|s| s.open = false);
                     }
@@ -273,13 +280,19 @@ impl<'a, T: Clone + PartialEq + Send + Sync + 'static> Select<HasState<'a, T>> {
 
         // Build dropdown if open
         if current.open {
-            log::debug!("Select::build rendering {} options", current.options.len());
+            log::debug!(
+                "[select] Building dropdown id={}, options_count={}, options={:?}",
+                id,
+                current.options.len(),
+                current.options.iter().map(|(_, l)| l.as_str()).collect::<Vec<_>>()
+            );
             let dropdown_id = format!("{}-dropdown", id);
             let mut options_col = Element::col().id(&dropdown_id);
 
             for (i, (value, label)) in current.options.iter().enumerate() {
                 let opt_id = format!("{}-opt-{}", id, i);
                 let is_selected = current.value.as_ref() == Some(value);
+                log::debug!("[select] Building option id={}, label={}", opt_id, label);
 
                 // Use a full-width row to ensure the entire option area is focusable/clickable
                 // This prevents focus gaps that would cause focus-follows-mouse to hit elements underneath
@@ -323,14 +336,20 @@ impl<'a, T: Clone + PartialEq + Send + Sync + 'static> Select<HasState<'a, T>> {
                 // Register blur handler for option
                 let state_clone = state.clone();
                 let base_id = id.clone();
+                let opt_id_for_log = opt_id.clone();
                 registry.register(
                     &opt_id,
                     "on_blur",
                     Arc::new(move |hx| {
-                        let should_close = match hx.event().blur_target() {
+                        let blur_target = hx.event().blur_target();
+                        let should_close = match &blur_target {
                             Some(new_target) => !new_target.starts_with(&base_id),
                             None => true,
                         };
+                        log::debug!(
+                            "[select] option on_blur: opt_id={}, base_id={}, blur_target={:?}, should_close={}",
+                            opt_id_for_log, base_id, blur_target, should_close
+                        );
                         if should_close {
                             state_clone.update(|s| s.open = false);
                         }
@@ -352,8 +371,21 @@ impl<'a, T: Clone + PartialEq + Send + Sync + 'static> Select<HasState<'a, T>> {
                 .width(Size::Fixed(min_width + 1)) // Account for extra padding
                 .height(Size::Fixed(dropdown_height)) // Cap height for scrolling
                 .overflow(Overflow::Auto) // Enable scrolling when content overflows
-                .z_index(10000) // Render above other content
+                .z_index(1)
+                .interaction_scope(true) // Scope focus/clicks to dropdown
                 .style(Style::new().background(Color::var("select.dropdown_bg")));
+
+            // Register on_scope_click handler to close dropdown when clicking backdrop
+            let state_clone = state.clone();
+            let dropdown_id_for_log = dropdown_id.clone();
+            registry.register(
+                &dropdown_id,
+                "on_scope_click",
+                Arc::new(move |_hx| {
+                    log::debug!("[select] on_scope_click fired for {}", dropdown_id_for_log);
+                    state_clone.update(|s| s.open = false);
+                }),
+            );
 
             Element::box_()
                 .width(Size::Fixed(min_width))

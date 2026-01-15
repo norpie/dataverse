@@ -319,6 +319,7 @@ impl FocusState {
                     // Escape blurs focused element; only emits key event if nothing focused
                     if key == Key::Escape {
                         if let Some(old) = self.focused.take() {
+                            log::debug!("[focus] Escape key pressed, blurring {} with None target", old);
                             events.push(Event::Blur { target: old, new_target: None });
                             continue;
                         }
@@ -438,9 +439,15 @@ impl FocusState {
                             let clickable_target = crate::hit::hit_test(layout, root, x, y);
                             let focusable_target = hit_test_focusable(layout, root, x, y);
 
+                            log::debug!(
+                                "[focus] MouseDown at ({}, {}), clickable={:?}, focusable={:?}, current_focus={:?}",
+                                x, y, clickable_target, focusable_target, self.focused
+                            );
+
                             // Blur focus if clicking on non-focusable area
                             if focusable_target.is_none() {
                                 if let Some(old) = self.focused.take() {
+                                    log::debug!("[focus] MouseDown on non-focusable area, blurring {}", old);
                                     events.push(Event::Blur { target: old, new_target: None });
                                 }
                             }
@@ -480,6 +487,11 @@ impl FocusState {
                                     None => true, // No active scope, all elements eligible
                                 };
 
+                                log::debug!(
+                                    "[focus] MouseMove hover: target={}, active_scope={:?}, in_scope={}, current_focus={:?}",
+                                    focusable_target, active_scope, in_scope, self.focused
+                                );
+
                                 // Only change focus if different AND target is in scope
                                 if in_scope && self.focused.as_ref() != Some(&focusable_target) {
                                     log::debug!("[focus] Changing focus from {:?} to {}", self.focused, focusable_target);
@@ -490,6 +502,8 @@ impl FocusState {
                                     events.push(Event::Focus {
                                         target: focusable_target,
                                     });
+                                } else if !in_scope {
+                                    log::debug!("[focus] MouseMove blocked - target {} not in active scope {:?}", focusable_target, active_scope);
                                 }
                             }
 
