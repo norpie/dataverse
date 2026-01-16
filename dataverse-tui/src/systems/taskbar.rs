@@ -465,7 +465,6 @@ impl Taskbar {
             .position(Position::Absolute)
             .left(-(GROUP_OVERLAY_WIDTH as i16 + 1))
             .top(0)
-            .z_index(100)
             .overflow_y(Overflow::Auto)
     }
 
