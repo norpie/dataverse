@@ -178,6 +178,80 @@ fn create_sample_tree() -> Vec<TreeNode<FsNode>> {
                 ),
             ],
         ),
+        // Add many more items to test scrolling
+        TreeNode::branch(
+            FsNode {
+                path: "/usr".into(),
+                name: "usr".into(),
+                is_dir: true,
+            },
+            vec![
+                TreeNode::branch(
+                    FsNode {
+                        path: "/usr/bin".into(),
+                        name: "bin".into(),
+                        is_dir: true,
+                    },
+                    (1..=30)
+                        .map(|i| {
+                            TreeNode::leaf(FsNode {
+                                path: format!("/usr/bin/program{}", i),
+                                name: format!("program{}", i),
+                                is_dir: false,
+                            })
+                        })
+                        .collect(),
+                ),
+                TreeNode::branch(
+                    FsNode {
+                        path: "/usr/lib".into(),
+                        name: "lib".into(),
+                        is_dir: true,
+                    },
+                    (1..=20)
+                        .map(|i| {
+                            TreeNode::leaf(FsNode {
+                                path: format!("/usr/lib/lib{}.so", i),
+                                name: format!("lib{}.so", i),
+                                is_dir: false,
+                            })
+                        })
+                        .collect(),
+                ),
+                TreeNode::branch(
+                    FsNode {
+                        path: "/usr/share".into(),
+                        name: "share".into(),
+                        is_dir: true,
+                    },
+                    (1..=15)
+                        .map(|i| {
+                            TreeNode::leaf(FsNode {
+                                path: format!("/usr/share/doc{}", i),
+                                name: format!("doc{}", i),
+                                is_dir: false,
+                            })
+                        })
+                        .collect(),
+                ),
+            ],
+        ),
+        TreeNode::branch(
+            FsNode {
+                path: "/tmp".into(),
+                name: "tmp".into(),
+                is_dir: true,
+            },
+            (1..=25)
+                .map(|i| {
+                    TreeNode::leaf(FsNode {
+                        path: format!("/tmp/temp_file_{}", i),
+                        name: format!("temp_file_{}", i),
+                        is_dir: false,
+                    })
+                })
+                .collect(),
+        ),
     ]
 }
 
@@ -189,6 +263,7 @@ struct TreeExample {
 
 #[app_impl]
 impl TreeExample {
+    #[on_start]
     async fn on_start(&self) {
         let tree = create_sample_tree();
         self.files
