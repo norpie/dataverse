@@ -23,3 +23,4 @@ dataverse-lib = { path = "../dataverse-lib" }
 open = "5"
 tokio-util = "0.7"
 url = "2"
+nucleo-matcher = "0.3"

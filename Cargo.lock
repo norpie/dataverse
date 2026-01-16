@@ -449,6 +449,7 @@ dependencies = [
  "directories",
  "inventory",
  "log",
+ "nucleo-matcher",
  "open",
  "rafter",
  "rusqlite",
