@@ -870,6 +870,8 @@ pub trait AnyModal: Send + Sync {
     fn size(&self) -> crate::ModalSize;
     /// Get the modal's position configuration.
     fn position(&self) -> crate::ModalPosition;
+    /// Take any pending focus request from the modal.
+    fn take_focus_request(&self) -> Option<String>;
 }
 
 impl<M: Modal> AnyModal for ModalEntry<M> {
@@ -907,6 +909,10 @@ impl<M: Modal> AnyModal for ModalEntry<M> {
 
     fn position(&self) -> crate::ModalPosition {
         self.modal.position()
+    }
+
+    fn take_focus_request(&self) -> Option<String> {
+        self.context.take_focus_request()
     }
 }
 

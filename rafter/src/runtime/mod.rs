@@ -586,6 +586,33 @@ impl Runtime {
                             }
                         }
                     }
+
+                    // Process focus requests from app modals
+                    let modals = instance.modals().read().unwrap();
+                    if let Some(modal) = modals.last() {
+                        if let Some(target_id) = modal.take_focus_request() {
+                            log::debug!("[runtime] Processing modal focus request: {}", target_id);
+                            if focus.focus(&target_id) {
+                                log::debug!("[runtime] Modal focus changed to: {}", target_id);
+                                if let Some(change) = scroll_to_element(&root, layout, scroll, &target_id) {
+                                    focus_scroll_changes.push(change);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 14b. Process focus requests from global modals
+            if let Some(modal) = global_modals.last() {
+                if let Some(target_id) = modal.take_focus_request() {
+                    log::debug!("[runtime] Processing global modal focus request: {}", target_id);
+                    if focus.focus(&target_id) {
+                        log::debug!("[runtime] Global modal focus changed to: {}", target_id);
+                        if let Some(change) = scroll_to_element(&root, layout, scroll, &target_id) {
+                            focus_scroll_changes.push(change);
+                        }
+                    }
                 }
             }
 

@@ -68,6 +68,7 @@ pub trait SystemModal: Modal {}
 pub struct ModalContext<R> {
     result_tx: Arc<Mutex<Option<oneshot::Sender<R>>>>,
     closed: Arc<AtomicBool>,
+    focus_request: Arc<Mutex<Option<String>>>,
 }
 
 impl<R> ModalContext<R> {
@@ -76,6 +77,7 @@ impl<R> ModalContext<R> {
         Self {
             result_tx: Arc::new(Mutex::new(Some(result_tx))),
             closed: Arc::new(AtomicBool::new(false)),
+            focus_request: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -96,6 +98,21 @@ impl<R> ModalContext<R> {
     pub fn is_closed(&self) -> bool {
         self.closed.load(Ordering::SeqCst)
     }
+
+    /// Request focus on an element within the modal.
+    pub fn focus(&self, element_id: impl Into<String>) {
+        if let Ok(mut guard) = self.focus_request.lock() {
+            *guard = Some(element_id.into());
+        }
+    }
+
+    /// Take any pending focus request (for runtime use).
+    pub fn take_focus_request(&self) -> Option<String> {
+        self.focus_request
+            .lock()
+            .ok()
+            .and_then(|mut guard| guard.take())
+    }
 }
 
 impl<R> Clone for ModalContext<R> {
@@ -103,6 +120,7 @@ impl<R> Clone for ModalContext<R> {
         Self {
             result_tx: Arc::clone(&self.result_tx),
             closed: Arc::clone(&self.closed),
+            focus_request: Arc::clone(&self.focus_request),
         }
     }
 }
