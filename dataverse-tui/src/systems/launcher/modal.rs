@@ -124,7 +124,7 @@ impl LauncherModal {
     fn element(&self) -> Element {
         page! {
             column (padding: (1, 2), gap: 1, width: fill, height: fill) style (bg: background) {
-                text (content: "Launcher") style (bold, fg: accent)
+                text (content: "Launcher") style (bold, fg: interact)
 
                 box_ (id: "tree-container", height: fill, width: fill) style (bg: surface) {
                     tree (state: self.entries, id: "launcher-tree")

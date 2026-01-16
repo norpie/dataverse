@@ -11,7 +11,7 @@ use tuidom::{Color, Edges, Overflow, Position, Size, Style};
 use crate::widgets::ScrollingText;
 
 const COLLAPSED_WIDTH: u16 = 3;
-const EXPANDED_WIDTH: u16 = 32;
+const EXPANDED_WIDTH: u16 = 45;
 const GROUP_OVERLAY_WIDTH: u16 = 30;
 
 /// Status indicator for various subsystems.
@@ -299,7 +299,7 @@ impl Taskbar {
         // Build the instances section with the list items
         let mut instances_section = Element::col()
             .width(Size::Fill)
-            .child(Element::text("Instances").style(Style::new().bold().foreground(Color::var("accent"))))
+            .child(Element::text("Instances").style(Style::new().bold().foreground(Color::var("interact"))))
             .child(Element::col().height(Size::Fixed(1))); // Spacer after title
 
         for item in list_items {
@@ -308,7 +308,7 @@ impl Taskbar {
 
         // Build the status section
         let status_title = Element::text("Status")
-            .style(Style::new().bold().foreground(Color::var("accent")));
+            .style(Style::new().bold().foreground(Color::var("interact")));
 
         // Queue subsection
         let queue = self.queue.get();

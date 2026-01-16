@@ -67,7 +67,7 @@ impl ConfirmModal {
     fn element(&self) -> Element {
         page! {
             column (padding: (1, 2), gap: 1, width: fill, height: fill) style (bg: surface) {
-                text (content: self.title.clone()) style (bold, fg: accent)
+                text (content: self.title.clone()) style (bold, fg: interact)
                 text (content: self.message.clone())
                 row (width: fill, justify: between) {
                     button (label: "Cancel", hint: "n", id: "cancel") on_activate: cancel()

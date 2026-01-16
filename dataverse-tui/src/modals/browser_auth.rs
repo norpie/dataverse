@@ -147,7 +147,7 @@ impl BrowserAuthModal {
 
         page! {
             column (padding: (1, 2), gap: 1, width: fill, height: fill) style (bg: surface) {
-                text (content: "Authenticating") style (bold, fg: accent)
+                text (content: "Authenticating") style (bold, fg: interact)
                 text (content: "Complete authentication in your browser.") style (fg: muted)
 
                 column (gap: 1) {
@@ -172,7 +172,7 @@ impl BrowserAuthModal {
 
         page! {
             column (padding: (1, 2), gap: 1, width: fill, height: fill) style (bg: surface) {
-                text (content: "Authentication Error") style (bold, fg: accent)
+                text (content: "Authentication Error") style (bold, fg: interact)
                 text (content: "Authentication failed.") style (fg: muted)
 
                 column (gap: 1) style (bg: background, padding: (1, 2)) {

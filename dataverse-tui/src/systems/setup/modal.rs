@@ -233,7 +233,7 @@ impl SetupModal {
     fn render_environment_step(&self) -> Element {
         page! {
             column (padding: (1, 2), gap: 1, width: fill, height: fill) style (bg: surface) {
-                text (content: "Setup - Environment") style (bold, fg: accent)
+                text (content: "Setup - Environment") style (bold, fg: interact)
                 text (content: "Enter your Dataverse environment details.") style (fg: muted)
 
                 column (gap: 1) {
@@ -257,7 +257,7 @@ impl SetupModal {
     fn render_account_step(&self) -> Element {
         page! {
             column (padding: (1, 2), gap: 1, width: fill, height: fill) style (bg: surface) {
-                text (content: "Setup - Account") style (bold, fg: accent)
+                text (content: "Setup - Account") style (bold, fg: interact)
                 text (content: "Enter your Azure AD application details.") style (fg: muted)
 
                 column (gap: 1) {
@@ -287,7 +287,7 @@ impl SetupModal {
 
         page! {
             column (padding: (1, 2), gap: 1, width: fill, height: fill) style (bg: surface) {
-                text (content: "Setup - Error") style (bold, fg: accent)
+                text (content: "Setup - Error") style (bold, fg: interact)
                 text (content: "Authentication failed.") style (fg: muted)
 
                 column (gap: 1) style (bg: background, padding: (1, 2)) {

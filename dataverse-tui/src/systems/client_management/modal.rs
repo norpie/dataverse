@@ -433,11 +433,11 @@ impl ClientManagementModal {
 
         page! {
             column (padding: (1, 2), gap: 1, width: fill, height: fill) style (bg: surface) {
-                text (content: "Client Management") style (bold, fg: accent)
+                text (content: "Client Management") style (bold, fg: interact)
 
                 // Tab bar
                 row (gap: 2) {
-                    button (label: "Active", hint: "1", id: "tab-active") style (fg: accent)
+                    button (label: "Active", hint: "1", id: "tab-active") style (fg: interact)
                         on_activate: tab_active()
                     button (label: "Environments", hint: "2", id: "tab-environments")
                         on_activate: tab_environments()
@@ -482,13 +482,13 @@ impl ClientManagementModal {
 
         page! {
             column (padding: (1, 2), gap: 1, width: fill, height: fill) style (bg: surface) {
-                text (content: "Client Management") style (bold, fg: accent)
+                text (content: "Client Management") style (bold, fg: interact)
 
                 // Tab bar
                 row (gap: 2) {
                     button (label: "Active", hint: "1", id: "tab-active")
                         on_activate: tab_active()
-                    button (label: "Environments", hint: "2", id: "tab-environments") style (fg: accent)
+                    button (label: "Environments", hint: "2", id: "tab-environments") style (fg: interact)
                         on_activate: tab_environments()
                     button (label: "Accounts", hint: "3", id: "tab-accounts")
                         on_activate: tab_accounts()
@@ -511,13 +511,13 @@ impl ClientManagementModal {
     fn render_env_add_form(&self) -> Element {
         page! {
             column (padding: (1, 2), gap: 1, width: fill, height: fill) style (bg: surface) {
-                text (content: "Client Management") style (bold, fg: accent)
+                text (content: "Client Management") style (bold, fg: interact)
 
                 // Tab bar
                 row (gap: 2) {
                     button (label: "Active", hint: "1", id: "tab-active")
                         on_activate: tab_active()
-                    button (label: "Environments", hint: "2", id: "tab-environments") style (fg: accent)
+                    button (label: "Environments", hint: "2", id: "tab-environments") style (fg: interact)
                         on_activate: tab_environments()
                     button (label: "Accounts", hint: "3", id: "tab-accounts")
                         on_activate: tab_accounts()
@@ -555,7 +555,7 @@ impl ClientManagementModal {
 
         page! {
             column (padding: (1, 2), gap: 1, width: fill, height: fill) style (bg: surface) {
-                text (content: "Client Management") style (bold, fg: accent)
+                text (content: "Client Management") style (bold, fg: interact)
 
                 // Tab bar
                 row (gap: 2) {
@@ -563,7 +563,7 @@ impl ClientManagementModal {
                         on_activate: tab_active()
                     button (label: "Environments", hint: "2", id: "tab-environments")
                         on_activate: tab_environments()
-                    button (label: "Accounts", hint: "3", id: "tab-accounts") style (fg: accent)
+                    button (label: "Accounts", hint: "3", id: "tab-accounts") style (fg: interact)
                         on_activate: tab_accounts()
                 }
 
@@ -584,7 +584,7 @@ impl ClientManagementModal {
     fn render_acc_add_form(&self) -> Element {
         page! {
             column (padding: (1, 2), gap: 1, width: fill, height: fill) style (bg: surface) {
-                text (content: "Client Management") style (bold, fg: accent)
+                text (content: "Client Management") style (bold, fg: interact)
 
                 // Tab bar
                 row (gap: 2) {
@@ -592,7 +592,7 @@ impl ClientManagementModal {
                         on_activate: tab_active()
                     button (label: "Environments", hint: "2", id: "tab-environments")
                         on_activate: tab_environments()
-                    button (label: "Accounts", hint: "3", id: "tab-accounts") style (fg: accent)
+                    button (label: "Accounts", hint: "3", id: "tab-accounts") style (fg: interact)
                         on_activate: tab_accounts()
                 }
 

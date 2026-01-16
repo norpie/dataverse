@@ -5,7 +5,7 @@ This document defines the visual and interaction patterns for dataverse-tui.
 ## Colors
 
 Use the default rafter theme. Key colors:
-- `accent` - Titles, highlights
+- `interact` - Titles, highlights
 - `primary` - Primary text, keybind hints
 - `muted` - Secondary text, descriptions
 - `surface` - Modal backgrounds
@@ -23,7 +23,7 @@ Compact - minimize whitespace while maintaining readability.
 
 ## Typography
 
-- **Titles**: Bold, accent color
+- **Titles**: Bold, interact color
 - **Body text**: Default color
 - **Secondary text**: Muted color
 
@@ -69,7 +69,7 @@ Key format: lowercase, actual key name (e.g., `esc` not `Escape`, `ctrl+p` not `
 ### Modals
 
 - Use `padding: (1, 2)` on content column
-- Title in bold accent color
+- Title in bold interact color
 - Auto size for simple dialogs, `Lg` for complex ones (e.g., launcher)
 - Bottom button row should be pushed to the bottom using `justify: end` on the outer column or a spacer element
 
@@ -135,12 +135,12 @@ Element::row()
 
 ## Emphasis Point
 
-Accent dot (●) with accent label, followed by secondary text. Keys in primary color.
+Accent dot (●) with interact label, followed by secondary text. Keys in primary color.
 
 ```rust
 Element::row()
-    .child(Element::text("●").style(Style::new().foreground(Color::var("accent"))))
-    .child(Element::text("Tip").style(Style::new().foreground(Color::var("accent"))))
+    .child(Element::text("●").style(Style::new().foreground(Color::var("interact"))))
+    .child(Element::text("Tip").style(Style::new().foreground(Color::var("interact"))))
     .child(Element::text(" Use "))
     .child(Element::text("ctrl+q").style(Style::new().foreground(Color::var("primary"))))
     .child(Element::text(" to quickly quit"))

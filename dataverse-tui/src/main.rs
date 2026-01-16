@@ -51,7 +51,7 @@ impl TestApp {
         let label = format!("Instance ID: {}", id);
         page! {
             column (padding: 2, gap: 1) style (bg: background) {
-                text (content: "Test App") style (bold, fg: accent)
+                text (content: "Test App") style (bold, fg: interact)
                 text (content: label) style (fg: text)
             }
         }
@@ -61,13 +61,13 @@ impl TestApp {
 #[app_impl]
 impl DataverseTui {
     fn title(&self) -> String {
-        "Home - really long for testing".to_string()
+        "Home".to_string()
     }
 
     fn element(&self) -> Element {
         page! {
             column (padding: 2, gap: 1) style (bg: background) {
-                text (content: "Dataverse TUI") style (bold, fg: accent)
+                text (content: "Dataverse TUI") style (bold, fg: interact)
                 text (content: "Press Ctrl+P to open launcher") style (fg: muted)
                 text (content: "Press Ctrl+Q to quit") style (fg: muted)
                 spinner (id: "main-spinner")
