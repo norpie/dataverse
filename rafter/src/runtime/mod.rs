@@ -419,6 +419,56 @@ impl Runtime {
                             let _ = crate::handler_context::call_handler_for_app(&handler, &hx, app_name, instance_id);
                         }
                     }
+
+                    // Also dispatch on_layout to app modals
+                    let modals = instance.modals().read().unwrap();
+                    if let Some(modal) = modals.last() {
+                        if !modal.is_closed() {
+                            let modal_handlers = modal.handlers();
+                            let mx = modal.modal_context();
+                            for (id, rect) in layout.iter_rects() {
+                                if let Some(handler) = modal_handlers.get(id, "on_layout") {
+                                    let hx = crate::HandlerContext::for_modal_any_with_event(
+                                        &cx,
+                                        gx,
+                                        mx,
+                                        crate::handler_context::EventData::Layout {
+                                            x: rect.x,
+                                            y: rect.y,
+                                            width: rect.width,
+                                            height: rect.height,
+                                        },
+                                    );
+                                    let _ = crate::handler_context::call_handler_for_app(&handler, &hx, app_name, instance_id);
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Also dispatch on_layout to global modals
+                if let Some(modal) = global_modals.last() {
+                    if !modal.is_closed() {
+                        let modal_handlers = modal.handlers();
+                        let cx = crate::AppContext::default();
+                        let mx = modal.modal_context();
+                        for (id, rect) in layout.iter_rects() {
+                            if let Some(handler) = modal_handlers.get(id, "on_layout") {
+                                let hx = crate::HandlerContext::for_modal_any_with_event(
+                                    &cx,
+                                    gx,
+                                    mx,
+                                    crate::handler_context::EventData::Layout {
+                                        x: rect.x,
+                                        y: rect.y,
+                                        width: rect.width,
+                                        height: rect.height,
+                                    },
+                                );
+                                let _ = crate::handler_context::call_handler(&handler, &hx);
+                            }
+                        }
+                    }
                 }
             }
 

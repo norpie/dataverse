@@ -188,6 +188,32 @@ impl<'a> EventDispatcher<'a> {
                         }
                     }
                 }
+
+                // Arrow keys dispatch to on_key_up/down/left/right handlers
+                // (Used by List/Tree widgets for boundary scrolling and expand/collapse)
+                if modifiers.none() {
+                    if let Some(target_id) = target {
+                        let handler_name = match key {
+                            Key::Up => Some("on_key_up"),
+                            Key::Down => Some("on_key_down"),
+                            Key::Left => Some("on_key_left"),
+                            Key::Right => Some("on_key_right"),
+                            _ => None,
+                        };
+                        if let Some(name) = handler_name {
+                            if let Some(handler) = handlers.get(target_id, name) {
+                                let hx = HandlerContext::for_modal_any(cx, self.gx, mx);
+                                if let Some(panic_result) = call(&handler, &hx) {
+                                    return Some(panic_result);
+                                }
+                                // For Left/Right, consume the event (don't let focus nav continue)
+                                if matches!(key, Key::Left | Key::Right) {
+                                    return Some(DispatchResult::HandledByModal);
+                                }
+                            }
+                        }
+                    }
+                }
             }
 
             Event::Click { target, x, y, .. } => {
@@ -264,6 +290,44 @@ impl<'a> EventDispatcher<'a> {
                     );
                     if let Some(panic_result) = call(&handler, &hx) {
                         return Some(panic_result);
+                    }
+                }
+            }
+
+            Event::Scroll { target, delta_x, delta_y, action, .. } => {
+                if let Some(target_id) = target {
+                    if let Some(handler) = handlers.get(target_id, "on_scroll") {
+                        let hx = HandlerContext::for_modal_any_with_event(
+                            cx,
+                            self.gx,
+                            mx,
+                            EventData::ScrollInput {
+                                delta_x: *delta_x,
+                                delta_y: *delta_y,
+                                action: *action,
+                            },
+                        );
+                        if let Some(panic_result) = call(&handler, &hx) {
+                            return Some(panic_result);
+                        }
+                        return Some(DispatchResult::HandledByModal);
+                    }
+                }
+            }
+
+            Event::Drag { target, x, y, .. } => {
+                if let Some(target_id) = target {
+                    if let Some(handler) = handlers.get(target_id, "on_drag") {
+                        let hx = HandlerContext::for_modal_any_with_event(
+                            cx,
+                            self.gx,
+                            mx,
+                            EventData::Drag { x: *x, y: *y },
+                        );
+                        if let Some(panic_result) = call(&handler, &hx) {
+                            return Some(panic_result);
+                        }
+                        return Some(DispatchResult::HandledByModal);
                     }
                 }
             }

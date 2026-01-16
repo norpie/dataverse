@@ -7,6 +7,7 @@ use std::collections::HashSet;
 use std::hash::Hash;
 use std::sync::Arc;
 
+use log;
 use tuidom::{Color, Element, Overflow, Size, Style, Transitions};
 
 use crate::state::State;
@@ -546,9 +547,17 @@ impl<'a, T: TreeItem> Tree<HasTreeState<'a, T>> {
         });
 
         let current = state.get();
+        log::debug!(
+            "[TREE] Building tree '{}': viewport={}, total_flattened={}, scroll_offset={}",
+            tree_id,
+            current.scroll.viewport,
+            current.flattened.len(),
+            current.scroll.offset
+        );
 
         // Calculate visible range
         let visible = self.calculate_visible_nodes(&current);
+        log::debug!("[TREE] Calculated visible nodes: {}", visible.len());
 
         // Create elements only for visible nodes
         let mut children = Vec::with_capacity(visible.len());
@@ -654,6 +663,7 @@ impl<'a, T: TreeItem> Tree<HasTreeState<'a, T>> {
                 "on_layout",
                 Arc::new(move |hx| {
                     if let Some((_, _, _, height)) = hx.event().layout() {
+                        log::debug!("[TREE] on_layout fired: height={}", height);
                         state_clone.update(|s| {
                             s.scroll.set_viewport(height);
                         });
@@ -690,12 +700,17 @@ impl<'a, T: TreeItem> Tree<HasTreeState<'a, T>> {
         let viewport = state.scroll.viewport;
 
         if state.flattened.is_empty() {
+            log::debug!("[TREE] calculate_visible_nodes: flattened is empty!");
             return Vec::new();
         }
 
         let effective_viewport = if viewport == 0 { 200 } else { viewport };
 
         let first_visible = state.node_at_offset(scroll_y);
+        log::debug!(
+            "[TREE] calculate_visible_nodes: scroll_y={}, viewport={}, effective_viewport={}, first_visible={}",
+            scroll_y, viewport, effective_viewport, first_visible
+        );
 
         let mut end_idx = first_visible;
         let mut total_height: u16 = 0;
@@ -708,6 +723,11 @@ impl<'a, T: TreeItem> Tree<HasTreeState<'a, T>> {
         for i in first_visible..end_idx {
             nodes.push(VisibleNode { index: i });
         }
+
+        log::debug!(
+            "[TREE] calculate_visible_nodes: computed range {} to {}, total_height={}",
+            first_visible, end_idx, total_height
+        );
 
         nodes
     }
@@ -736,6 +756,11 @@ impl<'a, T: TreeItem> Tree<HasTreeState<'a, T>> {
         let is_at_top_boundary = pos_in_visible == 0 && node_index > 0;
         let is_at_bottom_boundary =
             pos_in_visible == visible_count - 1 && node_index < total_nodes - 1;
+
+        log::trace!(
+            "[TREE] build_node_row: key={}, node_index={}, pos_in_visible={}, visible_count={}, total_nodes={}, is_bottom_boundary={}",
+            key.to_string(), node_index, pos_in_visible, visible_count, total_nodes, is_at_bottom_boundary
+        );
 
         // Build indentation
         let indent_width = (flat_node.depth as u16) * self.indent;
