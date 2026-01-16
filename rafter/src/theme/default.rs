@@ -1,4 +1,4 @@
-//! Default rafter theme with dark purple accents.
+//! Default rafter theme with dark purple interacts.
 
 use rafter_derive::theme;
 use tuidom::Color;
@@ -106,7 +106,8 @@ pub struct RafterTheme {
     pub primary: Color,
     pub secondary: Color,
     pub muted: Color,
-    pub accent: Color,
+    pub interact: Color,
+    pub accent: Color,      
 
     // Semantic colors
     pub success: Color,
@@ -143,16 +144,17 @@ pub struct RafterTheme {
 }
 
 /// Create the default rafter theme.
-/// Dark theme with purple accents.
+/// Dark theme with purple interacts.
 pub fn default_theme() -> RafterTheme {
     RafterTheme {
-        // Core: dark purple-gray bg, black surface, purple accent
+        // Core: dark purple-gray bg, black surface, purple interact
         background: Color::oklch(0.1684, 0.0, 0.0),
         surface: Color::oklch(0.1957, 0.014, 291.6),
         border: Color::oklch(0.3, 0.02, 280.0),
         primary: Color::oklch(0.9, 0.0, 0.0),
         secondary: Color::oklch(0.75, 0.02, 280.0),
         muted: Color::oklch(0.5, 0.02, 280.0),
+        interact: Color::oklch(0.674, 0.1945, 295.27),
         accent: Color::oklch(0.8044, 0.1774, 323.99),
 
         // Semantic colors
@@ -170,12 +172,12 @@ pub fn default_theme() -> RafterTheme {
         input: InputColors {
             background: Color::var("surface").darken(0.02),
             border: Color::var("surface").lighten(0.1),
-            border_focus: Color::var("accent").darken(0.2),
+            border_focus: Color::var("interact").darken(0.2),
             placeholder: Color::var("text.muted"),
             cursor_fg: Color::var("text.inverted"),
             cursor_bg: Color::var("text.primary"),
             selection_fg: Color::var("text.inverted"),
-            selection_bg: Color::var("accent"),
+            selection_bg: Color::var("interact"),
         },
 
         text: TextColors {
@@ -200,17 +202,17 @@ pub fn default_theme() -> RafterTheme {
             focused: Color::var("surface").lighten(0.1),
             disabled: Color::var("surface").darken(0.1),
             dropdown_bg: Color::var("surface"),
-            item_focused: Color::var("accent"),
+            item_focused: Color::var("interact"),
         },
 
         list: ListColors {
-            item_focused: Color::var("accent"),
-            item_selected: Color::var("accent").darken(0.3),
+            item_focused: Color::var("interact"),
+            item_selected: Color::var("interact").darken(0.3),
         },
 
         tree: TreeColors {
-            node_focused: Color::var("accent"),
-            node_selected: Color::var("accent").darken(0.3),
+            node_focused: Color::var("interact"),
+            node_selected: Color::var("interact").darken(0.3),
         },
 
         radio: RadioColors {
@@ -231,14 +233,14 @@ pub fn default_theme() -> RafterTheme {
             focused: Color::var("surface").lighten(0.1),
             disabled: Color::var("surface").darken(0.1),
             dropdown_bg: Color::var("surface"),
-            item_focused: Color::var("accent"),
+            item_focused: Color::var("interact"),
         },
 
         table: TableColors {
-            row_focused: Color::var("accent"),
-            row_selected: Color::var("accent").darken(0.3),
+            row_focused: Color::var("interact"),
+            row_selected: Color::var("interact").darken(0.3),
             header_bg: Color::var("surface").lighten(0.1),
-            header_focused: Color::var("accent"),
+            header_focused: Color::var("interact"),
         },
     }
 }
