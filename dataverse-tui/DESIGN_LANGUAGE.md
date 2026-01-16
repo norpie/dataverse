@@ -122,3 +122,28 @@ Toast duration: use defaults.
 ## Selection
 
 Use default rafter widget styling for selection highlighting.
+
+## Status Indicator
+
+Colored dot (●) with label showing system state.
+
+```rust
+Element::row()
+    .child(Element::text("●").style(Style::new().foreground(Color::var("success"))))
+    .child(Element::text("Running"))
+```
+
+## Emphasis Point
+
+Accent dot (●) with accent label, followed by secondary text. Keys in primary color.
+
+```rust
+Element::row()
+    .child(Element::text("●").style(Style::new().foreground(Color::var("accent"))))
+    .child(Element::text("Tip").style(Style::new().foreground(Color::var("accent"))))
+    .child(Element::text(" Use "))
+    .child(Element::text("ctrl+q").style(Style::new().foreground(Color::var("primary"))))
+    .child(Element::text(" to quickly quit"))
+```
+
+Example: "● Tip Use the ctrl+q shortcut to quickly quit the program"
