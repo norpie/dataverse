@@ -50,7 +50,7 @@ impl ConfirmModal {
 impl ConfirmModal {
     #[keybinds]
     fn keys() {
-        bind("enter", "y", confirm);
+        bind("y", confirm);
         bind("escape", "n", cancel);
     }
 
