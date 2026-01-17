@@ -1,12 +1,15 @@
 //! Event dispatch for the runtime.
 //!
 //! Handles dispatching tuidom events to the appropriate handlers:
-//! 1. Global modals (capture all input when open)
-//! 2. App-scoped modals (capture input for focused app)
-//! 3. System keybinds
+//! 1. Global modals (keybinds, widget events)
+//! 2. App-scoped modals (keybinds, widget events)
+//! 3. System keybinds (receives unhandled key events from modals)
 //! 4. App keybinds (with page scope support)
 //! 5. Focused widget (for key events)
 //! 6. Target widget (for mouse events)
+//!
+//! Note: Modals capture mouse/input events but unhandled key events fall through
+//! to system keybinds, allowing global shortcuts like Ctrl+Q to work.
 
 use std::sync::{Arc, RwLock};
 
@@ -214,6 +217,9 @@ impl<'a> EventDispatcher<'a> {
                         }
                     }
                 }
+
+                // Key event not handled by modal - fall through to system keybinds
+                return None;
             }
 
             Event::Click { target, x, y, .. } => {
