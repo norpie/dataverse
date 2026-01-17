@@ -70,6 +70,29 @@ pub enum AttrValue {
     /// Bare flag with no value (e.g., `disabled`, `small`)
     /// Generates `.flag()` method call with no arguments
     BareFlag,
+    /// Conditional value (e.g., `if cond { value } else { other }`)
+    If {
+        cond: Expr,
+        then_value: Box<AttrValue>,
+        else_branch: AttrValueElse,
+    },
+}
+
+/// Else branch of a conditional attribute value
+#[derive(Debug)]
+pub enum AttrValueElse {
+    /// else { value }
+    Else(Box<AttrValue>),
+    /// else if ... { ... } else { ... }
+    ElseIf(Box<AttrValueIf>),
+}
+
+/// An if node within a conditional attribute value (for else-if chains)
+#[derive(Debug)]
+pub struct AttrValueIf {
+    pub cond: Expr,
+    pub then_value: Box<AttrValue>,
+    pub else_branch: AttrValueElse,
 }
 
 /// An inline handler attribute (e.g., `on_click: handler(arg1, cx)`)

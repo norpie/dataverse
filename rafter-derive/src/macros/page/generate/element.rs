@@ -5,8 +5,10 @@ use quote::{format_ident, quote};
 
 use crate::macros::page::ast::{Attr, AttrValue, ElementNode, HandlerArg, HandlerAttr};
 
+use super::generate_conditional_attr_value;
 use super::generate_view_node;
 use super::handler;
+use super::is_conditional;
 use super::style;
 use super::transition;
 
@@ -395,13 +397,23 @@ fn generate_widget_attr_calls(attrs: &[&Attr]) -> Vec<TokenStream> {
         .collect()
 }
 
-/// Generate token stream for an attribute value
+/// Generate token stream for an attribute value (simple passthrough for non-conditional values)
 fn generate_attr_value(value: &AttrValue) -> TokenStream {
     match value {
         AttrValue::Ident(ident) => quote! { #ident },
         AttrValue::Lit(lit) => quote! { #lit },
         AttrValue::Expr(expr) => quote! { #expr },
         AttrValue::BareFlag => quote! {}, // Should not be called for bare flags
+        AttrValue::If { .. } => {
+            // For conditionals without a specific converter, just passthrough the leaf values
+            generate_conditional_attr_value(value, |leaf| match leaf {
+                AttrValue::Ident(ident) => quote! { #ident },
+                AttrValue::Lit(lit) => quote! { #lit },
+                AttrValue::Expr(expr) => quote! { #expr },
+                AttrValue::BareFlag => quote! {},
+                AttrValue::If { .. } => unreachable!("nested If should be handled recursively"),
+            })
+        }
     }
 }
 
@@ -412,6 +424,12 @@ fn generate_attr_value(value: &AttrValue) -> TokenStream {
 /// - Tuple (vertical, horizontal): `padding: (1, 2)` -> `Edges::symmetric(1, 2)`
 fn generate_edges_call(method: &str, value: &AttrValue) -> TokenStream {
     let method_ident = syn::Ident::new(method, proc_macro2::Span::call_site());
+
+    // Handle conditional values
+    if is_conditional(value) {
+        let edges_value = generate_conditional_attr_value(value, generate_edges_value_leaf);
+        return quote! { .#method_ident(#edges_value) };
+    }
 
     match value {
         AttrValue::Lit(syn::Lit::Int(i)) => {
@@ -436,9 +454,38 @@ fn generate_edges_call(method: &str, value: &AttrValue) -> TokenStream {
     }
 }
 
+/// Convert a leaf AttrValue to a tuidom::Edges value
+fn generate_edges_value_leaf(value: &AttrValue) -> TokenStream {
+    match value {
+        AttrValue::Lit(syn::Lit::Int(i)) => {
+            let val = i.base10_parse::<u16>().unwrap_or(0);
+            quote! { tuidom::Edges::all(#val) }
+        }
+        AttrValue::Expr(expr) => {
+            // Check if it's a tuple expression (vertical, horizontal)
+            if let syn::Expr::Tuple(tuple) = expr {
+                if tuple.elems.len() == 2 {
+                    let vertical = &tuple.elems[0];
+                    let horizontal = &tuple.elems[1];
+                    return quote! { tuidom::Edges::symmetric(#vertical as u16, #horizontal as u16) };
+                }
+            }
+            quote! { tuidom::Edges::all(#expr as u16) }
+        }
+        AttrValue::Ident(ident) => quote! { #ident },
+        _ => quote! { tuidom::Edges::all(0) },
+    }
+}
+
 /// Generate size call (width/height)
 fn generate_size_call(method: &str, value: &AttrValue) -> TokenStream {
     let method_ident = syn::Ident::new(method, proc_macro2::Span::call_site());
+
+    // Handle conditional values
+    if is_conditional(value) {
+        let size_value = generate_conditional_attr_value(value, generate_size_value_leaf);
+        return quote! { .#method_ident(#size_value) };
+    }
 
     match value {
         AttrValue::Ident(ident) => {
@@ -469,8 +516,53 @@ fn generate_size_call(method: &str, value: &AttrValue) -> TokenStream {
     }
 }
 
+/// Convert a leaf AttrValue to a tuidom::Size value
+fn generate_size_value_leaf(value: &AttrValue) -> TokenStream {
+    match value {
+        AttrValue::Ident(ident) => {
+            let ident_str = ident.to_string();
+            match ident_str.as_str() {
+                "auto" => quote! { tuidom::Size::Auto },
+                "fill" => quote! { tuidom::Size::Fill },
+                _ => quote! { tuidom::Size::Fixed(#ident as u16) },
+            }
+        }
+        AttrValue::Lit(syn::Lit::Int(i)) => {
+            let val = i.base10_parse::<u16>().unwrap_or(0);
+            quote! { tuidom::Size::Fixed(#val) }
+        }
+        AttrValue::Lit(syn::Lit::Str(s)) => {
+            let s_val = s.value();
+            if s_val.ends_with('%') {
+                let pct: u16 = s_val.trim_end_matches('%').parse().unwrap_or(100);
+                quote! { tuidom::Size::Percent(#pct) }
+            } else {
+                quote! { tuidom::Size::Fixed(#s_val.parse().unwrap_or(0)) }
+            }
+        }
+        AttrValue::Expr(expr) => quote! { #expr },
+        _ => quote! { tuidom::Size::Auto },
+    }
+}
+
 /// Generate direction call
 fn generate_direction_call(value: &AttrValue) -> TokenStream {
+    // Handle conditional values
+    if is_conditional(value) {
+        let dir_value = generate_conditional_attr_value(value, |leaf| match leaf {
+            AttrValue::Ident(ident) => {
+                let ident_str = ident.to_string();
+                match ident_str.as_str() {
+                    "row" | "horizontal" => quote! { tuidom::Direction::Row },
+                    "column" | "col" | "vertical" => quote! { tuidom::Direction::Column },
+                    _ => quote! { #ident },
+                }
+            }
+            _ => generate_attr_value(leaf),
+        });
+        return quote! { .direction(#dir_value) };
+    }
+
     match value {
         AttrValue::Ident(ident) => {
             let ident_str = ident.to_string();
@@ -489,6 +581,26 @@ fn generate_direction_call(value: &AttrValue) -> TokenStream {
 
 /// Generate justify call
 fn generate_justify_call(value: &AttrValue) -> TokenStream {
+    // Handle conditional values
+    if is_conditional(value) {
+        let justify_value = generate_conditional_attr_value(value, |leaf| match leaf {
+            AttrValue::Ident(ident) => {
+                let ident_str = ident.to_string();
+                match ident_str.as_str() {
+                    "start" => quote! { tuidom::Justify::Start },
+                    "end" => quote! { tuidom::Justify::End },
+                    "center" => quote! { tuidom::Justify::Center },
+                    "between" | "space_between" => quote! { tuidom::Justify::SpaceBetween },
+                    "around" | "space_around" => quote! { tuidom::Justify::SpaceAround },
+                    "evenly" | "space_evenly" => quote! { tuidom::Justify::SpaceEvenly },
+                    _ => quote! { #ident },
+                }
+            }
+            _ => generate_attr_value(leaf),
+        });
+        return quote! { .justify(#justify_value) };
+    }
+
     match value {
         AttrValue::Ident(ident) => {
             let ident_str = ident.to_string();
@@ -513,6 +625,24 @@ fn generate_justify_call(value: &AttrValue) -> TokenStream {
 
 /// Generate align call
 fn generate_align_call(value: &AttrValue) -> TokenStream {
+    // Handle conditional values
+    if is_conditional(value) {
+        let align_value = generate_conditional_attr_value(value, |leaf| match leaf {
+            AttrValue::Ident(ident) => {
+                let ident_str = ident.to_string();
+                match ident_str.as_str() {
+                    "start" => quote! { tuidom::Align::Start },
+                    "end" => quote! { tuidom::Align::End },
+                    "center" => quote! { tuidom::Align::Center },
+                    "stretch" => quote! { tuidom::Align::Stretch },
+                    _ => quote! { #ident },
+                }
+            }
+            _ => generate_attr_value(leaf),
+        });
+        return quote! { .align(#align_value) };
+    }
+
     match value {
         AttrValue::Ident(ident) => {
             let ident_str = ident.to_string();
@@ -533,6 +663,24 @@ fn generate_align_call(value: &AttrValue) -> TokenStream {
 
 /// Generate align_self call
 fn generate_align_self_call(value: &AttrValue) -> TokenStream {
+    // Handle conditional values
+    if is_conditional(value) {
+        let align_value = generate_conditional_attr_value(value, |leaf| match leaf {
+            AttrValue::Ident(ident) => {
+                let ident_str = ident.to_string();
+                match ident_str.as_str() {
+                    "start" => quote! { tuidom::Align::Start },
+                    "end" => quote! { tuidom::Align::End },
+                    "center" => quote! { tuidom::Align::Center },
+                    "stretch" => quote! { tuidom::Align::Stretch },
+                    _ => quote! { #ident },
+                }
+            }
+            _ => generate_attr_value(leaf),
+        });
+        return quote! { .align_self(#align_value) };
+    }
+
     match value {
         AttrValue::Ident(ident) => {
             let ident_str = ident.to_string();
@@ -553,6 +701,23 @@ fn generate_align_self_call(value: &AttrValue) -> TokenStream {
 
 /// Generate wrap call
 fn generate_wrap_call(value: &AttrValue) -> TokenStream {
+    // Handle conditional values
+    if is_conditional(value) {
+        let wrap_value = generate_conditional_attr_value(value, |leaf| match leaf {
+            AttrValue::Ident(ident) => {
+                let ident_str = ident.to_string();
+                match ident_str.as_str() {
+                    "no_wrap" | "nowrap" => quote! { tuidom::Wrap::NoWrap },
+                    "wrap" => quote! { tuidom::Wrap::Wrap },
+                    "reverse" | "wrap_reverse" => quote! { tuidom::Wrap::WrapReverse },
+                    _ => quote! { #ident },
+                }
+            }
+            _ => generate_attr_value(leaf),
+        });
+        return quote! { .wrap(#wrap_value) };
+    }
+
     match value {
         AttrValue::Ident(ident) => {
             let ident_str = ident.to_string();
@@ -572,6 +737,24 @@ fn generate_wrap_call(value: &AttrValue) -> TokenStream {
 
 /// Generate overflow call
 fn generate_overflow_call(value: &AttrValue) -> TokenStream {
+    // Handle conditional values
+    if is_conditional(value) {
+        let overflow_value = generate_conditional_attr_value(value, |leaf| match leaf {
+            AttrValue::Ident(ident) => {
+                let ident_str = ident.to_string();
+                match ident_str.as_str() {
+                    "visible" => quote! { tuidom::Overflow::Visible },
+                    "hidden" => quote! { tuidom::Overflow::Hidden },
+                    "scroll" => quote! { tuidom::Overflow::Scroll },
+                    "auto" => quote! { tuidom::Overflow::Auto },
+                    _ => quote! { #ident },
+                }
+            }
+            _ => generate_attr_value(leaf),
+        });
+        return quote! { .overflow(#overflow_value) };
+    }
+
     match value {
         AttrValue::Ident(ident) => {
             let ident_str = ident.to_string();
@@ -592,6 +775,22 @@ fn generate_overflow_call(value: &AttrValue) -> TokenStream {
 
 /// Generate position call
 fn generate_position_call(value: &AttrValue) -> TokenStream {
+    // Handle conditional values
+    if is_conditional(value) {
+        let position_value = generate_conditional_attr_value(value, |leaf| match leaf {
+            AttrValue::Ident(ident) => {
+                let ident_str = ident.to_string();
+                match ident_str.as_str() {
+                    "relative" => quote! { tuidom::Position::Relative },
+                    "absolute" => quote! { tuidom::Position::Absolute },
+                    _ => quote! { #ident },
+                }
+            }
+            _ => generate_attr_value(leaf),
+        });
+        return quote! { .position(#position_value) };
+    }
+
     match value {
         AttrValue::Ident(ident) => {
             let ident_str = ident.to_string();

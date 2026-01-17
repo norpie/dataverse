@@ -8,7 +8,82 @@ pub mod transition;
 use proc_macro2::TokenStream;
 use quote::quote;
 
-use super::ast::{ElseBranch, ForNode, IfNode, MatchNode, Page, ViewNode};
+use super::ast::{AttrValue, AttrValueElse, AttrValueIf, ElseBranch, ForNode, IfNode, MatchNode, Page, ViewNode};
+
+/// Generate code for a conditional attribute value.
+///
+/// This handles `AttrValue::If` variants by generating if-else expressions,
+/// recursively calling the converter function for leaf values.
+///
+/// # Arguments
+/// * `value` - The attribute value to generate code for
+/// * `convert_leaf` - A function to convert leaf values (Ident, Lit, Expr, BareFlag) to TokenStream
+///
+/// # Example
+/// For `if active { primary } else { muted }` with a color converter:
+/// ```ignore
+/// if active {
+///     tuidom::Color::var("primary")
+/// } else {
+///     tuidom::Color::var("muted")
+/// }
+/// ```
+pub fn generate_conditional_attr_value<F>(value: &AttrValue, convert_leaf: F) -> TokenStream
+where
+    F: Fn(&AttrValue) -> TokenStream + Copy,
+{
+    match value {
+        AttrValue::If {
+            cond,
+            then_value,
+            else_branch,
+        } => {
+            let then_code = generate_conditional_attr_value(then_value, convert_leaf);
+            let else_code = generate_conditional_else_branch(else_branch, convert_leaf);
+            quote! {
+                if #cond {
+                    #then_code
+                } else {
+                    #else_code
+                }
+            }
+        }
+        _ => convert_leaf(value),
+    }
+}
+
+/// Generate code for the else branch of a conditional attribute value.
+fn generate_conditional_else_branch<F>(else_branch: &AttrValueElse, convert_leaf: F) -> TokenStream
+where
+    F: Fn(&AttrValue) -> TokenStream + Copy,
+{
+    match else_branch {
+        AttrValueElse::Else(value) => generate_conditional_attr_value(value, convert_leaf),
+        AttrValueElse::ElseIf(if_node) => generate_conditional_attr_value_if(if_node, convert_leaf),
+    }
+}
+
+/// Generate code for an AttrValueIf (used in else-if chains).
+fn generate_conditional_attr_value_if<F>(if_node: &AttrValueIf, convert_leaf: F) -> TokenStream
+where
+    F: Fn(&AttrValue) -> TokenStream + Copy,
+{
+    let cond = &if_node.cond;
+    let then_code = generate_conditional_attr_value(&if_node.then_value, convert_leaf);
+    let else_code = generate_conditional_else_branch(&if_node.else_branch, convert_leaf);
+    quote! {
+        if #cond {
+            #then_code
+        } else {
+            #else_code
+        }
+    }
+}
+
+/// Check if an AttrValue contains a conditional (If variant).
+pub fn is_conditional(value: &AttrValue) -> bool {
+    matches!(value, AttrValue::If { .. })
+}
 
 /// Generate code for the entire page
 pub fn generate(page: &Page) -> TokenStream {

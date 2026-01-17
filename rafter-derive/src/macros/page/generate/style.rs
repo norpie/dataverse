@@ -7,6 +7,8 @@ use quote::quote;
 
 use crate::macros::page::ast::{Attr, AttrValue};
 
+use super::{generate_conditional_attr_value, is_conditional};
+
 /// Generate a single merged style call from style attributes.
 /// Returns None if no style attributes are present.
 pub fn generate_merged_style(attrs: &[&Attr]) -> Option<TokenStream> {
@@ -88,6 +90,16 @@ fn is_true_value(value: &AttrValue) -> bool {
 
 /// Generate color value from attribute
 pub fn generate_color(value: &AttrValue) -> TokenStream {
+    // Handle conditional values
+    if is_conditional(value) {
+        return generate_conditional_attr_value(value, generate_color_leaf);
+    }
+
+    generate_color_leaf(value)
+}
+
+/// Generate color value for a leaf (non-conditional) attribute value
+fn generate_color_leaf(value: &AttrValue) -> TokenStream {
     match value {
         AttrValue::Ident(ident) => {
             // All identifiers are treated as theme variable names
@@ -118,6 +130,16 @@ pub fn generate_color(value: &AttrValue) -> TokenStream {
 
 /// Generate border value from attribute
 fn generate_border(value: &AttrValue) -> TokenStream {
+    // Handle conditional values
+    if is_conditional(value) {
+        return generate_conditional_attr_value(value, generate_border_leaf);
+    }
+
+    generate_border_leaf(value)
+}
+
+/// Generate border value for a leaf (non-conditional) attribute value
+fn generate_border_leaf(value: &AttrValue) -> TokenStream {
     match value {
         AttrValue::Ident(ident) => {
             let ident_str = ident.to_string();

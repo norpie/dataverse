@@ -5,8 +5,8 @@ use syn::token::{Brace, Paren};
 use syn::{braced, parenthesized, Expr, Ident, Pat, Token};
 
 use super::ast::{
-    Attr, AttrValue, ElseBranch, ElementNode, ForNode, HandlerArg, HandlerAttr, IfNode, MatchArm,
-    MatchNode, Page, TransitionAttr, ViewNode,
+    Attr, AttrValue, AttrValueElse, AttrValueIf, ElseBranch, ElementNode, ForNode, HandlerArg,
+    HandlerAttr, IfNode, MatchArm, MatchNode, Page, TransitionAttr, ViewNode,
 };
 
 impl Parse for Page {
@@ -193,6 +193,11 @@ fn parse_attrs(input: ParseStream) -> syn::Result<Vec<Attr>> {
 
 /// Parse an attribute value
 fn parse_attr_value(input: ParseStream) -> syn::Result<AttrValue> {
+    // Check for conditional expression: `if cond { value } else { value }`
+    if input.peek(Token![if]) {
+        return parse_attr_value_if(input);
+    }
+
     // Check for braced expression
     if input.peek(Brace) {
         let content;
@@ -289,6 +294,70 @@ fn parse_color_with_ops(base: Ident, input: ParseStream) -> syn::Result<AttrValu
     }
 
     Ok(AttrValue::Expr(expr))
+}
+
+/// Parse a conditional attribute value: `if cond { value } else { value }`
+///
+/// Supports else-if chains: `if cond { value } else if cond2 { value2 } else { value3 }`
+fn parse_attr_value_if(input: ParseStream) -> syn::Result<AttrValue> {
+    input.parse::<Token![if]>()?;
+
+    // Parse condition (everything up to `{`)
+    let cond = parse_expr_before_brace(input)?;
+
+    // Parse then branch: `{ attr_value }`
+    let content;
+    braced!(content in input);
+    let then_value = Box::new(parse_attr_value(&content)?);
+
+    // Require else branch
+    input.parse::<Token![else]>()?;
+
+    // Check for else if vs else
+    let else_branch = if input.peek(Token![if]) {
+        AttrValueElse::ElseIf(Box::new(parse_attr_value_if_inner(input)?))
+    } else {
+        let content;
+        braced!(content in input);
+        AttrValueElse::Else(Box::new(parse_attr_value(&content)?))
+    };
+
+    Ok(AttrValue::If {
+        cond,
+        then_value,
+        else_branch,
+    })
+}
+
+/// Parse the inner part of an else-if chain (returns AttrValueIf instead of AttrValue)
+fn parse_attr_value_if_inner(input: ParseStream) -> syn::Result<AttrValueIf> {
+    input.parse::<Token![if]>()?;
+
+    // Parse condition
+    let cond = parse_expr_before_brace(input)?;
+
+    // Parse then branch
+    let content;
+    braced!(content in input);
+    let then_value = Box::new(parse_attr_value(&content)?);
+
+    // Require else branch
+    input.parse::<Token![else]>()?;
+
+    // Check for else if vs else
+    let else_branch = if input.peek(Token![if]) {
+        AttrValueElse::ElseIf(Box::new(parse_attr_value_if_inner(input)?))
+    } else {
+        let content;
+        braced!(content in input);
+        AttrValueElse::Else(Box::new(parse_attr_value(&content)?))
+    };
+
+    Ok(AttrValueIf {
+        cond,
+        then_value,
+        else_branch,
+    })
 }
 
 /// Parse handlers after attributes: `on_click: handler(args) on_change: other()`
