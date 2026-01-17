@@ -881,13 +881,14 @@ impl Runtime {
         }
 
         // Add app modals (overlay with dim backdrop)
+        // Each modal is rendered in order, stacking on top of each other
         {
             let reg = registry.read().unwrap();
             if let Some(instance) = reg.focused_instance() {
                 let modals = instance.modals().read().unwrap();
-                if let Some(modal) = modals.last() {
+                for (i, modal) in modals.iter().enumerate() {
                     let modal_wrapper = Self::build_modal_wrapper(
-                        "__modal__",
+                        &format!("__modal_{}__", i),
                         modal.as_ref(),
                     );
                     root = root.child(modal_wrapper);
@@ -896,9 +897,10 @@ impl Runtime {
         }
 
         // Add global modals (highest z-order, overlays everything including app modals)
-        if let Some(modal) = global_modals.last() {
+        // Each modal is rendered in order, stacking on top of each other
+        for (i, modal) in global_modals.iter().enumerate() {
             let modal_wrapper = Self::build_modal_wrapper(
-                "__global_modal__",
+                &format!("__global_modal_{}__", i),
                 modal.as_ref(),
             );
             root = root.child(modal_wrapper);
