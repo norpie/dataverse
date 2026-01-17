@@ -5,6 +5,9 @@
 //! - Generating `Clone` and `Default` impls
 //! - Registering with inventory for auto-discovery
 //! - Creating metadata for use by `#[app_impl]`
+//!
+//! Supports the `pages` flag for page routing:
+//! - `#[app(pages)]` - enables page routing (expects `Page` enum in scope)
 
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
@@ -18,6 +21,8 @@ struct AppAttrs {
     singleton: bool,
     on_panic: Option<Ident>,
     on_blur: Option<Ident>,
+    /// Whether page routing is enabled (expects `Page` enum in scope)
+    pages: bool,
 }
 
 impl AppAttrs {
@@ -27,6 +32,7 @@ impl AppAttrs {
             singleton: false,
             on_panic: None,
             on_blur: None,
+            pages: false,
         };
 
         if !attr.is_empty() {
@@ -36,6 +42,8 @@ impl AppAttrs {
                     attrs.name = Some(value.value());
                 } else if meta.path.is_ident("singleton") {
                     attrs.singleton = true;
+                } else if meta.path.is_ident("pages") {
+                    attrs.pages = true;
                 } else if meta.path.is_ident("on_panic") {
                     meta.input.parse::<Token![=]>()?;
                     let ident: Ident = meta.input.parse()?;
@@ -101,7 +109,7 @@ fn transform_field(field: &Field) -> TokenStream {
 }
 
 /// Generate Default impl.
-fn generate_default_impl(name: &Ident, fields: &FieldsNamed) -> TokenStream {
+fn generate_default_impl(name: &Ident, fields: &FieldsNamed, attrs: &AppAttrs) -> TokenStream {
     let field_defaults: Vec<_> = fields
         .named
         .iter()
@@ -123,11 +131,21 @@ fn generate_default_impl(name: &Ident, fields: &FieldsNamed) -> TokenStream {
         })
         .collect();
 
+    let page_field = if attrs.pages {
+        quote! { __page: rafter::State::new(Page::default()), }
+    } else {
+        quote! {}
+    };
+
     let fields_init = if field_defaults.is_empty() {
-        quote! { __handler_registry: rafter::HandlerRegistry::new() }
+        quote! {
+            #page_field
+            __handler_registry: rafter::HandlerRegistry::new()
+        }
     } else {
         quote! {
             #(#field_defaults),*,
+            #page_field
             __handler_registry: rafter::HandlerRegistry::new()
         }
     };
@@ -144,7 +162,7 @@ fn generate_default_impl(name: &Ident, fields: &FieldsNamed) -> TokenStream {
 }
 
 /// Generate Clone impl.
-fn generate_clone_impl(name: &Ident, fields: &FieldsNamed) -> TokenStream {
+fn generate_clone_impl(name: &Ident, fields: &FieldsNamed, attrs: &AppAttrs) -> TokenStream {
     let field_clones: Vec<_> = fields
         .named
         .iter()
@@ -154,11 +172,21 @@ fn generate_clone_impl(name: &Ident, fields: &FieldsNamed) -> TokenStream {
         })
         .collect();
 
+    let page_field = if attrs.pages {
+        quote! { __page: self.__page.clone(), }
+    } else {
+        quote! {}
+    };
+
     let fields_clone = if field_clones.is_empty() {
-        quote! { __handler_registry: self.__handler_registry.clone() }
+        quote! {
+            #page_field
+            __handler_registry: self.__handler_registry.clone()
+        }
     } else {
         quote! {
             #(#field_clones),*,
+            #page_field
             __handler_registry: self.__handler_registry.clone()
         }
     };
@@ -216,6 +244,8 @@ fn generate_metadata(name: &Ident, attrs: &AppAttrs, fields: &FieldsNamed) -> To
         None => quote! { rafter::BlurPolicy::Continue },
     };
 
+    let has_pages = attrs.pages;
+
     // Fields for dirty checking (all non-skipped fields)
     let dirty_fields: Vec<_> = fields
         .named
@@ -242,6 +272,25 @@ fn generate_metadata(name: &Ident, attrs: &AppAttrs, fields: &FieldsNamed) -> To
 
     let widget_ids: Vec<_> = widget_fields.iter().map(|f| f.to_string()).collect();
 
+    // Include __page in dirty checking and wakeup if pages is enabled
+    let page_dirty = if attrs.pages {
+        quote! { || app.__page.is_dirty() }
+    } else {
+        quote! {}
+    };
+
+    let page_clear_dirty = if attrs.pages {
+        quote! { app.__page.clear_dirty(); }
+    } else {
+        quote! {}
+    };
+
+    let page_wakeup = if attrs.pages {
+        quote! { app.__page.install_wakeup(sender.clone()); }
+    } else {
+        quote! {}
+    };
+
     quote! {
         #[doc(hidden)]
         #[allow(non_snake_case)]
@@ -250,6 +299,7 @@ fn generate_metadata(name: &Ident, attrs: &AppAttrs, fields: &FieldsNamed) -> To
 
             pub const WIDGET_FIELDS: &[&str] = &[#(#widget_ids),*];
             pub const PANIC_BEHAVIOR: rafter::PanicBehavior = #panic_behavior;
+            pub const HAS_PAGES: bool = #has_pages;
 
             pub fn config() -> rafter::AppConfig {
                 rafter::AppConfig {
@@ -261,15 +311,17 @@ fn generate_metadata(name: &Ident, attrs: &AppAttrs, fields: &FieldsNamed) -> To
             }
 
             pub fn is_dirty(app: &#name) -> bool {
-                false #(|| app.#dirty_fields.is_dirty())*
+                false #(|| app.#dirty_fields.is_dirty())* #page_dirty
             }
 
             pub fn clear_dirty(app: &#name) {
                 #(app.#dirty_fields.clear_dirty();)*
+                #page_clear_dirty
             }
 
             pub fn install_wakeup(app: &#name, sender: rafter::WakeupSender) {
                 #(app.#wakeup_fields.install_wakeup(sender.clone());)*
+                #page_wakeup
             }
         }
     }
@@ -341,21 +393,33 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
     };
 
     let transformed_fields: Vec<_> = fields.named.iter().map(transform_field).collect();
-    let default_impl = generate_default_impl(name, fields);
-    let clone_impl = generate_clone_impl(name, fields);
+    let default_impl = generate_default_impl(name, fields, &attrs);
+    let clone_impl = generate_clone_impl(name, fields, &attrs);
     let registration = generate_registration(name);
     let metadata = generate_metadata(name, &attrs, fields);
     let singleton_methods = generate_singleton_methods(name, &attrs);
 
+    // Generate the __page field if pages is enabled
+    let page_field = if attrs.pages {
+        quote! {
+            #[doc(hidden)]
+            __page: rafter::State<Page>,
+        }
+    } else {
+        quote! {}
+    };
+
     // Handle empty fields case to avoid trailing comma issues
     let fields_tokens = if transformed_fields.is_empty() {
         quote! {
+            #page_field
             #[doc(hidden)]
             __handler_registry: rafter::HandlerRegistry,
         }
     } else {
         quote! {
             #(#transformed_fields),*,
+            #page_field
             #[doc(hidden)]
             __handler_registry: rafter::HandlerRegistry,
         }

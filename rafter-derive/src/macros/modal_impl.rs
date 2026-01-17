@@ -30,15 +30,18 @@ struct ModalImplAttrs {
     result_type: Option<Type>,
     /// The modal kind (App or System)
     kind: ModalKindAttr,
+    /// Layout method name for page routing (e.g., `layout = layout`)
+    layout: Option<syn::Ident>,
 }
 
 impl ModalImplAttrs {
     fn parse(attr: TokenStream) -> syn::Result<Self> {
         let mut result_type = None;
         let mut kind = ModalKindAttr::default();
+        let mut layout = None;
 
         if !attr.is_empty() {
-            // Parse: Result = Type, kind = System/App
+            // Parse: Result = Type, kind = System/App, layout = method_name
             let parser = syn::meta::parser(|meta| {
                 if meta.path.is_ident("Result") {
                     let _eq: syn::Token![=] = meta.input.parse()?;
@@ -57,13 +60,17 @@ impl ModalImplAttrs {
                             ))
                         }
                     }
+                } else if meta.path.is_ident("layout") {
+                    let _eq: syn::Token![=] = meta.input.parse()?;
+                    let ident: syn::Ident = meta.input.parse()?;
+                    layout = Some(ident);
                 }
                 Ok(())
             });
             syn::parse::Parser::parse2(parser, attr)?;
         }
 
-        Ok(Self { result_type, kind })
+        Ok(Self { result_type, kind, layout })
     }
 }
 
@@ -161,26 +168,28 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
 
         // Check for page method
         if method.has_attr("page") {
-            // For modals, we only support a single unnamed #[page] method
-            let has_name = method.attrs.iter().any(|attr| {
+            // Extract page name from #[page(Variant)] attribute
+            let page_name = method.attrs.iter().find_map(|attr| {
                 if attr.path().is_ident("page") {
-                    matches!(&attr.meta, syn::Meta::List(_))
+                    match &attr.meta {
+                        syn::Meta::Path(_) => None, // #[page] without name
+                        syn::Meta::List(list) => {
+                            // #[page(Variant)] - parse the variant name
+                            let tokens = &list.tokens;
+                            syn::parse2::<syn::Ident>(tokens.clone())
+                                .ok()
+                                .map(|n| n.to_string())
+                        }
+                        syn::Meta::NameValue(_) => None,
+                    }
                 } else {
-                    false
+                    None
                 }
             });
 
-            if has_name {
-                return syn::Error::new_spanned(
-                    &method.sig.ident,
-                    "Modals only support #[page], not #[page(Name)]. Use #[page] instead.",
-                )
-                .to_compile_error();
-            }
-
             page_methods.push(PageMethod {
                 name: method.sig.ident.clone(),
-                page_name: None,
+                page_name,
                 body: method.body.clone(),
             });
         }
@@ -234,17 +243,14 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
         reconstructed_methods.push(reconstruct_method_stripped(method));
     }
 
-    // Validate page methods for modals
-    if page_methods.len() > 1 {
-        return syn::Error::new_spanned(
-            &partial_impl.self_ty,
-            "Modals can only have one #[page] method",
-        )
-        .to_compile_error();
-    }
+    // Collect page methods with named variants for page routing
+    let named_page_methods: Vec<_> = page_methods
+        .iter()
+        .filter(|p| p.page_name.is_some())
+        .collect();
 
-    // TODO: Process page_methods for DSL parsing
-    let _ = &page_methods;
+    // Check if page routing is enabled (based on metadata)
+    let has_page_routing = !named_page_methods.is_empty();
 
     // Determine the result type
     let result_type = attrs
@@ -255,8 +261,22 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
     // Generate trait method implementations
     let keybinds_impl =
         generate_keybinds_closures_impl(&keybinds_methods, &handler_contexts, &type_name);
-    let element_impl = generate_element_impl(has_element, &self_ty);
+
+    // Generate element impl - use page routing if enabled
+    let element_impl = if has_page_routing {
+        generate_page_routing_element_impl(&named_page_methods, &attrs.layout, &self_ty)
+    } else {
+        generate_element_impl(has_element, &self_ty)
+    };
+
     let name_impl = generate_name_impl(&type_name);
+
+    // Generate page routing helper methods if page routing is enabled
+    let page_routing_helpers = if has_page_routing {
+        generate_page_routing_helpers(&named_page_methods, &self_ty)
+    } else {
+        quote! {}
+    };
 
     // Generate handlers() method
     let handlers_impl = quote! {
@@ -360,6 +380,9 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
 
             // Handler wrappers for page! macro integration
             #handler_wrappers
+
+            // Page routing helpers (if page routing is enabled)
+            #page_routing_helpers
         }
 
         impl #impl_generics rafter::Modal for #self_ty {
@@ -377,5 +400,91 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
         }
 
         #system_modal_impl
+    }
+}
+
+/// Generate element() implementation with page routing.
+///
+/// Generates code like:
+/// ```ignore
+/// fn element(&self) -> tuidom::Element {
+///     let content = match self.__page.get() {
+///         Page::Active => self.active_tab(),
+///         Page::Environments => self.environments_tab(),
+///     };
+///     self.layout(content)  // if layout is specified
+/// }
+/// ```
+fn generate_page_routing_element_impl(
+    page_methods: &[&PageMethod],
+    layout: &Option<syn::Ident>,
+    self_ty: &Type,
+) -> TokenStream {
+    // Generate match arms for each page
+    let match_arms: Vec<TokenStream> = page_methods
+        .iter()
+        .map(|page| {
+            let method_name = &page.name;
+            let variant_name = page.page_name.as_ref().expect("page_name should be Some for named pages");
+            let variant_ident = syn::Ident::new(variant_name, proc_macro2::Span::call_site());
+            quote! {
+                Page::#variant_ident => #self_ty::#method_name(self),
+            }
+        })
+        .collect();
+
+    let content_expr = quote! {
+        match self.__page.get() {
+            #(#match_arms)*
+        }
+    };
+
+    // Wrap with layout if specified
+    let final_expr = if let Some(layout_method) = layout {
+        quote! {
+            let content = #content_expr;
+            #self_ty::#layout_method(self, content)
+        }
+    } else {
+        content_expr
+    };
+
+    quote! {
+        fn element(&self) -> tuidom::Element {
+            #final_expr
+        }
+    }
+}
+
+/// Generate page routing helper methods.
+///
+/// Generates:
+/// - `page(&self) -> Page` - getter for current page
+/// - `navigate(&self, page: Page)` - setter for navigation
+/// - `current_page(&self) -> Option<String>` - for keybind scoping
+fn generate_page_routing_helpers(
+    page_methods: &[&PageMethod],
+    _self_ty: &Type,
+) -> TokenStream {
+    // Just check that we have pages to validate
+    if page_methods.is_empty() {
+        return quote! {};
+    }
+
+    quote! {
+        /// Get the current page.
+        pub fn page(&self) -> Page {
+            self.__page.get()
+        }
+
+        /// Navigate to a different page.
+        pub fn navigate(&self, page: Page) {
+            self.__page.set(page);
+        }
+
+        /// Get the current page name as a string (for keybind scoping).
+        fn current_page(&self) -> Option<String> {
+            Some(format!("{:?}", self.__page.get()))
+        }
     }
 }

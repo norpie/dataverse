@@ -2,6 +2,7 @@
 //!
 //! Supports attributes:
 //! - `#[modal]` - default centered position, auto size
+//! - `#[modal(pages)]` - enable page routing (expects `Page` enum in scope)
 //! - `#[modal(size = Sm)]` - small size preset
 //! - `#[modal(size = Md)]` - medium size preset
 //! - `#[modal(size = Lg)]` - large size preset
@@ -38,19 +39,24 @@ enum ModalPosition {
 struct ModalAttrs {
     size: Option<ModalSize>,
     position: Option<ModalPosition>,
+    /// Whether page routing is enabled (expects `Page` enum in scope)
+    pages: bool,
 }
 
 impl ModalAttrs {
     fn parse(attr: TokenStream) -> syn::Result<Self> {
         let mut size: Option<ModalSize> = None;
         let mut position: Option<ModalPosition> = None;
+        let mut pages = false;
 
         if attr.is_empty() {
-            return Ok(Self { size, position });
+            return Ok(Self { size, position, pages });
         }
 
         let parser = syn::meta::parser(|meta| {
-            if meta.path.is_ident("size") {
+            if meta.path.is_ident("pages") {
+                pages = true;
+            } else if meta.path.is_ident("size") {
                 // Parse: size = Sm or size = Fixed { width: 40, height: 10 }
                 let _eq: syn::Token![=] = meta.input.parse()?;
                 let ident: syn::Ident = meta.input.parse()?;
@@ -160,7 +166,7 @@ impl ModalAttrs {
         });
 
         syn::parse::Parser::parse2(parser, attr)?;
-        Ok(Self { size, position })
+        Ok(Self { size, position, pages })
     }
 }
 
@@ -218,12 +224,19 @@ fn transform_field(field: &Field) -> TokenStream {
 }
 
 /// Generate Default impl.
-fn generate_default_impl(name: &Ident, fields: Option<&FieldsNamed>) -> TokenStream {
+fn generate_default_impl(name: &Ident, fields: Option<&FieldsNamed>, attrs: &ModalAttrs) -> TokenStream {
+    let page_field = if attrs.pages {
+        quote! { __page: rafter::State::new(Page::default()), }
+    } else {
+        quote! {}
+    };
+
     let Some(fields) = fields else {
         return quote! {
             impl Default for #name {
                 fn default() -> Self {
                     Self {
+                        #page_field
                         __handler_registry: rafter::HandlerRegistry::new(),
                     }
                 }
@@ -257,6 +270,7 @@ fn generate_default_impl(name: &Ident, fields: Option<&FieldsNamed>) -> TokenStr
             fn default() -> Self {
                 Self {
                     #(#field_defaults),*,
+                    #page_field
                     __handler_registry: rafter::HandlerRegistry::new(),
                 }
             }
@@ -265,12 +279,19 @@ fn generate_default_impl(name: &Ident, fields: Option<&FieldsNamed>) -> TokenStr
 }
 
 /// Generate Clone impl.
-fn generate_clone_impl(name: &Ident, fields: Option<&FieldsNamed>) -> TokenStream {
+fn generate_clone_impl(name: &Ident, fields: Option<&FieldsNamed>, attrs: &ModalAttrs) -> TokenStream {
+    let page_field = if attrs.pages {
+        quote! { __page: self.__page.clone(), }
+    } else {
+        quote! {}
+    };
+
     let Some(fields) = fields else {
         return quote! {
             impl Clone for #name {
                 fn clone(&self) -> Self {
                     Self {
+                        #page_field
                         __handler_registry: self.__handler_registry.clone(),
                     }
                 }
@@ -292,6 +313,7 @@ fn generate_clone_impl(name: &Ident, fields: Option<&FieldsNamed>) -> TokenStrea
             fn clone(&self) -> Self {
                 Self {
                     #(#field_clones),*,
+                    #page_field
                     __handler_registry: self.__handler_registry.clone(),
                 }
             }
@@ -358,21 +380,39 @@ fn generate_metadata(
         }
     };
 
+    let has_pages = attrs.pages;
+
+    // Include __page in dirty checking if pages is enabled
+    let page_dirty = if attrs.pages {
+        quote! { || modal.__page.is_dirty() }
+    } else {
+        quote! {}
+    };
+
+    let page_clear_dirty = if attrs.pages {
+        quote! { modal.__page.clear_dirty(); }
+    } else {
+        quote! {}
+    };
+
     quote! {
         #[doc(hidden)]
         #[allow(non_snake_case)]
         pub mod #metadata_name {
             use super::*;
 
+            pub const HAS_PAGES: bool = #has_pages;
+
             #size_fn
             #position_fn
 
             pub fn is_dirty(modal: &#name) -> bool {
-                false #(|| modal.#dirty_fields.is_dirty())*
+                false #(|| modal.#dirty_fields.is_dirty())* #page_dirty
             }
 
             pub fn clear_dirty(modal: &#name) {
                 #(modal.#dirty_fields.clear_dirty();)*
+                #page_clear_dirty
             }
         }
     }
@@ -413,9 +453,19 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
         }
     };
 
-    let default_impl = generate_default_impl(name, fields);
-    let clone_impl = generate_clone_impl(name, fields);
+    let default_impl = generate_default_impl(name, fields, &attrs);
+    let clone_impl = generate_clone_impl(name, fields, &attrs);
     let metadata = generate_metadata(name, fields, &attrs);
+
+    // Generate the __page field if pages is enabled
+    let page_field = if attrs.pages {
+        quote! {
+            #[doc(hidden)]
+            __page: rafter::State<Page>,
+        }
+    } else {
+        quote! {}
+    };
 
     if let Some(fields) = fields {
         let transformed_fields: Vec<_> = fields.named.iter().map(transform_field).collect();
@@ -424,6 +474,7 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
             #(#other_attrs)*
             #vis struct #name {
                 #(#transformed_fields),*,
+                #page_field
                 #[doc(hidden)]
                 __handler_registry: rafter::HandlerRegistry,
             }
@@ -433,10 +484,11 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
             #metadata
         }
     } else {
-        // Unit struct becomes struct with just __handler_registry
+        // Unit struct becomes struct with just __handler_registry (and __page if pages enabled)
         quote! {
             #(#other_attrs)*
             #vis struct #name {
+                #page_field
                 #[doc(hidden)]
                 __handler_registry: rafter::HandlerRegistry,
             }
