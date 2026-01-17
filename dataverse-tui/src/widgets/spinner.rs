@@ -85,6 +85,13 @@ impl Spinner {
     /// Spinner is a stateless widget, so it doesn't use the registry or handlers,
     /// but accepts them for API consistency with other widgets.
     pub fn build(self, _registry: &HandlerRegistry, _handlers: &WidgetHandlers) -> Element {
+        self.build_standalone()
+    }
+
+    /// Build the spinner element without registry/handlers.
+    ///
+    /// Use this when building the spinner outside of the page! macro context.
+    pub fn build_standalone(self) -> Element {
         let mut elem = Element::frames(self.generate_frames(), Duration::from_millis(self.frame_ms));
         if let Some(id) = &self.id {
             elem = elem.id(id);
