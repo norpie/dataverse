@@ -31,6 +31,7 @@ use super::builder::QueryBuilder;
 ///     }
 /// }
 /// ```
+#[derive(Clone)]
 pub struct ODataPages {
     /// Owned client for making requests.
     client: DataverseClient,

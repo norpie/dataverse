@@ -33,6 +33,7 @@ use super::url::order_to_odata;
 ///     }
 /// }
 /// ```
+#[derive(Clone)]
 pub struct QueryBuilder {
     client: DataverseClient,
     entity: Entity,
