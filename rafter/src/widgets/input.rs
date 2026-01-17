@@ -31,6 +31,7 @@ pub struct Input<S = NeedsState> {
     state_marker: S,
     id: Option<String>,
     placeholder: Option<String>,
+    label: Option<String>,
     disabled: bool,
     password: bool,
     width: Option<u16>,
@@ -53,6 +54,7 @@ impl Input<NeedsState> {
             state_marker: NeedsState,
             id: None,
             placeholder: None,
+            label: None,
             disabled: false,
             password: false,
             width: None,
@@ -69,6 +71,7 @@ impl Input<NeedsState> {
             state_marker: HasState(s),
             id: self.id,
             placeholder: self.placeholder,
+            label: self.label,
             disabled: self.disabled,
             password: self.password,
             width: self.width,
@@ -90,6 +93,12 @@ impl<S> Input<S> {
     /// Set the placeholder text.
     pub fn placeholder(mut self, placeholder: impl Into<String>) -> Self {
         self.placeholder = Some(placeholder.into());
+        self
+    }
+
+    /// Set the label text (displayed above the input).
+    pub fn label(mut self, label: impl Into<String>) -> Self {
+        self.label = Some(label.into());
         self
     }
 
@@ -208,6 +217,16 @@ impl<'a> Input<HasState<'a>> {
             }
         }
 
-        elem
+        // Wrap in column with label if label is present
+        if let Some(label) = &self.label {
+            Element::col()
+                .child(
+                    Element::text(label)
+                        .style(Style::new().foreground(Color::var("text.muted"))),
+                )
+                .child(elem)
+        } else {
+            elem
+        }
     }
 }
