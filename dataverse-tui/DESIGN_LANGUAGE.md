@@ -47,6 +47,20 @@ button (label: "Ok", hint: "y", id: "ok")
 // Renders as: "Ok y" (Ok in primary, y in muted)
 ```
 
+### Form Fields
+
+Use the `label` parameter on `input`, `select`, and `autocomplete` widgets. The label renders in muted color directly above the field (no gap). Field-to-field spacing comes from the parent container's `gap`.
+
+```rust
+column (gap: 1) {
+    input (state: self.name, id: "name", label: "Name", placeholder: "Enter name...")
+    input (state: self.email, id: "email", label: "Email", placeholder: "user@example.com")
+    select (state: self.country, id: "country", label: "Country", placeholder: "Select...")
+}
+```
+
+Labels should always be above the field, never inline beside it. Inline labels waste horizontal space and make vertical scanning difficult.
+
 ### Keybind Hints
 
 Key in primary color, description in muted color. Multiple hints on one line use `justify: between`.
