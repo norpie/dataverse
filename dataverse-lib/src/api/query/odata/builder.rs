@@ -231,36 +231,53 @@ impl QueryBuilder {
 
     /// Executes a count query and returns the number of matching records.
     ///
-    /// This uses the `$count` endpoint for efficiency.
+    /// Uses `$apply=aggregate($count as count)` which returns accurate counts
+    /// (the `/$count` endpoint is limited to 5000 on some Dataverse instances).
     pub async fn count(self) -> Result<usize, Error> {
         let entity_set_name = self.resolve_entity_set().await?;
         let base_url = self.client.base_url().trim_end_matches('/');
         let api_version = self.client.api_version();
 
         let mut url = format!(
-            "{}/api/data/{}/{}/$count",
+            "{}/api/data/{}/{}?$apply=aggregate($count as count)",
             base_url, api_version, entity_set_name
         );
 
-        // Only $filter is supported with $count
+        // Add filter if present
         if let Some(ref filter) = self.filter {
-            url.push_str(&format!("?$filter={}", odata_filter_to_string(filter)));
+            url.push_str(&format!("&$filter={}", odata_filter_to_string(filter)));
         }
+
+        log::debug!("[QueryBuilder] Count URL: {}", url);
+
+        // Build OData headers
+        let mut headers = reqwest::header::HeaderMap::new();
+        headers.insert("OData-MaxVersion", reqwest::header::HeaderValue::from_static("4.0"));
+        headers.insert("OData-Version", reqwest::header::HeaderValue::from_static("4.0"));
+        headers.insert("Accept", reqwest::header::HeaderValue::from_static("application/json"));
 
         let response: reqwest::Response = self
             .client
-            .request(reqwest::Method::GET, &url, None, None)
+            .request(reqwest::Method::GET, &url, Some(headers), None)
             .await?;
 
-        let count_text = response.text().await.map_err(crate::error::ApiError::from)?;
-        let count: usize = count_text.trim().parse().map_err(|_| {
-            Error::Api(crate::error::ApiError::Parse {
-                message: format!("Invalid count response: {}", count_text),
-                body: Some(count_text),
-            })
-        })?;
+        // Parse JSON response: {"value": [{"count": 12345}]}
+        let json: serde_json::Value = response.json().await.map_err(crate::error::ApiError::from)?;
 
-        Ok(count)
+        let count = json
+            .get("value")
+            .and_then(|v| v.as_array())
+            .and_then(|arr| arr.first())
+            .and_then(|obj| obj.get("count"))
+            .and_then(|c| c.as_u64())
+            .ok_or_else(|| {
+                Error::Api(crate::error::ApiError::Parse {
+                    message: "Invalid count response format".to_string(),
+                    body: Some(json.to_string()),
+                })
+            })?;
+
+        Ok(count as usize)
     }
 
     /// Converts this query builder into an async iterator over pages.
