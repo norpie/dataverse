@@ -450,6 +450,9 @@ impl ClientManagementModal {
         let is_connected = self.is_connected.get();
         let connect_label = if is_connected { "Re-authenticate" } else { "Connect" };
         let status_text = if is_connected { "Connected" } else { "Not connected" };
+        let status_color = if is_connected { "success" } else { "error" };
+        let status_indicator = Element::text("●")
+            .style(Style::new().foreground(Color::var(status_color)));
 
         page! {
             column (gap: 1, width: fill, height: fill) {
@@ -460,15 +463,15 @@ impl ClientManagementModal {
                     on_change: on_acc_select()
 
                 row (gap: 1) {
-                    text (content: "Status:") style (fg: muted)
+                    { status_indicator }
                     text (content: status_text)
-                    button (label: connect_label, id: "connect") on_activate: connect()
                 }
 
                 // Spacer to push buttons to bottom
                 row (height: fill)
 
-                row (width: fill, justify: end) {
+                row (width: fill, justify: between) {
+                    button (label: connect_label, id: "connect") on_activate: connect()
                     button (label: "Close", hint: "esc", id: "close") on_activate: close()
                 }
             }
