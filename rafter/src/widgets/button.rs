@@ -1,6 +1,6 @@
 //! Button widget.
 
-use tuidom::{Color, Element, Style, Transitions};
+use tuidom::{Color, Edges, Element, Style, Transitions};
 
 use crate::{HandlerRegistry, WidgetHandlers};
 
@@ -141,7 +141,8 @@ impl Button {
             .id(&id)
             .focusable(!self.disabled)
             .clickable(!self.disabled)
-            .disabled(self.disabled);
+            .disabled(self.disabled)
+            .padding(Edges::symmetric(0, 1));
 
         if self.ghost {
             // Ghost buttons: no background, no style changes on hover/focus
