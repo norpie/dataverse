@@ -1,4 +1,6 @@
 //! Client management modal with tabbed interface.
+//!
+//! Uses page routing for tab navigation with a shared layout wrapper.
 
 use rafter::page;
 use rafter::prelude::*;
@@ -8,9 +10,9 @@ use tuidom::{Color, Element, Style};
 use crate::credentials::CredentialsProvider;
 use crate::modals::{BrowserAuthModal, ConfirmModal};
 
-/// Tab selection for the client management modal.
+/// Page enum for the client management modal tabs.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub enum TabKind {
+pub enum Page {
     #[default]
     Active,
     Environments,
@@ -62,10 +64,8 @@ impl ListItem for AccListItem {
 }
 
 /// Modal for managing environments, accounts, and their connections.
-#[modal(size = Lg)]
+#[modal(size = Lg, pages)]
 pub struct ClientManagementModal {
-    current_tab: TabKind,
-
     // Active tab state
     env_select: SelectState<i64>,
     acc_select: SelectState<i64>,
@@ -85,7 +85,7 @@ pub struct ClientManagementModal {
     acc_add_name: String,
 }
 
-#[modal_impl(kind = System)]
+#[modal_impl(kind = System, layout = layout)]
 impl ClientManagementModal {
     #[on_start]
     async fn load_data(&self, gx: &GlobalContext) {
@@ -174,17 +174,17 @@ impl ClientManagementModal {
 
     #[handler]
     async fn tab_active(&self) {
-        self.current_tab.set(TabKind::Active);
+        self.navigate(Page::Active);
     }
 
     #[handler]
     async fn tab_environments(&self) {
-        self.current_tab.set(TabKind::Environments);
+        self.navigate(Page::Environments);
     }
 
     #[handler]
     async fn tab_accounts(&self) {
-        self.current_tab.set(TabKind::Accounts);
+        self.navigate(Page::Accounts);
     }
 
     #[handler]
@@ -415,36 +415,44 @@ impl ClientManagementModal {
     }
 
     // =========================================================================
-    // Rendering
+    // Layout and Pages (using page routing)
     // =========================================================================
 
-    fn element(&self) -> Element {
-        match self.current_tab.get() {
-            TabKind::Active => self.render_active_tab(),
-            TabKind::Environments => self.render_environments_tab(),
-            TabKind::Accounts => self.render_accounts_tab(),
+    /// Shared layout wrapper with title and tab bar.
+    fn layout(&self, content: Element) -> Element {
+        let current = self.page();
+
+        page! {
+            column (padding: (1, 2), gap: 1, width: fill, height: fill)
+                style (bg: surface)
+            {
+                text (content: "Client Management") style (bold, fg: interact)
+
+                row (gap: 2) {
+                    button (label: "Active", hint: "1", id: "tab-active")
+                        style (fg: if current == Page::Active { interact } else { muted })
+                        on_activate: tab_active()
+                    button (label: "Environments", hint: "2", id: "tab-environments")
+                        style (fg: if current == Page::Environments { interact } else { muted })
+                        on_activate: tab_environments()
+                    button (label: "Accounts", hint: "3", id: "tab-accounts")
+                        style (fg: if current == Page::Accounts { interact } else { muted })
+                        on_activate: tab_accounts()
+                }
+
+                { content }
+            }
         }
     }
 
-    fn render_active_tab(&self) -> Element {
+    #[page(Active)]
+    fn active_page(&self) -> Element {
         let is_connected = self.is_connected.get();
         let connect_label = if is_connected { "Re-authenticate" } else { "Connect" };
         let status_text = if is_connected { "Connected" } else { "Not connected" };
 
         page! {
-            column (padding: (1, 2), gap: 1, width: fill, height: fill) style (bg: surface) {
-                text (content: "Client Management") style (bold, fg: interact)
-
-                // Tab bar
-                row (gap: 2) {
-                    button (label: "Active", hint: "1", id: "tab-active") style (fg: interact)
-                        on_activate: tab_active()
-                    button (label: "Environments", hint: "2", id: "tab-environments")
-                        on_activate: tab_environments()
-                    button (label: "Accounts", hint: "3", id: "tab-accounts")
-                        on_activate: tab_accounts()
-                }
-
+            column (gap: 1, width: fill, height: fill) {
                 row (gap: 1) {
                     text (content: "Environment") style (bold)
                     select (state: self.env_select, id: "env-select", placeholder: "Select environment...")
@@ -473,7 +481,8 @@ impl ClientManagementModal {
         }
     }
 
-    fn render_environments_tab(&self) -> Element {
+    #[page(Environments)]
+    fn environments_page(&self) -> Element {
         let is_adding = self.env_adding.get();
 
         if is_adding {
@@ -481,19 +490,7 @@ impl ClientManagementModal {
         }
 
         page! {
-            column (padding: (1, 2), gap: 1, width: fill, height: fill) style (bg: surface) {
-                text (content: "Client Management") style (bold, fg: interact)
-
-                // Tab bar
-                row (gap: 2) {
-                    button (label: "Active", hint: "1", id: "tab-active")
-                        on_activate: tab_active()
-                    button (label: "Environments", hint: "2", id: "tab-environments") style (fg: interact)
-                        on_activate: tab_environments()
-                    button (label: "Accounts", hint: "3", id: "tab-accounts")
-                        on_activate: tab_accounts()
-                }
-
+            column (gap: 1, width: fill, height: fill) {
                 list (state: self.env_list, id: "env-list", height: fill)
                     style (bg: background)
 
@@ -508,21 +505,37 @@ impl ClientManagementModal {
         }
     }
 
+    #[page(Accounts)]
+    fn accounts_page(&self) -> Element {
+        let is_adding = self.acc_adding.get();
+
+        if is_adding {
+            return self.render_acc_add_form();
+        }
+
+        page! {
+            column (gap: 1, width: fill, height: fill) {
+                list (state: self.acc_list, id: "acc-list", height: fill)
+                    style (bg: background)
+
+                row (width: fill, justify: between) {
+                    row (gap: 1) {
+                        button (label: "Add", id: "acc-add") on_activate: acc_show_add()
+                        button (label: "Delete", id: "acc-delete") on_activate: acc_delete()
+                    }
+                    button (label: "Close", hint: "esc", id: "close") on_activate: close()
+                }
+            }
+        }
+    }
+
+    // =========================================================================
+    // Sub-forms (not using page routing - these are nested views)
+    // =========================================================================
+
     fn render_env_add_form(&self) -> Element {
         page! {
-            column (padding: (1, 2), gap: 1, width: fill, height: fill) style (bg: surface) {
-                text (content: "Client Management") style (bold, fg: interact)
-
-                // Tab bar
-                row (gap: 2) {
-                    button (label: "Active", hint: "1", id: "tab-active")
-                        on_activate: tab_active()
-                    button (label: "Environments", hint: "2", id: "tab-environments") style (fg: interact)
-                        on_activate: tab_environments()
-                    button (label: "Accounts", hint: "3", id: "tab-accounts")
-                        on_activate: tab_accounts()
-                }
-
+            column (gap: 1, width: fill, height: fill) {
                 text (content: "Add Environment") style (bold)
 
                 row (gap: 1) {
@@ -546,56 +559,9 @@ impl ClientManagementModal {
         }
     }
 
-    fn render_accounts_tab(&self) -> Element {
-        let is_adding = self.acc_adding.get();
-
-        if is_adding {
-            return self.render_acc_add_form();
-        }
-
-        page! {
-            column (padding: (1, 2), gap: 1, width: fill, height: fill) style (bg: surface) {
-                text (content: "Client Management") style (bold, fg: interact)
-
-                // Tab bar
-                row (gap: 2) {
-                    button (label: "Active", hint: "1", id: "tab-active")
-                        on_activate: tab_active()
-                    button (label: "Environments", hint: "2", id: "tab-environments")
-                        on_activate: tab_environments()
-                    button (label: "Accounts", hint: "3", id: "tab-accounts") style (fg: interact)
-                        on_activate: tab_accounts()
-                }
-
-                list (state: self.acc_list, id: "acc-list", height: fill)
-                    style (bg: background)
-
-                row (width: fill, justify: between) {
-                    row (gap: 1) {
-                        button (label: "Add", id: "acc-add") on_activate: acc_show_add()
-                        button (label: "Delete", id: "acc-delete") on_activate: acc_delete()
-                    }
-                    button (label: "Close", hint: "esc", id: "close") on_activate: close()
-                }
-            }
-        }
-    }
-
     fn render_acc_add_form(&self) -> Element {
         page! {
-            column (padding: (1, 2), gap: 1, width: fill, height: fill) style (bg: surface) {
-                text (content: "Client Management") style (bold, fg: interact)
-
-                // Tab bar
-                row (gap: 2) {
-                    button (label: "Active", hint: "1", id: "tab-active")
-                        on_activate: tab_active()
-                    button (label: "Environments", hint: "2", id: "tab-environments")
-                        on_activate: tab_environments()
-                    button (label: "Accounts", hint: "3", id: "tab-accounts") style (fg: interact)
-                        on_activate: tab_accounts()
-                }
-
+            column (gap: 1, width: fill, height: fill) {
                 text (content: "Add Account") style (bold)
 
                 row (gap: 1) {
