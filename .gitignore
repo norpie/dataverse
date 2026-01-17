@@ -1,6 +1,7 @@
 .direnv
 **/target
 AGENTS.md
+**/claude.*.md
 rafter/CURRENT_PLAN.md
 rafter/flamegraph.svg
 rafter/perf.data
