@@ -237,12 +237,9 @@ impl SetupModal {
                 text (content: "Enter your Dataverse environment details.") style (fg: muted)
 
                 column (gap: 1) {
-                    text (content: "Environment URL") style (fg: muted)
-                    input (state: self.env_url, id: "env_url", placeholder: "https://org.crm.dynamics.com")
+                    input (state: self.env_url, id: "env_url", label: "Environment URL", placeholder: "https://org.crm.dynamics.com")
                         style (bg: background)
-
-                    text (content: "Display Name") style (fg: muted)
-                    input (state: self.env_display_name, id: "env_display_name", placeholder: "My Environment")
+                    input (state: self.env_display_name, id: "env_display_name", label: "Display Name", placeholder: "My Environment")
                         style (bg: background)
                 }
 
@@ -261,16 +258,11 @@ impl SetupModal {
                 text (content: "Enter your Azure AD application details.") style (fg: muted)
 
                 column (gap: 1) {
-                    text (content: "Client ID") style (fg: muted)
-                    input (state: self.client_id, id: "client_id", placeholder: "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx")
+                    input (state: self.client_id, id: "client_id", label: "Client ID", placeholder: "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx")
                         style (bg: background)
-
-                    text (content: "Tenant ID") style (fg: muted)
-                    input (state: self.tenant_id, id: "tenant_id", placeholder: "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx")
+                    input (state: self.tenant_id, id: "tenant_id", label: "Tenant ID", placeholder: "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx")
                         style (bg: background)
-
-                    text (content: "Account Display Name") style (fg: muted)
-                    input (state: self.account_display_name, id: "account_display_name", placeholder: "My Account")
+                    input (state: self.account_display_name, id: "account_display_name", label: "Account Display Name", placeholder: "My Account")
                         style (bg: background)
                 }
 

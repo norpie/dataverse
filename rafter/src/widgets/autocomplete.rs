@@ -185,6 +185,7 @@ pub struct Autocomplete<S = NeedsState> {
     state_marker: S,
     id: Option<String>,
     placeholder: Option<String>,
+    label: Option<String>,
     disabled: bool,
     width: Option<u16>,
     style: Option<Style>,
@@ -206,6 +207,7 @@ impl Autocomplete<NeedsState> {
             state_marker: NeedsState,
             id: None,
             placeholder: None,
+            label: None,
             disabled: false,
             width: None,
             style: None,
@@ -224,6 +226,7 @@ impl Autocomplete<NeedsState> {
             state_marker: HasState(s),
             id: self.id,
             placeholder: self.placeholder,
+            label: self.label,
             disabled: self.disabled,
             width: self.width,
             style: self.style,
@@ -244,6 +247,12 @@ impl<S> Autocomplete<S> {
     /// Set the placeholder text shown when input is empty.
     pub fn placeholder(mut self, placeholder: impl Into<String>) -> Self {
         self.placeholder = Some(placeholder.into());
+        self
+    }
+
+    /// Set the label text (displayed above the autocomplete).
+    pub fn label(mut self, label: impl Into<String>) -> Self {
+        self.label = Some(label.into());
         self
     }
 
@@ -424,7 +433,7 @@ impl<'a, T: Clone + PartialEq + Send + Sync + 'static> Autocomplete<HasState<'a,
         }
 
         // Build dropdown if open
-        if current.open && !current.filtered.is_empty() {
+        let elem = if current.open && !current.filtered.is_empty() {
             let dropdown_id = format!("{}-dropdown", id);
             let mut options_col = Element::col().id(&dropdown_id);
 
@@ -524,6 +533,18 @@ impl<'a, T: Clone + PartialEq + Send + Sync + 'static> Autocomplete<HasState<'a,
                 .child(dropdown)
         } else {
             input
+        };
+
+        // Wrap in column with label if label is present
+        if let Some(label) = &self.label {
+            Element::col()
+                .child(
+                    Element::text(label)
+                        .style(Style::new().foreground(Color::var("text.muted"))),
+                )
+                .child(elem)
+        } else {
+            elem
         }
     }
 }

@@ -84,6 +84,7 @@ pub struct Select<S = NeedsState> {
     state_marker: S,
     id: Option<String>,
     placeholder: Option<String>,
+    label: Option<String>,
     disabled: bool,
     style: Option<Style>,
     style_focused: Option<Style>,
@@ -104,6 +105,7 @@ impl Select<NeedsState> {
             state_marker: NeedsState,
             id: None,
             placeholder: None,
+            label: None,
             disabled: false,
             style: None,
             style_focused: None,
@@ -121,6 +123,7 @@ impl Select<NeedsState> {
             state_marker: HasState(s),
             id: self.id,
             placeholder: self.placeholder,
+            label: self.label,
             disabled: self.disabled,
             style: self.style,
             style_focused: self.style_focused,
@@ -140,6 +143,12 @@ impl<S> Select<S> {
     /// Set the placeholder text shown when no value is selected.
     pub fn placeholder(mut self, placeholder: impl Into<String>) -> Self {
         self.placeholder = Some(placeholder.into());
+        self
+    }
+
+    /// Set the label text (displayed above the select).
+    pub fn label(mut self, label: impl Into<String>) -> Self {
+        self.label = Some(label.into());
         self
     }
 
@@ -277,7 +286,7 @@ impl<'a, T: Clone + PartialEq + Send + Sync + 'static> Select<HasState<'a, T>> {
         }
 
         // Build dropdown if open
-        if current.open {
+        let elem = if current.open {
             log::debug!(
                 "[select] Building dropdown id={}, options_count={}, options={:?}",
                 id,
@@ -392,6 +401,18 @@ impl<'a, T: Clone + PartialEq + Send + Sync + 'static> Select<HasState<'a, T>> {
                 .child(dropdown)
         } else {
             toggle.width(tuidom::Size::Fixed(min_width))
+        };
+
+        // Wrap in column with label if label is present
+        if let Some(label) = &self.label {
+            Element::col()
+                .child(
+                    Element::text(label)
+                        .style(Style::new().foreground(Color::var("text.muted"))),
+                )
+                .child(elem)
+        } else {
+            elem
         }
     }
 }

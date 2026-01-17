@@ -453,17 +453,11 @@ impl ClientManagementModal {
 
         page! {
             column (gap: 1, width: fill, height: fill) {
-                row (gap: 1) {
-                    text (content: "Environment") style (bold)
-                    select (state: self.env_select, id: "env-select", placeholder: "Select environment...")
-                        on_change: on_env_select()
-                }
+                select (state: self.env_select, id: "env-select", label: "Environment", placeholder: "Select environment...")
+                    on_change: on_env_select()
 
-                row (gap: 1) {
-                    text (content: "Account") style (bold)
-                    select (state: self.acc_select, id: "acc-select", placeholder: "Select account...")
-                        on_change: on_acc_select()
-                }
+                select (state: self.acc_select, id: "acc-select", label: "Account", placeholder: "Select account...")
+                    on_change: on_acc_select()
 
                 row (gap: 1) {
                     text (content: "Status:") style (fg: muted)
@@ -538,15 +532,8 @@ impl ClientManagementModal {
             column (gap: 1, width: fill, height: fill) {
                 text (content: "Add Environment") style (bold)
 
-                row (gap: 1) {
-                    text (content: "URL") style (fg: muted)
-                    input (state: self.env_add_url, id: "env-url", placeholder: "https://org.crm.dynamics.com")
-                }
-
-                row (gap: 1) {
-                    text (content: "Name") style (fg: muted)
-                    input (state: self.env_add_name, id: "env-name", placeholder: "My Environment")
-                }
+                input (state: self.env_add_url, id: "env-url", label: "URL", placeholder: "https://org.crm.dynamics.com")
+                input (state: self.env_add_name, id: "env-name", label: "Name", placeholder: "My Environment")
 
                 // Spacer to push buttons to bottom
                 row (height: fill)
@@ -564,20 +551,9 @@ impl ClientManagementModal {
             column (gap: 1, width: fill, height: fill) {
                 text (content: "Add Account") style (bold)
 
-                row (gap: 1) {
-                    text (content: "Client ID") style (fg: muted)
-                    input (state: self.acc_add_client_id, id: "acc-client-id", placeholder: "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx")
-                }
-
-                row (gap: 1) {
-                    text (content: "Tenant ID") style (fg: muted)
-                    input (state: self.acc_add_tenant_id, id: "acc-tenant-id", placeholder: "common (optional)")
-                }
-
-                row (gap: 1) {
-                    text (content: "Name") style (fg: muted)
-                    input (state: self.acc_add_name, id: "acc-name", placeholder: "My Account")
-                }
+                input (state: self.acc_add_client_id, id: "acc-client-id", label: "Client ID", placeholder: "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx")
+                input (state: self.acc_add_tenant_id, id: "acc-tenant-id", label: "Tenant ID", placeholder: "common (optional)")
+                input (state: self.acc_add_name, id: "acc-name", label: "Name", placeholder: "My Account")
 
                 // Spacer to push buttons to bottom
                 row (height: fill)
