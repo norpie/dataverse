@@ -1,11 +1,13 @@
 //! Autocomplete widget - a text input with fuzzy-filtered dropdown suggestions.
 
+use std::hash::Hash;
 use std::sync::Arc;
 
 use nucleo_matcher::pattern::{AtomKind, CaseMatching, Normalization, Pattern};
 use nucleo_matcher::{Config, Matcher, Utf32Str};
 use tuidom::{Color, Element, Overflow, Position, Size, Style, Transitions};
 
+use super::selection::{Selection, SelectionMode};
 use crate::state::State;
 use crate::{HandlerRegistry, WidgetHandlers};
 
@@ -59,7 +61,7 @@ fn fuzzy_filter(query: &str, labels: &[String]) -> Vec<FilterMatch> {
 
 /// State for an autocomplete widget.
 ///
-/// Contains the dropdown state, input text, selected value, and available options.
+/// Contains the dropdown state, input text, selected value(s), and available options.
 ///
 /// # Example
 ///
@@ -67,21 +69,24 @@ fn fuzzy_filter(query: &str, labels: &[String]) -> Vec<FilterMatch> {
 /// // In app struct (will be wrapped in State<> by #[app] macro):
 /// country: AutocompleteState<String>,
 ///
-/// // Initialize in on_start:
+/// // Initialize in on_start (single-select, the default):
 /// self.country.set(AutocompleteState::new([
 ///     ("us".to_string(), "United States"),
 ///     ("uk".to_string(), "United Kingdom"),
 ///     ("de".to_string(), "Germany"),
 /// ]));
+///
+/// // Multi-select mode:
+/// self.tags.set(AutocompleteState::new([...]).with_selection(SelectionMode::Multi));
 /// ```
 #[derive(Clone, Debug)]
-pub struct AutocompleteState<T: Clone> {
+pub struct AutocompleteState<T: Clone + Eq + Hash> {
     /// Whether the dropdown is open.
     pub open: bool,
     /// Current input text.
     pub text: String,
-    /// The currently selected value, if any.
-    pub value: Option<T>,
+    /// Selection state (supports single and multi-select).
+    pub selection: Selection<T>,
     /// Dropdown cursor position (index into filtered).
     pub cursor: usize,
     /// Available options as (value, label) pairs.
@@ -90,12 +95,12 @@ pub struct AutocompleteState<T: Clone> {
     pub filtered: Vec<FilterMatch>,
 }
 
-impl<T: Clone> Default for AutocompleteState<T> {
+impl<T: Clone + Eq + Hash> Default for AutocompleteState<T> {
     fn default() -> Self {
         Self {
             open: false,
             text: String::new(),
-            value: None,
+            selection: Selection::single(),
             cursor: 0,
             options: Vec::new(),
             filtered: Vec::new(),
@@ -103,8 +108,10 @@ impl<T: Clone> Default for AutocompleteState<T> {
     }
 }
 
-impl<T: Clone> AutocompleteState<T> {
+impl<T: Clone + Eq + Hash> AutocompleteState<T> {
     /// Create a new AutocompleteState with the given options.
+    ///
+    /// Defaults to single-select mode. Use `with_selection()` for multi-select.
     pub fn new(options: impl IntoIterator<Item = (T, impl Into<String>)>) -> Self {
         let options: Vec<(T, String)> = options
             .into_iter()
@@ -116,23 +123,61 @@ impl<T: Clone> AutocompleteState<T> {
         Self {
             open: false,
             text: String::new(),
-            value: None,
+            selection: Selection::single(),
             cursor: 0,
             options,
             filtered,
         }
     }
 
-    /// Set the initial selected value (also sets text to matching label).
+    /// Set the selection mode.
+    pub fn with_selection(mut self, mode: SelectionMode) -> Self {
+        self.selection = match mode {
+            SelectionMode::None => Selection::none(),
+            SelectionMode::Single => Selection::single(),
+            SelectionMode::Multi => Selection::multi(),
+        };
+        self
+    }
+
+    /// Set the initial selected value (also sets text to matching label in single-select mode).
     pub fn with_value(mut self, value: T) -> Self
     where
         T: PartialEq,
     {
-        if let Some((_, label)) = self.options.iter().find(|(v, _)| v == &value) {
-            self.text = label.clone();
+        if self.selection.mode == SelectionMode::Single {
+            if let Some((_, label)) = self.options.iter().find(|(v, _)| v == &value) {
+                self.text = label.clone();
+            }
         }
-        self.value = Some(value);
+        self.selection.selected.insert(value);
         self
+    }
+
+    /// Get the single selected value (for single-select mode).
+    ///
+    /// Returns `None` if nothing is selected or if in multi-select mode with multiple selections.
+    pub fn value(&self) -> Option<&T> {
+        self.selection.get_single()
+    }
+
+    /// Check if a value is selected.
+    pub fn is_selected(&self, value: &T) -> bool {
+        self.selection.is_selected(value)
+    }
+
+    /// Get all selected values.
+    pub fn selected_values(&self) -> impl Iterator<Item = &T> {
+        self.selection.get_all()
+    }
+
+    /// Get labels for all selected values.
+    pub fn selected_labels(&self) -> Vec<&str> {
+        self.options
+            .iter()
+            .filter(|(v, _)| self.selection.is_selected(v))
+            .map(|(_, label)| label.as_str())
+            .collect()
     }
 
     /// Re-run the fuzzy filter with current text.
@@ -166,7 +211,7 @@ impl<T: Clone> AutocompleteState<T> {
 pub struct NeedsState;
 
 /// Typestate marker: autocomplete has a state reference.
-pub struct HasState<'a, T: Clone>(&'a State<AutocompleteState<T>>);
+pub struct HasState<'a, T: Clone + Eq + Hash>(&'a State<AutocompleteState<T>>);
 
 /// An autocomplete widget builder.
 ///
@@ -191,6 +236,7 @@ pub struct Autocomplete<S = NeedsState> {
     style: Option<Style>,
     style_focused: Option<Style>,
     style_disabled: Option<Style>,
+    style_selected: Option<Style>,
     transitions: Option<Transitions>,
 }
 
@@ -213,12 +259,13 @@ impl Autocomplete<NeedsState> {
             style: None,
             style_focused: None,
             style_disabled: None,
+            style_selected: None,
             transitions: None,
         }
     }
 
     /// Set the state reference. Required before calling `build()`.
-    pub fn state<T: Clone + PartialEq + Send + Sync + 'static>(
+    pub fn state<T: Clone + Eq + Hash + PartialEq + Send + Sync + 'static>(
         self,
         s: &State<AutocompleteState<T>>,
     ) -> Autocomplete<HasState<'_, T>> {
@@ -232,6 +279,7 @@ impl Autocomplete<NeedsState> {
             style: self.style,
             style_focused: self.style_focused,
             style_disabled: self.style_disabled,
+            style_selected: self.style_selected,
             transitions: self.transitions,
         }
     }
@@ -286,6 +334,12 @@ impl<S> Autocomplete<S> {
         self
     }
 
+    /// Set the style for selected items in the dropdown.
+    pub fn style_selected(mut self, s: Style) -> Self {
+        self.style_selected = Some(s);
+        self
+    }
+
     /// Set transitions.
     pub fn transitions(mut self, t: Transitions) -> Self {
         self.transitions = Some(t);
@@ -293,7 +347,7 @@ impl<S> Autocomplete<S> {
     }
 }
 
-impl<'a, T: Clone + PartialEq + Send + Sync + 'static> Autocomplete<HasState<'a, T>> {
+impl<'a, T: Clone + Eq + Hash + PartialEq + Send + Sync + 'static> Autocomplete<HasState<'a, T>> {
     /// Build the autocomplete element.
     ///
     /// Registers handlers for text input, option selection, and blur.
@@ -301,14 +355,16 @@ impl<'a, T: Clone + PartialEq + Send + Sync + 'static> Autocomplete<HasState<'a,
         let state = self.state_marker.0;
         let current = state.get();
         let id = self.id.clone().unwrap_or_else(|| "autocomplete".into());
+        let is_multi = current.selection.mode == SelectionMode::Multi;
 
         log::debug!(
-            "Autocomplete::build id={} open={} text={} options_count={} filtered_count={}",
+            "Autocomplete::build id={} open={} text={} options_count={} filtered_count={} multi={}",
             id,
             current.open,
             current.text,
             current.options.len(),
-            current.filtered.len()
+            current.filtered.len(),
+            is_multi
         );
 
         // Calculate width
@@ -412,15 +468,20 @@ impl<'a, T: Clone + PartialEq + Send + Sync + 'static> Autocomplete<HasState<'a,
                     let current = state_clone.get();
                     if current.open && !current.filtered.is_empty() {
                         let cursor = current.cursor;
+                        let is_multi = current.selection.mode == SelectionMode::Multi;
                         if let Some(filter_match) = current.filtered.get(cursor) {
                             if let Some((value, label)) = current.options.get(filter_match.index) {
                                 let value = value.clone();
                                 let label = label.clone();
                                 state_clone.update(|s| {
-                                    s.value = Some(value);
-                                    s.text = label;
-                                    s.open = false;
-                                    s.refilter();
+                                    s.selection.toggle(value);
+                                    // In single-select mode, update text and close dropdown
+                                    if !is_multi {
+                                        s.text = label;
+                                        s.open = false;
+                                        s.refilter();
+                                    }
+                                    // In multi-select mode, stay open
                                 });
                                 if let Some(ref handler) = on_select {
                                     handler(hx);
@@ -437,17 +498,24 @@ impl<'a, T: Clone + PartialEq + Send + Sync + 'static> Autocomplete<HasState<'a,
             let dropdown_id = format!("{}-dropdown", id);
             let mut options_col = Element::col().id(&dropdown_id);
 
+            // Get selected style (with default)
+            let selected_style = self
+                .style_selected
+                .clone()
+                .unwrap_or_else(|| Style::new().background(Color::var("autocomplete.item_selected")));
+
             for (i, filter_match) in current.filtered.iter().enumerate() {
                 if let Some((value, label)) = current.options.get(filter_match.index) {
                     let opt_id = format!("{}-opt-{}", id, i);
                     let is_cursor = i == current.cursor;
+                    let is_selected = current.selection.is_selected(value);
 
                     let mut text_elem = Element::text(label);
                     if is_cursor {
                         text_elem = text_elem.style(Style::new().bold());
                     }
 
-                    let opt_elem = Element::row()
+                    let mut opt_elem = Element::row()
                         .id(&opt_id)
                         .width(Size::Fill)
                         .focusable(true)
@@ -458,6 +526,11 @@ impl<'a, T: Clone + PartialEq + Send + Sync + 'static> Autocomplete<HasState<'a,
                                 .foreground(Color::var("text.inverted")),
                         )
                         .child(text_elem);
+
+                    // Apply selected style
+                    if is_selected {
+                        opt_elem = opt_elem.style(selected_style.clone());
+                    }
 
                     options_col = options_col.child(opt_elem);
 
@@ -470,11 +543,16 @@ impl<'a, T: Clone + PartialEq + Send + Sync + 'static> Autocomplete<HasState<'a,
                         &opt_id,
                         "on_activate",
                         Arc::new(move |hx| {
+                            let is_multi = state_clone.get().selection.mode == SelectionMode::Multi;
                             state_clone.update(|s| {
-                                s.value = Some(value_clone.clone());
-                                s.text = label_clone.clone();
-                                s.open = false;
-                                s.refilter();
+                                s.selection.toggle(value_clone.clone());
+                                // In single-select mode, update text and close dropdown
+                                if !is_multi {
+                                    s.text = label_clone.clone();
+                                    s.open = false;
+                                    s.refilter();
+                                }
+                                // In multi-select mode, stay open
                             });
                             if let Some(ref handler) = on_select {
                                 handler(hx);

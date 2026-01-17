@@ -1,15 +1,17 @@
 //! Select widget - a dropdown selection component.
 
+use std::hash::Hash;
 use std::sync::Arc;
 
 use tuidom::{Color, Element, Style, Transitions};
 
+use super::selection::{Selection, SelectionMode};
 use crate::state::State;
 use crate::{HandlerRegistry, WidgetHandlers};
 
 /// State for a select widget.
 ///
-/// Contains the dropdown open/closed state, selected value, and available options.
+/// Contains the dropdown open/closed state, selected value(s), and available options.
 ///
 /// # Example
 ///
@@ -17,47 +19,88 @@ use crate::{HandlerRegistry, WidgetHandlers};
 /// // In app struct (will be wrapped in State<> by #[app] macro):
 /// country: SelectState<String>,
 ///
-/// // Initialize in on_start:
+/// // Initialize in on_start (single-select, the default):
 /// self.country.set(SelectState::new([
 ///     ("us".to_string(), "United States"),
 ///     ("uk".to_string(), "United Kingdom"),
 ///     ("de".to_string(), "Germany"),
 /// ]));
+///
+/// // Multi-select mode:
+/// self.tags.set(SelectState::new([...]).with_selection(SelectionMode::Multi));
 /// ```
 #[derive(Clone, Debug)]
-pub struct SelectState<T: Clone> {
+pub struct SelectState<T: Clone + Eq + Hash> {
     /// Whether the dropdown is open.
     pub open: bool,
-    /// The currently selected value, if any.
-    pub value: Option<T>,
+    /// Selection state (supports single and multi-select).
+    pub selection: Selection<T>,
     /// Available options as (value, label) pairs.
     pub options: Vec<(T, String)>,
 }
 
-impl<T: Clone> Default for SelectState<T> {
+impl<T: Clone + Eq + Hash> Default for SelectState<T> {
     fn default() -> Self {
         Self {
             open: false,
-            value: None,
+            selection: Selection::single(),
             options: Vec::new(),
         }
     }
 }
 
-impl<T: Clone> SelectState<T> {
+impl<T: Clone + Eq + Hash> SelectState<T> {
     /// Create a new SelectState with the given options.
+    ///
+    /// Defaults to single-select mode. Use `with_selection()` for multi-select.
     pub fn new(options: impl IntoIterator<Item = (T, impl Into<String>)>) -> Self {
         Self {
             open: false,
-            value: None,
+            selection: Selection::single(),
             options: options.into_iter().map(|(v, l)| (v, l.into())).collect(),
         }
     }
 
+    /// Set the selection mode.
+    pub fn with_selection(mut self, mode: SelectionMode) -> Self {
+        self.selection = match mode {
+            SelectionMode::None => Selection::none(),
+            SelectionMode::Single => Selection::single(),
+            SelectionMode::Multi => Selection::multi(),
+        };
+        self
+    }
+
     /// Set the initial selected value.
     pub fn with_value(mut self, value: T) -> Self {
-        self.value = Some(value);
+        self.selection.selected.insert(value);
         self
+    }
+
+    /// Get the single selected value (for single-select mode).
+    ///
+    /// Returns `None` if nothing is selected or if in multi-select mode with multiple selections.
+    pub fn value(&self) -> Option<&T> {
+        self.selection.get_single()
+    }
+
+    /// Check if a value is selected.
+    pub fn is_selected(&self, value: &T) -> bool {
+        self.selection.is_selected(value)
+    }
+
+    /// Get all selected values.
+    pub fn selected_values(&self) -> impl Iterator<Item = &T> {
+        self.selection.get_all()
+    }
+
+    /// Get labels for all selected values.
+    pub fn selected_labels(&self) -> Vec<&str> {
+        self.options
+            .iter()
+            .filter(|(v, _)| self.selection.is_selected(v))
+            .map(|(_, label)| label.as_str())
+            .collect()
     }
 }
 
@@ -65,7 +108,7 @@ impl<T: Clone> SelectState<T> {
 pub struct NeedsState;
 
 /// Typestate marker: select has a state reference.
-pub struct HasState<'a, T: Clone>(&'a State<SelectState<T>>);
+pub struct HasState<'a, T: Clone + Eq + Hash>(&'a State<SelectState<T>>);
 
 /// A select widget builder.
 ///
@@ -89,6 +132,7 @@ pub struct Select<S = NeedsState> {
     style: Option<Style>,
     style_focused: Option<Style>,
     style_disabled: Option<Style>,
+    style_selected: Option<Style>,
     transitions: Option<Transitions>,
 }
 
@@ -110,12 +154,13 @@ impl Select<NeedsState> {
             style: None,
             style_focused: None,
             style_disabled: None,
+            style_selected: None,
             transitions: None,
         }
     }
 
     /// Set the state reference. Required before calling `build()`.
-    pub fn state<T: Clone + PartialEq + Send + Sync + 'static>(
+    pub fn state<T: Clone + Eq + Hash + PartialEq + Send + Sync + 'static>(
         self,
         s: &State<SelectState<T>>,
     ) -> Select<HasState<'_, T>> {
@@ -128,6 +173,7 @@ impl Select<NeedsState> {
             style: self.style,
             style_focused: self.style_focused,
             style_disabled: self.style_disabled,
+            style_selected: self.style_selected,
             transitions: self.transitions,
         }
     }
@@ -176,6 +222,12 @@ impl<S> Select<S> {
         self
     }
 
+    /// Set the style for selected items in the dropdown.
+    pub fn style_selected(mut self, s: Style) -> Self {
+        self.style_selected = Some(s);
+        self
+    }
+
     /// Set transitions.
     pub fn transitions(mut self, t: Transitions) -> Self {
         self.transitions = Some(t);
@@ -183,7 +235,7 @@ impl<S> Select<S> {
     }
 }
 
-impl<'a, T: Clone + PartialEq + Send + Sync + 'static> Select<HasState<'a, T>> {
+impl<'a, T: Clone + Eq + Hash + PartialEq + Send + Sync + 'static> Select<HasState<'a, T>> {
     /// Build the select element.
     ///
     /// Registers the toggle and option handlers if not disabled.
@@ -191,25 +243,39 @@ impl<'a, T: Clone + PartialEq + Send + Sync + 'static> Select<HasState<'a, T>> {
         let state = self.state_marker.0;
         let current = state.get();
         let id = self.id.clone().unwrap_or_else(|| "select".into());
+        let is_multi = current.selection.mode == SelectionMode::Multi;
 
         log::debug!(
-            "Select::build id={} open={} options_count={}",
+            "Select::build id={} open={} options_count={} multi={}",
             id,
             current.open,
-            current.options.len()
+            current.options.len(),
+            is_multi
         );
 
-        // Display text: selected label or placeholder
+        // Display text: selected label(s) or placeholder
         let placeholder = self
             .placeholder
             .clone()
             .unwrap_or_else(|| "Select...".into());
-        let display_text = current
-            .value
-            .as_ref()
-            .and_then(|v| current.options.iter().find(|(ov, _)| ov == v))
-            .map(|(_, label)| label.clone())
-            .unwrap_or_else(|| placeholder.clone());
+        let display_text = if current.selection.selected.is_empty() {
+            placeholder.clone()
+        } else if is_multi {
+            // Show count or comma-separated labels for multi-select
+            let selected_labels = current.selected_labels();
+            if selected_labels.len() <= 2 {
+                selected_labels.join(", ")
+            } else {
+                format!("{} selected", selected_labels.len())
+            }
+        } else {
+            // Single-select: show the selected label
+            current
+                .value()
+                .and_then(|v| current.options.iter().find(|(ov, _)| ov == v))
+                .map(|(_, label)| label.clone())
+                .unwrap_or_else(|| placeholder.clone())
+        };
 
         // Calculate min width: max of all option labels and placeholder + arrow + gap
         let max_label_width = current
@@ -296,10 +362,16 @@ impl<'a, T: Clone + PartialEq + Send + Sync + 'static> Select<HasState<'a, T>> {
             let dropdown_id = format!("{}-dropdown", id);
             let mut options_col = Element::col().id(&dropdown_id);
 
+            // Get selected style (with default)
+            let selected_style = self
+                .style_selected
+                .clone()
+                .unwrap_or_else(|| Style::new().background(Color::var("select.item_selected")));
+
             for (i, (value, label)) in current.options.iter().enumerate() {
                 let opt_id = format!("{}-opt-{}", id, i);
-                let is_selected = current.value.as_ref() == Some(value);
-                log::debug!("[select] Building option id={}, label={}", opt_id, label);
+                let is_selected = current.selection.is_selected(value);
+                log::debug!("[select] Building option id={}, label={}, selected={}", opt_id, label, is_selected);
 
                 // Use a full-width row to ensure the entire option area is focusable/clickable
                 // This prevents focus gaps that would cause focus-follows-mouse to hit elements underneath
@@ -308,7 +380,7 @@ impl<'a, T: Clone + PartialEq + Send + Sync + 'static> Select<HasState<'a, T>> {
                     text_elem = text_elem.style(Style::new().bold());
                 }
 
-                let opt_elem = Element::row()
+                let mut opt_elem = Element::row()
                     .id(&opt_id)
                     .width(tuidom::Size::Fill)
                     .focusable(true)
@@ -320,6 +392,11 @@ impl<'a, T: Clone + PartialEq + Send + Sync + 'static> Select<HasState<'a, T>> {
                     )
                     .child(text_elem);
 
+                // Apply selected style
+                if is_selected {
+                    opt_elem = opt_elem.style(selected_style.clone());
+                }
+
                 options_col = options_col.child(opt_elem);
 
                 // Register option handler
@@ -330,9 +407,14 @@ impl<'a, T: Clone + PartialEq + Send + Sync + 'static> Select<HasState<'a, T>> {
                     &opt_id,
                     "on_activate",
                     Arc::new(move |hx| {
+                        let is_multi = state_clone.get().selection.mode == SelectionMode::Multi;
                         state_clone.update(|s| {
-                            s.value = Some(value_clone.clone());
-                            s.open = false;
+                            s.selection.toggle(value_clone.clone());
+                            // In single-select mode, close dropdown
+                            if !is_multi {
+                                s.open = false;
+                            }
+                            // In multi-select mode, stay open
                         });
                         if let Some(ref handler) = on_change {
                             handler(hx);
