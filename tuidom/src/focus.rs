@@ -7,16 +7,34 @@ use crate::layout::{LayoutResult, Rect};
 use crate::scroll::{find_scrollable_ancestor, find_scrollable_ancestor_with_type};
 
 /// Find the active interaction scope.
-/// - If current focus is inside a scope, returns the innermost scope containing it
-/// - If no focus, returns the topmost (last in tree order) scope
+/// - Always prioritizes the topmost (last in tree order) scope
+/// - If focus is within the topmost scope, returns the innermost scope containing it
+/// - If focus is outside the topmost scope (blocked by a higher modal), returns topmost
+/// - If no focus, returns the topmost scope
 /// - If no scopes exist, returns None (global scope)
 fn find_active_scope(root: &Element, focused: Option<&str>) -> Option<String> {
+    // Always find the topmost scope first
+    let topmost = find_topmost_scope(root);
+
     if let Some(focused_id) = focused {
-        // Find the innermost scope containing the focused element
-        find_scope_containing(root, focused_id)
+        if let Some(ref topmost_id) = topmost {
+            // Check if focused element is within the topmost scope
+            if is_in_scope(root, focused_id, topmost_id) {
+                // Focus is within topmost scope - find the innermost scope containing it
+                // This handles nested scopes within the topmost modal
+                find_scope_containing(root, focused_id)
+            } else {
+                // Focus is outside topmost scope (blocked by a higher modal)
+                // Return topmost scope so Tab cycles within it
+                topmost
+            }
+        } else {
+            // No scopes exist
+            None
+        }
     } else {
-        // No focus - find the topmost (last in tree order) scope
-        find_topmost_scope(root)
+        // No focus - use topmost scope
+        topmost
     }
 }
 
