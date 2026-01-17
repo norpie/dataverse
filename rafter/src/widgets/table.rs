@@ -936,7 +936,7 @@ impl<'a, T: TableRow> Table<HasTableState<'a, T>> {
         handlers: &WidgetHandlers,
         state: &State<TableState<T>>,
     ) -> Element {
-        let mut row = Element::row().id(header_id).width(Size::Auto);
+        let mut row = Element::row().id(header_id).width(Size::Fill);
 
         for col in columns {
             let cell_id = format!("{}-{}", header_id, col.id);
@@ -1066,7 +1066,7 @@ impl<'a, T: TableRow> Table<HasTableState<'a, T>> {
         // Build cells - both sides are focusable, focus styling is based on focused_key
         let mut row = Element::row()
             .id(&row_id)
-            .width(Size::Auto)
+            .width(Size::Fill)
             .focusable(true)
             .clickable(true);
 
