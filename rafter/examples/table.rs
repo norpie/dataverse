@@ -123,6 +123,8 @@ struct TableExample {
 
 #[app_impl]
 impl TableExample {
+
+    #[on_start]
     async fn on_start(&self) {
         let users = create_sample_users();
         let columns = create_columns();

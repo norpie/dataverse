@@ -87,6 +87,7 @@ struct PaginationExample {
 
 #[app_impl]
 impl PaginationExample {
+    #[on_start]
     async fn on_start(&self) {
         self.message.set("Loading initial records...".into());
         self.loading.set(true);
