@@ -48,6 +48,10 @@ impl ConfirmModal {
 
 #[modal_impl]
 impl ConfirmModal {
+    fn default_result(&self) -> bool {
+        false
+    }
+
     #[keybinds]
     fn keys() {
         bind("y", confirm);

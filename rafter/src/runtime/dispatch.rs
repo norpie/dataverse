@@ -860,6 +860,8 @@ fn dispatch_widget_result(
 pub trait AnyModal: Send + Sync {
     /// Check if the modal is closed.
     fn is_closed(&self) -> bool;
+    /// Close the modal with its default result (used during shutdown).
+    fn close_with_default(&self);
     /// Get the modal's kind (App or System).
     fn kind(&self) -> crate::ModalKind;
     /// Get lifecycle hook closures.
@@ -883,6 +885,10 @@ pub trait AnyModal: Send + Sync {
 impl<M: Modal> AnyModal for ModalEntry<M> {
     fn is_closed(&self) -> bool {
         ModalEntry::is_closed(self)
+    }
+
+    fn close_with_default(&self) {
+        self.context.close(self.modal.default_result());
     }
 
     fn kind(&self) -> crate::ModalKind {

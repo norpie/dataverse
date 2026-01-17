@@ -87,6 +87,8 @@ pub struct ClientManagementModal {
 
 #[modal_impl(kind = System, layout = layout)]
 impl ClientManagementModal {
+    fn default_result(&self) {}
+
     #[on_start]
     async fn load_data(&self, gx: &GlobalContext) {
         self.reload_data(gx).await;

@@ -125,6 +125,7 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
     let mut has_element = false;
     let mut has_position = false;
     let mut has_size = false;
+    let mut has_default_result = false;
     let mut inferred_result_type: Option<Type> = None;
 
     // Reconstructed methods for the impl block
@@ -238,9 +239,22 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
         if method.is_named("size") {
             has_size = true;
         }
+        if method.is_named("default_result") {
+            has_default_result = true;
+        }
 
         // Add to reconstructed methods (with custom attrs stripped)
         reconstructed_methods.push(reconstruct_method_stripped(method));
+    }
+
+    // Validate that default_result is defined
+    if !has_default_result {
+        return syn::Error::new_spanned(
+            &self_ty,
+            "Modal implementations must define `fn default_result(&self) -> Self::Result`. \
+             This method returns the default result when the modal is closed during shutdown.",
+        )
+        .to_compile_error();
     }
 
     // Collect page methods with named variants for page routing
@@ -357,6 +371,13 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
         }
     };
 
+    // Generate default_result delegation to user-defined method
+    let default_result_impl = quote! {
+        fn default_result(&self) -> Self::Result {
+            #self_ty::default_result(self)
+        }
+    };
+
     // Generate handler wrapper methods
     let handler_wrappers = generate_handler_wrappers(&handler_infos);
 
@@ -392,6 +413,7 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
             #kind_impl
             #position_impl
             #size_impl
+            #default_result_impl
             #lifecycle_hooks_impl
             #keybinds_impl
             #handlers_impl

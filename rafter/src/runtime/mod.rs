@@ -772,6 +772,28 @@ impl Runtime {
             }
         }
 
+        // Close all open modals with their default results before dropping
+        // This prevents panics in handlers awaiting on modal results
+        for modal in global_modals.iter() {
+            if !modal.is_closed() {
+                modal.close_with_default();
+            }
+        }
+
+        // Close all app modals as well
+        {
+            let reg = registry.read().unwrap();
+            for instance in reg.iter() {
+                if let Ok(modals) = instance.modals().read() {
+                    for modal in modals.iter() {
+                        if !modal.is_closed() {
+                            modal.close_with_default();
+                        }
+                    }
+                }
+            }
+        }
+
         Ok(())
     }
 

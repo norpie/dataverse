@@ -212,6 +212,10 @@ pub struct LauncherModal {
 
 #[modal_impl]
 impl LauncherModal {
+    fn default_result(&self) -> Option<String> {
+        None
+    }
+
     #[on_start]
     async fn on_start(&self, mx: &ModalContext<Option<String>>) {
         let entries = create_launcher_entries();

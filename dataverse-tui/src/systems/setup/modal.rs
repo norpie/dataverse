@@ -45,6 +45,10 @@ pub struct SetupModal {
 
 #[modal_impl(kind = System)]
 impl SetupModal {
+    fn default_result(&self) -> Option<()> {
+        None
+    }
+
     #[keybinds]
     fn keys() {
         bind("escape", cancel);

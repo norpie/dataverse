@@ -72,6 +72,10 @@ impl BrowserAuthModal {
 
 #[modal_impl]
 impl BrowserAuthModal {
+    fn default_result(&self) -> Option<AccessToken> {
+        None
+    }
+
     #[keybinds]
     fn keys() {
         bind("escape", cancel);

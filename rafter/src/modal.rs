@@ -135,6 +135,12 @@ pub trait Modal: Clone + Send + Sync + 'static {
     /// The result type returned when the modal closes.
     type Result: Send + 'static;
 
+    /// The default result to return if the modal is abandoned (e.g., during shutdown).
+    ///
+    /// This is called by the runtime when closing modals during shutdown.
+    /// Must be explicitly implemented - typically returns a "cancelled" or "no-op" value.
+    fn default_result(&self) -> Self::Result;
+
     /// Get the modal's name (for debugging).
     fn name(&self) -> &str {
         std::any::type_name::<Self>()
