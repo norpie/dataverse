@@ -227,14 +227,12 @@ impl<'a, T: Clone + PartialEq + Send + Sync + 'static> Select<HasState<'a, T>> {
         if let Some(style) = self.style.clone() {
             toggle = toggle.style(style);
         }
-        let focused_style = self
-            .style_focused
-            .clone()
-            .unwrap_or_else(|| Style::new().background(Color::var("select.focused")));
-        let disabled_style = self
-            .style_disabled
-            .clone()
-            .unwrap_or_else(|| Style::new().background(Color::var("select.disabled")));
+        let focused_style = Style::new()
+            .background(Color::var("select.focused"))
+            .merge(&self.style_focused);
+        let disabled_style = Style::new()
+            .background(Color::var("select.disabled"))
+            .merge(&self.style_disabled);
         toggle = toggle.style_focused(focused_style);
         toggle = toggle.style_disabled(disabled_style);
         if let Some(transitions) = self.transitions.clone() {

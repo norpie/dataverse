@@ -188,14 +188,12 @@ impl<'a> Checkbox<HasState<'a>> {
         }
 
         // Build the full element (indicator + optional label)
-        let focused_style = self
-            .style_focused
-            .clone()
-            .unwrap_or_else(|| Style::new().background(Color::var("checkbox.focused")));
-        let disabled_style = self
-            .style_disabled
-            .clone()
-            .unwrap_or_else(|| Style::new().background(Color::var("checkbox.disabled")));
+        let focused_style = Style::new()
+            .background(Color::var("checkbox.focused"))
+            .merge(&self.style_focused);
+        let disabled_style = Style::new()
+            .background(Color::var("checkbox.disabled"))
+            .merge(&self.style_disabled);
 
         let mut elem = if let Some(label_text) = &self.label {
             let mut label_elem = Element::text(label_text);

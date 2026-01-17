@@ -88,12 +88,12 @@ impl Card {
         if let Some(style) = self.style {
             elem = elem.style(style);
         }
-        let focused_style = self
-            .style_focused
-            .unwrap_or_else(|| Style::new().background(Color::var("card.focused")));
-        let disabled_style = self
-            .style_disabled
-            .unwrap_or_else(|| Style::new().background(Color::var("card.disabled")));
+        let focused_style = Style::new()
+            .background(Color::var("card.focused"))
+            .merge(&self.style_focused);
+        let disabled_style = Style::new()
+            .background(Color::var("card.disabled"))
+            .merge(&self.style_disabled);
         elem = elem.style_focused(focused_style);
         elem = elem.style_disabled(disabled_style);
         if let Some(transitions) = self.transitions {

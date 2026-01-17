@@ -329,14 +329,12 @@ impl<'a, T: Clone + PartialEq + Send + Sync + 'static> Autocomplete<HasState<'a,
         if let Some(style) = self.style.clone() {
             input = input.style(style);
         }
-        let focused_style = self
-            .style_focused
-            .clone()
-            .unwrap_or_else(|| Style::new().background(Color::var("autocomplete.focused")));
-        let disabled_style = self
-            .style_disabled
-            .clone()
-            .unwrap_or_else(|| Style::new().background(Color::var("autocomplete.disabled")));
+        let focused_style = Style::new()
+            .background(Color::var("autocomplete.focused"))
+            .merge(&self.style_focused);
+        let disabled_style = Style::new()
+            .background(Color::var("autocomplete.disabled"))
+            .merge(&self.style_disabled);
         input = input.style_focused(focused_style);
         input = input.style_disabled(disabled_style);
         if let Some(transitions) = self.transitions.clone() {

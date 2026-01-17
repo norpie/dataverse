@@ -222,14 +222,12 @@ impl<'a, T: Clone + PartialEq + Send + Sync + 'static> RadioGroup<HasState<'a, T
                 .disabled(self.disabled)
                 .children(vec![indicator_elem, label_elem]);
 
-            let focused_style = self
-                .style_focused
-                .clone()
-                .unwrap_or_else(|| Style::new().background(Color::var("radio.focused")));
-            let disabled_style = self
-                .style_disabled
-                .clone()
-                .unwrap_or_else(|| Style::new().background(Color::var("radio.disabled")));
+            let focused_style = Style::new()
+                .background(Color::var("radio.focused"))
+                .merge(&self.style_focused);
+            let disabled_style = Style::new()
+                .background(Color::var("radio.disabled"))
+                .merge(&self.style_disabled);
             opt_row = opt_row.style_focused(focused_style);
             opt_row = opt_row.style_disabled(disabled_style);
 

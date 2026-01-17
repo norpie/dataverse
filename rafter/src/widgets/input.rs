@@ -166,18 +166,15 @@ impl<'a> Input<HasState<'a>> {
             elem = elem.password();
         }
 
-        let style = self
-            .style
-            .clone()
-            .unwrap_or_else(|| Style::new().background(Color::var("input.background")));
-        let focused_style = self
-            .style_focused
-            .clone()
-            .unwrap_or_else(|| Style::new().background(Color::var("input.background").lighten(0.05)));
-        let disabled_style = self
-            .style_disabled
-            .clone()
-            .unwrap_or_else(|| Style::new().background(Color::var("surface").darken(0.05)));
+        let style = Style::new()
+            .background(Color::var("input.background"))
+            .merge(&self.style);
+        let focused_style = Style::new()
+            .background(Color::var("input.background").lighten(0.05))
+            .merge(&self.style_focused);
+        let disabled_style = Style::new()
+            .background(Color::var("surface").darken(0.05))
+            .merge(&self.style_disabled);
         elem = elem.style(style);
         elem = elem.style_focused(focused_style);
         elem = elem.style_disabled(disabled_style);

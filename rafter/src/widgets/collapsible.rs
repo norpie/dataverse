@@ -158,10 +158,9 @@ impl<'a> Collapsible<HasState<'a>> {
         if let Some(style) = self.header_style {
             header_row = header_row.style(style);
         }
-        let focused_style = self
-            .style_focused
-            .clone()
-            .unwrap_or_else(|| Style::new().background(Color::var("collapsible.focused")));
+        let focused_style = Style::new()
+            .background(Color::var("collapsible.focused"))
+            .merge(&self.style_focused);
         header_row = header_row.style_focused(focused_style);
 
         // Register toggle handler

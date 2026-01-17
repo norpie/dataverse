@@ -151,15 +151,15 @@ impl Button {
             }
         } else {
             // Normal buttons: themed background with hover/focus styles
-            let style = self
-                .style
-                .unwrap_or_else(|| Style::new().background(Color::var("button.normal")));
-            let focused_style = self
-                .style_focused
-                .unwrap_or_else(|| Style::new().background(Color::var("button.hover")));
-            let disabled_style = self
-                .style_disabled
-                .unwrap_or_else(|| Style::new().background(Color::var("button.disabled")));
+            let style = Style::new()
+                .background(Color::var("button.normal"))
+                .merge(&self.style);
+            let focused_style = Style::new()
+                .background(Color::var("button.hover"))
+                .merge(&self.style_focused);
+            let disabled_style = Style::new()
+                .background(Color::var("button.disabled"))
+                .merge(&self.style_disabled);
             elem = elem.style(style);
             elem = elem.style_focused(focused_style);
             elem = elem.style_disabled(disabled_style);
