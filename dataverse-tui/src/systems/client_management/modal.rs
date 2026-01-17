@@ -203,7 +203,7 @@ impl ClientManagementModal {
         let env_state = self.env_select.get();
         let acc_state = self.acc_select.get();
 
-        if let (Some(env_id), Some(acc_id)) = (env_state.value, acc_state.value) {
+        if let (Some(&env_id), Some(&acc_id)) = (env_state.value(), acc_state.value()) {
             let credentials = gx.data::<CredentialsProvider>();
             let has_tokens = credentials.get_tokens(acc_id, env_id).await.is_ok();
             self.is_connected.set(has_tokens);
@@ -217,8 +217,8 @@ impl ClientManagementModal {
         let env_state = self.env_select.get();
         let acc_state = self.acc_select.get();
 
-        let (env_id, acc_id) = match (env_state.value, acc_state.value) {
-            (Some(e), Some(a)) => (e, a),
+        let (env_id, acc_id) = match (env_state.value(), acc_state.value()) {
+            (Some(&e), Some(&a)) => (e, a),
             _ => {
                 gx.toast(Toast::error("Select both environment and account"));
                 return;

@@ -43,8 +43,8 @@ use crate::DataverseClient;
 ///     }
 /// }
 /// ```
-pub struct RelatedQueryBuilder<'a> {
-    client: &'a DataverseClient,
+pub struct RelatedQueryBuilder {
+    client: DataverseClient,
     entity: Entity,
     id: Uuid,
     nav_property: String,
@@ -57,10 +57,10 @@ pub struct RelatedQueryBuilder<'a> {
     include_count: bool,
 }
 
-impl<'a> RelatedQueryBuilder<'a> {
+impl RelatedQueryBuilder {
     /// Creates a new related query builder.
     pub(crate) fn new(
-        client: &'a DataverseClient,
+        client: DataverseClient,
         entity: Entity,
         id: Uuid,
         nav_property: impl Into<String>,
@@ -137,7 +137,7 @@ impl<'a> RelatedQueryBuilder<'a> {
     }
 
     /// Converts this builder into an async page iterator.
-    pub fn into_async_iter(self) -> RelatedPages<'a> {
+    pub fn into_async_iter(self) -> RelatedPages {
         RelatedPages::new(self)
     }
 
@@ -173,8 +173,8 @@ impl<'a> RelatedQueryBuilder<'a> {
     }
 
     /// Returns the client reference.
-    pub(crate) fn client(&self) -> &'a DataverseClient {
-        self.client
+    pub(crate) fn client(&self) -> &DataverseClient {
+        &self.client
     }
 
     /// Returns the entity.
@@ -243,8 +243,9 @@ impl<'a> RelatedQueryBuilder<'a> {
 /// Async iterator that yields pages of related record query results.
 ///
 /// Automatically follows `@odata.nextLink` for pagination.
-pub struct RelatedPages<'a> {
-    client: &'a DataverseClient,
+pub struct RelatedPages {
+    /// Owned client for making requests.
+    client: DataverseClient,
     /// The initial URL (built from query builder).
     initial_url: Option<String>,
     /// Page size preference.
@@ -254,13 +255,14 @@ pub struct RelatedPages<'a> {
     /// Whether we've exhausted all pages.
     done: bool,
     /// Builder for first call (needs entity resolution).
-    needs_resolution: Option<RelatedQueryBuilder<'a>>,
+    needs_resolution: Option<RelatedQueryBuilder>,
 }
 
-impl<'a> RelatedPages<'a> {
+impl RelatedPages {
     /// Creates a new async iterator from a related query builder.
-    pub(crate) fn new(builder: RelatedQueryBuilder<'a>) -> Self {
-        let client = builder.client();
+    pub(crate) fn new(builder: RelatedQueryBuilder) -> Self {
+        // Clone the client (cheap - it's an Arc wrapper)
+        let client = builder.client().clone();
         let page_size = builder.page_size_value();
 
         Self {

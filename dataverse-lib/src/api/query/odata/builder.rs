@@ -33,8 +33,8 @@ use super::url::order_to_odata;
 ///     }
 /// }
 /// ```
-pub struct QueryBuilder<'a> {
-    client: &'a DataverseClient,
+pub struct QueryBuilder {
+    client: DataverseClient,
     entity: Entity,
     select: Vec<String>,
     filter: Option<ODataFilter>,
@@ -45,9 +45,9 @@ pub struct QueryBuilder<'a> {
     include_count: bool,
 }
 
-impl<'a> QueryBuilder<'a> {
+impl QueryBuilder {
     /// Creates a new query builder for the given entity.
-    pub(crate) fn new(client: &'a DataverseClient, entity: Entity) -> Self {
+    pub(crate) fn new(client: DataverseClient, entity: Entity) -> Self {
         Self {
             client,
             entity,
@@ -191,8 +191,8 @@ impl<'a> QueryBuilder<'a> {
     }
 
     /// Returns a reference to the client.
-    pub(crate) fn client(&self) -> &'a DataverseClient {
-        self.client
+    pub(crate) fn client(&self) -> &DataverseClient {
+        &self.client
     }
 
     /// Resolves the entity to its entity set name.
@@ -263,7 +263,7 @@ impl<'a> QueryBuilder<'a> {
     }
 
     /// Converts this query builder into an async iterator over pages.
-    pub fn into_async_iter(self) -> ODataPages<'a> {
+    pub fn into_async_iter(self) -> ODataPages {
         ODataPages::new(self)
     }
 }

@@ -31,9 +31,9 @@ use super::builder::QueryBuilder;
 ///     }
 /// }
 /// ```
-pub struct ODataPages<'a> {
-    /// Reference to the client for making requests.
-    client: &'a DataverseClient,
+pub struct ODataPages {
+    /// Owned client for making requests.
+    client: DataverseClient,
     /// The initial URL (built from query builder).
     initial_url: Option<String>,
     /// Page size preference.
@@ -43,14 +43,14 @@ pub struct ODataPages<'a> {
     /// Whether we've exhausted all pages.
     done: bool,
     /// Whether we need to resolve the entity first.
-    needs_resolution: Option<QueryBuilder<'a>>,
+    needs_resolution: Option<QueryBuilder>,
 }
 
-impl<'a> ODataPages<'a> {
+impl ODataPages {
     /// Creates a new async iterator from a query builder.
-    pub(crate) fn new(builder: QueryBuilder<'a>) -> Self {
-        // Extract values before moving builder
-        let client = builder.client();
+    pub(crate) fn new(builder: QueryBuilder) -> Self {
+        // Clone the client (cheap - it's an Arc wrapper)
+        let client = builder.client().clone();
         let page_size = builder.page_size_value();
 
         Self {

@@ -970,8 +970,8 @@ impl DataverseClient {
     ///     }
     /// }
     /// ```
-    pub fn query(&self, entity: Entity) -> QueryBuilder<'_> {
-        QueryBuilder::new(self, entity)
+    pub fn query(&self, entity: Entity) -> QueryBuilder {
+        QueryBuilder::new(self.clone(), entity)
     }
 
     /// Creates a FetchXML query for the specified entity.
@@ -1068,8 +1068,8 @@ impl DataverseClient {
         entity: Entity,
         id: Uuid,
         nav_property: impl Into<String>,
-    ) -> RelatedQueryBuilder<'_> {
-        RelatedQueryBuilder::new(self, entity, id, nav_property)
+    ) -> RelatedQueryBuilder {
+        RelatedQueryBuilder::new(self.clone(), entity, id, nav_property)
     }
 
     /// Creates a batch request builder.
