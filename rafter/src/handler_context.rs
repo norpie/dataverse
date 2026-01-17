@@ -517,6 +517,18 @@ impl<'a> HandlerContext<'a> {
     pub fn event(&self) -> &EventData {
         &self.event_data
     }
+
+    /// Create a new HandlerContext with different event data.
+    ///
+    /// Useful for widgets that need to call user handlers with transformed event data.
+    pub fn with_event(&self, event: EventData) -> Self {
+        Self {
+            cx: self.cx,
+            gx: self.gx,
+            modal_context: self.modal_context,
+            event_data: event,
+        }
+    }
 }
 
 // =============================================================================

@@ -607,15 +607,19 @@ impl<'a, T: TreeItem> Tree<HasTreeState<'a, T>> {
         {
             let state_clone = state.clone();
             let tree_id_clone = tree_id.clone();
+            let user_on_scroll = handlers.get("on_scroll").cloned();
             registry.register(
                 &content_id,
                 "on_scroll",
                 Arc::new(move |hx| {
+                    let mut scrolled = false;
+
                     // Mouse wheel: delta
                     if let Some((_, delta_y)) = hx.event().scroll_delta() {
                         state_clone.update(|s| {
                             s.scroll.scroll_by(delta_y);
                         });
+                        scrolled = true;
                     }
                     // Page Up/Down/Home/End
                     if let Some(action) = hx.event().scroll_action() {
@@ -649,6 +653,24 @@ impl<'a, T: TreeItem> Tree<HasTreeState<'a, T>> {
                             let node_id =
                                 format!("{}-node-{}", tree_id_clone, flat_node.key.to_string());
                             hx.cx().focus(&node_id);
+                        }
+                        scrolled = true;
+                    }
+
+                    // Call user's on_scroll handler if scrolling occurred
+                    if scrolled {
+                        if let Some(ref handler) = user_on_scroll {
+                            let current = state_clone.get();
+                            let scroll_event = crate::handler_context::EventData::Scroll {
+                                offset_x: 0,
+                                offset_y: current.scroll.offset as u16,
+                                content_width: 0,
+                                content_height: current.scroll.content_height as u16,
+                                viewport_width: 0,
+                                viewport_height: current.scroll.viewport,
+                            };
+                            let scroll_hx = hx.with_event(scroll_event);
+                            handler(&scroll_hx);
                         }
                     }
                 }),

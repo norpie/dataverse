@@ -640,7 +640,7 @@ impl<'a, T: TableRow> Table<HasTableState<'a, T>> {
             .children(row_elements);
 
         // Register scroll handlers
-        self.register_scroll_handlers(&body_id, &content_id, registry, state, table_id, "row");
+        self.register_scroll_handlers(&body_id, &content_id, registry, handlers, state, table_id, "row");
 
         // Register layout handler (no horizontal scrollbar in simple table)
         self.register_layout_handler(&body_id, registry, state, false);
@@ -826,6 +826,7 @@ impl<'a, T: TableRow> Table<HasTableState<'a, T>> {
             &frozen_body_id,
             &frozen_panel_id,
             registry,
+            handlers,
             state,
             table_id,
             "frozen",
@@ -834,6 +835,7 @@ impl<'a, T: TableRow> Table<HasTableState<'a, T>> {
             &scrollable_body_id,
             &scrollable_panel_id,
             registry,
+            handlers,
             state,
             table_id,
             "scrollable",
@@ -1244,6 +1246,7 @@ impl<'a, T: TableRow> Table<HasTableState<'a, T>> {
         body_id: &str,
         _content_id: &str,
         registry: &HandlerRegistry,
+        handlers: &WidgetHandlers,
         state: &State<TableState<T>>,
         table_id: &str,
         row_type: &str,
@@ -1251,16 +1254,19 @@ impl<'a, T: TableRow> Table<HasTableState<'a, T>> {
         let state_clone = state.clone();
         let table_id_clone = table_id.to_string();
         let row_type_clone = row_type.to_string();
+        let user_on_scroll = handlers.get("on_scroll").cloned();
 
         registry.register(
             body_id,
             "on_scroll",
             Arc::new(move |hx| {
+                let mut scrolled = false;
                 // Scrollbar drag: absolute offset (for header sync)
                 if let Some((offset_x, _offset_y)) = hx.event().scroll_offset() {
                     state_clone.update(|s| {
                         s.horizontal_scroll_offset = offset_x;
                     });
+                    scrolled = true;
                 }
                 // Mouse wheel: delta (vertical and horizontal)
                 else if let Some((delta_x, delta_y)) = hx.event().scroll_delta() {
@@ -1273,6 +1279,7 @@ impl<'a, T: TableRow> Table<HasTableState<'a, T>> {
                             s.horizontal_scroll_offset = new_offset as u16;
                         }
                     });
+                    scrolled = true;
                 }
                 // Page Up/Down/Home/End
                 if let Some(action) = hx.event().scroll_action() {
@@ -1313,6 +1320,24 @@ impl<'a, T: TableRow> Table<HasTableState<'a, T>> {
 
                         let row_id = format!("{}-{}-{}", table_id_clone, row_type_clone, key.to_string());
                         hx.cx().focus(&row_id);
+                        scrolled = true;
+                    }
+                }
+
+                // Call user's on_scroll handler if scrolling occurred
+                if scrolled {
+                    if let Some(ref handler) = user_on_scroll {
+                        let current = state_clone.get();
+                        let scroll_event = crate::handler_context::EventData::Scroll {
+                            offset_x: current.horizontal_scroll_offset,
+                            offset_y: current.scroll.offset as u16,
+                            content_width: 0, // Table doesn't track total content width
+                            content_height: current.scroll.content_height as u16,
+                            viewport_width: 0, // Table doesn't track viewport width
+                            viewport_height: current.scroll.viewport,
+                        };
+                        let scroll_hx = hx.with_event(scroll_event);
+                        handler(&scroll_hx);
                     }
                 }
             }),
