@@ -181,25 +181,7 @@ fn fuzzy_filter(query: &str, entries: &[LauncherEntry]) -> Vec<FuzzyMatch> {
 
 fn create_launcher_entries() -> Vec<LauncherEntry> {
     vec![
-        // Data
-        LauncherEntry::new("record-viewer", "Record Viewer", "Data"),
-        LauncherEntry::new("entity-viewer", "Entity Viewer", "Data"),
-        LauncherEntry::new("collection-browser", "Collection Browser", "Data"),
-        LauncherEntry::new("search", "Search", "Data"),
-        LauncherEntry::new("relationships", "Relationships", "Data"),
-        LauncherEntry::new("query-builder", "Query Builder", "Data"),
-        // Transfer
-        LauncherEntry::new("import", "Import", "Transfer"),
-        LauncherEntry::new("export", "Export", "Transfer"),
-        LauncherEntry::new("queue", "Queue", "Transfer"),
-        LauncherEntry::new("transform", "Transform", "Transfer"),
-        // System
-        LauncherEntry::new("indexer", "Indexer", "System"),
-        LauncherEntry::new("cache", "Cache", "System"),
-        LauncherEntry::new("settings", "Settings", "System"),
-        LauncherEntry::new("connections", "Connections", "System"),
-        LauncherEntry::new("logs", "Logs", "System"),
-        LauncherEntry::new("test", "Test", "System"),
+        LauncherEntry::new("entity-viewer", "Entity Browser", "Data"),
     ]
 }
 

@@ -4,7 +4,7 @@ mod modal;
 
 use rafter::prelude::*;
 
-use crate::TestApp;
+use crate::apps::EntityBrowser;
 use modal::LauncherModal;
 
 #[system]
@@ -23,8 +23,8 @@ impl Launcher {
 
         if let Some(selected) = result {
             match selected.as_str() {
-                "test" => {
-                    let _ = gx.spawn_and_focus(TestApp::default());
+                "entity-viewer" => {
+                    let _ = gx.spawn_and_focus(EntityBrowser::default());
                 }
                 _ => {
                     gx.toast(Toast::info(format!("App not implemented: {}", selected)));
