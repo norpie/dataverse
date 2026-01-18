@@ -479,13 +479,13 @@ impl EntityBrowser {
 
     fn element(&self) -> Element {
         let loading_message = self.loading_message.get();
-        let has_entity = self.entity_data.get().is_some();
-        let records_table = self.records.get();
-        let has_records = !records_table.rows.is_empty();
+        let has_entity = self.entity_data.with_ref(|e| e.is_some());
+        // Extract only needed values without cloning all rows
+        let (has_records, loaded_count, column_count) = self.records.with_ref(|t| {
+            (!t.rows.is_empty(), t.rows.len(), t.columns.len())
+        });
         let records_state = self.records_loading.get();
         let total_count = self.total_count.get();
-        let loaded_count = records_table.rows.len();
-        let column_count = records_table.columns.len();
 
         page! {
             box_ (width: fill, height: fill) {
