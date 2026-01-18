@@ -447,15 +447,16 @@ impl<'a, T: Clone + Eq + Hash + PartialEq + Send + Sync + 'static> Autocomplete<
             input = input.placeholder(&placeholder);
         }
 
-        if let Some(style) = self.style.clone() {
-            input = input.style(style);
-        }
+        let style = Style::new()
+            .background(Color::var("input.background"))
+            .merge(&self.style);
         let focused_style = Style::new()
-            .background(Color::var("autocomplete.focused"))
+            .background(Color::var("input.background").lighten(0.05))
             .merge(&self.style_focused);
         let disabled_style = Style::new()
-            .background(Color::var("autocomplete.disabled"))
+            .background(Color::var("surface").darken(0.05))
             .merge(&self.style_disabled);
+        input = input.style(style);
         input = input.style_focused(focused_style);
         input = input.style_disabled(disabled_style);
         if let Some(transitions) = self.transitions.clone() {
