@@ -1239,7 +1239,7 @@ impl Runtime {
                     request_type,
                     response_tx,
                 } => {
-                    let result = self.handle_request(registry, gx, target, request, request_type).await;
+                    let result = self.handle_request(registry, systems, gx, target, request, request_type).await;
                     let _ = response_tx.send(result);
                 }
             }
@@ -1252,11 +1252,40 @@ impl Runtime {
     async fn handle_request(
         &self,
         registry: &Arc<RwLock<InstanceRegistry>>,
+        systems: &[Box<dyn AnySystem>],
         gx: &GlobalContext,
         target: RequestTarget,
         request: Box<dyn Any + Send + Sync>,
         request_type: TypeId,
     ) -> Result<Box<dyn Any + Send + Sync>, RequestError> {
+        // Handle system requests
+        if let RequestTarget::SystemType(target_type_id) = target {
+            // Find the system
+            log::debug!(
+                "[SendRequest] Looking for system with type_id={:?}, available systems: {:?}",
+                target_type_id,
+                systems.iter().map(|s| (s.name(), AnySystem::type_id(s.as_ref()))).collect::<Vec<_>>()
+            );
+            let mut found_system = None;
+            for system in systems.iter() {
+                if AnySystem::type_id(system.as_ref()) == target_type_id {
+                    found_system = Some(system);
+                    break;
+                }
+            }
+            let system = found_system.ok_or(RequestError::NoInstance)?;
+
+            if !system.has_request_handler(request_type) {
+                return Err(RequestError::NoHandler);
+            }
+
+            let future = system.dispatch_request(request_type, request, gx);
+            return match future {
+                Some(fut) => Ok(fut.await),
+                None => Err(RequestError::NoHandler),
+            };
+        }
+
         // Find target instance and get the future while holding the lock briefly
         let future = {
             let reg = registry.read().unwrap();
@@ -1274,6 +1303,7 @@ impl Runtime {
                     found_id.ok_or(RequestError::NoInstance)?
                 }
                 RequestTarget::Instance(id) => id,
+                RequestTarget::SystemType(_) => unreachable!(), // Handled above
             };
 
             let instance = reg.get(instance_id).ok_or(RequestError::InstanceNotFound)?;

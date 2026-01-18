@@ -101,6 +101,17 @@ pub trait AnySystem: Send + Sync {
         event: &(dyn std::any::Any + Send + Sync),
         gx: &GlobalContext,
     ) -> bool;
+    /// Check if this system has a handler for the given request type.
+    fn has_request_handler(&self, request_type: std::any::TypeId) -> bool;
+    /// Dispatch a request to this system. Returns future if handler exists.
+    fn dispatch_request(
+        &self,
+        request_type: std::any::TypeId,
+        request: Box<dyn std::any::Any + Send + Sync>,
+        gx: &GlobalContext,
+    ) -> Option<std::pin::Pin<Box<dyn std::future::Future<Output = Box<dyn std::any::Any + Send + Sync>> + Send>>>;
+    /// Get the TypeId of the concrete system type.
+    fn type_id(&self) -> std::any::TypeId;
 }
 
 impl<T: System> AnySystem for T {
@@ -143,5 +154,22 @@ impl<T: System> AnySystem for T {
         gx: &GlobalContext,
     ) -> bool {
         System::dispatch_event(self, event_type, event, gx)
+    }
+
+    fn has_request_handler(&self, request_type: std::any::TypeId) -> bool {
+        System::has_request_handler(self, request_type)
+    }
+
+    fn dispatch_request(
+        &self,
+        request_type: std::any::TypeId,
+        request: Box<dyn std::any::Any + Send + Sync>,
+        gx: &GlobalContext,
+    ) -> Option<std::pin::Pin<Box<dyn std::future::Future<Output = Box<dyn std::any::Any + Send + Sync>> + Send>>> {
+        System::dispatch_request(self, request_type, request, gx)
+    }
+
+    fn type_id(&self) -> std::any::TypeId {
+        std::any::TypeId::of::<T>()
     }
 }

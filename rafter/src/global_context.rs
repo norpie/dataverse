@@ -21,7 +21,7 @@ use crate::instance::{InstanceId, InstanceInfo, RequestError, SpawnError};
 use crate::modal::{Modal, ModalContext, ModalEntry};
 use crate::registration::CloneableApp;
 use crate::wakeup::WakeupSender;
-use crate::{App, Event, Request, Toast};
+use crate::{App, Event, Request, System, Toast};
 
 // =============================================================================
 // ArcEvent
@@ -71,6 +71,8 @@ pub enum RequestTarget {
     AppType(TypeId),
     /// Target a specific instance by ID.
     Instance(InstanceId),
+    /// Target a system by type.
+    SystemType(TypeId),
 }
 
 // =============================================================================
@@ -511,6 +513,35 @@ impl GlobalContext {
         if let Ok(mut inner) = self.inner.write() {
             inner.instance_commands.push(InstanceCommand::SendRequest {
                 target: RequestTarget::Instance(instance_id),
+                request: Box::new(request),
+                request_type: TypeId::of::<R>(),
+                response_tx: tx,
+            });
+            self.send_wakeup();
+        }
+
+        let response = rx.await.map_err(|_| RequestError::HandlerPanicked)??;
+        let response: Box<R::Response> = response
+            .downcast()
+            .map_err(|_| RequestError::HandlerPanicked)?;
+        Ok(*response)
+    }
+
+    /// Send a request to a system.
+    ///
+    /// Returns the response from the handler, or an error if:
+    /// - The system is not registered (`NoInstance`)
+    /// - The system has no handler for this request type (`NoHandler`)
+    /// - The handler panicked (`HandlerPanicked`)
+    pub async fn request_system<S: System, R: Request>(
+        &self,
+        request: R,
+    ) -> Result<R::Response, RequestError> {
+        let (tx, rx) = oneshot::channel();
+
+        if let Ok(mut inner) = self.inner.write() {
+            inner.instance_commands.push(InstanceCommand::SendRequest {
+                target: RequestTarget::SystemType(TypeId::of::<S>()),
                 request: Box::new(request),
                 request_type: TypeId::of::<R>(),
                 response_tx: tx,
