@@ -30,6 +30,8 @@
               openssl
               pkg-config
 
+              sqlite
+
               mdbook
             ];
 
