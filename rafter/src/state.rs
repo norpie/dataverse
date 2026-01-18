@@ -58,6 +58,18 @@ impl<T> State<T> {
             .unwrap_or_else(|poisoned| poisoned.into_inner().clone())
     }
 
+    /// Read the value without cloning.
+    ///
+    /// Use this when you only need to read data and don't need ownership.
+    /// More efficient than `get()` for large state objects.
+    pub fn with_ref<R, F>(&self, f: F) -> R
+    where
+        F: FnOnce(&T) -> R,
+    {
+        let guard = self.inner.read().unwrap_or_else(|p| p.into_inner());
+        f(&guard)
+    }
+
     /// Set a new value.
     pub fn set(&self, value: T) {
         if let Ok(mut guard) = self.inner.write() {
