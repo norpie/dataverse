@@ -676,6 +676,7 @@ impl<'a, S: ScrollableWidgetState> Scrollbar<HasScrollState<'a, S>> {
             .id(id)
             .width(Size::Fixed(1))
             .height(Size::Fill)
+            .focusable(true)
             .clickable(true)
             .z_index(10)
             .children(children)

@@ -7,7 +7,9 @@ use nucleo_matcher::pattern::{AtomKind, CaseMatching, Normalization, Pattern};
 use nucleo_matcher::{Config, Matcher, Utf32Str};
 use tuidom::{Color, Element, Overflow, Position, Size, Style, Transitions};
 
+use super::scroll::{ScrollState, ScrollableWidgetState, Scrollbar};
 use super::selection::{Selection, SelectionMode};
+use super::virtual_scroller::VirtualScroller;
 use crate::state::State;
 use crate::{HandlerRegistry, WidgetHandlers};
 
@@ -93,6 +95,14 @@ pub struct AutocompleteState<T: Clone + Eq + Hash> {
     pub options: Vec<(T, String)>,
     /// Cached filtered indices (indices into options), sorted by score.
     pub filtered: Vec<FilterMatch>,
+    /// Scroll state for virtualized dropdown.
+    pub scroll: ScrollState,
+    /// Virtual scroller for dropdown virtualization.
+    pub(crate) scroller: VirtualScroller,
+    /// Scrollbar rect for drag calculations.
+    scrollbar_rect: Option<(u16, u16, u16, u16)>,
+    /// Drag grab offset for scrollbar.
+    drag_grab_offset: Option<u16>,
 }
 
 impl<T: Clone + Eq + Hash> Default for AutocompleteState<T> {
@@ -104,6 +114,10 @@ impl<T: Clone + Eq + Hash> Default for AutocompleteState<T> {
             cursor: 0,
             options: Vec::new(),
             filtered: Vec::new(),
+            scroll: ScrollState::new(),
+            scroller: VirtualScroller::new(),
+            scrollbar_rect: None,
+            drag_grab_offset: None,
         }
     }
 }
@@ -120,6 +134,13 @@ impl<T: Clone + Eq + Hash> AutocompleteState<T> {
         let labels: Vec<String> = options.iter().map(|(_, l)| l.clone()).collect();
         let filtered = fuzzy_filter("", &labels);
 
+        // Build scroller for filtered items
+        let mut scroller = VirtualScroller::new();
+        let total = scroller.rebuild(std::iter::repeat(1).take(filtered.len()));
+
+        let mut scroll = ScrollState::new();
+        scroll.set_content_height(total);
+
         Self {
             open: false,
             text: String::new(),
@@ -127,6 +148,10 @@ impl<T: Clone + Eq + Hash> AutocompleteState<T> {
             cursor: 0,
             options,
             filtered,
+            scroll,
+            scroller,
+            scrollbar_rect: None,
+            drag_grab_offset: None,
         }
     }
 
@@ -188,6 +213,10 @@ impl<T: Clone + Eq + Hash> AutocompleteState<T> {
         if self.cursor >= self.filtered.len() {
             self.cursor = 0;
         }
+        // Rebuild scroller for new filtered items
+        let total = self.scroller.rebuild(std::iter::repeat(1).take(self.filtered.len()));
+        self.scroll.set_content_height(total);
+        self.scroll.offset = 0; // Reset scroll on filter change
     }
 
     /// Get the label at a filtered index.
@@ -204,6 +233,33 @@ impl<T: Clone + Eq + Hash> AutocompleteState<T> {
             .get(filtered_index)
             .and_then(|m| self.options.get(m.index))
             .map(|(value, _)| value)
+    }
+}
+
+// Implement ScrollableWidgetState for AutocompleteState (for scrollbar support)
+impl<T: Clone + Eq + Hash + Send + Sync + 'static> ScrollableWidgetState for AutocompleteState<T> {
+    fn scroll(&self) -> &ScrollState {
+        &self.scroll
+    }
+
+    fn scroll_mut(&mut self) -> &mut ScrollState {
+        &mut self.scroll
+    }
+
+    fn scrollbar_rect(&self) -> Option<(u16, u16, u16, u16)> {
+        self.scrollbar_rect
+    }
+
+    fn set_scrollbar_rect(&mut self, rect: Option<(u16, u16, u16, u16)>) {
+        self.scrollbar_rect = rect;
+    }
+
+    fn drag_grab_offset(&self) -> Option<u16> {
+        self.drag_grab_offset
+    }
+
+    fn set_drag_grab_offset(&mut self, offset: Option<u16>) {
+        self.drag_grab_offset = offset;
     }
 }
 
@@ -436,6 +492,7 @@ impl<'a, T: Clone + Eq + Hash + PartialEq + Send + Sync + 'static> Autocomplete<
                 &id,
                 "on_blur",
                 Arc::new(move |hx| {
+                    // Close if focus moved outside this widget or no new target (e.g. Escape)
                     let should_close = match hx.event().blur_target() {
                         Some(new_target) => !new_target.starts_with(&base_id),
                         None => true,
@@ -443,6 +500,16 @@ impl<'a, T: Clone + Eq + Hash + PartialEq + Send + Sync + 'static> Autocomplete<
                     if should_close {
                         state_clone.update(|s| s.open = false);
                     }
+                }),
+            );
+
+            // on_activate: open dropdown when clicked
+            let state_clone = state.clone();
+            registry.register(
+                &id,
+                "on_activate",
+                Arc::new(move |_hx| {
+                    state_clone.update(|s| s.open = true);
                 }),
             );
 
@@ -488,109 +555,250 @@ impl<'a, T: Clone + Eq + Hash + PartialEq + Send + Sync + 'static> Autocomplete<
         // Build dropdown if open
         let elem = if current.open && !current.filtered.is_empty() {
             let dropdown_id = format!("{}-dropdown", id);
-            let mut options_col = Element::col().id(&dropdown_id);
+            let body_id = format!("{}-body", id);
 
             // Get selected style (with default)
             let selected_style = self
                 .style_selected
                 .clone()
-                .unwrap_or_else(|| Style::new().background(Color::var("autocomplete.item_selected")));
+                .unwrap_or_else(|| Style::new().background(Color::var("list.item_selected")));
 
-            for (i, filter_match) in current.filtered.iter().enumerate() {
-                if let Some((value, label)) = current.options.get(filter_match.index) {
-                    let opt_id = format!("{}-opt-{}", id, i);
-                    let is_cursor = i == current.cursor;
-                    let is_selected = current.selection.is_selected(value);
+            // Calculate dropdown height - cap at 10 items
+            let max_visible = 10u16;
+            let dropdown_height = (current.filtered.len() as u16).min(max_visible);
 
-                    let mut text_elem = Element::text(label);
-                    if is_cursor {
-                        text_elem = text_elem.style(Style::new().bold());
-                    }
+            // Set viewport for virtualization
+            state.update(|s| {
+                s.scroll.set_viewport(dropdown_height);
+            });
 
-                    let mut opt_elem = Element::row()
-                        .id(&opt_id)
-                        .width(Size::Fill)
-                        .focusable(true)
-                        .clickable(true)
-                        .style_focused(
-                            Style::new()
-                                .background(Color::var("autocomplete.item_focused"))
-                                .foreground(Color::var("text.inverted")),
-                        )
-                        .child(text_elem);
+            // Get visible range using virtualization
+            let visible_range = current.scroller.visible_range(&current.scroll);
+            let visible_count = visible_range.len();
+            let total_filtered = current.filtered.len();
 
-                    // Apply selected style
-                    if is_selected {
-                        opt_elem = opt_elem.style(selected_style.clone());
-                    }
+            let mut options_col = Element::col()
+                .id(&body_id)
+                .width(Size::Fill)
+                .height(Size::Fill)
+                .overflow(Overflow::Hidden)
+                .scrollable(true);
 
-                    options_col = options_col.child(opt_elem);
+            for (pos_in_visible, i) in visible_range.enumerate() {
+                if let Some(filter_match) = current.filtered.get(i) {
+                    if let Some((value, label)) = current.options.get(filter_match.index) {
+                        let opt_id = format!("{}-opt-{}", id, i);
+                        let is_cursor = i == current.cursor;
+                        let is_selected = current.selection.is_selected(value);
 
-                    // Register option handler
-                    let state_clone = state.clone();
-                    let value_clone = value.clone();
-                    let label_clone = label.clone();
-                    let on_select = handlers.get("on_select").cloned();
-                    registry.register(
-                        &opt_id,
-                        "on_activate",
-                        Arc::new(move |hx| {
-                            let is_multi = state_clone.get().selection.mode == SelectionMode::Multi;
-                            state_clone.update(|s| {
-                                s.selection.toggle(value_clone.clone());
-                                // In single-select mode, update text and close dropdown
-                                if !is_multi {
-                                    s.text = label_clone.clone();
-                                    s.open = false;
-                                    s.refilter();
+                        let mut text_elem = Element::text(label);
+                        if is_cursor {
+                            text_elem = text_elem.style(Style::new().bold());
+                        }
+
+                        let mut opt_elem = Element::row()
+                            .id(&opt_id)
+                            .width(Size::Fill)
+                            .height(Size::Fixed(1))
+                            .focusable(true)
+                            .clickable(true)
+                            .style_focused(
+                                Style::new()
+                                    .background(Color::var("list.item_focused"))
+                                    .foreground(Color::var("text.inverted")),
+                            )
+                            .child(text_elem);
+
+                        if is_selected {
+                            opt_elem = opt_elem.style(selected_style.clone());
+                        }
+
+                        options_col = options_col.child(opt_elem);
+
+                        // Register option activate handler
+                        let state_clone = state.clone();
+                        let value_clone = value.clone();
+                        let label_clone = label.clone();
+                        let on_select = handlers.get("on_select").cloned();
+                        registry.register(
+                            &opt_id,
+                            "on_activate",
+                            Arc::new(move |hx| {
+                                let is_multi = state_clone.get().selection.mode == SelectionMode::Multi;
+                                state_clone.update(|s| {
+                                    s.selection.toggle(value_clone.clone());
+                                    if !is_multi {
+                                        s.text = label_clone.clone();
+                                        s.open = false;
+                                        s.refilter();
+                                    }
+                                });
+                                if let Some(ref handler) = on_select {
+                                    handler(hx);
                                 }
-                                // In multi-select mode, stay open
-                            });
-                            if let Some(ref handler) = on_select {
-                                handler(hx);
-                            }
-                        }),
-                    );
+                            }),
+                        );
 
-                    // Register blur handler for option
-                    let state_clone = state.clone();
-                    let base_id = id.clone();
-                    registry.register(
-                        &opt_id,
-                        "on_blur",
-                        Arc::new(move |hx| {
-                            let should_close = match hx.event().blur_target() {
-                                Some(new_target) => !new_target.starts_with(&base_id),
-                                None => true,
-                            };
-                            if should_close {
-                                state_clone.update(|s| s.open = false);
-                            }
-                        }),
-                    );
+                        // Register blur handler
+                        let state_clone = state.clone();
+                        let base_id = id.clone();
+                        registry.register(
+                            &opt_id,
+                            "on_blur",
+                            Arc::new(move |hx| {
+                                // Close if focus moved outside this widget or no new target (e.g. Escape)
+                                let should_close = match hx.event().blur_target() {
+                                    Some(new_target) => !new_target.starts_with(&base_id),
+                                    None => true,
+                                };
+                                if should_close {
+                                    state_clone.update(|s| s.open = false);
+                                }
+                            }),
+                        );
+
+                        // Register boundary scroll handlers
+                        let is_at_top = pos_in_visible == 0 && i > 0;
+                        let is_at_bottom = pos_in_visible == visible_count - 1 && i < total_filtered - 1;
+
+                        if is_at_top {
+                            let state_clone = state.clone();
+                            let id_clone = id.clone();
+                            let target_index = i.saturating_sub(1);
+                            registry.register(
+                                &opt_id,
+                                "on_key_up",
+                                Arc::new(move |hx| {
+                                    state_clone.update(|s| {
+                                        s.scroll.apply_request(super::scroll::ScrollRequest::Delta(-1));
+                                        s.cursor = target_index;
+                                    });
+                                    let target_id = format!("{}-opt-{}", id_clone, target_index);
+                                    hx.cx().focus(&target_id);
+                                }),
+                            );
+                        }
+
+                        if is_at_bottom {
+                            let state_clone = state.clone();
+                            let id_clone = id.clone();
+                            let target_index = i + 1;
+                            registry.register(
+                                &opt_id,
+                                "on_key_down",
+                                Arc::new(move |hx| {
+                                    state_clone.update(|s| {
+                                        s.scroll.apply_request(super::scroll::ScrollRequest::Delta(1));
+                                        s.cursor = target_index;
+                                    });
+                                    let target_id = format!("{}-opt-{}", id_clone, target_index);
+                                    hx.cx().focus(&target_id);
+                                }),
+                            );
+                        }
+                    }
                 }
             }
 
-            // Dropdown overlay positioning
-            let dropdown_height = (current.filtered.len() as u16).min(10);
+            // Register scroll handler for mouse wheel and keyboard on body
+            {
+                let state_clone = state.clone();
+                let id_clone = id.clone();
+                registry.register(
+                    &body_id,
+                    "on_scroll",
+                    Arc::new(move |hx| {
+                        // Mouse wheel
+                        if let Some((_, delta_y)) = hx.event().scroll_delta() {
+                            state_clone.update(|s| {
+                                s.scroll.apply_request(super::scroll::ScrollRequest::Delta(delta_y));
+                            });
+                        }
+                        // Keyboard scroll actions (PageUp/Down/Home/End)
+                        if let Some(action) = hx.event().scroll_action() {
+                            use super::scroll::ScrollRequest;
+                            use tuidom::ScrollAction;
 
-            let dropdown = options_col
+                            state_clone.update(|s| {
+                                let request = match action {
+                                    ScrollAction::PageUp => ScrollRequest::PageUp,
+                                    ScrollAction::PageDown => ScrollRequest::PageDown,
+                                    ScrollAction::Home => ScrollRequest::Home,
+                                    ScrollAction::End => ScrollRequest::End,
+                                };
+                                s.scroll.apply_request(request);
+                            });
+
+                            // Focus the appropriate item after scroll
+                            let current = state_clone.get();
+                            let total = current.filtered.len();
+                            if total == 0 {
+                                return;
+                            }
+
+                            let target_index = match action {
+                                ScrollAction::Home => 0,
+                                ScrollAction::End => total - 1,
+                                ScrollAction::PageUp | ScrollAction::PageDown => {
+                                    current.scroller.first_visible_index(&current.scroll)
+                                }
+                            };
+
+                            let target_id = format!("{}-opt-{}", id_clone, target_index);
+                            hx.cx().focus(&target_id);
+                        }
+                    }),
+                );
+            }
+
+            // Build dropdown with scrollbar if needed
+            let show_scrollbar = current.filtered.len() > max_visible as usize;
+
+            let dropdown_content = if show_scrollbar {
+                let scrollbar_id = format!("{}-scrollbar", id);
+                let scrollbar = Scrollbar::vertical()
+                    .id(&scrollbar_id)
+                    .state(state)
+                    .build(registry, handlers);
+
+                Element::row()
+                    .width(Size::Fixed(min_width + 1))
+                    .height(Size::Fixed(dropdown_height))
+                    .child(options_col)
+                    .child(scrollbar)
+            } else {
+                options_col
+                    .width(Size::Fixed(min_width + 1))
+                    .height(Size::Fixed(dropdown_height))
+            };
+
+            let dropdown = dropdown_content
+                .id(&dropdown_id)
                 .position(Position::Absolute)
                 .top(1)
                 .left(-1)
                 .padding(tuidom::Edges::left(1))
-                .width(Size::Fixed(min_width + 1))
-                .height(Size::Fixed(dropdown_height))
-                .overflow(Overflow::Auto)
-                .z_index(1)
-                .interaction_scope(true) // Scope focus/clicks to dropdown
+                .z_index(2)
+                .interaction_scope(true)
                 .style(Style::new().background(Color::var("autocomplete.dropdown_bg")));
 
-            // Register on_scope_click handler to close dropdown when clicking backdrop
+            // Full-screen backdrop to capture clicks outside dropdown
+            let backdrop_id = format!("{}-backdrop", id);
+            let backdrop = Element::box_()
+                .id(&backdrop_id)
+                .position(Position::Absolute)
+                .left(0)
+                .top(0)
+                .width(Size::Percent(1.0))
+                .height(Size::Percent(1.0))
+                .z_index(1)
+                .clickable(true);
+
+            // Register on_activate on backdrop to close dropdown
             let state_clone = state.clone();
             registry.register(
-                &dropdown_id,
-                "on_scope_click",
+                &backdrop_id,
+                "on_activate",
                 Arc::new(move |_hx| {
                     state_clone.update(|s| s.open = false);
                 }),
@@ -600,8 +808,11 @@ impl<'a, T: Clone + Eq + Hash + PartialEq + Send + Sync + 'static> Autocomplete<
                 .width(Size::Fixed(min_width))
                 .height(Size::Fixed(1))
                 .child(input)
+                .child(backdrop)
                 .child(dropdown)
         } else {
+            // Reset scroll when closed
+            state.update(|s| s.scroll.offset = 0);
             input
         };
 
