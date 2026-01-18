@@ -429,18 +429,6 @@ impl<'a, T: Clone + Eq + Hash + PartialEq + Send + Sync + 'static> Autocomplete<
                 }),
             );
 
-            // on_focus: open dropdown
-            let state_clone = state.clone();
-            registry.register(
-                &id,
-                "on_focus",
-                Arc::new(move |_hx| {
-                    state_clone.update(|s| {
-                        s.open = true;
-                    });
-                }),
-            );
-
             // on_blur: close dropdown when focus leaves the widget
             let state_clone = state.clone();
             let base_id = id.clone();
@@ -458,7 +446,7 @@ impl<'a, T: Clone + Eq + Hash + PartialEq + Send + Sync + 'static> Autocomplete<
                 }),
             );
 
-            // on_submit: select item at cursor if dropdown open
+            // on_submit: open dropdown if closed, select item at cursor if open
             let state_clone = state.clone();
             let on_select = handlers.get("on_select").cloned();
             registry.register(
@@ -466,7 +454,11 @@ impl<'a, T: Clone + Eq + Hash + PartialEq + Send + Sync + 'static> Autocomplete<
                 "on_submit",
                 Arc::new(move |hx| {
                     let current = state_clone.get();
-                    if current.open && !current.filtered.is_empty() {
+                    if !current.open {
+                        // Open dropdown on activate
+                        state_clone.update(|s| s.open = true);
+                    } else if !current.filtered.is_empty() {
+                        // Select item at cursor
                         let cursor = current.cursor;
                         let is_multi = current.selection.mode == SelectionMode::Multi;
                         if let Some(filter_match) = current.filtered.get(cursor) {
