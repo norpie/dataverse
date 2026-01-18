@@ -455,6 +455,7 @@ dependencies = [
  "rafter",
  "rusqlite",
  "serde",
+ "sha2",
  "simplelog",
  "thiserror 2.0.17",
  "tokio",
