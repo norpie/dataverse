@@ -132,10 +132,11 @@ pub trait TableRow: Clone + Send + Sync + 'static {
 /// State for a virtualized Table widget.
 ///
 /// Uses cumulative height caching for O(1) position lookups.
+/// Rows are stored in `Arc<Vec<T>>` for O(1) cloning.
 #[derive(Clone, Debug)]
 pub struct TableState<T: TableRow> {
-    /// The rows in the table.
-    pub rows: Vec<T>,
+    /// The rows in the table. Wrapped in Arc for O(1) cloning.
+    pub rows: Arc<Vec<T>>,
     /// Column definitions.
     pub columns: Vec<Column>,
     /// Selection state.
@@ -177,7 +178,7 @@ pub struct TableState<T: TableRow> {
 impl<T: TableRow> Default for TableState<T> {
     fn default() -> Self {
         Self {
-            rows: Vec::new(),
+            rows: Arc::new(Vec::new()),
             columns: Vec::new(),
             selection: Selection::none(),
             scroll: ScrollState::new(),
@@ -263,8 +264,43 @@ impl<T: TableRow> TableState<T> {
             self.cumulative_heights.push(total);
         }
 
-        self.rows = rows;
+        self.rows = Arc::new(rows);
         self.scroll.set_content_height(total);
+    }
+
+    /// Rebuild cumulative height cache from current rows.
+    fn rebuild_cumulative_heights(&mut self) {
+        self.cumulative_heights = Vec::with_capacity(self.rows.len() + 1);
+        self.cumulative_heights.push(0);
+
+        let mut total: u16 = 0;
+        for row in self.rows.iter() {
+            total = total.saturating_add(row.height());
+            self.cumulative_heights.push(total);
+        }
+
+        self.scroll.set_content_height(total);
+    }
+
+    /// Extend rows with additional items and rebuild caches.
+    /// Uses copy-on-write semantics (only clones if there are other refs).
+    pub fn extend_rows(&mut self, rows: impl IntoIterator<Item = T>) {
+        Arc::make_mut(&mut self.rows).extend(rows);
+        self.rebuild_cumulative_heights();
+    }
+
+    /// Push a single row and rebuild caches.
+    /// Uses copy-on-write semantics (only clones if there are other refs).
+    pub fn push_row(&mut self, row: T) {
+        Arc::make_mut(&mut self.rows).push(row);
+        self.rebuild_cumulative_heights();
+    }
+
+    /// Clear all rows.
+    pub fn clear_rows(&mut self) {
+        self.rows = Arc::new(Vec::new());
+        self.cumulative_heights = vec![0];
+        self.scroll.set_content_height(0);
     }
 
     /// Get Y offset for row at index. O(1).
@@ -535,6 +571,9 @@ impl<'a, T: TableRow> Table<HasTableState<'a, T>> {
             s.process_scroll();
         });
 
+        // NOTE: state.get() clones the entire TableState including all rows.
+        // This is O(n) but necessary because holding a read lock during build
+        // would deadlock when scrollbar handlers try to update state.
         let current = state.get();
 
         // Calculate visible rows

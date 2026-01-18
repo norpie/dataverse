@@ -123,11 +123,11 @@ struct FlatNode<K: Clone> {
 /// State for a virtualized Tree widget.
 ///
 /// Uses cumulative height caching for O(1) position lookups and O(log n)
-/// offset-to-index queries.
+/// offset-to-index queries. Roots are wrapped in Arc for O(1) cloning.
 #[derive(Clone, Debug)]
 pub struct TreeState<T: TreeItem> {
-    /// The root nodes of the tree.
-    pub roots: Vec<TreeNode<T>>,
+    /// The root nodes of the tree. Wrapped in Arc for O(1) cloning.
+    pub roots: Arc<Vec<TreeNode<T>>>,
     /// Set of expanded node keys.
     pub expanded: HashSet<T::Key>,
     /// Selection state.
@@ -153,7 +153,7 @@ pub struct TreeState<T: TreeItem> {
 impl<T: TreeItem> Default for TreeState<T> {
     fn default() -> Self {
         Self {
-            roots: Vec::new(),
+            roots: Arc::new(Vec::new()),
             expanded: HashSet::new(),
             selection: Selection::none(),
             scroll: ScrollState::new(),
@@ -186,7 +186,7 @@ impl<T: TreeItem> TreeState<T> {
 
     /// Expand all root nodes initially.
     pub fn with_roots_expanded(mut self) -> Self {
-        for root in &self.roots {
+        for root in self.roots.iter() {
             self.expanded.insert(root.value.key());
         }
         self.rebuild_flattened();
@@ -195,8 +195,30 @@ impl<T: TreeItem> TreeState<T> {
 
     /// Set root nodes and rebuild the flattened view.
     pub fn set_roots(&mut self, roots: Vec<TreeNode<T>>) {
-        self.roots = roots;
+        self.roots = Arc::new(roots);
         self.rebuild_flattened();
+    }
+
+    /// Extend roots with additional nodes and rebuild caches.
+    /// Uses copy-on-write semantics (only clones if there are other refs).
+    pub fn extend_roots(&mut self, roots: impl IntoIterator<Item = TreeNode<T>>) {
+        Arc::make_mut(&mut self.roots).extend(roots);
+        self.rebuild_flattened();
+    }
+
+    /// Push a single root node and rebuild caches.
+    /// Uses copy-on-write semantics (only clones if there are other refs).
+    pub fn push_root(&mut self, root: TreeNode<T>) {
+        Arc::make_mut(&mut self.roots).push(root);
+        self.rebuild_flattened();
+    }
+
+    /// Clear all roots.
+    pub fn clear_roots(&mut self) {
+        self.roots = Arc::new(Vec::new());
+        self.flattened.clear();
+        self.cumulative_heights = vec![0];
+        self.scroll.set_content_height(0);
     }
 
     /// Toggle the expanded state of a node.

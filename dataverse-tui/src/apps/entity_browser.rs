@@ -461,10 +461,7 @@ impl EntityBrowser {
         );
 
         self.records.update(|state| {
-            // Must use set_rows() to rebuild cumulative_heights cache and update scroll content height
-            let mut all_rows = std::mem::take(&mut state.rows);
-            all_rows.extend(new_rows);
-            state.set_rows(all_rows);
+            state.extend_rows(new_rows);
         });
 
         // Store pages iterator back (if more pages exist)

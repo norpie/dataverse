@@ -84,8 +84,8 @@ pub trait ListItem: Clone + Send + Sync + 'static {
 /// ```
 #[derive(Clone, Debug)]
 pub struct ListState<T: ListItem> {
-    /// The items in the list.
-    pub items: Vec<T>,
+    /// The items in the list. Wrapped in Arc for O(1) cloning.
+    pub items: Arc<Vec<T>>,
     /// Selection state.
     pub selection: Selection<T::Key>,
     /// Scroll state for virtualization.
@@ -111,7 +111,7 @@ pub struct ListState<T: ListItem> {
 impl<T: ListItem> Default for ListState<T> {
     fn default() -> Self {
         Self {
-            items: Vec::new(),
+            items: Arc::new(Vec::new()),
             selection: Selection::none(),
             scroll: ScrollState::new(),
             last_activated: None,
@@ -126,7 +126,7 @@ impl<T: ListItem> ListState<T> {
     /// Create a new ListState with the given items.
     pub fn new(items: Vec<T>) -> Self {
         let mut state = Self {
-            items: Vec::new(),
+            items: Arc::new(Vec::new()),
             selection: Selection::none(),
             scroll: ScrollState::new(),
             last_activated: None,
@@ -161,8 +161,43 @@ impl<T: ListItem> ListState<T> {
             self.cumulative_heights.push(total);
         }
 
-        self.items = items;
+        self.items = Arc::new(items);
         self.scroll.set_content_height(total);
+    }
+
+    /// Rebuild cumulative height cache from current items.
+    fn rebuild_cumulative_heights(&mut self) {
+        self.cumulative_heights = Vec::with_capacity(self.items.len() + 1);
+        self.cumulative_heights.push(0);
+
+        let mut total: u16 = 0;
+        for item in self.items.iter() {
+            total = total.saturating_add(item.height());
+            self.cumulative_heights.push(total);
+        }
+
+        self.scroll.set_content_height(total);
+    }
+
+    /// Extend items with additional elements and rebuild caches.
+    /// Uses copy-on-write semantics (only clones if there are other refs).
+    pub fn extend_items(&mut self, items: impl IntoIterator<Item = T>) {
+        Arc::make_mut(&mut self.items).extend(items);
+        self.rebuild_cumulative_heights();
+    }
+
+    /// Push a single item and rebuild caches.
+    /// Uses copy-on-write semantics (only clones if there are other refs).
+    pub fn push_item(&mut self, item: T) {
+        Arc::make_mut(&mut self.items).push(item);
+        self.rebuild_cumulative_heights();
+    }
+
+    /// Clear all items.
+    pub fn clear_items(&mut self) {
+        self.items = Arc::new(Vec::new());
+        self.cumulative_heights = vec![0];
+        self.scroll.set_content_height(0);
     }
 
     /// Get Y offset for item at index. O(1).
