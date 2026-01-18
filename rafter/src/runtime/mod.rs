@@ -367,7 +367,26 @@ impl Runtime {
                 terminal.set_theme(theme);
             }
 
-            // 6. Build UI
+            // 6a. Clear handler registries before rebuilding UI
+            // This ensures handlers from previous renders don't accumulate
+            {
+                let reg = registry.read().unwrap();
+                if let Some(instance) = reg.focused_instance() {
+                    instance.handlers().clear();
+                    // Also clear handlers for any open modals
+                    if let Ok(modals) = instance.modals().read() {
+                        for modal in modals.iter() {
+                            modal.handlers().clear();
+                        }
+                    }
+                }
+            }
+            // Clear global modal handlers
+            for modal in global_modals.iter() {
+                modal.handlers().clear();
+            }
+
+            // 6b. Build UI
             log::debug!("[runtime] Building root element...");
             let mut root = self.build_root_element(registry, systems, active_toasts, global_modals);
             log::debug!("[runtime] Root element built successfully");
