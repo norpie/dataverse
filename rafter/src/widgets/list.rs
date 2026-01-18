@@ -11,9 +11,7 @@ use tuidom::{Color, Element, Overflow, Size, Style, Transitions};
 use crate::state::State;
 use crate::{HandlerRegistry, WidgetHandlers};
 
-use super::scroll::{
-    register_scrollbar_handlers, ScrollRequest, ScrollState, ScrollableWidgetState, Scrollbar,
-};
+use super::scroll::{ScrollRequest, ScrollState, ScrollableWidgetState, Scrollbar};
 use super::selection::{Selection, SelectionMode};
 
 // =============================================================================
@@ -614,11 +612,8 @@ impl<'a, T: ListItem> List<HasListState<'a, T>> {
             let scrollbar_id = format!("{}-scrollbar", list_id);
             let scrollbar = Scrollbar::vertical()
                 .id(&scrollbar_id)
-                .scroll_state(&current.scroll)
-                .build();
-
-            // Register scrollbar handlers for click/drag scrolling
-            register_scrollbar_handlers(&scrollbar_id, registry, state);
+                .state(state)
+                .build(registry, handlers);
 
             log::debug!("[List::build] Build complete (with scrollbar)");
             Element::row()

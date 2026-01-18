@@ -291,74 +291,81 @@ impl ScrollbarStyle {
     }
 }
 
+/// Typestate marker: scrollbar needs a state reference.
+pub struct NeedsScrollState;
+
+/// Typestate marker: scrollbar has a state reference.
+pub struct HasScrollState<'a, S: ScrollableWidgetState>(pub(crate) &'a State<S>);
+
 /// A standalone scrollbar widget.
 ///
 /// Renders a track with a thumb positioned according to scroll state.
-/// Can be vertical or horizontal.
+/// Can be vertical or horizontal. Uses typestate pattern to enforce
+/// `state()` is called before `build()`.
 ///
 /// # Example
 ///
 /// ```ignore
-/// // In page! macro or build method:
+/// // In a widget's build method:
 /// let scrollbar = Scrollbar::vertical()
-///     .scroll_state(&self.scroll.get())
-///     .build();
-///
-/// Element::row()
-///     .child(content)
-///     .child(scrollbar)
+///     .id(&scrollbar_id)
+///     .state(table_state)
+///     .build(registry, handlers);
 /// ```
-#[derive(Debug, Clone, Default)]
-pub struct Scrollbar {
+#[derive(Debug, Clone)]
+pub struct Scrollbar<S = NeedsScrollState> {
+    state_marker: S,
     id: Option<String>,
     orientation: Orientation,
-    /// Current offset (0 to max_offset).
-    offset: u16,
-    /// Viewport size.
-    viewport: u16,
-    /// Total content size.
-    content_size: u16,
     /// Scrollbar style.
     style: ScrollbarStyle,
 }
 
-impl Scrollbar {
+impl Default for Scrollbar<NeedsScrollState> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Scrollbar<NeedsScrollState> {
+    /// Create a new scrollbar builder.
+    pub fn new() -> Self {
+        Self {
+            state_marker: NeedsScrollState,
+            id: None,
+            orientation: Orientation::Vertical,
+            style: ScrollbarStyle::default(),
+        }
+    }
+
     /// Create a vertical scrollbar.
     pub fn vertical() -> Self {
-        Self {
-            orientation: Orientation::Vertical,
-            ..Default::default()
-        }
+        Self::new()
     }
 
     /// Create a horizontal scrollbar.
     pub fn horizontal() -> Self {
         Self {
             orientation: Orientation::Horizontal,
-            // Horizontal uses same style as vertical (░ for track, █ for thumb)
-            ..Default::default()
+            ..Self::new()
         }
     }
 
+    /// Set the state reference. Required before calling `build()`.
+    pub fn state<T: ScrollableWidgetState>(self, s: &State<T>) -> Scrollbar<HasScrollState<'_, T>> {
+        Scrollbar {
+            state_marker: HasScrollState(s),
+            id: self.id,
+            orientation: self.orientation,
+            style: self.style,
+        }
+    }
+}
+
+impl<S> Scrollbar<S> {
     /// Set the scrollbar id.
     pub fn id(mut self, id: impl Into<String>) -> Self {
         self.id = Some(id.into());
-        self
-    }
-
-    /// Set scroll state values from a ScrollState.
-    pub fn scroll_state(mut self, state: &ScrollState) -> Self {
-        self.offset = state.offset;
-        self.viewport = state.viewport;
-        self.content_size = state.content_height;
-        self
-    }
-
-    /// Set scroll values directly.
-    pub fn values(mut self, offset: u16, viewport: u16, content_size: u16) -> Self {
-        self.offset = offset;
-        self.viewport = viewport;
-        self.content_size = content_size;
         self
     }
 
@@ -367,32 +374,43 @@ impl Scrollbar {
         self.style = style;
         self
     }
+}
 
-    /// Build the scrollbar element.
-    pub fn build(self) -> Element {
+impl<'a, S: ScrollableWidgetState> Scrollbar<HasScrollState<'a, S>> {
+    /// Build the scrollbar element and register handlers.
+    ///
+    /// Registers handlers for click, drag, and layout events.
+    /// Calls `on_scroll` handler when scrolling occurs.
+    pub fn build(
+        self,
+        registry: &HandlerRegistry,
+        handlers: &crate::WidgetHandlers,
+    ) -> Element {
+        let state = self.state_marker.0;
+        let current = state.get();
+        let scroll = current.scroll();
+
         let id = self.id.clone().unwrap_or_else(|| "scrollbar".into());
 
         log::debug!(
             "[Scrollbar::build] viewport={} content_size={} offset={}",
-            self.viewport, self.content_size, self.offset
+            scroll.viewport, scroll.content_height, scroll.offset
         );
 
         // Calculate thumb size and position
-        let track_size = self.viewport;
-        let max_offset = self.content_size.saturating_sub(self.viewport);
-        log::debug!("[Scrollbar::build] track_size={} max_offset={}", track_size, max_offset);
+        let track_size = scroll.viewport;
+        let max_offset = scroll.content_height.saturating_sub(scroll.viewport);
 
         // If viewport is 0, return empty element (happens on first frame before layout)
         if track_size == 0 {
-            log::debug!("[Scrollbar::build] track_size=0, returning empty element");
             return Element::col().id(&id).width(Size::Fixed(1)).height(Size::Fill);
         }
 
         // Thumb size proportional to viewport/content ratio
-        let thumb_size = if self.content_size == 0 {
+        let thumb_size = if scroll.content_height == 0 {
             track_size
         } else {
-            let ratio = self.viewport as f32 / self.content_size as f32;
+            let ratio = scroll.viewport as f32 / scroll.content_height as f32;
             ((ratio * track_size as f32).round() as u16).clamp(1, track_size)
         };
 
@@ -400,37 +418,258 @@ impl Scrollbar {
         let thumb_pos = if max_offset == 0 {
             0
         } else {
-            let progress = self.offset as f32 / max_offset as f32;
+            let progress = scroll.offset as f32 / max_offset as f32;
             let available_space = track_size.saturating_sub(thumb_size);
             (progress * available_space as f32).round() as u16
         };
 
+        // Register handlers
+        self.register_handlers(&id, registry, handlers, state);
+
+        // Build the element
         match self.orientation {
-            Orientation::Vertical => self.build_vertical(&id, track_size, thumb_size, thumb_pos),
+            Orientation::Vertical => {
+                Self::build_vertical_element(&id, track_size, thumb_size, thumb_pos, &self.style)
+            }
             Orientation::Horizontal => {
-                self.build_horizontal(&id, track_size, thumb_size, thumb_pos)
+                Self::build_horizontal_element(&id, track_size, thumb_size, thumb_pos, &self.style)
             }
         }
     }
 
-    fn build_vertical(
-        self,
+    fn register_handlers(
+        &self,
+        scrollbar_id: &str,
+        registry: &HandlerRegistry,
+        handlers: &crate::WidgetHandlers,
+        state: &State<S>,
+    ) {
+        // on_layout: store scrollbar rect for position calculations
+        {
+            let state_clone = state.clone();
+            registry.register(
+                scrollbar_id,
+                "on_layout",
+                Arc::new(move |hx| {
+                    if let Some((x, y, width, height)) = hx.event().layout() {
+                        state_clone.update(|s| {
+                            s.set_scrollbar_rect(Some((x, y, width, height)));
+                        });
+                    }
+                }),
+            );
+        }
+
+        // on_activate: click on scrollbar - detect thumb vs track
+        {
+            let state_clone = state.clone();
+            let on_scroll = handlers.get("on_scroll").cloned();
+            registry.register(
+                scrollbar_id,
+                "on_activate",
+                Arc::new(move |hx| {
+                    if let Some((_, click_y)) = hx.event().click_position() {
+                        // Extract only needed values without cloning entire state
+                        let scroll_data = state_clone.with_ref(|s| {
+                            s.scrollbar_rect().map(|(_, track_y, _, track_height)| {
+                                let scroll = s.scroll();
+                                (
+                                    track_y,
+                                    track_height,
+                                    scroll.content_height,
+                                    scroll.viewport,
+                                    scroll.max_offset(),
+                                    scroll.offset,
+                                )
+                            })
+                        });
+
+                        if let Some((track_y, track_height, content_size, viewport, max_offset, current_offset)) = scroll_data {
+                            if track_height > 0 {
+                                // Calculate thumb size and position
+                                let thumb_size = if content_size == 0 {
+                                    track_height
+                                } else {
+                                    let ratio = viewport as f32 / content_size as f32;
+                                    ((ratio * track_height as f32).round() as u16)
+                                        .clamp(1, track_height)
+                                };
+
+                                let thumb_pos = if max_offset == 0 {
+                                    0
+                                } else {
+                                    let progress = current_offset as f32 / max_offset as f32;
+                                    let available_space = track_height.saturating_sub(thumb_size);
+                                    (progress * available_space as f32).round() as u16
+                                };
+
+                                let thumb_screen_start = track_y + thumb_pos;
+                                let thumb_screen_end = thumb_screen_start + thumb_size;
+
+                                if click_y >= thumb_screen_start && click_y < thumb_screen_end {
+                                    // Clicked on thumb - store grab offset
+                                    let grab_offset = click_y - thumb_screen_start;
+                                    state_clone.update(|s| {
+                                        s.set_drag_grab_offset(Some(grab_offset));
+                                    });
+                                } else {
+                                    // Clicked on track - jump to position
+                                    let relative_y = click_y.saturating_sub(track_y);
+                                    let track_ratio =
+                                        relative_y as f32 / track_height.max(1) as f32;
+                                    let grab_offset = ((track_ratio * thumb_size as f32).round()
+                                        as u16)
+                                        .min(thumb_size.saturating_sub(1));
+
+                                    let scroll_range = track_height.saturating_sub(thumb_size);
+                                    let thumb_start = click_y.saturating_sub(grab_offset);
+                                    let clamped_thumb_start =
+                                        thumb_start.clamp(track_y, track_y + scroll_range);
+                                    let thumb_pos_in_track =
+                                        clamped_thumb_start.saturating_sub(track_y);
+
+                                    let new_offset = if scroll_range == 0 {
+                                        0
+                                    } else {
+                                        ((thumb_pos_in_track as u32 * max_offset as u32
+                                            + scroll_range as u32 / 2)
+                                            / scroll_range as u32)
+                                            .min(max_offset as u32)
+                                            as u16
+                                    };
+
+                                    state_clone.update(|s| {
+                                        s.scroll_mut().offset = new_offset;
+                                        s.set_drag_grab_offset(Some(grab_offset));
+                                    });
+
+                                    // Call on_scroll handler with proper scroll event
+                                    if let Some(ref handler) = on_scroll {
+                                        let scroll_event = crate::handler_context::EventData::Scroll {
+                                            offset_x: 0,
+                                            offset_y: new_offset,
+                                            content_width: 0,
+                                            content_height: content_size,
+                                            viewport_width: 0,
+                                            viewport_height: viewport,
+                                        };
+                                        let scroll_hx = hx.with_event(scroll_event);
+                                        handler(&scroll_hx);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }),
+            );
+        }
+
+        // on_drag: drag to scroll
+        {
+            let state_clone = state.clone();
+            let on_scroll = handlers.get("on_scroll").cloned();
+            registry.register(
+                scrollbar_id,
+                "on_drag",
+                Arc::new(move |hx| {
+                    if let Some((_, drag_y)) = hx.event().drag_position() {
+                        // Extract only needed values without cloning entire state
+                        let scroll_data = state_clone.with_ref(|s| {
+                            s.scrollbar_rect().map(|(_, track_y, _, track_height)| {
+                                let scroll = s.scroll();
+                                (
+                                    track_y,
+                                    track_height,
+                                    scroll.content_height,
+                                    scroll.viewport,
+                                    scroll.max_offset(),
+                                    s.drag_grab_offset().unwrap_or(0),
+                                )
+                            })
+                        });
+
+                        if let Some((track_y, track_height, content_size, viewport, max_offset, grab_offset)) = scroll_data {
+                            if track_height > 0 {
+                                let thumb_size = if content_size == 0 {
+                                    track_height
+                                } else {
+                                    let ratio = viewport as f32 / content_size as f32;
+                                    ((ratio * track_height as f32).round() as u16)
+                                        .clamp(1, track_height)
+                                };
+
+                                let scroll_range = track_height.saturating_sub(thumb_size);
+                                let thumb_start = drag_y.saturating_sub(grab_offset);
+                                let clamped_thumb_start =
+                                    thumb_start.clamp(track_y, track_y + scroll_range);
+                                let thumb_pos_in_track =
+                                    clamped_thumb_start.saturating_sub(track_y);
+
+                                let new_offset = if scroll_range == 0 {
+                                    0
+                                } else {
+                                    ((thumb_pos_in_track as u32 * max_offset as u32
+                                        + scroll_range as u32 / 2)
+                                        / scroll_range as u32)
+                                        .min(max_offset as u32) as u16
+                                };
+
+                                state_clone.update(|s| {
+                                    s.scroll_mut().offset = new_offset;
+                                });
+
+                                // Call on_scroll handler with proper scroll event
+                                if let Some(ref handler) = on_scroll {
+                                    let scroll_event = crate::handler_context::EventData::Scroll {
+                                        offset_x: 0,
+                                        offset_y: new_offset,
+                                        content_width: 0,
+                                        content_height: content_size,
+                                        viewport_width: 0,
+                                        viewport_height: viewport,
+                                    };
+                                    let scroll_hx = hx.with_event(scroll_event);
+                                    handler(&scroll_hx);
+                                }
+                            }
+                        }
+                    }
+                }),
+            );
+        }
+
+        // on_release: clear grab offset
+        {
+            let state_clone = state.clone();
+            registry.register(
+                scrollbar_id,
+                "on_release",
+                Arc::new(move |_hx| {
+                    state_clone.update(|s| {
+                        s.set_drag_grab_offset(None);
+                    });
+                }),
+            );
+        }
+    }
+
+    fn build_vertical_element(
         id: &str,
         track_size: u16,
         thumb_size: u16,
         thumb_pos: u16,
+        style: &ScrollbarStyle,
     ) -> Element {
         let mut children = Vec::with_capacity(track_size as usize);
 
         for i in 0..track_size {
             let is_thumb = i >= thumb_pos && i < thumb_pos + thumb_size;
-            let (ch, style) = if is_thumb {
-                (self.style.thumb_char, self.style.thumb_style.clone())
+            let (ch, s) = if is_thumb {
+                (style.thumb_char, style.thumb_style.clone())
             } else {
-                (self.style.track_char, self.style.track_style.clone())
+                (style.track_char, style.track_style.clone())
             };
-
-            children.push(Element::text(&ch.to_string()).style(style));
+            children.push(Element::text(&ch.to_string()).style(s));
         }
 
         Element::col()
@@ -438,36 +677,33 @@ impl Scrollbar {
             .width(Size::Fixed(1))
             .height(Size::Fill)
             .clickable(true)
-            .z_index(10) // Ensure scrollbar is on top for hit-testing
+            .z_index(10)
             .children(children)
     }
 
-    fn build_horizontal(
-        self,
+    fn build_horizontal_element(
         id: &str,
         track_size: u16,
         thumb_size: u16,
         thumb_pos: u16,
+        style: &ScrollbarStyle,
     ) -> Element {
         let mut text = String::with_capacity(track_size as usize);
 
         for i in 0..track_size {
             let is_thumb = i >= thumb_pos && i < thumb_pos + thumb_size;
             if is_thumb {
-                text.push(self.style.thumb_char);
+                text.push(style.thumb_char);
             } else {
-                text.push(self.style.track_char);
+                text.push(style.track_char);
             }
         }
 
-        // For horizontal, we use a single text element
-        // Note: This is simplified - a more complex implementation would
-        // support different styles for track vs thumb in horizontal mode
         Element::text(&text)
             .id(id)
             .width(Size::Fill)
             .height(Size::Fixed(1))
-            .style(self.style.thumb_style)
+            .style(style.thumb_style.clone())
     }
 }
 
@@ -499,217 +735,3 @@ pub trait ScrollableWidgetState: Clone + Send + Sync + 'static {
     fn set_drag_grab_offset(&mut self, offset: Option<u16>);
 }
 
-// =============================================================================
-// Scrollbar Handler Registration
-// =============================================================================
-
-/// Register scrollbar click/drag handlers for a widget.
-///
-/// This helper registers four handlers on the scrollbar element:
-/// - `on_layout`: Store the scrollbar's screen rect for position calculations
-/// - `on_activate`: Handle clicks on thumb (start drag) or track (jump to position)
-/// - `on_drag`: Handle dragging the thumb
-/// - `on_release`: Clear drag state when mouse is released
-///
-/// # Arguments
-///
-/// * `scrollbar_id` - The element ID of the scrollbar
-/// * `registry` - The handler registry to register handlers with
-/// * `state` - The widget state implementing `ScrollableWidgetState`
-///
-/// # Example
-///
-/// ```ignore
-/// let scrollbar = Scrollbar::vertical()
-///     .id(&scrollbar_id)
-///     .scroll_state(&current.scroll)
-///     .build();
-///
-/// register_scrollbar_handlers(&scrollbar_id, registry, state);
-/// ```
-pub fn register_scrollbar_handlers<S: ScrollableWidgetState>(
-    scrollbar_id: &str,
-    registry: &HandlerRegistry,
-    state: &State<S>,
-) {
-    // on_layout: store scrollbar rect for position calculations
-    {
-        let state_clone = state.clone();
-        registry.register(
-            scrollbar_id,
-            "on_layout",
-            Arc::new(move |hx| {
-                if let Some((x, y, width, height)) = hx.event().layout() {
-                    state_clone.update(|s| {
-                        s.set_scrollbar_rect(Some((x, y, width, height)));
-                    });
-                }
-            }),
-        );
-    }
-
-    // on_activate: click on scrollbar - detect thumb vs track
-    {
-        let state_clone = state.clone();
-        registry.register(
-            scrollbar_id,
-            "on_activate",
-            Arc::new(move |hx| {
-                if let Some((_, click_y)) = hx.event().click_position() {
-                    let current = state_clone.get();
-                    if let Some((_, track_y, _, track_height)) = current.scrollbar_rect() {
-                        if track_height > 0 {
-                            let scroll = current.scroll();
-                            let content_size = scroll.content_height;
-                            let viewport = scroll.viewport;
-                            let max_offset = scroll.max_offset();
-                            let current_offset = scroll.offset;
-
-                            // Calculate thumb size and position (same as Scrollbar::build)
-                            let thumb_size = if content_size == 0 {
-                                track_height
-                            } else {
-                                let ratio = viewport as f32 / content_size as f32;
-                                ((ratio * track_height as f32).round() as u16).clamp(1, track_height)
-                            };
-
-                            let thumb_pos = if max_offset == 0 {
-                                0
-                            } else {
-                                let progress = current_offset as f32 / max_offset as f32;
-                                let available_space = track_height.saturating_sub(thumb_size);
-                                (progress * available_space as f32).round() as u16
-                            };
-
-                            let thumb_screen_start = track_y + thumb_pos;
-                            let thumb_screen_end = thumb_screen_start + thumb_size;
-
-                            // Check if click is on thumb or track
-                            if click_y >= thumb_screen_start && click_y < thumb_screen_end {
-                                // Clicked on thumb - just store grab offset, don't scroll
-                                let grab_offset = click_y - thumb_screen_start;
-                                log::debug!(
-                                    "[scrollbar] clicked on thumb, grab_offset={}",
-                                    grab_offset
-                                );
-                                state_clone.update(|s| {
-                                    s.set_drag_grab_offset(Some(grab_offset));
-                                });
-                            } else {
-                                // Clicked on track - calculate proportional grab offset
-                                let relative_y = click_y.saturating_sub(track_y);
-                                let track_ratio =
-                                    relative_y as f32 / track_height.max(1) as f32;
-                                let grab_offset =
-                                    ((track_ratio * thumb_size as f32).round() as u16)
-                                        .min(thumb_size.saturating_sub(1));
-
-                                let scroll_range = track_height.saturating_sub(thumb_size);
-
-                                // Calculate scroll position from click using grab offset
-                                let thumb_start = click_y.saturating_sub(grab_offset);
-                                let clamped_thumb_start =
-                                    thumb_start.clamp(track_y, track_y + scroll_range);
-                                let thumb_pos_in_track =
-                                    clamped_thumb_start.saturating_sub(track_y);
-
-                                // Convert thumb position to scroll offset
-                                let new_offset = if scroll_range == 0 {
-                                    0
-                                } else {
-                                    ((thumb_pos_in_track as u32 * max_offset as u32
-                                        + scroll_range as u32 / 2)
-                                        / scroll_range as u32)
-                                        .min(max_offset as u32) as u16
-                                };
-
-                                log::debug!(
-                                    "[scrollbar] clicked on track at y={}, grab_offset={}, new_offset={}",
-                                    click_y, grab_offset, new_offset
-                                );
-                                state_clone.update(|s| {
-                                    s.scroll_mut().offset = new_offset;
-                                    s.set_drag_grab_offset(Some(grab_offset));
-                                });
-                            }
-                        }
-                    }
-                }
-            }),
-        );
-    }
-
-    // on_drag: drag to scroll using grab offset
-    {
-        let state_clone = state.clone();
-        registry.register(
-            scrollbar_id,
-            "on_drag",
-            Arc::new(move |hx| {
-                if let Some((_, drag_y)) = hx.event().drag_position() {
-                    let current = state_clone.get();
-                    if let Some((_, track_y, _, track_height)) = current.scrollbar_rect() {
-                        if track_height > 0 {
-                            let scroll = current.scroll();
-                            let content_size = scroll.content_height;
-                            let viewport = scroll.viewport;
-                            let max_offset = scroll.max_offset();
-                            let grab_offset = current.drag_grab_offset().unwrap_or(0);
-
-                            // Calculate thumb size
-                            let thumb_size = if content_size == 0 {
-                                track_height
-                            } else {
-                                let ratio = viewport as f32 / content_size as f32;
-                                ((ratio * track_height as f32).round() as u16).clamp(1, track_height)
-                            };
-
-                            let scroll_range = track_height.saturating_sub(thumb_size);
-
-                            // Calculate thumb position from drag position and grab offset
-                            let thumb_start = drag_y.saturating_sub(grab_offset);
-                            let clamped_thumb_start =
-                                thumb_start.clamp(track_y, track_y + scroll_range);
-                            let thumb_pos_in_track = clamped_thumb_start.saturating_sub(track_y);
-
-                            // Convert thumb position to scroll offset
-                            let new_offset = if scroll_range == 0 {
-                                0
-                            } else {
-                                ((thumb_pos_in_track as u32 * max_offset as u32
-                                    + scroll_range as u32 / 2)
-                                    / scroll_range as u32)
-                                    .min(max_offset as u32) as u16
-                            };
-
-                            log::debug!(
-                                "[scrollbar] drag at y={}, grab_offset={}, new_offset={}",
-                                drag_y,
-                                grab_offset,
-                                new_offset
-                            );
-                            state_clone.update(|s| {
-                                s.scroll_mut().offset = new_offset;
-                            });
-                        }
-                    }
-                }
-            }),
-        );
-    }
-
-    // on_release: clear grab offset when drag ends
-    {
-        let state_clone = state.clone();
-        registry.register(
-            scrollbar_id,
-            "on_release",
-            Arc::new(move |_hx| {
-                log::debug!("[scrollbar] release, clearing grab offset");
-                state_clone.update(|s| {
-                    s.set_drag_grab_offset(None);
-                });
-            }),
-        );
-    }
-}

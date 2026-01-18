@@ -13,9 +13,7 @@ use tuidom::{Color, Element, Overflow, Size, Style, Transitions};
 use crate::state::State;
 use crate::{HandlerRegistry, WidgetHandlers};
 
-use super::scroll::{
-    register_scrollbar_handlers, ScrollRequest, ScrollState, ScrollableWidgetState, Scrollbar,
-};
+use super::scroll::{ScrollRequest, ScrollState, ScrollableWidgetState, Scrollbar};
 use super::selection::{Selection, SelectionMode};
 
 // =============================================================================
@@ -700,10 +698,8 @@ impl<'a, T: TreeItem> Tree<HasTreeState<'a, T>> {
             let scrollbar_id = format!("{}-scrollbar", tree_id);
             let scrollbar = Scrollbar::vertical()
                 .id(&scrollbar_id)
-                .scroll_state(&current.scroll)
-                .build();
-
-            register_scrollbar_handlers(&scrollbar_id, registry, state);
+                .state(state)
+                .build(registry, handlers);
 
             Element::row()
                 .id(&tree_id)
