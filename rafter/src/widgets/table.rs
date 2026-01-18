@@ -15,6 +15,7 @@ use crate::{HandlerRegistry, WidgetHandlers};
 
 use super::scroll::{ScrollRequest, ScrollState, ScrollableWidgetState, Scrollbar};
 use super::selection::{Selection, SelectionMode};
+use super::virtual_scroller::VirtualScroller;
 
 // =============================================================================
 // Column
@@ -146,8 +147,8 @@ pub struct TableState<T: TableRow> {
     /// The key of the last activated row.
     pub last_activated: Option<T::Key>,
 
-    /// Cached cumulative heights for O(1) position lookups.
-    cumulative_heights: Vec<u16>,
+    /// Virtual scroller for O(1) position lookups.
+    pub(crate) scroller: VirtualScroller,
 
     /// Set of frozen column IDs.
     frozen_column_ids: HashSet<String>,
@@ -183,7 +184,7 @@ impl<T: TableRow> Default for TableState<T> {
             selection: Selection::none(),
             scroll: ScrollState::new(),
             last_activated: None,
-            cumulative_heights: vec![0],
+            scroller: VirtualScroller::new(),
             frozen_column_ids: HashSet::new(),
             frozen_count: 0,
             scrollbar_rect: None,
@@ -253,32 +254,16 @@ impl<T: TableRow> TableState<T> {
         self.columns.extend(non_frozen);
     }
 
-    /// Set rows and rebuild cumulative height cache.
+    /// Set rows and rebuild scroller.
     pub fn set_rows(&mut self, rows: Vec<T>) {
-        self.cumulative_heights = Vec::with_capacity(rows.len() + 1);
-        self.cumulative_heights.push(0);
-
-        let mut total: u16 = 0;
-        for row in &rows {
-            total = total.saturating_add(row.height());
-            self.cumulative_heights.push(total);
-        }
-
+        let total = self.scroller.rebuild(rows.iter().map(|row| row.height()));
         self.rows = Arc::new(rows);
         self.scroll.set_content_height(total);
     }
 
-    /// Rebuild cumulative height cache from current rows.
-    fn rebuild_cumulative_heights(&mut self) {
-        self.cumulative_heights = Vec::with_capacity(self.rows.len() + 1);
-        self.cumulative_heights.push(0);
-
-        let mut total: u16 = 0;
-        for row in self.rows.iter() {
-            total = total.saturating_add(row.height());
-            self.cumulative_heights.push(total);
-        }
-
+    /// Rebuild scroller from current rows.
+    fn rebuild_scroller(&mut self) {
+        let total = self.scroller.rebuild(self.rows.iter().map(|row| row.height()));
         self.scroll.set_content_height(total);
     }
 
@@ -286,47 +271,41 @@ impl<T: TableRow> TableState<T> {
     /// Uses copy-on-write semantics (only clones if there are other refs).
     pub fn extend_rows(&mut self, rows: impl IntoIterator<Item = T>) {
         Arc::make_mut(&mut self.rows).extend(rows);
-        self.rebuild_cumulative_heights();
+        self.rebuild_scroller();
     }
 
     /// Push a single row and rebuild caches.
     /// Uses copy-on-write semantics (only clones if there are other refs).
     pub fn push_row(&mut self, row: T) {
         Arc::make_mut(&mut self.rows).push(row);
-        self.rebuild_cumulative_heights();
+        self.rebuild_scroller();
     }
 
     /// Clear all rows.
     pub fn clear_rows(&mut self) {
         self.rows = Arc::new(Vec::new());
-        self.cumulative_heights = vec![0];
+        self.scroller = VirtualScroller::new();
         self.scroll.set_content_height(0);
     }
 
     /// Get Y offset for row at index. O(1).
     pub fn row_y_offset(&self, index: usize) -> u16 {
-        self.cumulative_heights.get(index).copied().unwrap_or(0)
+        self.scroller.item_y_offset(index)
     }
 
     /// Get total content height. O(1).
     pub fn total_height(&self) -> u16 {
-        self.cumulative_heights.last().copied().unwrap_or(0)
+        self.scroller.total_height()
     }
 
     /// Find row index at given Y offset. O(log n) binary search.
     pub fn row_at_offset(&self, y: u16) -> usize {
-        self.cumulative_heights
-            .partition_point(|&h| h <= y)
-            .saturating_sub(1)
+        self.scroller.item_at_offset(y)
     }
 
     /// Get height of row at index. O(1).
     pub fn row_height(&self, index: usize) -> u16 {
-        if index + 1 < self.cumulative_heights.len() {
-            self.cumulative_heights[index + 1] - self.cumulative_heights[index]
-        } else {
-            1
-        }
+        self.scroller.item_height(index)
     }
 
     /// Get the index of a row by key.
@@ -368,15 +347,8 @@ impl<T: TableRow> TableState<T> {
 
         if let Some(request) = self.scroll.process_request() {
             if let ScrollRequest::IntoView(index) = request {
-                let y = self.row_y_offset(index);
-                let row_h = self.row_height(index);
-                let viewport = self.scroll.viewport;
-                let offset = self.scroll.offset;
-
-                if y < offset {
-                    self.scroll.offset = y;
-                } else if y + row_h > offset + viewport {
-                    self.scroll.offset = (y + row_h).saturating_sub(viewport);
+                if let Some(new_offset) = self.scroller.scroll_into_view(index, &self.scroll) {
+                    self.scroll.offset = new_offset;
                 }
             }
         }
@@ -386,7 +358,7 @@ impl<T: TableRow> TableState<T> {
 
     /// Get the index of the first visible row based on current scroll offset.
     pub fn first_visible_index(&self) -> usize {
-        self.row_at_offset(self.scroll.offset)
+        self.scroller.first_visible_index(&self.scroll)
     }
 }
 
@@ -596,30 +568,8 @@ impl<'a, T: TableRow> Table<HasTableState<'a, T>> {
 
     /// Calculate which rows are visible given current scroll state.
     fn calculate_visible_rows(&self, state: &TableState<T>) -> Vec<VisibleRow> {
-        let scroll_y = state.scroll.offset;
-        let viewport = state.scroll.viewport;
-
-        if state.rows.is_empty() {
-            return Vec::new();
-        }
-
-        let effective_viewport = if viewport == 0 { 200 } else { viewport };
-
-        let first_visible = state.row_at_offset(scroll_y);
-
-        let mut end_idx = first_visible;
-        let mut total_height: u16 = 0;
-        while end_idx < state.rows.len() && total_height < effective_viewport {
-            total_height += state.row_height(end_idx);
-            end_idx += 1;
-        }
-
-        let mut rows = Vec::with_capacity(end_idx - first_visible);
-        for i in first_visible..end_idx {
-            rows.push(VisibleRow { index: i });
-        }
-
-        rows
+        let range = state.scroller.visible_range(&state.scroll);
+        range.map(|index| VisibleRow { index }).collect()
     }
 
     /// Build a simple table without frozen columns.

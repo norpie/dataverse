@@ -13,6 +13,7 @@ use crate::{HandlerRegistry, WidgetHandlers};
 
 use super::scroll::{ScrollRequest, ScrollState, ScrollableWidgetState, Scrollbar};
 use super::selection::{Selection, SelectionMode};
+use super::virtual_scroller::VirtualScroller;
 
 // =============================================================================
 // ListItem Trait
@@ -93,11 +94,8 @@ pub struct ListState<T: ListItem> {
     /// The key of the last activated item. Set before handlers are called.
     pub last_activated: Option<T::Key>,
 
-    /// Cached cumulative heights for O(1) position lookups.
-    /// `cumulative[i]` = total height of items `0..i`
-    /// `cumulative[0]` = 0, `cumulative[n]` = total content height
-    /// Length = `items.len() + 1`
-    cumulative_heights: Vec<u16>,
+    /// Virtual scroller for O(1) position lookups.
+    pub(crate) scroller: VirtualScroller,
 
     /// Scrollbar screen rect (x, y, width, height) for drag calculations.
     /// Updated via on_layout handler.
@@ -115,7 +113,7 @@ impl<T: ListItem> Default for ListState<T> {
             selection: Selection::none(),
             scroll: ScrollState::new(),
             last_activated: None,
-            cumulative_heights: vec![0],
+            scroller: VirtualScroller::new(),
             scrollbar_rect: None,
             drag_grab_offset: None,
         }
@@ -125,15 +123,7 @@ impl<T: ListItem> Default for ListState<T> {
 impl<T: ListItem> ListState<T> {
     /// Create a new ListState with the given items.
     pub fn new(items: Vec<T>) -> Self {
-        let mut state = Self {
-            items: Arc::new(Vec::new()),
-            selection: Selection::none(),
-            scroll: ScrollState::new(),
-            last_activated: None,
-            cumulative_heights: vec![0],
-            scrollbar_rect: None,
-            drag_grab_offset: None,
-        };
+        let mut state = Self::default();
         state.set_items(items);
         state
     }
@@ -152,30 +142,14 @@ impl<T: ListItem> ListState<T> {
     ///
     /// O(n) but only called when items change, not every frame.
     pub fn set_items(&mut self, items: Vec<T>) {
-        self.cumulative_heights = Vec::with_capacity(items.len() + 1);
-        self.cumulative_heights.push(0);
-
-        let mut total: u16 = 0;
-        for item in &items {
-            total = total.saturating_add(item.height());
-            self.cumulative_heights.push(total);
-        }
-
+        let total = self.scroller.rebuild(items.iter().map(|item| item.height()));
         self.items = Arc::new(items);
         self.scroll.set_content_height(total);
     }
 
-    /// Rebuild cumulative height cache from current items.
-    fn rebuild_cumulative_heights(&mut self) {
-        self.cumulative_heights = Vec::with_capacity(self.items.len() + 1);
-        self.cumulative_heights.push(0);
-
-        let mut total: u16 = 0;
-        for item in self.items.iter() {
-            total = total.saturating_add(item.height());
-            self.cumulative_heights.push(total);
-        }
-
+    /// Rebuild scroller from current items.
+    fn rebuild_scroller(&mut self) {
+        let total = self.scroller.rebuild(self.items.iter().map(|item| item.height()));
         self.scroll.set_content_height(total);
     }
 
@@ -183,47 +157,41 @@ impl<T: ListItem> ListState<T> {
     /// Uses copy-on-write semantics (only clones if there are other refs).
     pub fn extend_items(&mut self, items: impl IntoIterator<Item = T>) {
         Arc::make_mut(&mut self.items).extend(items);
-        self.rebuild_cumulative_heights();
+        self.rebuild_scroller();
     }
 
     /// Push a single item and rebuild caches.
     /// Uses copy-on-write semantics (only clones if there are other refs).
     pub fn push_item(&mut self, item: T) {
         Arc::make_mut(&mut self.items).push(item);
-        self.rebuild_cumulative_heights();
+        self.rebuild_scroller();
     }
 
     /// Clear all items.
     pub fn clear_items(&mut self) {
         self.items = Arc::new(Vec::new());
-        self.cumulative_heights = vec![0];
+        self.scroller = VirtualScroller::new();
         self.scroll.set_content_height(0);
     }
 
     /// Get Y offset for item at index. O(1).
     pub fn item_y_offset(&self, index: usize) -> u16 {
-        self.cumulative_heights.get(index).copied().unwrap_or(0)
+        self.scroller.item_y_offset(index)
     }
 
     /// Get total content height. O(1).
     pub fn total_height(&self) -> u16 {
-        self.cumulative_heights.last().copied().unwrap_or(0)
+        self.scroller.total_height()
     }
 
     /// Find item index at given Y offset. O(log n) binary search.
     pub fn item_at_offset(&self, y: u16) -> usize {
-        self.cumulative_heights
-            .partition_point(|&h| h <= y)
-            .saturating_sub(1)
+        self.scroller.item_at_offset(y)
     }
 
     /// Get height of item at index. O(1).
     pub fn item_height(&self, index: usize) -> u16 {
-        if index + 1 < self.cumulative_heights.len() {
-            self.cumulative_heights[index + 1] - self.cumulative_heights[index]
-        } else {
-            1 // Default
-        }
+        self.scroller.item_height(index)
     }
 
     /// Get the index of an item by key.
@@ -246,17 +214,8 @@ impl<T: ListItem> ListState<T> {
         if let Some(request) = self.scroll.process_request() {
             // Handle IntoView specially since it needs item positions
             if let ScrollRequest::IntoView(index) = request {
-                let y = self.item_y_offset(index);
-                let item_h = self.item_height(index);
-                let viewport = self.scroll.viewport;
-                let offset = self.scroll.offset;
-
-                if y < offset {
-                    // Item above viewport - scroll up to show it
-                    self.scroll.offset = y;
-                } else if y + item_h > offset + viewport {
-                    // Item below viewport - scroll down to show it
-                    self.scroll.offset = (y + item_h).saturating_sub(viewport);
+                if let Some(new_offset) = self.scroller.scroll_into_view(index, &self.scroll) {
+                    self.scroll.offset = new_offset;
                 }
             }
         }
@@ -266,7 +225,7 @@ impl<T: ListItem> ListState<T> {
 
     /// Get the index of the first visible item based on current scroll offset.
     pub fn first_visible_index(&self) -> usize {
-        self.item_at_offset(self.scroll.offset)
+        self.scroller.first_visible_index(&self.scroll)
     }
 }
 
@@ -665,34 +624,8 @@ impl<'a, T: ListItem> List<HasListState<'a, T>> {
 
     /// Calculate which items are visible given current scroll state.
     fn calculate_visible_items(&self, state: &ListState<T>) -> Vec<VisibleItem> {
-        let scroll_y = state.scroll.offset;
-        let viewport = state.scroll.viewport;
-
-        if state.items.is_empty() {
-            return Vec::new();
-        }
-
-        // If viewport is 0 (first frame before layout), use a safe maximum
-        let effective_viewport = if viewport == 0 { 200 } else { viewport };
-
-        // O(log n) binary search to find first visible item
-        let first_visible = state.item_at_offset(scroll_y);
-
-        // Calculate exactly how many items fit in viewport
-        let mut end_idx = first_visible;
-        let mut total_height: u16 = 0;
-        while end_idx < state.items.len() && total_height < effective_viewport {
-            total_height += state.item_height(end_idx);
-            end_idx += 1;
-        }
-
-        // Collect visible items
-        let mut items = Vec::with_capacity(end_idx - first_visible);
-        for i in first_visible..end_idx {
-            items.push(VisibleItem { index: i });
-        }
-
-        items
+        let range = state.scroller.visible_range(&state.scroll);
+        range.map(|index| VisibleItem { index }).collect()
     }
 
     /// Build a single item row element.

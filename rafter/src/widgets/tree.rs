@@ -15,6 +15,7 @@ use crate::{HandlerRegistry, WidgetHandlers};
 
 use super::scroll::{ScrollRequest, ScrollState, ScrollableWidgetState, Scrollbar};
 use super::selection::{Selection, SelectionMode};
+use super::virtual_scroller::VirtualScroller;
 
 // =============================================================================
 // TreeItem Trait
@@ -114,6 +115,8 @@ struct FlatNode<K: Clone> {
     parent_key: Option<K>,
     /// Index of the first child in the flattened list (if expanded and has children).
     first_child_index: Option<usize>,
+    /// Height of this node for virtualization.
+    height: u16,
 }
 
 // =============================================================================
@@ -140,8 +143,8 @@ pub struct TreeState<T: TreeItem> {
     /// Cached flattened view of visible nodes.
     flattened: Vec<FlatNode<T::Key>>,
 
-    /// Cached cumulative heights for O(1) position lookups.
-    cumulative_heights: Vec<u16>,
+    /// Virtual scroller for O(1) position lookups.
+    pub(crate) scroller: VirtualScroller,
 
     /// Scrollbar screen rect for drag calculations.
     scrollbar_rect: Option<(u16, u16, u16, u16)>,
@@ -159,7 +162,7 @@ impl<T: TreeItem> Default for TreeState<T> {
             scroll: ScrollState::new(),
             last_activated: None,
             flattened: Vec::new(),
-            cumulative_heights: vec![0],
+            scroller: VirtualScroller::new(),
             scrollbar_rect: None,
             drag_grab_offset: None,
         }
@@ -217,7 +220,7 @@ impl<T: TreeItem> TreeState<T> {
     pub fn clear_roots(&mut self) {
         self.roots = Arc::new(Vec::new());
         self.flattened.clear();
-        self.cumulative_heights = vec![0];
+        self.scroller = VirtualScroller::new();
         self.scroll.set_content_height(0);
     }
 
@@ -250,15 +253,14 @@ impl<T: TreeItem> TreeState<T> {
         self.expanded.contains(key)
     }
 
-    /// Rebuild the flattened view and cumulative heights.
+    /// Rebuild the flattened view and scroller.
     fn rebuild_flattened(&mut self) {
         self.flattened.clear();
-        self.cumulative_heights.clear();
-        self.cumulative_heights.push(0);
 
         self.flatten_nodes(&self.roots.clone(), 0, None);
 
-        let total_height = self.cumulative_heights.last().copied().unwrap_or(0);
+        // Rebuild scroller from flattened node heights
+        let total_height = self.scroller.rebuild(self.flattened.iter().map(|n| n.height));
         self.scroll.set_content_height(total_height);
     }
 
@@ -273,10 +275,7 @@ impl<T: TreeItem> TreeState<T> {
             let key = node.value.key();
             let is_expanded = self.expanded.contains(&key);
             let has_children = node.has_children();
-
             let height = node.value.height();
-            let cumulative = self.cumulative_heights.last().unwrap() + height;
-            self.cumulative_heights.push(cumulative);
 
             let current_index = self.flattened.len();
 
@@ -287,6 +286,7 @@ impl<T: TreeItem> TreeState<T> {
                 is_expanded,
                 parent_key: parent_key.clone(),
                 first_child_index: None, // Will be set below if expanded
+                height,
             });
 
             if is_expanded && has_children {
@@ -306,28 +306,22 @@ impl<T: TreeItem> TreeState<T> {
 
     /// Get Y offset for node at index. O(1).
     pub fn node_y_offset(&self, index: usize) -> u16 {
-        self.cumulative_heights.get(index).copied().unwrap_or(0)
+        self.scroller.item_y_offset(index)
     }
 
     /// Get total content height. O(1).
     pub fn total_height(&self) -> u16 {
-        self.cumulative_heights.last().copied().unwrap_or(0)
+        self.scroller.total_height()
     }
 
     /// Find node index at given Y offset. O(log n) binary search.
     pub fn node_at_offset(&self, y: u16) -> usize {
-        self.cumulative_heights
-            .partition_point(|&h| h <= y)
-            .saturating_sub(1)
+        self.scroller.item_at_offset(y)
     }
 
     /// Get height of node at index. O(1).
     pub fn node_height(&self, index: usize) -> u16 {
-        if index + 1 < self.cumulative_heights.len() {
-            self.cumulative_heights[index + 1] - self.cumulative_heights[index]
-        } else {
-            1
-        }
+        self.scroller.item_height(index)
     }
 
     /// Find the index of a node by key.
@@ -360,15 +354,8 @@ impl<T: TreeItem> TreeState<T> {
 
         if let Some(request) = self.scroll.process_request() {
             if let ScrollRequest::IntoView(index) = request {
-                let y = self.node_y_offset(index);
-                let node_h = self.node_height(index);
-                let viewport = self.scroll.viewport;
-                let offset = self.scroll.offset;
-
-                if y < offset {
-                    self.scroll.offset = y;
-                } else if y + node_h > offset + viewport {
-                    self.scroll.offset = (y + node_h).saturating_sub(viewport);
+                if let Some(new_offset) = self.scroller.scroll_into_view(index, &self.scroll) {
+                    self.scroll.offset = new_offset;
                 }
             }
         }
@@ -378,7 +365,7 @@ impl<T: TreeItem> TreeState<T> {
 
     /// Get the index of the first visible node based on current scroll offset.
     pub fn first_visible_index(&self) -> usize {
-        self.node_at_offset(self.scroll.offset)
+        self.scroller.first_visible_index(&self.scroll)
     }
 }
 
@@ -736,40 +723,12 @@ impl<'a, T: TreeItem> Tree<HasTreeState<'a, T>> {
 
     /// Calculate which nodes are visible given current scroll state.
     fn calculate_visible_nodes(&self, state: &TreeState<T>) -> Vec<VisibleNode> {
-        let scroll_y = state.scroll.offset;
-        let viewport = state.scroll.viewport;
-
-        if state.flattened.is_empty() {
-            log::debug!("[TREE] calculate_visible_nodes: flattened is empty!");
-            return Vec::new();
-        }
-
-        let effective_viewport = if viewport == 0 { 200 } else { viewport };
-
-        let first_visible = state.node_at_offset(scroll_y);
+        let range = state.scroller.visible_range(&state.scroll);
         log::debug!(
-            "[TREE] calculate_visible_nodes: scroll_y={}, viewport={}, effective_viewport={}, first_visible={}",
-            scroll_y, viewport, effective_viewport, first_visible
+            "[TREE] calculate_visible_nodes: range {:?}, viewport={}",
+            range, state.scroll.viewport
         );
-
-        let mut end_idx = first_visible;
-        let mut total_height: u16 = 0;
-        while end_idx < state.flattened.len() && total_height < effective_viewport {
-            total_height += state.node_height(end_idx);
-            end_idx += 1;
-        }
-
-        let mut nodes = Vec::with_capacity(end_idx - first_visible);
-        for i in first_visible..end_idx {
-            nodes.push(VisibleNode { index: i });
-        }
-
-        log::debug!(
-            "[TREE] calculate_visible_nodes: computed range {} to {}, total_height={}",
-            first_visible, end_idx, total_height
-        );
-
-        nodes
+        range.map(|index| VisibleNode { index }).collect()
     }
 
     /// Build a single node row element.

@@ -42,6 +42,7 @@ pub mod selection;
 pub mod table;
 pub mod text;
 pub mod tree;
+pub mod virtual_scroller;
 
 pub use autocomplete::{Autocomplete, AutocompleteState};
 pub use button::Button;
@@ -57,3 +58,4 @@ pub use selection::{Selection, SelectionMode};
 pub use table::{Column, ColumnWidth, Table, TableRow, TableState};
 pub use text::Text;
 pub use tree::{Tree, TreeItem, TreeNode, TreeState};
+pub use virtual_scroller::VirtualScroller;
