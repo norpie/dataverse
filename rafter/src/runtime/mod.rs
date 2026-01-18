@@ -277,6 +277,8 @@ impl Runtime {
         let mut drag_target: Option<String> = None;
 
         loop {
+            let t_loop_start = Instant::now();
+
             // 1. Check shutdown
             if gx.is_shutdown_requested() {
                 log::debug!("[runtime] Exiting: shutdown requested");
@@ -294,6 +296,7 @@ impl Runtime {
 
             // 2. Process pending commands
             self.process_commands(registry, systems, gx).await?;
+            let t_commands = Instant::now();
 
             // 3. Process modal requests from focused app and clean up closed modals
             // Take modal request outside the lock so we can await on_start
@@ -349,6 +352,8 @@ impl Runtime {
                 global_modals.pop();
             }
 
+            let t_modals = Instant::now();
+
             // 4. Collect new toasts
             for toast in gx.take_toasts() {
                 let duration = toast.duration;
@@ -385,11 +390,11 @@ impl Runtime {
             for modal in global_modals.iter() {
                 modal.handlers().clear();
             }
+            let t_clear_handlers = Instant::now();
 
             // 6b. Build UI
-            log::debug!("[runtime] Building root element...");
             let mut root = self.build_root_element(registry, systems, active_toasts, global_modals);
-            log::debug!("[runtime] Root element built successfully");
+            let t_build_ui = Instant::now();
 
             // 7. Process cursor position requests (before enrichment uses TextInputState)
             {
@@ -409,10 +414,11 @@ impl Runtime {
 
             // 8. Enrich elements with runtime state (BEFORE render)
             enrich_elements(&mut root, focus, text_inputs, scroll);
+            let t_enrich = Instant::now();
 
             // 9. Render (stores layout internally)
-            log::trace!("[runtime] === FRAME START ===");
             terminal.render(&root)?;
+            let t_render = Instant::now();
 
             // 9b. Dispatch on_layout handlers for elements that have them
             {
@@ -490,6 +496,7 @@ impl Runtime {
                     }
                 }
             }
+            let t_on_layout = Instant::now();
 
             // 10. Update toast phases (AFTER render so animation captures off-screen position first)
             let now = Instant::now();
@@ -789,6 +796,20 @@ impl Runtime {
             while wakeup_rx.try_recv() {
                 // Just drain the wakeup queue - we'll re-render on next iteration
             }
+
+            // Performance timing log (rafter frame overhead, excludes poll wait time)
+            let t_loop_end = Instant::now();
+            log::debug!(
+                "rafter: cmds={:>6.2}µs modals={:>6.2}µs clear={:>6.2}µs build={:>6.2}µs enrich={:>6.2}µs render={:>6.2}µs on_layout={:>6.2}µs total={:>6.2}µs",
+                t_commands.duration_since(t_loop_start).as_secs_f64() * 1_000_000.0,
+                t_modals.duration_since(t_commands).as_secs_f64() * 1_000_000.0,
+                t_clear_handlers.duration_since(t_modals).as_secs_f64() * 1_000_000.0,
+                t_build_ui.duration_since(t_clear_handlers).as_secs_f64() * 1_000_000.0,
+                t_enrich.duration_since(t_build_ui).as_secs_f64() * 1_000_000.0,
+                t_render.duration_since(t_enrich).as_secs_f64() * 1_000_000.0,
+                t_on_layout.duration_since(t_render).as_secs_f64() * 1_000_000.0,
+                t_loop_end.duration_since(t_loop_start).as_secs_f64() * 1_000_000.0,
+            );
         }
 
         // Close all open modals with their default results before dropping
