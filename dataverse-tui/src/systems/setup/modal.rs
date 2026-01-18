@@ -6,8 +6,8 @@ use rafter::prelude::*;
 use rafter::widgets::{Button, Input, Text};
 use url::Url;
 
-use crate::client_manager::ClientManager;
 use crate::credentials::{Account, AuthType, CachedTokens, CredentialsProvider};
+use crate::systems::client_management::{ClientManagement, GetClient};
 use crate::modals::BrowserAuthModal;
 
 /// Wizard step for the setup modal.
@@ -210,11 +210,22 @@ impl SetupModal {
         }
 
         // Verify connection
-        let client_manager = gx.data::<ClientManager>();
-        if let Err(e) = client_manager.get_client(account.id, env.id).await {
-            self.error.set(Some(e.to_string()));
-            self.step.set(SetupStep::Error);
-            return;
+        let request = GetClient {
+            account_id: account.id,
+            env_id: env.id,
+        };
+        match gx.request_system::<ClientManagement, GetClient>(request).await {
+            Ok(Ok(_)) => {}
+            Ok(Err(e)) => {
+                self.error.set(Some(e.to_string()));
+                self.step.set(SetupStep::Error);
+                return;
+            }
+            Err(e) => {
+                self.error.set(Some(format!("Request failed: {:?}", e)));
+                self.step.set(SetupStep::Error);
+                return;
+            }
         }
 
         // Success! Toast and close

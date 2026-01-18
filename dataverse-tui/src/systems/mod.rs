@@ -1,4 +1,4 @@
-mod client_management;
+pub mod client_management;
 mod launcher;
 mod setup;
 mod shutdown;

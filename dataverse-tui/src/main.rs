@@ -14,7 +14,6 @@ use rafter::prelude::*;
 use rafter::widgets::Text;
 use simplelog::{Config, LevelFilter, WriteLogger};
 
-use client_manager::ClientManager;
 use widgets::Spinner;
 
 #[app(name = "Dataverse", singleton)]
@@ -52,12 +51,10 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
 
     let settings = init_settings().await?;
     let credentials = init_credentials().await?;
-    let client_manager = ClientManager::new(credentials.clone());
 
     Runtime::new()?
         .data(settings)
         .data(credentials)
-        .data(client_manager)
         .run(DataverseTui::default())
         .await?;
 
@@ -65,8 +62,8 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn init_directories() -> Result<(), std::io::Error> {
-    if let Some(cache_dir) = paths::cache_dir() {
-        std::fs::create_dir_all(&cache_dir)?;
+    if let Some(logs_dir) = paths::logs_dir() {
+        std::fs::create_dir_all(&logs_dir)?;
     }
     if let Some(data_dir) = paths::data_dir() {
         std::fs::create_dir_all(&data_dir)?;

@@ -14,8 +14,8 @@ use rafter::widgets::{
 use rafter::EventData;
 use tuidom::Element;
 
+use crate::systems::client_management::{ActiveClientInfo, ClientManagement, GetActiveClient};
 use crate::widgets::{loading_overlay, Spinner};
-use crate::ClientManager;
 
 /// Entity data including metadata and readable fields.
 #[derive(Clone, Debug)]
@@ -59,6 +59,10 @@ impl TableRow for RecordRow {
 
 #[app(name = "Entity Browser")]
 pub struct EntityBrowser {
+    // Connection info (set once on startup)
+    client: Option<DataverseClient>,
+    environment_name: String,
+
     // Loading overlay message (None = no overlay)
     loading_message: Option<String>,
 
@@ -82,22 +86,38 @@ impl EntityBrowser {
     #[on_start]
     async fn on_start(&self, gx: &GlobalContext, cx: &AppContext) {
         self.loading_message
-            .set(Some("Loading Dataverse metadata...".to_string()));
+            .set(Some("Connecting to Dataverse...".to_string()));
 
-        // Get client
-        let client = match get_client(gx).await {
-            Some(c) => c,
-            None => {
-                gx.toast(Toast::error(
-                    "No active client. Please configure a connection first.",
-                ));
+        // Get client info once
+        let info = match gx
+            .request_system::<ClientManagement, GetActiveClient>(GetActiveClient)
+            .await
+        {
+            Ok(Ok(info)) => info,
+            Ok(Err(e)) => {
+                gx.toast(Toast::error(format!("Client error: {}", e)));
+                self.loading_message.set(None);
+                return;
+            }
+            Err(e) => {
+                gx.toast(Toast::error(format!(
+                    "No active client. Please configure a connection first. ({:?})",
+                    e
+                )));
                 self.loading_message.set(None);
                 return;
             }
         };
 
+        // Store client and environment info
+        self.client.set(Some(info.client.clone()));
+        self.environment_name.set(info.environment_name);
+
+        self.loading_message
+            .set(Some("Loading Dataverse metadata...".to_string()));
+
         // Load all entities
-        let all_entities = match client.metadata().all_entities().await {
+        let all_entities = match info.client.metadata().all_entities().await {
             Ok(entities) => entities,
             Err(e) => {
                 gx.toast(Toast::error(format!("Failed to load entities: {}", e)));
@@ -142,24 +162,41 @@ impl EntityBrowser {
         };
 
         // Load the selected entity's full metadata
-        self.load_entity_data(gx, cx, &client, &selected_logical_name)
-            .await;
+        self.load_entity_data(gx, cx, &selected_logical_name).await;
 
         self.loading_message.set(None);
         cx.focus("field-autocomplete");
     }
 
     fn title(&self) -> String {
-        match self.entity_data.get() {
-            Some(data) => {
-                let name = data
-                    .metadata
+        let env_name = self.environment_name.get();
+        let entity_name = self.entity_data.with_ref(|data| {
+            data.as_ref().map(|d| {
+                d.metadata
                     .display_name
                     .text()
-                    .unwrap_or(&data.metadata.core.logical_name);
-                format!("Entity Browser - {}", name)
+                    .unwrap_or(&d.metadata.core.logical_name)
+                    .to_string()
+            })
+        });
+
+        match (entity_name, env_name.is_empty()) {
+            (Some(entity), false) => format!("{} ({})", entity, env_name),
+            (Some(entity), true) => entity,
+            (None, false) => env_name,
+            (None, true) => String::new(),
+        }
+    }
+
+    /// Get the stored client, or toast an error and close the app if unavailable.
+    fn client(&self, gx: &GlobalContext, cx: &AppContext) -> Option<DataverseClient> {
+        match self.client.get() {
+            Some(c) => Some(c),
+            None => {
+                gx.toast(Toast::error("Client connection lost"));
+                cx.close();
+                None
             }
-            None => "Entity Browser".to_string(),
         }
     }
 
@@ -184,28 +221,18 @@ impl EntityBrowser {
         self.loading_message
             .set(Some(format!("Loading {}...", display_name)));
 
-        let client = match get_client(gx).await {
-            Some(c) => c,
-            None => {
-                gx.toast(Toast::error("No active client"));
-                self.loading_message.set(None);
-                return;
-            }
-        };
-
-        self.load_entity_data(gx, cx, &client, &selected_key).await;
+        self.load_entity_data(gx, cx, &selected_key).await;
 
         self.loading_message.set(None);
         cx.focus("field-autocomplete");
     }
 
-    async fn load_entity_data(
-        &self,
-        gx: &GlobalContext,
-        _cx: &AppContext,
-        client: &DataverseClient,
-        logical_name: &str,
-    ) {
+    async fn load_entity_data(&self, gx: &GlobalContext, cx: &AppContext, logical_name: &str) {
+        let client = match self.client(gx, cx) {
+            Some(c) => c,
+            None => return,
+        };
+
         // Load full entity metadata (with attributes)
         let entity = match client.metadata().entity(logical_name).await {
             Ok(e) => e,
@@ -257,11 +284,11 @@ impl EntityBrowser {
         });
 
         // Load initial records with default columns
-        self.load_records(gx, &entity, Vec::new()).await;
+        self.load_records(gx, cx, &entity, Vec::new()).await;
     }
 
     #[handler]
-    async fn on_field_change(&self, gx: &GlobalContext) {
+    async fn on_field_change(&self, gx: &GlobalContext, cx: &AppContext) {
         let entity_data = match self.entity_data.get() {
             Some(data) => data,
             None => return,
@@ -270,21 +297,22 @@ impl EntityBrowser {
         let state = self.field_autocomplete.get();
         let selected_fields: Vec<String> = state.selected_values().cloned().collect();
 
-        self.load_records(gx, &entity_data.metadata, selected_fields)
+        self.load_records(gx, cx, &entity_data.metadata, selected_fields)
             .await;
     }
 
     #[handler]
-    async fn on_table_scroll(&self, gx: &GlobalContext, event: &EventData) {
+    async fn on_table_scroll(&self, gx: &GlobalContext, cx: &AppContext, event: &EventData) {
         // Check if near bottom (80% scrolled)
         if event.is_near_bottom(0.8) {
-            self.load_more_records(gx).await;
+            self.load_more_records(gx, cx).await;
         }
     }
 
     async fn load_records(
         &self,
         gx: &GlobalContext,
+        cx: &AppContext,
         entity: &EntityMetadata,
         selected_fields: Vec<String>,
     ) {
@@ -295,12 +323,9 @@ impl EntityBrowser {
 
         self.records_loading.set_loading();
 
-        let client = match get_client(gx).await {
+        let client = match self.client(gx, cx) {
             Some(c) => c,
-            None => {
-                self.records_loading.set_error("No active client");
-                return;
-            }
+            None => return,
         };
 
         // Determine columns to fetch
@@ -414,7 +439,7 @@ impl EntityBrowser {
         self.records_loading.set_ready(());
     }
 
-    async fn load_more_records(&self, gx: &GlobalContext) {
+    async fn load_more_records(&self, gx: &GlobalContext, _cx: &AppContext) {
         // Don't load more if already loading
         if self.records_loading.is_loading() {
             return;
@@ -568,19 +593,6 @@ impl EntityBrowser {
                     { loading_overlay("loading-overlay", &msg) }
                 }
             }
-        }
-    }
-}
-
-/// Helper to get the active client.
-async fn get_client(gx: &GlobalContext) -> Option<DataverseClient> {
-    let client_manager = gx.data::<ClientManager>();
-    match client_manager.get_active_client().await {
-        Ok(Some(client)) => Some(client),
-        Ok(None) => None,
-        Err(e) => {
-            log::error!("[EntityBrowser] Failed to get client: {}", e);
-            None
         }
     }
 }
