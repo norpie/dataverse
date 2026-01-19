@@ -14,6 +14,7 @@ use rafter::widgets::{
 use rafter::EventData;
 use tuidom::Element;
 
+use crate::formatting::default_column_width;
 use crate::systems::client_management::{ActiveClientInfo, ClientManagement, GetActiveClient};
 use crate::widgets::{loading_overlay, Spinner};
 
@@ -352,14 +353,18 @@ impl EntityBrowser {
         let table_columns: Vec<Column> = columns
             .iter()
             .map(|col_name| {
-                let display = available
-                    .iter()
-                    .find(|a| &a.logical_name == col_name)
+                let attr = available.iter().find(|a| &a.logical_name == col_name);
+
+                let display = attr
                     .and_then(|a| a.display_name.text())
                     .unwrap_or(col_name)
                     .to_string();
 
-                Column::new(col_name, &display).fixed(20)
+                let width = attr
+                    .map(|a| default_column_width(&a.attribute_type))
+                    .unwrap_or(20);
+
+                Column::new(col_name, &display).fixed(width)
             })
             .collect();
 

@@ -1,6 +1,7 @@
 mod apps;
 mod client_manager;
 mod credentials;
+mod formatting;
 mod modals;
 mod paths;
 mod settings;
