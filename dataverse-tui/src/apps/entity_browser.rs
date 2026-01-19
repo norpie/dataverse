@@ -201,6 +201,56 @@ impl EntityBrowser {
         }
     }
 
+    #[keybinds]
+    fn keybinds() {
+        bind("r", refresh);
+    }
+
+    #[handler]
+    async fn refresh(&self, gx: &GlobalContext, cx: &AppContext) {
+        let entity_data = match self.entity_data.get() {
+            Some(data) => data,
+            None => return,
+        };
+
+        let logical_name = entity_data.metadata.core.logical_name.clone();
+        let display_name = entity_data
+            .metadata
+            .display_name
+            .text()
+            .unwrap_or(&logical_name)
+            .to_string();
+
+        self.loading_message
+            .set(Some(format!("Refreshing {}...", display_name)));
+
+        // Preserve current field selection
+        let selected_fields: Vec<String> = self
+            .field_autocomplete
+            .get()
+            .selected_values()
+            .cloned()
+            .collect();
+
+        // Reload entity data (metadata + records)
+        self.load_entity_data(gx, cx, &logical_name).await;
+
+        // Restore field selection and reload with those fields
+        if !selected_fields.is_empty() {
+            self.field_autocomplete.update(|state| {
+                state.selection.selected.clear();
+                for field in &selected_fields {
+                    state.selection.selected.insert(field.clone());
+                }
+            });
+            self.load_records(gx, cx, &entity_data.metadata, selected_fields)
+                .await;
+        }
+
+        self.loading_message.set(None);
+        gx.toast(Toast::info("Refreshed"));
+    }
+
     #[handler]
     async fn on_entity_select(&self, gx: &GlobalContext, cx: &AppContext) {
         let state = self.entity_autocomplete.get();
