@@ -1,8 +1,8 @@
 //! Record row types for the entity browser table.
 
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use dataverse_lib::model::metadata::{AttributeMetadata, EntityMetadata};
 use rafter::widgets::TableRow;

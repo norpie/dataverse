@@ -1,43 +1,42 @@
-//! Entity Browser app for viewing Dataverse entity records.
+//! Record Explorer app for viewing Dataverse entity records.
 
 mod row;
 mod service;
 
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
-use dataverse_lib::api::query::odata::ODataPages;
 use dataverse_lib::DataverseClient;
+use dataverse_lib::api::query::odata::ODataPages;
+use rafter::EventData;
 use rafter::page;
 use rafter::prelude::*;
 use rafter::widgets::{
     Autocomplete, AutocompleteState, Column, SelectionMode, Table, TableRow, TableState, Text,
 };
-use rafter::EventData;
 use tuidom::Element;
 
 use crate::formatting::default_column_width;
 use crate::systems::client_management::{ClientManagement, GetActiveClient};
-use crate::widgets::{loading_overlay, Spinner};
+use crate::widgets::{Spinner, loading_overlay};
 
 use row::{EntityData, RecordRow};
 use service::{
-    build_field_options, default_columns, fetch_all_entities, fetch_entity_data, fetch_next_page,
-    fetch_records,
+    build_field_options, default_columns, fetch_entity_data, fetch_next_page, fetch_records,
 };
 
-#[app(name = "Entity Browser")]
-pub struct EntityBrowser {
+#[app(name = "Record Explorer")]
+pub struct RecordExplorer {
+    // Entity to explore (set at construction, never changes)
+    #[state(skip)]
+    entity_logical_name: String,
+
     // Connection info (set once on startup)
     client: Option<DataverseClient>,
     environment_name: String,
 
     // Loading overlay message (None = no overlay)
     loading_message: Option<String>,
-
-    // Entity selection
-    entities: Vec<(String, String)>,
-    entity_autocomplete: AutocompleteState<String>,
 
     // Entity data (Some after initial load)
     entity_data: Option<EntityData>,
@@ -54,8 +53,17 @@ pub struct EntityBrowser {
     advanced_mode: Arc<AtomicBool>,
 }
 
+impl RecordExplorer {
+    pub fn new(entity_logical_name: impl Into<String>) -> Self {
+        Self {
+            entity_logical_name: entity_logical_name.into(),
+            ..Default::default()
+        }
+    }
+}
+
 #[app_impl]
-impl EntityBrowser {
+impl RecordExplorer {
     #[on_start]
     async fn on_start(&self, gx: &GlobalContext, cx: &AppContext) {
         self.loading_message
@@ -86,34 +94,10 @@ impl EntityBrowser {
         self.client.set(Some(info.client.clone()));
         self.environment_name.set(info.environment_name);
 
+        // Load the entity specified at construction
         self.loading_message
-            .set(Some("Loading Dataverse metadata...".to_string()));
-
-        // Load all entities
-        let result = match fetch_all_entities(&info.client).await {
-            Ok(r) => r,
-            Err(e) => {
-                gx.toast(Toast::error(format!("Failed to load entities: {}", e)));
-                self.loading_message.set(None);
-                return;
-            }
-        };
-
-        self.entities.set(result.options.clone());
-        self.entity_autocomplete
-            .set(AutocompleteState::new(result.options));
-
-        let selected_logical_name = match result.auto_select {
-            Some(name) => name,
-            None => {
-                gx.toast(Toast::error("No entities available"));
-                self.loading_message.set(None);
-                return;
-            }
-        };
-
-        // Load the selected entity's full metadata and records
-        self.load_entity(&selected_logical_name, gx).await;
+            .set(Some(format!("Loading {}...", self.entity_logical_name)));
+        self.load_entity(&self.entity_logical_name, gx).await;
 
         self.loading_message.set(None);
         cx.focus("field-autocomplete");
@@ -122,21 +106,13 @@ impl EntityBrowser {
     fn title(&self) -> String {
         let env_name = self.environment_name.get();
         let entity_name = self.entity_data.with_ref(|data| {
-            data.as_ref().map(|d| {
-                d.metadata
-                    .display_name
-                    .text()
-                    .unwrap_or(&d.metadata.core.logical_name)
-                    .to_string()
-            })
+            data.as_ref()
+                .and_then(|d| d.metadata.display_name.text())
+                .unwrap_or(&self.entity_logical_name)
+                .to_string()
         });
 
-        match (entity_name, env_name.is_empty()) {
-            (Some(entity), false) => format!("{} ({})", entity, env_name),
-            (Some(entity), true) => entity,
-            (None, false) => env_name,
-            (None, true) => String::new(),
-        }
+        format!("{} ({})", entity_name, env_name)
     }
 
     /// Get the stored client.
@@ -152,18 +128,12 @@ impl EntityBrowser {
 
     #[handler]
     async fn refresh(&self, gx: &GlobalContext, _cx: &AppContext) {
-        let entity_data = match self.entity_data.get() {
-            Some(data) => data,
-            None => return,
-        };
-
-        let logical_name = entity_data.metadata.core.logical_name.clone();
-        let display_name = entity_data
-            .metadata
-            .display_name
-            .text()
-            .unwrap_or(&logical_name)
-            .to_string();
+        let display_name = self.entity_data.with_ref(|data| {
+            data.as_ref()
+                .and_then(|d| d.metadata.display_name.text())
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| self.entity_logical_name.clone())
+        });
 
         self.loading_message
             .set(Some(format!("Refreshing {}...", display_name)));
@@ -177,7 +147,7 @@ impl EntityBrowser {
             .collect();
 
         // Reload entity and records
-        self.load_entity(&logical_name, gx).await;
+        self.load_entity(&self.entity_logical_name, gx).await;
 
         // Restore field selection if any were selected
         if !selected_fields.is_empty() {
@@ -200,28 +170,6 @@ impl EntityBrowser {
     async fn toggle_advanced(&self, gx: &GlobalContext, _cx: &AppContext) {
         let new_mode = !self.advanced_mode.load(Ordering::Relaxed);
         self.advanced_mode.store(new_mode, Ordering::Relaxed);
-
-        // Swap entity autocomplete labels (display_name <-> logical_name)
-        let entities = self.entities.get();
-        self.entity_autocomplete.update(|state| {
-            for (key, label) in &mut state.options {
-                if new_mode {
-                    // Advanced: show logical name
-                    *label = key.clone();
-                } else {
-                    // Normal: show display name
-                    if let Some((_, display)) = entities.iter().find(|(k, _)| k == key) {
-                        *label = display.clone();
-                    }
-                }
-            }
-            // Update current text if entity is selected
-            if let Some(selected_key) = state.selection.selected.iter().next() {
-                if let Some((_, label)) = state.options.iter().find(|(k, _)| k == selected_key) {
-                    state.text = label.clone();
-                }
-            }
-        });
 
         // Swap field autocomplete labels
         if let Some(entity_data) = self.entity_data.get() {
@@ -263,33 +211,6 @@ impl EntityBrowser {
         }));
     }
 
-    #[handler]
-    async fn on_entity_select(&self, gx: &GlobalContext, cx: &AppContext) {
-        let state = self.entity_autocomplete.get();
-        let selected_key = match state.value() {
-            Some(key) => key.clone(),
-            None => return,
-        };
-
-        // Get display name for loading message
-        let display_name = self
-            .entities
-            .get()
-            .iter()
-            .find(|(k, _)| k == &selected_key)
-            .map(|(_, d)| d.clone())
-            .unwrap_or_else(|| selected_key.clone());
-
-        log::debug!("[EntityBrowser] Entity selected: {}", selected_key);
-        self.loading_message
-            .set(Some(format!("Loading {}...", display_name)));
-
-        self.load_entity(&selected_key, gx).await;
-
-        self.loading_message.set(None);
-        cx.focus("field-autocomplete");
-    }
-
     /// Load an entity's metadata, set up field autocomplete, and load initial records.
     async fn load_entity(&self, logical_name: &str, gx: &GlobalContext) {
         let client = match self.client() {
@@ -312,18 +233,8 @@ impl EntityBrowser {
         // Build field autocomplete options
         let is_advanced = self.advanced_mode.load(Ordering::Relaxed);
         let field_options = build_field_options(&entity_data, is_advanced);
-        self.field_autocomplete.set(
-            AutocompleteState::new(field_options).with_selection(SelectionMode::Multi),
-        );
-
-        // Update autocomplete selection to show current entity
-        self.entity_autocomplete.update(|state| {
-            if let Some((_, label)) = state.options.iter().find(|(k, _)| k == logical_name) {
-                state.text = label.clone();
-            }
-            state.selection.selected.clear();
-            state.selection.selected.insert(logical_name.to_string());
-        });
+        self.field_autocomplete
+            .set(AutocompleteState::new(field_options).with_selection(SelectionMode::Multi));
 
         // Store entity data
         self.entity_data.set(Some(entity_data.clone()));
@@ -518,11 +429,10 @@ impl EntityBrowser {
 
     fn element(&self) -> Element {
         let loading_message = self.loading_message.get();
-        let has_entity = self.entity_data.with_ref(|e| e.is_some());
         // Extract only needed values without cloning all rows
-        let (has_records, loaded_count, column_count) = self.records.with_ref(|t| {
-            (!t.rows.is_empty(), t.rows.len(), t.columns.len())
-        });
+        let (has_records, loaded_count, column_count) = self
+            .records
+            .with_ref(|t| (!t.rows.is_empty(), t.rows.len(), t.columns.len()));
         let records_state = self.records_loading.get();
         let total_count = self.total_count.get();
 
@@ -530,55 +440,40 @@ impl EntityBrowser {
             box_ (width: fill, height: fill) {
                 // Main content
                 column (padding: (1, 2), gap: 1, height: fill, width: fill) style (bg: background) {
-                    // Header row with entity and field selection
+                    // Header row with field selection
                     row (gap: 2) {
                         column (gap: 0) {
-                            text (content: "Entity") style (fg: muted)
+                            text (content: "Fields") style (fg: muted)
                             autocomplete (
-                                state: self.entity_autocomplete,
-                                id: "entity-autocomplete",
-                                placeholder: "Search entities...",
-                                width: 30
+                                state: self.field_autocomplete,
+                                id: "field-autocomplete",
+                                placeholder: "Select fields...",
+                                width: 40
                             )
-                                on_select: on_entity_select()
-                        }
-
-                        if has_entity {
-                            column (gap: 0) {
-                                text (content: "Fields") style (fg: muted)
-                                autocomplete (
-                                    state: self.field_autocomplete,
-                                    id: "field-autocomplete",
-                                    placeholder: "Select fields...",
-                                    width: 40
-                                )
-                                    on_change: on_field_change()
-                            }
+                                on_change: on_field_change()
                         }
                     }
 
                     // Table area
-                    if has_entity {
-                        if has_records {
-                            box_ (id: "table-container", height: fill, width: fill) style (bg: surface) {
-                                table (state: self.records, id: "records-table")
-                                    on_scroll: on_table_scroll()
+                    if has_records {
+                        box_ (id: "table-container", height: fill, width: fill) style (bg: surface) {
+                            table (state: self.records, id: "records-table")
+                                on_scroll: on_table_scroll()
+                        }
+                    } else {
+                        match records_state {
+                            ResourceState::Loading => {
+                                column (height: fill, width: fill, align: center, justify: center) style (bg: surface) {
+                                    spinner (id: "table-spinner")
+                                }
                             }
-                        } else {
-                            match records_state {
-                                ResourceState::Loading => {
-                                    column (height: fill, width: fill, align: center, justify: center) style (bg: surface) {
-                                        spinner (id: "table-spinner")
-                                    }
+                            ResourceState::Error(ref e) => {
+                                column (height: fill, width: fill, align: center, justify: center) style (bg: surface) {
+                                    text (content: {e.to_string()}) style (fg: error)
                                 }
-                                ResourceState::Error(ref e) => {
-                                    column (height: fill, width: fill, align: center, justify: center) style (bg: surface) {
-                                        text (content: {e.to_string()}) style (fg: error)
-                                    }
-                                }
-                                _ => {
-                                    box_ (height: fill, width: fill) style (bg: surface) {}
-                                }
+                            }
+                            _ => {
+                                box_ (height: fill, width: fill) style (bg: surface) {}
                             }
                         }
                     }

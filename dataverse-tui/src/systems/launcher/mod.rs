@@ -4,7 +4,6 @@ mod modal;
 
 use rafter::prelude::*;
 
-use crate::apps::EntityBrowser;
 use modal::LauncherModal;
 
 #[system]
@@ -22,14 +21,8 @@ impl Launcher {
         let result = gx.modal(LauncherModal::default()).await;
 
         if let Some(selected) = result {
-            match selected.as_str() {
-                "entity-viewer" => {
-                    let _ = gx.spawn_and_focus(EntityBrowser::default());
-                }
-                _ => {
-                    gx.toast(Toast::info(format!("App not implemented: {}", selected)));
-                }
-            }
+            // Entity Browser removed - will be replaced by Entity Explorer in Phase 2
+            gx.toast(Toast::info(format!("App not implemented: {}", selected)));
         }
     }
 }

@@ -1,5 +1,5 @@
 //! Applications for the Dataverse TUI.
 
-mod entity_browser;
+mod record_explorer;
 
-pub use entity_browser::EntityBrowser;
+pub use record_explorer::RecordExplorer;

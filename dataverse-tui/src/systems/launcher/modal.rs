@@ -181,7 +181,7 @@ fn fuzzy_filter(query: &str, entries: &[LauncherEntry]) -> Vec<FuzzyMatch> {
 
 fn create_launcher_entries() -> Vec<LauncherEntry> {
     vec![
-        LauncherEntry::new("entity-viewer", "Entity Browser", "Data"),
+        // Entity Browser removed - will be replaced by Entity Explorer in Phase 2
     ]
 }
 
@@ -209,10 +209,8 @@ impl LauncherModal {
             .collect();
 
         self.entries.set(entries);
-        self.filtered.set(
-            ListState::new(items)
-                .with_selection(SelectionMode::Single),
-        );
+        self.filtered
+            .set(ListState::new(items).with_selection(SelectionMode::Single));
 
         mx.focus("launcher-input");
     }
@@ -239,10 +237,8 @@ impl LauncherModal {
             .map(|m| LauncherItem::from_entry(&entries[m.index], m.indices))
             .collect();
 
-        self.filtered.set(
-            ListState::new(items)
-                .with_selection(SelectionMode::Single),
-        );
+        self.filtered
+            .set(ListState::new(items).with_selection(SelectionMode::Single));
     }
 
     #[handler]

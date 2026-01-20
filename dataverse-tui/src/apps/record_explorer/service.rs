@@ -1,61 +1,17 @@
-//! Data fetching service for the entity browser.
+//! Data fetching service for the record explorer.
 
-use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 
+use dataverse_lib::DataverseClient;
 use dataverse_lib::api::query::odata::ODataPages;
 use dataverse_lib::error::Error;
-use dataverse_lib::model::metadata::{AttributeMetadata, EntityMetadata};
 use dataverse_lib::model::Entity;
-use dataverse_lib::DataverseClient;
+use dataverse_lib::model::metadata::{AttributeMetadata, EntityMetadata};
 
-use crate::formatting::{format_value, FormattedValue};
+use crate::formatting::{FormattedValue, format_value};
 
 use super::row::{EntityData, RecordRow};
-
-/// Result of fetching all entities.
-pub struct AllEntitiesResult {
-    /// Sorted list of (logical_name, display_name) tuples.
-    pub options: Vec<(String, String)>,
-    /// The auto-selected entity logical name (contact > account > first).
-    pub auto_select: Option<String>,
-}
-
-/// Fetch all entities from Dataverse.
-pub async fn fetch_all_entities(
-    client: &DataverseClient,
-) -> Result<AllEntitiesResult, Error> {
-    let all_entities = client.metadata().all_entities().await?;
-
-    // Build options: (logical_name, display_name)
-    let mut options: Vec<(String, String)> = all_entities
-        .iter()
-        .map(|e| {
-            let display = e
-                .display_name
-                .text()
-                .unwrap_or(&e.core.logical_name)
-                .to_string();
-            (e.core.logical_name.clone(), display)
-        })
-        .collect();
-
-    // Sort by display name
-    options.sort_by(|a, b| a.1.to_lowercase().cmp(&b.1.to_lowercase()));
-
-    // Auto-select: contact > account > first available
-    let auto_select = all_entities
-        .iter()
-        .find(|e| e.core.logical_name == "contact")
-        .or_else(|| all_entities.iter().find(|e| e.core.logical_name == "account"))
-        .or_else(|| all_entities.first())
-        .map(|e| e.core.logical_name.clone());
-
-    Ok(AllEntitiesResult {
-        options,
-        auto_select,
-    })
-}
 
 /// Fetch entity metadata and build EntityData.
 pub async fn fetch_entity_data(
@@ -218,10 +174,7 @@ pub fn convert_records_to_rows(
                     FormattedValue::new(api_formatted, raw)
                 } else {
                     // No API formatted value - use our formatting
-                    record
-                        .get(key)
-                        .map(|v| format_value(v))
-                        .unwrap_or_default()
+                    record.get(key).map(|v| format_value(v)).unwrap_or_default()
                 };
                 row.set_cell(key.clone(), formatted);
             }
