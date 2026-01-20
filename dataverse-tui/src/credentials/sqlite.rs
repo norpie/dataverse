@@ -7,13 +7,13 @@ use async_trait::async_trait;
 use chrono::DateTime;
 use chrono::Utc;
 
+use super::CredentialsBackend;
+use super::CredentialsError;
 use super::models::Account;
 use super::models::ActiveSession;
 use super::models::AuthType;
 use super::models::CachedTokens;
 use super::models::Environment;
-use super::CredentialsBackend;
-use super::CredentialsError;
 
 /// SQLite-backed credentials storage.
 pub struct SqliteCredentialsBackend {
@@ -23,10 +23,7 @@ pub struct SqliteCredentialsBackend {
 impl SqliteCredentialsBackend {
     /// Create a new SQLite credentials backend at the given path.
     pub async fn new(path: impl AsRef<Path>) -> Result<Self, CredentialsError> {
-        let client = async_sqlite::ClientBuilder::new()
-            .path(path)
-            .open()
-            .await?;
+        let client = async_sqlite::ClientBuilder::new().path(path).open().await?;
 
         // Initialize schema
         client
@@ -423,8 +420,9 @@ impl CredentialsBackend for SqliteCredentialsBackend {
     async fn get_active_session(&self) -> Result<ActiveSession, CredentialsError> {
         self.client
             .conn(|conn| {
-                let mut stmt =
-                    conn.prepare("SELECT account_id, environment_id FROM active_session WHERE id = 1")?;
+                let mut stmt = conn.prepare(
+                    "SELECT account_id, environment_id FROM active_session WHERE id = 1",
+                )?;
                 let mut rows = stmt.query([])?;
                 match rows.next()? {
                     Some(row) => Ok(ActiveSession {

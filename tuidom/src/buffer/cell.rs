@@ -15,7 +15,7 @@ impl Default for Cell {
         Self {
             char: ' ',
             fg: Oklch::new(1.0, 0.0, 0.0), // white
-            bg: None,                       // transparent
+            bg: None,                      // transparent
             style: TextStyle::new(),
             wide_continuation: false,
         }

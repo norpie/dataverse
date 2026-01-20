@@ -1,16 +1,16 @@
 //! Async iterator for FetchXML query pagination.
 
+use reqwest::Method;
 use reqwest::header::HeaderMap;
 use reqwest::header::HeaderValue;
-use reqwest::Method;
 use serde::Deserialize;
 use url::form_urlencoded;
 
+use crate::DataverseClient;
 use crate::api::query::Page;
 use crate::error::ApiError;
 use crate::error::Error;
 use crate::model::Record;
-use crate::DataverseClient;
 
 use super::builder::FetchBuilder;
 
@@ -101,13 +101,11 @@ impl<'a> FetchXmlPages<'a> {
         // Build URL
         let base_url = self.client.base_url().trim_end_matches('/');
         let api_version = self.client.api_version();
-        let encoded_fetchxml: String = form_urlencoded::byte_serialize(fetchxml.as_bytes()).collect();
+        let encoded_fetchxml: String =
+            form_urlencoded::byte_serialize(fetchxml.as_bytes()).collect();
         let url = format!(
             "{}/api/data/{}/{}?fetchXml={}",
-            base_url,
-            api_version,
-            entity_set_name,
-            encoded_fetchxml
+            base_url, api_version, entity_set_name, encoded_fetchxml
         );
 
         // Build headers

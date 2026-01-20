@@ -372,12 +372,15 @@ impl GlobalContext {
     pub fn instance_of<A: App>(&self) -> Option<InstanceId> {
         let type_id = TypeId::of::<A>();
         let has_registry = self.registry.is_some();
-        let result = self.registry
+        let result = self
+            .registry
             .as_ref()
             .and_then(|r| r.instance_of_type(type_id));
         log::debug!(
             "[gx.instance_of] type={:?} has_registry={} result={:?}",
-            type_id, has_registry, result
+            type_id,
+            has_registry,
+            result
         );
         result
     }
@@ -645,4 +648,3 @@ impl Default for GlobalContext {
         }
     }
 }
-

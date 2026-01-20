@@ -43,79 +43,77 @@ fn create_sample_tree() -> Vec<TreeNode<FsNode>> {
                 name: "home".into(),
                 is_dir: true,
             },
-            vec![
-                TreeNode::branch(
-                    FsNode {
-                        path: "/home/user".into(),
-                        name: "user".into(),
-                        is_dir: true,
-                    },
-                    vec![
-                        TreeNode::branch(
-                            FsNode {
-                                path: "/home/user/documents".into(),
-                                name: "documents".into(),
-                                is_dir: true,
-                            },
-                            vec![
-                                TreeNode::leaf(FsNode {
-                                    path: "/home/user/documents/report.pdf".into(),
-                                    name: "report.pdf".into(),
-                                    is_dir: false,
-                                }),
-                                TreeNode::leaf(FsNode {
-                                    path: "/home/user/documents/notes.txt".into(),
-                                    name: "notes.txt".into(),
-                                    is_dir: false,
-                                }),
-                                TreeNode::branch(
-                                    FsNode {
-                                        path: "/home/user/documents/work".into(),
-                                        name: "work".into(),
-                                        is_dir: true,
-                                    },
-                                    vec![
-                                        TreeNode::leaf(FsNode {
-                                            path: "/home/user/documents/work/project.md".into(),
-                                            name: "project.md".into(),
-                                            is_dir: false,
-                                        }),
-                                        TreeNode::leaf(FsNode {
-                                            path: "/home/user/documents/work/tasks.md".into(),
-                                            name: "tasks.md".into(),
-                                            is_dir: false,
-                                        }),
-                                    ],
-                                ),
-                            ],
-                        ),
-                        TreeNode::branch(
-                            FsNode {
-                                path: "/home/user/downloads".into(),
-                                name: "downloads".into(),
-                                is_dir: true,
-                            },
-                            vec![
-                                TreeNode::leaf(FsNode {
-                                    path: "/home/user/downloads/image.png".into(),
-                                    name: "image.png".into(),
-                                    is_dir: false,
-                                }),
-                                TreeNode::leaf(FsNode {
-                                    path: "/home/user/downloads/archive.zip".into(),
-                                    name: "archive.zip".into(),
-                                    is_dir: false,
-                                }),
-                            ],
-                        ),
-                        TreeNode::leaf(FsNode {
-                            path: "/home/user/.bashrc".into(),
-                            name: ".bashrc".into(),
-                            is_dir: false,
-                        }),
-                    ],
-                ),
-            ],
+            vec![TreeNode::branch(
+                FsNode {
+                    path: "/home/user".into(),
+                    name: "user".into(),
+                    is_dir: true,
+                },
+                vec![
+                    TreeNode::branch(
+                        FsNode {
+                            path: "/home/user/documents".into(),
+                            name: "documents".into(),
+                            is_dir: true,
+                        },
+                        vec![
+                            TreeNode::leaf(FsNode {
+                                path: "/home/user/documents/report.pdf".into(),
+                                name: "report.pdf".into(),
+                                is_dir: false,
+                            }),
+                            TreeNode::leaf(FsNode {
+                                path: "/home/user/documents/notes.txt".into(),
+                                name: "notes.txt".into(),
+                                is_dir: false,
+                            }),
+                            TreeNode::branch(
+                                FsNode {
+                                    path: "/home/user/documents/work".into(),
+                                    name: "work".into(),
+                                    is_dir: true,
+                                },
+                                vec![
+                                    TreeNode::leaf(FsNode {
+                                        path: "/home/user/documents/work/project.md".into(),
+                                        name: "project.md".into(),
+                                        is_dir: false,
+                                    }),
+                                    TreeNode::leaf(FsNode {
+                                        path: "/home/user/documents/work/tasks.md".into(),
+                                        name: "tasks.md".into(),
+                                        is_dir: false,
+                                    }),
+                                ],
+                            ),
+                        ],
+                    ),
+                    TreeNode::branch(
+                        FsNode {
+                            path: "/home/user/downloads".into(),
+                            name: "downloads".into(),
+                            is_dir: true,
+                        },
+                        vec![
+                            TreeNode::leaf(FsNode {
+                                path: "/home/user/downloads/image.png".into(),
+                                name: "image.png".into(),
+                                is_dir: false,
+                            }),
+                            TreeNode::leaf(FsNode {
+                                path: "/home/user/downloads/archive.zip".into(),
+                                name: "archive.zip".into(),
+                                is_dir: false,
+                            }),
+                        ],
+                    ),
+                    TreeNode::leaf(FsNode {
+                        path: "/home/user/.bashrc".into(),
+                        name: ".bashrc".into(),
+                        is_dir: false,
+                    }),
+                ],
+            )],
         ),
         TreeNode::branch(
             FsNode {
@@ -140,13 +138,11 @@ fn create_sample_tree() -> Vec<TreeNode<FsNode>> {
                         name: "nginx".into(),
                         is_dir: true,
                     },
-                    vec![
-                        TreeNode::leaf(FsNode {
-                            path: "/etc/nginx/nginx.conf".into(),
-                            name: "nginx.conf".into(),
-                            is_dir: false,
-                        }),
-                    ],
+                    vec![TreeNode::leaf(FsNode {
+                        path: "/etc/nginx/nginx.conf".into(),
+                        name: "nginx.conf".into(),
+                        is_dir: false,
+                    })],
                 ),
             ],
         ),
@@ -156,27 +152,25 @@ fn create_sample_tree() -> Vec<TreeNode<FsNode>> {
                 name: "var".into(),
                 is_dir: true,
             },
-            vec![
-                TreeNode::branch(
-                    FsNode {
-                        path: "/var/log".into(),
-                        name: "log".into(),
-                        is_dir: true,
-                    },
-                    vec![
-                        TreeNode::leaf(FsNode {
-                            path: "/var/log/syslog".into(),
-                            name: "syslog".into(),
-                            is_dir: false,
-                        }),
-                        TreeNode::leaf(FsNode {
-                            path: "/var/log/auth.log".into(),
-                            name: "auth.log".into(),
-                            is_dir: false,
-                        }),
-                    ],
-                ),
-            ],
+            vec![TreeNode::branch(
+                FsNode {
+                    path: "/var/log".into(),
+                    name: "log".into(),
+                    is_dir: true,
+                },
+                vec![
+                    TreeNode::leaf(FsNode {
+                        path: "/var/log/syslog".into(),
+                        name: "syslog".into(),
+                        is_dir: false,
+                    }),
+                    TreeNode::leaf(FsNode {
+                        path: "/var/log/auth.log".into(),
+                        name: "auth.log".into(),
+                        is_dir: false,
+                    }),
+                ],
+            )],
         ),
         // Add many more items to test scrolling
         TreeNode::branch(
@@ -266,8 +260,11 @@ impl TreeExample {
     #[on_start]
     async fn on_start(&self) {
         let tree = create_sample_tree();
-        self.files
-            .set(TreeState::new(tree).with_selection(SelectionMode::Single).with_roots_expanded());
+        self.files.set(
+            TreeState::new(tree)
+                .with_selection(SelectionMode::Single)
+                .with_roots_expanded(),
+        );
         self.message
             .set("Navigate with arrows, Enter to select".into());
     }
@@ -297,7 +294,10 @@ impl TreeExample {
             // Find if it's a directory
             if let Some(node) = state.find_node(key) {
                 if node.value.is_dir {
-                    gx.toast(Toast::info(format!("Selected directory: {}", node.value.name)));
+                    gx.toast(Toast::info(format!(
+                        "Selected directory: {}",
+                        node.value.name
+                    )));
                 } else {
                     gx.toast(Toast::info(format!("Opened file: {}", node.value.name)));
                 }

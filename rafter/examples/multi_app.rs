@@ -12,11 +12,14 @@
 use std::fs::File;
 use std::sync::atomic::{AtomicU32, Ordering};
 
-use log::{debug, info, LevelFilter};
+use log::{LevelFilter, debug, info};
 use rafter::page;
 use rafter::prelude::*;
 use rafter::widgets::{Button, Text};
-use rafter::{Event, FocusChanged, InstanceClosed, InstanceId, InstanceInfo, InstanceSpawned, Overlay, Request, RequestError};
+use rafter::{
+    Event, FocusChanged, InstanceClosed, InstanceId, InstanceInfo, InstanceSpawned, Overlay,
+    Request, RequestError,
+};
 use simplelog::{Config, WriteLogger};
 
 // ============================================================================
@@ -229,7 +232,11 @@ impl GlobalKeys {
             return;
         }
         if let Some(idx) = instances.iter().position(|i| i.is_focused) {
-            let prev_idx = if idx == 0 { instances.len() - 1 } else { idx - 1 };
+            let prev_idx = if idx == 0 {
+                instances.len() - 1
+            } else {
+                idx - 1
+            };
             gx.focus_instance(instances[prev_idx].id);
         }
     }
@@ -332,7 +339,10 @@ impl AppA {
         let client = gx.data::<MockApiClient>();
         let response = client.get("/users").await;
         let count = client.request_count();
-        gx.toast(Toast::success(format!("API: {} (total: {})", response, count)));
+        gx.toast(Toast::success(format!(
+            "API: {} (total: {})",
+            response, count
+        )));
     }
 
     #[handler]
@@ -358,16 +368,32 @@ impl AppA {
             instances
                 .iter()
                 .map(|i| {
-                    let status = if i.is_focused { "focused" } else if i.is_sleeping { "sleeping" } else { "bg" };
+                    let status = if i.is_focused {
+                        "focused"
+                    } else if i.is_sleeping {
+                        "sleeping"
+                    } else {
+                        "bg"
+                    };
                     format!("  {} - {}", i.name, status)
                 })
                 .collect::<Vec<_>>()
                 .join("\n")
         };
 
-        let last_str = if last_activated.is_empty() { "(none)".to_string() } else { last_activated };
-        let b_status = match app_b_status { Some(true) => "sleeping", Some(false) => "awake", None => "unknown" };
-        let d_counter = app_d_counter.map(|v| v.to_string()).unwrap_or_else(|| "unknown".to_string());
+        let last_str = if last_activated.is_empty() {
+            "(none)".to_string()
+        } else {
+            last_activated
+        };
+        let b_status = match app_b_status {
+            Some(true) => "sleeping",
+            Some(false) => "awake",
+            None => "unknown",
+        };
+        let d_counter = app_d_counter
+            .map(|v| v.to_string())
+            .unwrap_or_else(|| "unknown".to_string());
 
         page! {
             column (padding: 2, gap: 1) style (bg: background) {

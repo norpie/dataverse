@@ -15,17 +15,21 @@ use std::sync::{Arc, RwLock};
 
 use tuidom::{Event, Key, LayoutResult, Modifiers};
 
-use crate::handler_context::{call_handler, call_handler_for_app, EventData, HandlerCallResult};
+use crate::handler_context::{EventData, HandlerCallResult, call_handler, call_handler_for_app};
 use crate::instance::{AnyAppInstance, InstanceRegistry};
 use crate::modal::ModalEntry;
 use crate::registration::AnySystem;
-use crate::{AppContext, GlobalContext, Handler, HandlerContext, LifecycleHooks, Modal, WidgetResult};
+use crate::{
+    AppContext, GlobalContext, Handler, HandlerContext, LifecycleHooks, Modal, WidgetResult,
+};
 
 /// Helper to call a handler and convert panic to DispatchResult.
 fn call_and_check(handler: &Handler, hx: &HandlerContext) -> Option<DispatchResult> {
     match call_handler(handler, hx) {
         HandlerCallResult::Ok => None,
-        HandlerCallResult::Panicked { message } => Some(DispatchResult::HandlerPanicked { message }),
+        HandlerCallResult::Panicked { message } => {
+            Some(DispatchResult::HandlerPanicked { message })
+        }
     }
 }
 
@@ -38,7 +42,9 @@ fn call_app_and_check(
 ) -> Option<DispatchResult> {
     match call_handler_for_app(handler, hx, app_name, instance_id) {
         HandlerCallResult::Ok => None,
-        HandlerCallResult::Panicked { message } => Some(DispatchResult::HandlerPanicked { message }),
+        HandlerCallResult::Panicked { message } => {
+            Some(DispatchResult::HandlerPanicked { message })
+        }
     }
 }
 
@@ -169,7 +175,11 @@ impl<'a> EventDispatcher<'a> {
         };
 
         match event {
-            Event::Key { key, modifiers, target } => {
+            Event::Key {
+                key,
+                modifiers,
+                target,
+            } => {
                 // First try keybinds
                 if let Some(handler) = keybinds.match_key(*key, *modifiers) {
                     let hx = HandlerContext::for_modal_any(cx, self.gx, mx);
@@ -271,12 +281,8 @@ impl<'a> EventDispatcher<'a> {
 
             Event::Focus { target } => {
                 if let Some(handler) = handlers.get(target, "on_focus") {
-                    let hx = HandlerContext::for_modal_any_with_event(
-                        cx,
-                        self.gx,
-                        mx,
-                        EventData::Focus,
-                    );
+                    let hx =
+                        HandlerContext::for_modal_any_with_event(cx, self.gx, mx, EventData::Focus);
                     if let Some(panic_result) = call(&handler, &hx) {
                         return Some(panic_result);
                     }
@@ -285,14 +291,19 @@ impl<'a> EventDispatcher<'a> {
 
             Event::Blur { target, new_target } => {
                 if new_target.is_none() {
-                    log::debug!("[dispatch-modal] Blur event with None new_target for target={}", target);
+                    log::debug!(
+                        "[dispatch-modal] Blur event with None new_target for target={}",
+                        target
+                    );
                 }
                 if let Some(handler) = handlers.get(target, "on_blur") {
                     let hx = HandlerContext::for_modal_any_with_event(
                         cx,
                         self.gx,
                         mx,
-                        EventData::Blur { new_target: new_target.clone() },
+                        EventData::Blur {
+                            new_target: new_target.clone(),
+                        },
                     );
                     if let Some(panic_result) = call(&handler, &hx) {
                         return Some(panic_result);
@@ -300,7 +311,13 @@ impl<'a> EventDispatcher<'a> {
                 }
             }
 
-            Event::Scroll { target, delta_x, delta_y, action, .. } => {
+            Event::Scroll {
+                target,
+                delta_x,
+                delta_y,
+                action,
+                ..
+            } => {
                 if let Some(target_id) = target {
                     if let Some(handler) = handlers.get(target_id, "on_scroll") {
                         let hx = HandlerContext::for_modal_any_with_event(
@@ -404,7 +421,8 @@ impl<'a> EventDispatcher<'a> {
 
         log::debug!(
             "dispatch_to_system_keybinds: key={:?}, modifiers={:?}",
-            key, modifiers
+            key,
+            modifiers
         );
 
         for system in self.systems {
@@ -448,11 +466,15 @@ impl<'a> EventDispatcher<'a> {
         );
 
         // Use page-scoped keybind matching
-        if let Some(handler) = keybinds.match_key_for_page(*key, *modifiers, current_page.as_deref()) {
+        if let Some(handler) =
+            keybinds.match_key_for_page(*key, *modifiers, current_page.as_deref())
+        {
             log::debug!("dispatch_to_app_keybinds: matched keybind, calling handler");
             let cx = instance.app_context();
             let hx = HandlerContext::for_app(&cx, self.gx);
-            if let Some(panic_result) = call_app_and_check(&handler, &hx, instance.config().name, instance.id()) {
+            if let Some(panic_result) =
+                call_app_and_check(&handler, &hx, instance.config().name, instance.id())
+            {
                 return Some(panic_result);
             }
             log::debug!("dispatch_to_app_keybinds: handler returned");
@@ -475,13 +497,22 @@ impl<'a> EventDispatcher<'a> {
         let handlers = instance.handlers();
 
         match event {
-            Event::Key { key, modifiers, target } => {
+            Event::Key {
+                key,
+                modifiers,
+                target,
+            } => {
                 // Enter key triggers on_activate on focused element (like click)
                 if *key == tuidom::Key::Enter && modifiers.none() {
                     if let Some(target_id) = target {
                         // First check app instance handlers
                         if let Some(handler) = handlers.get(target_id, "on_activate") {
-                            if let Some(panic_result) = call_app_and_check(&handler, &hx, instance.config().name, instance.id()) {
+                            if let Some(panic_result) = call_app_and_check(
+                                &handler,
+                                &hx,
+                                instance.config().name,
+                                instance.id(),
+                            ) {
                                 return Some(panic_result);
                             }
                             return Some(DispatchResult::HandledByWidget(WidgetResult::Activated));
@@ -495,7 +526,9 @@ impl<'a> EventDispatcher<'a> {
                                 if let Some(panic_result) = call_and_check(&handler, &system_hx) {
                                     return Some(panic_result);
                                 }
-                                return Some(DispatchResult::HandledByWidget(WidgetResult::Activated));
+                                return Some(DispatchResult::HandledByWidget(
+                                    WidgetResult::Activated,
+                                ));
                             }
                         }
                     }
@@ -513,19 +546,34 @@ impl<'a> EventDispatcher<'a> {
                             _ => None,
                         };
                         if let Some(name) = handler_name {
-                            log::debug!("dispatch_to_widgets: looking for {} handler on {}", name, target_id);
+                            log::debug!(
+                                "dispatch_to_widgets: looking for {} handler on {}",
+                                name,
+                                target_id
+                            );
                             if let Some(handler) = handlers.get(target_id, name) {
                                 log::debug!("dispatch_to_widgets: found {} handler, calling", name);
-                                if let Some(panic_result) = call_app_and_check(&handler, &hx, instance.config().name, instance.id()) {
+                                if let Some(panic_result) = call_app_and_check(
+                                    &handler,
+                                    &hx,
+                                    instance.config().name,
+                                    instance.id(),
+                                ) {
                                     return Some(panic_result);
                                 }
                                 // For Left/Right, consume the event (don't let focus nav continue)
                                 // For Up/Down, let focus navigation continue after handler
                                 if matches!(key, tuidom::Key::Left | tuidom::Key::Right) {
-                                    return Some(DispatchResult::HandledByWidget(WidgetResult::Handled));
+                                    return Some(DispatchResult::HandledByWidget(
+                                        WidgetResult::Handled,
+                                    ));
                                 }
                             } else {
-                                log::debug!("dispatch_to_widgets: no {} handler found for {}", name, target_id);
+                                log::debug!(
+                                    "dispatch_to_widgets: no {} handler found for {}",
+                                    name,
+                                    target_id
+                                );
                             }
                         }
                     }
@@ -535,7 +583,14 @@ impl<'a> EventDispatcher<'a> {
                 if let Some(target_id) = target {
                     let result = dispatch_key_to_instance(instance, *key, *modifiers, self.layout);
                     if result.is_handled() {
-                        if let Some(panic_result) = dispatch_widget_result(handlers, target_id, &result, &hx, instance.config().name, instance.id()) {
+                        if let Some(panic_result) = dispatch_widget_result(
+                            handlers,
+                            target_id,
+                            &result,
+                            &hx,
+                            instance.config().name,
+                            instance.id(),
+                        ) {
                             return Some(panic_result);
                         }
                         return Some(DispatchResult::HandledByWidget(result));
@@ -543,8 +598,18 @@ impl<'a> EventDispatcher<'a> {
                 }
             }
 
-            Event::Click { target, x, y, button: _ } => {
-                log::debug!("dispatch_to_widgets: Click event, target={:?}, pos=({}, {})", target, x, y);
+            Event::Click {
+                target,
+                x,
+                y,
+                button: _,
+            } => {
+                log::debug!(
+                    "dispatch_to_widgets: Click event, target={:?}, pos=({}, {})",
+                    target,
+                    x,
+                    y
+                );
                 if let Some(target_id) = target {
                     // Create handler context with click position
                     let hx_with_click = HandlerContext::for_app_with_event(
@@ -562,7 +627,12 @@ impl<'a> EventDispatcher<'a> {
                     // First check app instance handlers
                     if let Some(handler) = handlers.get(target_id, "on_activate") {
                         log::debug!("dispatch_to_widgets: found app handler, calling");
-                        if let Some(panic_result) = call_app_and_check(&handler, &hx_with_click, instance.config().name, instance.id()) {
+                        if let Some(panic_result) = call_app_and_check(
+                            &handler,
+                            &hx_with_click,
+                            instance.config().name,
+                            instance.id(),
+                        ) {
                             return Some(panic_result);
                         }
                         log::debug!("dispatch_to_widgets: handler returned");
@@ -573,7 +643,10 @@ impl<'a> EventDispatcher<'a> {
                     for system in self.systems {
                         let system_handlers = system.handlers();
                         if let Some(handler) = system_handlers.get(target_id, "on_activate") {
-                            log::debug!("dispatch_to_widgets: found system handler for {}, calling", system.name());
+                            log::debug!(
+                                "dispatch_to_widgets: found system handler for {}, calling",
+                                system.name()
+                            );
                             let system_hx = HandlerContext::for_system(self.gx);
                             if let Some(panic_result) = call_and_check(&handler, &system_hx) {
                                 return Some(panic_result);
@@ -587,7 +660,13 @@ impl<'a> EventDispatcher<'a> {
                 }
             }
 
-            Event::Scroll { target, delta_x, delta_y, action, .. } => {
+            Event::Scroll {
+                target,
+                delta_x,
+                delta_y,
+                action,
+                ..
+            } => {
                 if let Some(target_id) = target {
                     // Check for on_scroll handler on the scrollable element
                     if let Some(handler) = handlers.get(target_id, "on_scroll") {
@@ -600,7 +679,12 @@ impl<'a> EventDispatcher<'a> {
                                 action: *action,
                             },
                         );
-                        if let Some(panic_result) = call_app_and_check(&handler, &hx_with_event, instance.config().name, instance.id()) {
+                        if let Some(panic_result) = call_app_and_check(
+                            &handler,
+                            &hx_with_event,
+                            instance.config().name,
+                            instance.id(),
+                        ) {
                             return Some(panic_result);
                         }
                         return Some(DispatchResult::HandledByWidget(WidgetResult::Handled));
@@ -609,8 +693,18 @@ impl<'a> EventDispatcher<'a> {
                 // No handler - fall through to automatic scroll handling in runtime
             }
 
-            Event::Drag { target, x, y, button: _ } => {
-                log::debug!("dispatch_to_widgets: Drag event, target={:?}, pos=({}, {})", target, x, y);
+            Event::Drag {
+                target,
+                x,
+                y,
+                button: _,
+            } => {
+                log::debug!(
+                    "dispatch_to_widgets: Drag event, target={:?}, pos=({}, {})",
+                    target,
+                    x,
+                    y
+                );
                 if let Some(target_id) = target {
                     // Check for on_drag handler
                     if let Some(handler) = handlers.get(target_id, "on_drag") {
@@ -620,7 +714,12 @@ impl<'a> EventDispatcher<'a> {
                             EventData::Drag { x: *x, y: *y },
                         );
                         log::debug!("dispatch_to_widgets: found on_drag handler, calling");
-                        if let Some(panic_result) = call_app_and_check(&handler, &hx_with_drag, instance.config().name, instance.id()) {
+                        if let Some(panic_result) = call_app_and_check(
+                            &handler,
+                            &hx_with_drag,
+                            instance.config().name,
+                            instance.id(),
+                        ) {
                             return Some(panic_result);
                         }
                         return Some(DispatchResult::HandledByWidget(WidgetResult::Handled));
@@ -629,7 +728,14 @@ impl<'a> EventDispatcher<'a> {
                     // Fall back to instance dispatch
                     let result = dispatch_drag_to_instance(instance, *x, *y, self.layout);
                     if result.is_handled() {
-                        if let Some(panic_result) = dispatch_widget_result(handlers, target_id, &result, &hx, instance.config().name, instance.id()) {
+                        if let Some(panic_result) = dispatch_widget_result(
+                            handlers,
+                            target_id,
+                            &result,
+                            &hx,
+                            instance.config().name,
+                            instance.id(),
+                        ) {
                             return Some(panic_result);
                         }
                         return Some(DispatchResult::HandledByWidget(result));
@@ -637,13 +743,25 @@ impl<'a> EventDispatcher<'a> {
                 }
             }
 
-            Event::Release { target, x, y, button: _ } => {
-                log::debug!("dispatch_to_widgets: Release event, target={:?}, pos=({}, {})", target, x, y);
+            Event::Release {
+                target,
+                x,
+                y,
+                button: _,
+            } => {
+                log::debug!(
+                    "dispatch_to_widgets: Release event, target={:?}, pos=({}, {})",
+                    target,
+                    x,
+                    y
+                );
                 if let Some(target_id) = target {
                     // Check for on_release handler
                     if let Some(handler) = handlers.get(target_id, "on_release") {
                         log::debug!("dispatch_to_widgets: found on_release handler, calling");
-                        if let Some(panic_result) = call_app_and_check(&handler, &hx, instance.config().name, instance.id()) {
+                        if let Some(panic_result) =
+                            call_app_and_check(&handler, &hx, instance.config().name, instance.id())
+                        {
                             return Some(panic_result);
                         }
                         return Some(DispatchResult::HandledByWidget(WidgetResult::Handled));
@@ -652,7 +770,14 @@ impl<'a> EventDispatcher<'a> {
                     // Fall back to instance dispatch
                     let result = dispatch_release_to_instance(instance, self.layout);
                     if result.is_handled() {
-                        if let Some(panic_result) = dispatch_widget_result(handlers, target_id, &result, &hx, instance.config().name, instance.id()) {
+                        if let Some(panic_result) = dispatch_widget_result(
+                            handlers,
+                            target_id,
+                            &result,
+                            &hx,
+                            instance.config().name,
+                            instance.id(),
+                        ) {
                             return Some(panic_result);
                         }
                         return Some(DispatchResult::HandledByWidget(result));
@@ -665,13 +790,18 @@ impl<'a> EventDispatcher<'a> {
                 log::debug!("dispatch_to_widgets: Focus event, target={}", target);
                 // First check app instance handlers
                 if let Some(handler) = handlers.get(target, "on_focus") {
-                    log::debug!("dispatch_to_widgets: found app on_focus handler for {}", target);
-                    let hx_with_event = HandlerContext::for_app_with_event(
-                        &cx,
-                        self.gx,
-                        EventData::Focus,
+                    log::debug!(
+                        "dispatch_to_widgets: found app on_focus handler for {}",
+                        target
                     );
-                    if let Some(panic_result) = call_app_and_check(&handler, &hx_with_event, instance.config().name, instance.id()) {
+                    let hx_with_event =
+                        HandlerContext::for_app_with_event(&cx, self.gx, EventData::Focus);
+                    if let Some(panic_result) = call_app_and_check(
+                        &handler,
+                        &hx_with_event,
+                        instance.config().name,
+                        instance.id(),
+                    ) {
                         return Some(panic_result);
                     }
                 } else {
@@ -679,22 +809,33 @@ impl<'a> EventDispatcher<'a> {
                     for system in self.systems {
                         let system_handlers = system.handlers();
                         if let Some(handler) = system_handlers.get(target, "on_focus") {
-                            log::debug!("dispatch_to_widgets: found system on_focus handler for {} in {}", target, system.name());
-                            let system_hx = HandlerContext::for_system_with_event(self.gx, EventData::Focus);
+                            log::debug!(
+                                "dispatch_to_widgets: found system on_focus handler for {} in {}",
+                                target,
+                                system.name()
+                            );
+                            let system_hx =
+                                HandlerContext::for_system_with_event(self.gx, EventData::Focus);
                             if let Some(panic_result) = call_and_check(&handler, &system_hx) {
                                 return Some(panic_result);
                             }
                             break;
                         }
                     }
-                    log::debug!("dispatch_to_widgets: no on_focus handler found for {}", target);
+                    log::debug!(
+                        "dispatch_to_widgets: no on_focus handler found for {}",
+                        target
+                    );
                 }
             }
 
             // Blur events: dispatch to on_blur handlers with new_target info
             Event::Blur { target, new_target } => {
                 if new_target.is_none() {
-                    log::debug!("[dispatch] Blur event with None new_target for target={}", target);
+                    log::debug!(
+                        "[dispatch] Blur event with None new_target for target={}",
+                        target
+                    );
                 }
                 // First check app instance handlers
                 if let Some(handler) = handlers.get(target, "on_blur") {
@@ -705,7 +846,12 @@ impl<'a> EventDispatcher<'a> {
                             new_target: new_target.clone(),
                         },
                     );
-                    if let Some(panic_result) = call_app_and_check(&handler, &hx_with_event, instance.config().name, instance.id()) {
+                    if let Some(panic_result) = call_app_and_check(
+                        &handler,
+                        &hx_with_event,
+                        instance.config().name,
+                        instance.id(),
+                    ) {
                         return Some(panic_result);
                     }
                 } else {
@@ -738,11 +884,14 @@ impl<'a> EventDispatcher<'a> {
                     let hx_with_event = HandlerContext::for_app_with_event(
                         &cx,
                         self.gx,
-                        EventData::Change {
-                            text: text.clone(),
-                        },
+                        EventData::Change { text: text.clone() },
                     );
-                    if let Some(panic_result) = call_app_and_check(&handler, &hx_with_event, instance.config().name, instance.id()) {
+                    if let Some(panic_result) = call_app_and_check(
+                        &handler,
+                        &hx_with_event,
+                        instance.config().name,
+                        instance.id(),
+                    ) {
                         return Some(panic_result);
                     }
                     return Some(DispatchResult::HandledByWidget(WidgetResult::Changed));
@@ -752,12 +901,14 @@ impl<'a> EventDispatcher<'a> {
             // Submit events: pass EventData::Submit to handler
             Event::Submit { target } => {
                 if let Some(handler) = handlers.get(target, "on_submit") {
-                    let hx_with_event = HandlerContext::for_app_with_event(
-                        &cx,
-                        self.gx,
-                        EventData::Submit,
-                    );
-                    if let Some(panic_result) = call_app_and_check(&handler, &hx_with_event, instance.config().name, instance.id()) {
+                    let hx_with_event =
+                        HandlerContext::for_app_with_event(&cx, self.gx, EventData::Submit);
+                    if let Some(panic_result) = call_app_and_check(
+                        &handler,
+                        &hx_with_event,
+                        instance.config().name,
+                        instance.id(),
+                    ) {
                         return Some(panic_result);
                     }
                     return Some(DispatchResult::HandledByWidget(WidgetResult::Submitted));
@@ -772,7 +923,12 @@ impl<'a> EventDispatcher<'a> {
                         self.gx,
                         EventData::Click { x: *x, y: *y },
                     );
-                    if let Some(panic_result) = call_app_and_check(&handler, &hx_with_event, instance.config().name, instance.id()) {
+                    if let Some(panic_result) = call_app_and_check(
+                        &handler,
+                        &hx_with_event,
+                        instance.config().name,
+                        instance.id(),
+                    ) {
                         return Some(panic_result);
                     }
                     return Some(DispatchResult::HandledByWidget(WidgetResult::Handled));

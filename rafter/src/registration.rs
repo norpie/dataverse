@@ -1,12 +1,12 @@
 //! Registration types for inventory-based auto-discovery.
 
+use crate::GlobalContext;
 use crate::app::App;
 use crate::instance::{AnyAppInstance, AppInstance};
 use crate::keybinds::KeybindClosures;
 use crate::lifecycle::LifecycleHooks;
 use crate::system::{Overlay, System};
 use crate::wakeup::WakeupSender;
-use crate::GlobalContext;
 
 /// App registration entry for inventory.
 pub struct AppRegistration {
@@ -109,7 +109,11 @@ pub trait AnySystem: Send + Sync {
         request_type: std::any::TypeId,
         request: Box<dyn std::any::Any + Send + Sync>,
         gx: &GlobalContext,
-    ) -> Option<std::pin::Pin<Box<dyn std::future::Future<Output = Box<dyn std::any::Any + Send + Sync>> + Send>>>;
+    ) -> Option<
+        std::pin::Pin<
+            Box<dyn std::future::Future<Output = Box<dyn std::any::Any + Send + Sync>> + Send>,
+        >,
+    >;
     /// Get the TypeId of the concrete system type.
     fn type_id(&self) -> std::any::TypeId;
 }
@@ -165,7 +169,11 @@ impl<T: System> AnySystem for T {
         request_type: std::any::TypeId,
         request: Box<dyn std::any::Any + Send + Sync>,
         gx: &GlobalContext,
-    ) -> Option<std::pin::Pin<Box<dyn std::future::Future<Output = Box<dyn std::any::Any + Send + Sync>> + Send>>> {
+    ) -> Option<
+        std::pin::Pin<
+            Box<dyn std::future::Future<Output = Box<dyn std::any::Any + Send + Sync>> + Send>,
+        >,
+    > {
         System::dispatch_request(self, request_type, request, gx)
     }
 

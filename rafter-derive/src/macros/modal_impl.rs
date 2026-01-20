@@ -8,10 +8,11 @@ use syn::{AngleBracketedGenericArguments, GenericArgument, PathArguments, Type, 
 
 use super::impl_common::{
     HandlerContexts, HandlerInfo, KeybindScope, KeybindsMethod, LifecycleContext,
-    LifecycleHooksDefined, LifecycleHookInfo, PageMethod, PartialImplBlock, extract_handler_info,
+    LifecycleHookInfo, LifecycleHooksDefined, PageMethod, PartialImplBlock, extract_handler_info,
     extract_lifecycle_hook_info, generate_element_impl, generate_handler_wrappers,
     generate_keybinds_closures_impl, generate_lifecycle_hooks_impl, generate_name_impl,
-    get_type_name, modal_metadata_mod, reconstruct_method_stripped, validate_lifecycle_hook_contexts,
+    get_type_name, modal_metadata_mod, reconstruct_method_stripped,
+    validate_lifecycle_hook_contexts,
 };
 
 /// Modal kind for compile-time context checking.
@@ -57,7 +58,7 @@ impl ModalImplAttrs {
                             return Err(syn::Error::new_spanned(
                                 ident,
                                 "Expected 'App' or 'System'",
-                            ))
+                            ));
                         }
                     }
                 } else if meta.path.is_ident("layout") {
@@ -70,7 +71,11 @@ impl ModalImplAttrs {
             syn::parse::Parser::parse2(parser, attr)?;
         }
 
-        Ok(Self { result_type, kind, layout })
+        Ok(Self {
+            result_type,
+            kind,
+            layout,
+        })
     }
 }
 
@@ -202,28 +207,36 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
         };
         if method.has_attr("on_start") {
             let hook_info = extract_lifecycle_hook_info(&method.sig);
-            if let Err(e) = validate_lifecycle_hook_contexts(&hook_info, lifecycle_context, &method.sig) {
+            if let Err(e) =
+                validate_lifecycle_hook_contexts(&hook_info, lifecycle_context, &method.sig)
+            {
                 return e.to_compile_error();
             }
             lifecycle_hooks.on_start.push(hook_info);
         }
         if method.has_attr("on_foreground") {
             let hook_info = extract_lifecycle_hook_info(&method.sig);
-            if let Err(e) = validate_lifecycle_hook_contexts(&hook_info, lifecycle_context, &method.sig) {
+            if let Err(e) =
+                validate_lifecycle_hook_contexts(&hook_info, lifecycle_context, &method.sig)
+            {
                 return e.to_compile_error();
             }
             lifecycle_hooks.on_foreground.push(hook_info);
         }
         if method.has_attr("on_background") {
             let hook_info = extract_lifecycle_hook_info(&method.sig);
-            if let Err(e) = validate_lifecycle_hook_contexts(&hook_info, lifecycle_context, &method.sig) {
+            if let Err(e) =
+                validate_lifecycle_hook_contexts(&hook_info, lifecycle_context, &method.sig)
+            {
                 return e.to_compile_error();
             }
             lifecycle_hooks.on_background.push(hook_info);
         }
         if method.has_attr("on_close") {
             let hook_info = extract_lifecycle_hook_info(&method.sig);
-            if let Err(e) = validate_lifecycle_hook_contexts(&hook_info, lifecycle_context, &method.sig) {
+            if let Err(e) =
+                validate_lifecycle_hook_contexts(&hook_info, lifecycle_context, &method.sig)
+            {
                 return e.to_compile_error();
             }
             lifecycle_hooks.on_close.push(hook_info);
@@ -447,7 +460,10 @@ fn generate_page_routing_element_impl(
         .iter()
         .map(|page| {
             let method_name = &page.name;
-            let variant_name = page.page_name.as_ref().expect("page_name should be Some for named pages");
+            let variant_name = page
+                .page_name
+                .as_ref()
+                .expect("page_name should be Some for named pages");
             let variant_ident = syn::Ident::new(variant_name, proc_macro2::Span::call_site());
             quote! {
                 Page::#variant_ident => #self_ty::#method_name(self),
@@ -484,10 +500,7 @@ fn generate_page_routing_element_impl(
 /// - `page(&self) -> Page` - getter for current page
 /// - `navigate(&self, page: Page)` - setter for navigation
 /// - `current_page(&self) -> Option<String>` - for keybind scoping
-fn generate_page_routing_helpers(
-    page_methods: &[&PageMethod],
-    _self_ty: &Type,
-) -> TokenStream {
+fn generate_page_routing_helpers(page_methods: &[&PageMethod], _self_ty: &Type) -> TokenStream {
     // Just check that we have pages to validate
     if page_methods.is_empty() {
         return quote! {};

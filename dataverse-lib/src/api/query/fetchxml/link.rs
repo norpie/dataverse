@@ -221,10 +221,12 @@ mod tests {
 
     #[test]
     fn test_nested_links() {
-        let link = LinkEntityBuilder::new("contact", "contactid", "primarycontactid")
-            .link_entity("account", "accountid", "parentcustomerid", |nested| {
-                nested.select(&["name"])
-            });
+        let link = LinkEntityBuilder::new("contact", "contactid", "primarycontactid").link_entity(
+            "account",
+            "accountid",
+            "parentcustomerid",
+            |nested| nested.select(&["name"]),
+        );
 
         let xml = link.to_fetchxml();
         assert!(xml.contains(r#"<link-entity name="contact""#));

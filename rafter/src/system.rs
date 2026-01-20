@@ -73,7 +73,12 @@ impl Overlay {
 
     pub fn absolute(x: u16, y: u16, width: u16, height: u16, element: Element) -> Self {
         Self::new(
-            OverlayPosition::Absolute { x, y, width, height },
+            OverlayPosition::Absolute {
+                x,
+                y,
+                width,
+                height,
+            },
             element,
         )
     }

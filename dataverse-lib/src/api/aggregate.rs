@@ -23,20 +23,20 @@
 //! }
 //! ```
 
+use reqwest::Method;
 use reqwest::header::HeaderMap;
 use reqwest::header::HeaderValue;
-use reqwest::Method;
 use serde::Deserialize;
 use url::form_urlencoded;
 
+use crate::DataverseClient;
+use crate::api::query::Filter;
 use crate::api::query::fetchxml::xml::escape_xml;
 use crate::api::query::fetchxml::xml::filter_to_fetchxml;
-use crate::api::query::Filter;
 use crate::error::ApiError;
 use crate::error::Error;
 use crate::model::Entity;
 use crate::model::Record;
-use crate::DataverseClient;
 
 /// The type of aggregation to perform.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -428,7 +428,8 @@ impl<'a> AggregateBuilder<'a> {
             .await?;
 
         // Parse response
-        let aggregate_response: AggregateResponse = response.json().await.map_err(ApiError::from)?;
+        let aggregate_response: AggregateResponse =
+            response.json().await.map_err(ApiError::from)?;
 
         Ok(aggregate_response.value)
     }

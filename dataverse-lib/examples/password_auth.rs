@@ -18,7 +18,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let _ = dotenvy::dotenv();
 
     let client_id = env::var("DATAVERSE_CLIENT_ID").expect("DATAVERSE_CLIENT_ID not set");
-    let client_secret = env::var("DATAVERSE_CLIENT_SECRET").expect("DATAVERSE_CLIENT_SECRET not set");
+    let client_secret =
+        env::var("DATAVERSE_CLIENT_SECRET").expect("DATAVERSE_CLIENT_SECRET not set");
     let username = env::var("DATAVERSE_USERNAME").expect("DATAVERSE_USERNAME not set");
     let password = env::var("DATAVERSE_PASSWORD").expect("DATAVERSE_PASSWORD not set");
     let url = env::var("DATAVERSE_URL").expect("DATAVERSE_URL not set");

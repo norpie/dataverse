@@ -8,7 +8,7 @@ pub use sqlite::SqliteBackend;
 
 use std::sync::Arc;
 
-use serde::{de::DeserializeOwned, Serialize};
+use serde::{Serialize, de::DeserializeOwned};
 use thiserror::Error;
 
 /// Settings error type.
@@ -58,7 +58,11 @@ impl SettingsProvider {
     }
 
     /// Set a typed value for a key.
-    pub async fn set<T: Serialize + Sync>(&self, key: &str, value: &T) -> Result<(), SettingsError> {
+    pub async fn set<T: Serialize + Sync>(
+        &self,
+        key: &str,
+        value: &T,
+    ) -> Result<(), SettingsError> {
         let bytes = bincode::serialize(value).map_err(SettingsError::Serialization)?;
         self.backend.set_bytes(key, bytes).await
     }

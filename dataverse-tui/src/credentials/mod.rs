@@ -26,7 +26,10 @@ pub enum CredentialsError {
     #[error("{entity} with id {id} not found")]
     NotFound { entity: &'static str, id: i64 },
     #[error("re-authentication required for account {account_id} on environment {environment_id}")]
-    ReauthRequired { account_id: i64, environment_id: i64 },
+    ReauthRequired {
+        account_id: i64,
+        environment_id: i64,
+    },
     #[error("authentication error: {0}")]
     Auth(#[from] AuthError),
     #[error("invalid auth type: {0}")]
@@ -43,8 +46,10 @@ pub trait CredentialsBackend: Send + Sync {
         display_name: &str,
     ) -> Result<Environment, CredentialsError>;
     async fn get_environment(&self, id: i64) -> Result<Option<Environment>, CredentialsError>;
-    async fn get_environment_by_url(&self, url: &str)
-        -> Result<Option<Environment>, CredentialsError>;
+    async fn get_environment_by_url(
+        &self,
+        url: &str,
+    ) -> Result<Option<Environment>, CredentialsError>;
     async fn list_environments(&self) -> Result<Vec<Environment>, CredentialsError>;
     async fn update_environment(
         &self,
@@ -237,18 +242,14 @@ impl CredentialsProvider {
                 id: account_id,
             })?;
 
-        let environment = self
-            .get_environment(env_id)
-            .await?
-            .ok_or(CredentialsError::NotFound {
-                entity: "environment",
-                id: env_id,
-            })?;
+        let environment =
+            self.get_environment(env_id)
+                .await?
+                .ok_or(CredentialsError::NotFound {
+                    entity: "environment",
+                    id: env_id,
+                })?;
 
-        Ok(StoredTokenProvider::new(
-            self.clone(),
-            account,
-            environment,
-        ))
+        Ok(StoredTokenProvider::new(self.clone(), account, environment))
     }
 }

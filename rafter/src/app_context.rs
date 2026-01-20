@@ -16,10 +16,10 @@ use futures::FutureExt;
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
 
+use crate::GlobalContext;
 use crate::instance::InstanceId;
 use crate::modal::{Modal, ModalContext, ModalEntry};
 use crate::wakeup::WakeupSender;
-use crate::GlobalContext;
 
 // =============================================================================
 // AppError
@@ -269,12 +269,7 @@ impl AppContext {
                 Ok(value) => Some(value),
                 Err(panic) => {
                     let message = extract_panic_message(&panic);
-                    log::error!(
-                        "[{}:{}] Task panicked: {}",
-                        app_name,
-                        instance_id,
-                        message
-                    );
+                    log::error!("[{}:{}] Task panicked: {}", app_name, instance_id, message);
                     if let Some(sender) = error_sender {
                         let _ = sender.send(AppError {
                             app_name,

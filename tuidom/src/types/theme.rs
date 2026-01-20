@@ -29,11 +29,36 @@ pub struct DefaultTheme {
 impl DefaultTheme {
     pub const fn new() -> Self {
         Self {
-            background: Color::Oklch { l: 0.0, c: 0.0, h: 0.0, a: 1.0 },  // black
-            foreground: Color::Oklch { l: 1.0, c: 0.0, h: 0.0, a: 1.0 }, // white
-            surface: Color::Oklch { l: 0.15, c: 0.0, h: 0.0, a: 1.0 },   // dark gray
-            border: Color::Oklch { l: 0.4, c: 0.0, h: 0.0, a: 1.0 },     // gray
-            primary: Color::Oklch { l: 0.9, c: 0.0, h: 0.0, a: 1.0 },    // light gray
+            background: Color::Oklch {
+                l: 0.0,
+                c: 0.0,
+                h: 0.0,
+                a: 1.0,
+            }, // black
+            foreground: Color::Oklch {
+                l: 1.0,
+                c: 0.0,
+                h: 0.0,
+                a: 1.0,
+            }, // white
+            surface: Color::Oklch {
+                l: 0.15,
+                c: 0.0,
+                h: 0.0,
+                a: 1.0,
+            }, // dark gray
+            border: Color::Oklch {
+                l: 0.4,
+                c: 0.0,
+                h: 0.0,
+                a: 1.0,
+            }, // gray
+            primary: Color::Oklch {
+                l: 0.9,
+                c: 0.0,
+                h: 0.0,
+                a: 1.0,
+            }, // light gray
         }
     }
 }

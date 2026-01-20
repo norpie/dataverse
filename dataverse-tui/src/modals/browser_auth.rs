@@ -172,7 +172,10 @@ impl BrowserAuthModal {
     }
 
     fn render_error(&self) -> Element {
-        let error_msg = self.error.get().unwrap_or_else(|| "Unknown error".to_string());
+        let error_msg = self
+            .error
+            .get()
+            .unwrap_or_else(|| "Unknown error".to_string());
 
         page! {
             column (padding: (1, 2), gap: 1, width: fill, height: fill) style (bg: surface) {

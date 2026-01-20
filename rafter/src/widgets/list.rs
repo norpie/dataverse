@@ -142,14 +142,18 @@ impl<T: ListItem> ListState<T> {
     ///
     /// O(n) but only called when items change, not every frame.
     pub fn set_items(&mut self, items: Vec<T>) {
-        let total = self.scroller.rebuild(items.iter().map(|item| item.height()));
+        let total = self
+            .scroller
+            .rebuild(items.iter().map(|item| item.height()));
         self.items = Arc::new(items);
         self.scroll.set_content_height(total);
     }
 
     /// Rebuild scroller from current items.
     fn rebuild_scroller(&mut self) {
-        let total = self.scroller.rebuild(self.items.iter().map(|item| item.height()));
+        let total = self
+            .scroller
+            .rebuild(self.items.iter().map(|item| item.height()));
         self.scroll.set_content_height(total);
     }
 
@@ -425,7 +429,9 @@ impl<'a, T: ListItem> List<HasListState<'a, T>> {
         let content_id = format!("{}-content", list_id);
 
         // Process any pending scroll request and persist it
-        state.update(|s| { s.process_scroll(); });
+        state.update(|s| {
+            s.process_scroll();
+        });
 
         let current = state.get();
         log::debug!("[List::build] Got state, items={}", current.items.len());
@@ -462,7 +468,11 @@ impl<'a, T: ListItem> List<HasListState<'a, T>> {
         // NOTE: No spacers needed - we handle scroll position via ScrollState,
         // not tuidom's scroll system. Just render visible items directly.
 
-        log::debug!("[List::build] Building content element with {} children, horizontal_scroll={}", children.len(), self.horizontal_scroll);
+        log::debug!(
+            "[List::build] Building content element with {} children, horizontal_scroll={}",
+            children.len(),
+            self.horizontal_scroll
+        );
         // Build content column:
         // - overflow_x: Auto (if horizontal_scroll enabled) or Hidden (default)
         // - overflow_y: Hidden - we handle vertical via virtualization (clips, no tuidom scrollbar)
@@ -516,8 +526,12 @@ impl<'a, T: ListItem> List<HasListState<'a, T>> {
                         // Apply the scroll action immediately
                         state_clone.update(|s| {
                             let scroll_request = match action {
-                                tuidom::ScrollAction::PageUp => super::scroll::ScrollRequest::PageUp,
-                                tuidom::ScrollAction::PageDown => super::scroll::ScrollRequest::PageDown,
+                                tuidom::ScrollAction::PageUp => {
+                                    super::scroll::ScrollRequest::PageUp
+                                }
+                                tuidom::ScrollAction::PageDown => {
+                                    super::scroll::ScrollRequest::PageDown
+                                }
                                 tuidom::ScrollAction::Home => super::scroll::ScrollRequest::Home,
                                 tuidom::ScrollAction::End => super::scroll::ScrollRequest::End,
                             };
@@ -547,8 +561,13 @@ impl<'a, T: ListItem> List<HasListState<'a, T>> {
                         };
 
                         if let Some(item) = current.items.get(target_index) {
-                            let item_id = format!("{}-item-{}", list_id_clone, item.key().to_string());
-                            log::debug!("[List::on_scroll] Focusing item: {} (index {})", item_id, target_index);
+                            let item_id =
+                                format!("{}-item-{}", list_id_clone, item.key().to_string());
+                            log::debug!(
+                                "[List::on_scroll] Focusing item: {} (index {})",
+                                item_id,
+                                target_index
+                            );
                             hx.cx().focus(&item_id);
                         }
                     }
@@ -648,7 +667,8 @@ impl<'a, T: ListItem> List<HasListState<'a, T>> {
 
         // Check if this item is at a scroll boundary
         let is_at_top_boundary = pos_in_visible == 0 && item_index > 0;
-        let is_at_bottom_boundary = pos_in_visible == visible_count - 1 && item_index < total_items - 1;
+        let is_at_bottom_boundary =
+            pos_in_visible == visible_count - 1 && item_index < total_items - 1;
 
         // Build row element with item's rendered content
         // Use Auto width for horizontal scrolling, Fill otherwise
@@ -708,7 +728,8 @@ impl<'a, T: ListItem> List<HasListState<'a, T>> {
                 Arc::new(move |hx| {
                     log::debug!("[List::on_key_up] at top boundary, scrolling up");
                     state_clone.update(|s| {
-                        s.scroll.apply_request(super::scroll::ScrollRequest::Delta(-1));
+                        s.scroll
+                            .apply_request(super::scroll::ScrollRequest::Delta(-1));
                     });
                     // Focus the previous item
                     let current = state_clone.get();
@@ -730,7 +751,8 @@ impl<'a, T: ListItem> List<HasListState<'a, T>> {
                 Arc::new(move |hx| {
                     log::debug!("[List::on_key_down] at bottom boundary, scrolling down");
                     state_clone.update(|s| {
-                        s.scroll.apply_request(super::scroll::ScrollRequest::Delta(1));
+                        s.scroll
+                            .apply_request(super::scroll::ScrollRequest::Delta(1));
                     });
                     // Focus the next item
                     let current = state_clone.get();

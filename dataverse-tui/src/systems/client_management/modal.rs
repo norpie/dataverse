@@ -4,7 +4,9 @@
 
 use rafter::page;
 use rafter::prelude::*;
-use rafter::widgets::{Button, Input, List, ListItem, ListState, Select, SelectState, SelectionMode, Text};
+use rafter::widgets::{
+    Button, Input, List, ListItem, ListState, Select, SelectState, SelectionMode, Text,
+};
 use tuidom::{Color, Element, Style};
 
 use crate::credentials::CredentialsProvider;
@@ -37,7 +39,10 @@ impl ListItem for EnvListItem {
     fn render(&self) -> Element {
         Element::row()
             .child(Element::text(&self.display_name))
-            .child(Element::text(format!(" ({})", self.url)).style(Style::new().foreground(Color::var("muted"))))
+            .child(
+                Element::text(format!(" ({})", self.url))
+                    .style(Style::new().foreground(Color::var("muted"))),
+            )
     }
 }
 
@@ -59,7 +64,10 @@ impl ListItem for AccListItem {
     fn render(&self) -> Element {
         Element::row()
             .child(Element::text(&self.display_name))
-            .child(Element::text(format!(" ({})", self.client_id)).style(Style::new().foreground(Color::var("muted"))))
+            .child(
+                Element::text(format!(" ({})", self.client_id))
+                    .style(Style::new().foreground(Color::var("muted"))),
+            )
     }
 }
 
@@ -125,7 +133,8 @@ impl ClientManagementModal {
                     url: e.url,
                 })
                 .collect();
-            self.env_list.set(ListState::new(list_items).with_selection(SelectionMode::Single));
+            self.env_list
+                .set(ListState::new(list_items).with_selection(SelectionMode::Single));
         }
 
         // Load accounts
@@ -151,7 +160,8 @@ impl ClientManagementModal {
                     client_id: a.client_id,
                 })
                 .collect();
-            self.acc_list.set(ListState::new(list_items).with_selection(SelectionMode::Single));
+            self.acc_list
+                .set(ListState::new(list_items).with_selection(SelectionMode::Single));
         }
 
         // Check if connected (has tokens for current selection)
@@ -228,9 +238,15 @@ impl ClientManagementModal {
         // Get env and account details from credentials
         let credentials = gx.data::<CredentialsProvider>();
 
-        let env = credentials.list_environments().await.ok()
+        let env = credentials
+            .list_environments()
+            .await
+            .ok()
             .and_then(|envs| envs.into_iter().find(|e| e.id == env_id));
-        let acc = credentials.list_accounts().await.ok()
+        let acc = credentials
+            .list_accounts()
+            .await
+            .ok()
             .and_then(|accs| accs.into_iter().find(|a| a.id == acc_id));
 
         let (env_url, client_id, tenant_id) = match (env, acc) {
@@ -245,7 +261,9 @@ impl ClientManagementModal {
         };
 
         // Open browser auth modal
-        let token = gx.modal(BrowserAuthModal::new(&env_url, &client_id, &tenant_id)).await;
+        let token = gx
+            .modal(BrowserAuthModal::new(&env_url, &client_id, &tenant_id))
+            .await;
 
         if let Some(access_token) = token {
             // Save tokens
@@ -260,7 +278,10 @@ impl ClientManagementModal {
             }
 
             // Set as active session
-            if let Err(e) = credentials.set_active_session(Some(acc_id), Some(env_id)).await {
+            if let Err(e) = credentials
+                .set_active_session(Some(acc_id), Some(env_id))
+                .await
+            {
                 gx.toast(Toast::error(format!("Failed to set session: {}", e)));
                 return;
             }
@@ -319,7 +340,9 @@ impl ClientManagementModal {
             return;
         };
 
-        let confirmed = gx.modal(ConfirmModal::new("Delete this environment?").title("Delete")).await;
+        let confirmed = gx
+            .modal(ConfirmModal::new("Delete this environment?").title("Delete"))
+            .await;
         if !confirmed {
             return;
         }
@@ -364,8 +387,16 @@ impl ClientManagementModal {
             return;
         }
 
-        let display_name = if name.is_empty() { client_id.clone() } else { name };
-        let tenant = if tenant_id.is_empty() { None } else { Some(tenant_id) };
+        let display_name = if name.is_empty() {
+            client_id.clone()
+        } else {
+            name
+        };
+        let tenant = if tenant_id.is_empty() {
+            None
+        } else {
+            Some(tenant_id)
+        };
 
         let credentials = gx.data::<CredentialsProvider>();
         let account = crate::credentials::Account {
@@ -399,7 +430,9 @@ impl ClientManagementModal {
             return;
         };
 
-        let confirmed = gx.modal(ConfirmModal::new("Delete this account?").title("Delete")).await;
+        let confirmed = gx
+            .modal(ConfirmModal::new("Delete this account?").title("Delete"))
+            .await;
         if !confirmed {
             return;
         }
@@ -450,11 +483,19 @@ impl ClientManagementModal {
     #[page(Active)]
     fn active_page(&self) -> Element {
         let is_connected = self.is_connected.get();
-        let connect_label = if is_connected { "Re-authenticate" } else { "Connect" };
-        let status_text = if is_connected { "Connected" } else { "Not connected" };
+        let connect_label = if is_connected {
+            "Re-authenticate"
+        } else {
+            "Connect"
+        };
+        let status_text = if is_connected {
+            "Connected"
+        } else {
+            "Not connected"
+        };
         let status_color = if is_connected { "success" } else { "error" };
-        let status_indicator = Element::text("●")
-            .style(Style::new().foreground(Color::var(status_color)));
+        let status_indicator =
+            Element::text("●").style(Style::new().foreground(Color::var(status_color)));
 
         page! {
             column (gap: 1, width: fill, height: fill) {

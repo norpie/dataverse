@@ -114,7 +114,9 @@ pub fn rotate_logs() {
 
 /// Remove old log files, keeping only the most recent MAX_OLD_LOGS.
 fn cleanup_old_logs(logs_dir: &PathBuf) {
-    let Ok(entries) = fs::read_dir(logs_dir) else { return };
+    let Ok(entries) = fs::read_dir(logs_dir) else {
+        return;
+    };
 
     // Collect log files (excluding latest.log)
     let mut logs: Vec<_> = entries

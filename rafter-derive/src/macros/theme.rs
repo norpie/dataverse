@@ -5,7 +5,7 @@
 
 use proc_macro2::TokenStream;
 use quote::quote;
-use syn::{parse2, DeriveInput, Fields};
+use syn::{DeriveInput, Fields, parse2};
 
 /// Check if a field has the `#[group]` attribute.
 fn has_group_attr(field: &syn::Field) -> bool {

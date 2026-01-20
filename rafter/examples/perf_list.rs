@@ -55,7 +55,8 @@ struct PerfListExample {
 #[app_impl]
 impl PerfListExample {
     async fn on_start(&self) {
-        self.status.set("Select a button to populate the list".into());
+        self.status
+            .set("Select a button to populate the list".into());
     }
 
     #[keybinds]
@@ -105,7 +106,10 @@ impl PerfListExample {
         let items = generate_items(count);
         self.items.set(ListState::new(items));
         self.item_count.set(count);
-        self.status.set(format!("Loaded {} items - scroll to test performance", count));
+        self.status.set(format!(
+            "Loaded {} items - scroll to test performance",
+            count
+        ));
     }
 
     fn element(&self) -> Element {

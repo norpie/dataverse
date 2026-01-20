@@ -220,7 +220,7 @@ impl Terminal {
         let mut last_y = u16::MAX;
         let mut last_char_width: u16 = 1;
         let mut last_fg = Oklch::new(1.0, 0.0, 0.0); // white
-        let mut last_bg: Option<Oklch> = None;      // transparent (terminal default)
+        let mut last_bg: Option<Oklch> = None; // transparent (terminal default)
         let mut last_style = crate::types::TextStyle::new();
 
         // Reset to known state at start

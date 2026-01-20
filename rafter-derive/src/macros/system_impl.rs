@@ -8,7 +8,7 @@ use syn::parse2;
 
 use super::impl_common::{
     DispatchContextType, EventHandlerMethod, HandlerContexts, HandlerInfo, KeybindScope,
-    KeybindsMethod, LifecycleContext, LifecycleHooksDefined, LifecycleHookInfo, PageMethod,
+    KeybindsMethod, LifecycleContext, LifecycleHookInfo, LifecycleHooksDefined, PageMethod,
     PartialImplBlock, RequestHandlerMethod, extract_handler_info, extract_lifecycle_hook_info,
     generate_event_dispatch, generate_handler_wrappers, generate_keybinds_closures_impl,
     generate_lifecycle_hooks_impl, generate_request_dispatch, get_type_name,
@@ -119,28 +119,36 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
         // Check for lifecycle hook attributes
         if method.has_attr("on_start") {
             let hook_info = extract_lifecycle_hook_info(&method.sig);
-            if let Err(e) = validate_lifecycle_hook_contexts(&hook_info, LifecycleContext::System, &method.sig) {
+            if let Err(e) =
+                validate_lifecycle_hook_contexts(&hook_info, LifecycleContext::System, &method.sig)
+            {
                 return e.to_compile_error();
             }
             lifecycle_hooks.on_start.push(hook_info);
         }
         if method.has_attr("on_foreground") {
             let hook_info = extract_lifecycle_hook_info(&method.sig);
-            if let Err(e) = validate_lifecycle_hook_contexts(&hook_info, LifecycleContext::System, &method.sig) {
+            if let Err(e) =
+                validate_lifecycle_hook_contexts(&hook_info, LifecycleContext::System, &method.sig)
+            {
                 return e.to_compile_error();
             }
             lifecycle_hooks.on_foreground.push(hook_info);
         }
         if method.has_attr("on_background") {
             let hook_info = extract_lifecycle_hook_info(&method.sig);
-            if let Err(e) = validate_lifecycle_hook_contexts(&hook_info, LifecycleContext::System, &method.sig) {
+            if let Err(e) =
+                validate_lifecycle_hook_contexts(&hook_info, LifecycleContext::System, &method.sig)
+            {
                 return e.to_compile_error();
             }
             lifecycle_hooks.on_background.push(hook_info);
         }
         if method.has_attr("on_close") {
             let hook_info = extract_lifecycle_hook_info(&method.sig);
-            if let Err(e) = validate_lifecycle_hook_contexts(&hook_info, LifecycleContext::System, &method.sig) {
+            if let Err(e) =
+                validate_lifecycle_hook_contexts(&hook_info, LifecycleContext::System, &method.sig)
+            {
                 return e.to_compile_error();
             }
             lifecycle_hooks.on_close.push(hook_info);
@@ -200,11 +208,8 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
     };
 
     // Generate lifecycle_hooks method
-    let lifecycle_hooks_impl = generate_lifecycle_hooks_impl(
-        &lifecycle_hooks,
-        LifecycleContext::System,
-        &self_ty,
-    );
+    let lifecycle_hooks_impl =
+        generate_lifecycle_hooks_impl(&lifecycle_hooks, LifecycleContext::System, &self_ty);
 
     // Generate dirty methods and wakeup installation
     let dirty_impl = quote! {
@@ -223,7 +228,8 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
 
     // Generate event/request dispatch methods
     let event_dispatch_impl = generate_event_dispatch(&event_handlers, DispatchContextType::System);
-    let request_dispatch_impl = generate_request_dispatch(&request_handlers, DispatchContextType::System);
+    let request_dispatch_impl =
+        generate_request_dispatch(&request_handlers, DispatchContextType::System);
 
     // Generate handler wrapper methods
     let handler_wrappers = generate_handler_wrappers(&handler_infos);

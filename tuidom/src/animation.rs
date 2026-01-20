@@ -126,7 +126,10 @@ impl AnimationState {
         let now = Instant::now();
         !self.active.is_empty()
             || !self.frame_states.is_empty()
-            || self.position_transitions.values().any(|t| t.has_any_active(now))
+            || self
+                .position_transitions
+                .values()
+                .any(|t| t.has_any_active(now))
     }
 
     /// Capture current layout positions for next frame comparison.
@@ -148,7 +151,8 @@ impl AnimationState {
         let now = Instant::now();
 
         // Prune completed position transitions
-        self.position_transitions.retain(|_, t| t.has_any_active(now));
+        self.position_transitions
+            .retain(|_, t| t.has_any_active(now));
 
         // Check each element for position changes
         self.check_position_changes(root, layout, now);
@@ -297,7 +301,10 @@ impl AnimationState {
     /// Get interpolated position for an element.
     /// Returns (interpolated_x, interpolated_y) where each is Some if active, None if not.
     pub fn get_interpolated_position(&self, id: &str, now: Instant) -> (Option<u16>, Option<u16>) {
-        (self.get_interpolated_x(id, now), self.get_interpolated_y(id, now))
+        (
+            self.get_interpolated_x(id, now),
+            self.get_interpolated_y(id, now),
+        )
     }
 
     /// Returns when the next animation tick is due.

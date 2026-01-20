@@ -13,7 +13,9 @@ use std::sync::OnceLock;
 
 use tuidom::Element;
 
-use crate::{AppContext, GlobalContext, HandlerRegistry, KeybindClosures, LifecycleHooks, WakeupSender};
+use crate::{
+    AppContext, GlobalContext, HandlerRegistry, KeybindClosures, LifecycleHooks, WakeupSender,
+};
 
 /// App configuration.
 #[derive(Debug, Clone)]

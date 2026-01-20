@@ -107,7 +107,7 @@ pub struct RafterTheme {
     pub secondary: Color,
     pub muted: Color,
     pub interact: Color,
-    pub accent: Color,      
+    pub accent: Color,
 
     // Semantic colors
     pub success: Color,

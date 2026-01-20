@@ -236,7 +236,10 @@ impl FocusState {
         let current_scrollable = find_scrollable_ancestor(root, current_id);
         log::debug!(
             "[focus_direction] current={} direction={:?} scrollable_ancestor={:?} abs_rect={:?}",
-            current_id, direction, current_scrollable, current_rect
+            current_id,
+            direction,
+            current_scrollable,
+            current_rect
         );
 
         // Score candidates, preferring those in the same scrollable container
@@ -276,7 +279,10 @@ impl FocusState {
 
         log::debug!(
             "[focus_direction] best={} score=({}, {}, {:.2})",
-            best.0, (best.1).0, (best.1).1, (best.1).2
+            best.0,
+            (best.1).0,
+            (best.1).1,
+            (best.1).2
         );
 
         let new_focus = best.0.clone();
@@ -313,7 +319,10 @@ impl FocusState {
                     if key == Key::Tab {
                         if let Some(old) = self.focused.clone() {
                             if let Some(new) = self.focus_next(root) {
-                                events.push(Event::Blur { target: old, new_target: Some(new.clone()) });
+                                events.push(Event::Blur {
+                                    target: old,
+                                    new_target: Some(new.clone()),
+                                });
                                 events.push(Event::Focus { target: new });
                             }
                         } else if let Some(new) = self.focus_next(root) {
@@ -325,7 +334,10 @@ impl FocusState {
                     if key == Key::BackTab {
                         if let Some(old) = self.focused.clone() {
                             if let Some(new) = self.focus_prev(root) {
-                                events.push(Event::Blur { target: old, new_target: Some(new.clone()) });
+                                events.push(Event::Blur {
+                                    target: old,
+                                    new_target: Some(new.clone()),
+                                });
                                 events.push(Event::Focus { target: new });
                             }
                         } else if let Some(new) = self.focus_prev(root) {
@@ -337,8 +349,14 @@ impl FocusState {
                     // Escape blurs focused element; only emits key event if nothing focused
                     if key == Key::Escape {
                         if let Some(old) = self.focused.take() {
-                            log::debug!("[focus] Escape key pressed, blurring {} with None target", old);
-                            events.push(Event::Blur { target: old, new_target: None });
+                            log::debug!(
+                                "[focus] Escape key pressed, blurring {} with None target",
+                                old
+                            );
+                            events.push(Event::Blur {
+                                target: old,
+                                new_target: None,
+                            });
                             continue;
                         }
                         // Fall through to emit key event
@@ -371,12 +389,15 @@ impl FocusState {
                                     // would leave the scrollable container. If so, emit Key event
                                     // instead to let the widget handle boundary scrolling.
                                     if matches!(key, Key::Up | Key::Down) {
-                                        if let Some((scrollable_id, is_fake)) = find_scrollable_ancestor_with_type(root, &old) {
+                                        if let Some((scrollable_id, is_fake)) =
+                                            find_scrollable_ancestor_with_type(root, &old)
+                                        {
                                             if is_fake {
                                                 // Check if new target is still inside the scrollable
-                                                let new_in_scrollable = find_scrollable_ancestor_with_type(root, &new)
-                                                    .map(|(id, _)| id == scrollable_id)
-                                                    .unwrap_or(false);
+                                                let new_in_scrollable =
+                                                    find_scrollable_ancestor_with_type(root, &new)
+                                                        .map(|(id, _)| id == scrollable_id)
+                                                        .unwrap_or(false);
 
                                                 if !new_in_scrollable {
                                                     // Navigation would leave the scrollable - emit Key event first
@@ -389,7 +410,10 @@ impl FocusState {
                                                         modifiers,
                                                     });
                                                     // Also emit the focus change - if handler sets focus, post-dispatch will override
-                                                    events.push(Event::Blur { target: old, new_target: Some(new.clone()) });
+                                                    events.push(Event::Blur {
+                                                        target: old,
+                                                        new_target: Some(new.clone()),
+                                                    });
                                                     events.push(Event::Focus { target: new });
                                                     continue;
                                                 }
@@ -397,7 +421,10 @@ impl FocusState {
                                         }
                                     }
 
-                                    events.push(Event::Blur { target: old, new_target: Some(new.clone()) });
+                                    events.push(Event::Blur {
+                                        target: old,
+                                        new_target: Some(new.clone()),
+                                    });
                                     events.push(Event::Focus { target: new });
                                     continue;
                                 }
@@ -420,7 +447,9 @@ impl FocusState {
                         if let Some(action) = scroll_action {
                             // Check if there's a .scrollable() ancestor
                             if let Some(target_id) = &self.focused {
-                                if let Some((scrollable_id, is_fake)) = find_scrollable_ancestor_with_type(root, target_id) {
+                                if let Some((scrollable_id, is_fake)) =
+                                    find_scrollable_ancestor_with_type(root, target_id)
+                                {
                                     if is_fake {
                                         // For .scrollable() elements, emit Event::Scroll with action
                                         // so the widget handles it (they know virtual content size)
@@ -465,15 +494,23 @@ impl FocusState {
                             // Blur focus if clicking on non-focusable area
                             if focusable_target.is_none() {
                                 if let Some(old) = self.focused.take() {
-                                    log::debug!("[focus] MouseDown on non-focusable area, blurring {}", old);
-                                    events.push(Event::Blur { target: old, new_target: None });
+                                    log::debug!(
+                                        "[focus] MouseDown on non-focusable area, blurring {}",
+                                        old
+                                    );
+                                    events.push(Event::Blur {
+                                        target: old,
+                                        new_target: None,
+                                    });
                                 }
                             }
 
                             // Check if click is within an interaction_scope but not on a clickable element
                             // This emits ScopeClick for backdrop clicks on modals, etc.
                             if clickable_target.is_none() {
-                                if let Some(scope_id) = hit_test_interaction_scope(layout, root, x, y) {
+                                if let Some(scope_id) =
+                                    hit_test_interaction_scope(layout, root, x, y)
+                                {
                                     events.push(Event::ScopeClick {
                                         target: scope_id,
                                         x,
@@ -501,7 +538,9 @@ impl FocusState {
                                 // Respect interaction scope - only focus elements within active scope
                                 let active_scope = find_active_scope(root, self.focused.as_deref());
                                 let in_scope = match &active_scope {
-                                    Some(scope_id) => is_in_scope(root, &focusable_target, scope_id),
+                                    Some(scope_id) => {
+                                        is_in_scope(root, &focusable_target, scope_id)
+                                    }
                                     None => true, // No active scope, all elements eligible
                                 };
 
@@ -512,9 +551,16 @@ impl FocusState {
 
                                 // Only change focus if different AND target is in scope
                                 if in_scope && self.focused.as_ref() != Some(&focusable_target) {
-                                    log::debug!("[focus] Changing focus from {:?} to {}", self.focused, focusable_target);
+                                    log::debug!(
+                                        "[focus] Changing focus from {:?} to {}",
+                                        self.focused,
+                                        focusable_target
+                                    );
                                     if let Some(old) = self.focused.take() {
-                                        events.push(Event::Blur { target: old, new_target: Some(focusable_target.clone()) });
+                                        events.push(Event::Blur {
+                                            target: old,
+                                            new_target: Some(focusable_target.clone()),
+                                        });
                                     }
                                     self.focused = Some(focusable_target.clone());
                                     events.push(Event::Focus {
@@ -673,7 +719,13 @@ fn collect_focusable_with_z_recursive(
     }
     if let Content::Children(children) = &element.content {
         for child in children {
-            collect_focusable_with_z_recursive(child, effective_z, active_scope, now_in_scope, result);
+            collect_focusable_with_z_recursive(
+                child,
+                effective_z,
+                active_scope,
+                now_in_scope,
+                result,
+            );
         }
     }
 }
@@ -682,11 +734,7 @@ fn collect_focusable_with_z_recursive(
 /// If the element is inside a scroll container, its layout position may be relative to the
 /// container's content area on the scrolling axis. We add the container's screen position
 /// only for the axis that scrolls.
-fn get_absolute_rect(
-    element_id: &str,
-    layout: &LayoutResult,
-    root: &Element,
-) -> Option<Rect> {
+fn get_absolute_rect(element_id: &str, layout: &LayoutResult, root: &Element) -> Option<Rect> {
     let rect = layout.get(element_id)?;
 
     // Find the scrollable ancestor (if any)

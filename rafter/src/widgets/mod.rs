@@ -52,7 +52,7 @@ pub use collapsible::Collapsible;
 pub use input::Input;
 pub use list::{List, ListItem, ListState};
 pub use radio::{RadioGroup, RadioState};
-pub use scroll::{Orientation, Scrollbar, ScrollbarStyle, ScrollRequest, ScrollState};
+pub use scroll::{Orientation, ScrollRequest, ScrollState, Scrollbar, ScrollbarStyle};
 pub use select::{Select, SelectState};
 pub use selection::{Selection, SelectionMode};
 pub use table::{Column, ColumnWidth, Table, TableRow, TableState};

@@ -61,9 +61,20 @@ fn create_sample_users() -> Vec<User> {
     let departments = ["Engineering", "Sales", "Marketing", "HR", "Finance"];
     let roles = ["Manager", "Senior", "Junior", "Lead", "Intern"];
     let statuses = ["Active", "Away", "Busy", "Offline"];
-    let first_names = ["Alice", "Bob", "Charlie", "Diana", "Eve", "Frank", "Grace", "Henry"];
-    let last_names = ["Smith", "Johnson", "Williams", "Brown", "Jones", "Garcia", "Miller"];
-    let locations = ["New York", "San Francisco", "London", "Tokyo", "Berlin", "Sydney"];
+    let first_names = [
+        "Alice", "Bob", "Charlie", "Diana", "Eve", "Frank", "Grace", "Henry",
+    ];
+    let last_names = [
+        "Smith", "Johnson", "Williams", "Brown", "Jones", "Garcia", "Miller",
+    ];
+    let locations = [
+        "New York",
+        "San Francisco",
+        "London",
+        "Tokyo",
+        "Berlin",
+        "Sydney",
+    ];
     let teams = ["Alpha", "Beta", "Gamma", "Delta", "Omega"];
     let managers = ["John Doe", "Jane Smith", "Bob Wilson", "Mary Johnson"];
     let projects = ["Phoenix", "Atlas", "Mercury", "Neptune", "Orion", "Titan"];
@@ -74,7 +85,11 @@ fn create_sample_users() -> Vec<User> {
         let first = first_names[i % first_names.len()];
         let last = last_names[i % last_names.len()];
         let name = format!("{} {}", first, last);
-        let email = format!("{}.{}@example.com", first.to_lowercase(), last.to_lowercase());
+        let email = format!(
+            "{}.{}@example.com",
+            first.to_lowercase(),
+            last.to_lowercase()
+        );
 
         users.push(User {
             id: i as u32,
@@ -123,7 +138,6 @@ struct TableExample {
 
 #[app_impl]
 impl TableExample {
-
     #[on_start]
     async fn on_start(&self) {
         let users = create_sample_users();

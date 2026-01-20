@@ -18,7 +18,18 @@ struct Hit {
 pub fn hit_test(layout: &LayoutResult, root: &Element, x: u16, y: u16) -> Option<String> {
     let mut hits = Vec::new();
     let mut next_scope_order = 1usize;
-    collect_hits(layout, root, x, y, 0, 0, 0, &mut next_scope_order, &mut hits, |el| el.clickable);
+    collect_hits(
+        layout,
+        root,
+        x,
+        y,
+        0,
+        0,
+        0,
+        &mut next_scope_order,
+        &mut hits,
+        |el| el.clickable,
+    );
     best_hit(hits)
 }
 
@@ -28,7 +39,18 @@ pub fn hit_test(layout: &LayoutResult, root: &Element, x: u16, y: u16) -> Option
 pub fn hit_test_any(layout: &LayoutResult, root: &Element, x: u16, y: u16) -> Option<String> {
     let mut hits = Vec::new();
     let mut next_scope_order = 1usize;
-    collect_hits(layout, root, x, y, 0, 0, 0, &mut next_scope_order, &mut hits, |_| true);
+    collect_hits(
+        layout,
+        root,
+        x,
+        y,
+        0,
+        0,
+        0,
+        &mut next_scope_order,
+        &mut hits,
+        |_| true,
+    );
     best_hit(hits)
 }
 
@@ -38,27 +60,70 @@ pub fn hit_test_any(layout: &LayoutResult, root: &Element, x: u16, y: u16) -> Op
 pub fn hit_test_focusable(layout: &LayoutResult, root: &Element, x: u16, y: u16) -> Option<String> {
     let mut hits = Vec::new();
     let mut next_scope_order = 1usize;
-    collect_hits(layout, root, x, y, 0, 0, 0, &mut next_scope_order, &mut hits, |el| el.focusable);
+    collect_hits(
+        layout,
+        root,
+        x,
+        y,
+        0,
+        0,
+        0,
+        &mut next_scope_order,
+        &mut hits,
+        |el| el.focusable,
+    );
     best_hit(hits)
 }
 
 /// Find the scrollable element at the given coordinates.
 /// Returns None if no scrollable element contains the point.
 /// Respects stacking context and z-index ordering.
-pub fn hit_test_scrollable(layout: &LayoutResult, root: &Element, x: u16, y: u16) -> Option<String> {
+pub fn hit_test_scrollable(
+    layout: &LayoutResult,
+    root: &Element,
+    x: u16,
+    y: u16,
+) -> Option<String> {
     let mut hits = Vec::new();
     let mut next_scope_order = 1usize;
-    collect_hits(layout, root, x, y, 0, 0, 0, &mut next_scope_order, &mut hits, |el| el.scrollable);
+    collect_hits(
+        layout,
+        root,
+        x,
+        y,
+        0,
+        0,
+        0,
+        &mut next_scope_order,
+        &mut hits,
+        |el| el.scrollable,
+    );
     best_hit(hits)
 }
 
 /// Find the topmost interaction_scope element at the given coordinates.
 /// Returns None if no interaction_scope contains the point.
 /// Respects stacking context and z-index ordering.
-pub fn hit_test_interaction_scope(layout: &LayoutResult, root: &Element, x: u16, y: u16) -> Option<String> {
+pub fn hit_test_interaction_scope(
+    layout: &LayoutResult,
+    root: &Element,
+    x: u16,
+    y: u16,
+) -> Option<String> {
     let mut hits = Vec::new();
     let mut next_scope_order = 1usize;
-    collect_hits(layout, root, x, y, 0, 0, 0, &mut next_scope_order, &mut hits, |el| el.interaction_scope);
+    collect_hits(
+        layout,
+        root,
+        x,
+        y,
+        0,
+        0,
+        0,
+        &mut next_scope_order,
+        &mut hits,
+        |el| el.interaction_scope,
+    );
     best_hit(hits)
 }
 
@@ -70,7 +135,13 @@ fn best_hit(mut hits: Vec<Hit>) -> Option<String> {
 
     log::debug!("hit_test: collected {} hits:", hits.len());
     for hit in &hits {
-        log::debug!("  - id={} scope_order={} z_index={} depth={}", hit.id, hit.scope_order, hit.z_index, hit.depth);
+        log::debug!(
+            "  - id={} scope_order={} z_index={} depth={}",
+            hit.id,
+            hit.scope_order,
+            hit.z_index,
+            hit.depth
+        );
     }
 
     // Sort by scope_order descending (higher stacking context wins),
@@ -83,7 +154,13 @@ fn best_hit(mut hits: Vec<Hit>) -> Option<String> {
     });
 
     let best = hits.remove(0);
-    log::debug!("hit_test: best hit = {} (scope_order={}, z_index={}, depth={})", best.id, best.scope_order, best.z_index, best.depth);
+    log::debug!(
+        "hit_test: best hit = {} (scope_order={}, z_index={}, depth={})",
+        best.id,
+        best.scope_order,
+        best.z_index,
+        best.depth
+    );
     Some(best.id)
 }
 
@@ -129,7 +206,18 @@ fn collect_hits<F>(
     // absolute grandchildren that DO contain the point (e.g., dropdown in a height=1 container)
     if let Content::Children(children) = &element.content {
         for child in children {
-            collect_hits(layout, child, x, y, scope_order, effective_z, depth + 1, next_scope_order, hits, predicate);
+            collect_hits(
+                layout,
+                child,
+                x,
+                y,
+                scope_order,
+                effective_z,
+                depth + 1,
+                next_scope_order,
+                hits,
+                predicate,
+            );
         }
     }
 

@@ -146,8 +146,9 @@ where
         F: Fn(&W::Value) -> bool + Send + Sync + 'static,
     {
         let msg = msg.into();
-        self.sync_rules
-            .push(Box::new(move |v| if f(v) { Ok(()) } else { Err(msg.clone()) }));
+        self.sync_rules.push(Box::new(
+            move |v| if f(v) { Ok(()) } else { Err(msg.clone()) },
+        ));
         self
     }
 

@@ -65,7 +65,11 @@ pub struct Taskbar {
 impl Taskbar {
     fn overlay(&self) -> Option<Overlay> {
         let collapsed = self.collapsed.get();
-        let width = if collapsed { COLLAPSED_WIDTH } else { EXPANDED_WIDTH };
+        let width = if collapsed {
+            COLLAPSED_WIDTH
+        } else {
+            EXPANDED_WIDTH
+        };
 
         let content = if collapsed {
             self.render_collapsed()
@@ -258,7 +262,8 @@ impl Taskbar {
 
                 if is_expanded {
                     // Build overlay with instance list
-                    let overlay = self.render_group_overlay(&group_name, group_instances, &focused_style);
+                    let overlay =
+                        self.render_group_overlay(&group_name, group_instances, &focused_style);
 
                     // Group root button wrapped with overlay as sibling
                     let group_name_clone = group_name.clone();
@@ -299,7 +304,10 @@ impl Taskbar {
         // Build the instances section with the list items
         let mut instances_section = Element::col()
             .width(Size::Fill)
-            .child(Element::text("Instances").style(Style::new().bold().foreground(Color::var("interact"))))
+            .child(
+                Element::text("Instances")
+                    .style(Style::new().bold().foreground(Color::var("interact"))),
+            )
             .child(Element::col().height(Size::Fixed(1))); // Spacer after title
 
         for item in list_items {
@@ -307,8 +315,8 @@ impl Taskbar {
         }
 
         // Build the status section
-        let status_title = Element::text("Status")
-            .style(Style::new().bold().foreground(Color::var("interact")));
+        let status_title =
+            Element::text("Status").style(Style::new().bold().foreground(Color::var("interact")));
 
         // Queue subsection
         let queue = self.queue.get();
@@ -324,11 +332,19 @@ impl Taskbar {
             .width(Size::Fill)
             .justify(tuidom::Justify::SpaceBetween)
             .child(Element::text("Queue"))
-            .child(Element::row().gap(1).child(queue_indicator).child(Element::text(queue_status_text)));
+            .child(
+                Element::row()
+                    .gap(1)
+                    .child(queue_indicator)
+                    .child(Element::text(queue_status_text)),
+            );
         let queue_row2 = Element::row()
             .width(Size::Fill)
             .justify(tuidom::Justify::End)
-            .child(Element::text(&queue_progress).style(Style::new().foreground(Color::var("text.muted"))));
+            .child(
+                Element::text(&queue_progress)
+                    .style(Style::new().foreground(Color::var("text.muted"))),
+            );
 
         // Client subsection
         let client = self.client.get();
@@ -337,24 +353,41 @@ impl Taskbar {
             .width(Size::Fill)
             .justify(tuidom::Justify::SpaceBetween)
             .child(Element::text("Client"))
-            .child(Element::row().gap(1).child(client_indicator).child(Element::text(client_status_text)));
+            .child(
+                Element::row()
+                    .gap(1)
+                    .child(client_indicator)
+                    .child(Element::text(client_status_text)),
+            );
         let client_row2 = Element::row()
             .width(Size::Fill)
             .justify(tuidom::Justify::End)
-            .child(Element::text(&client.host).style(Style::new().foreground(Color::var("text.muted"))));
+            .child(
+                Element::text(&client.host)
+                    .style(Style::new().foreground(Color::var("text.muted"))),
+            );
         let client_row3 = Element::row()
             .width(Size::Fill)
             .justify(tuidom::Justify::End)
-            .child(Element::text(&client.auth_method).style(Style::new().foreground(Color::var("text.muted"))));
+            .child(
+                Element::text(&client.auth_method)
+                    .style(Style::new().foreground(Color::var("text.muted"))),
+            );
 
         // Indexer subsection
         let indexer = self.indexer.get();
-        let (indexer_indicator, indexer_status_text) = self.render_status_indicator(&indexer.status);
+        let (indexer_indicator, indexer_status_text) =
+            self.render_status_indicator(&indexer.status);
         let indexer_row = Element::row()
             .width(Size::Fill)
             .justify(tuidom::Justify::SpaceBetween)
             .child(Element::text("Indexer"))
-            .child(Element::row().gap(1).child(indexer_indicator).child(Element::text(indexer_status_text)));
+            .child(
+                Element::row()
+                    .gap(1)
+                    .child(indexer_indicator)
+                    .child(Element::text(indexer_status_text)),
+            );
 
         let status_section = Element::col()
             .width(Size::Fill)
@@ -390,7 +423,12 @@ impl Taskbar {
         }
     }
 
-    fn render_group_overlay(&self, group_name: &str, instances: &[&InstanceInfo], focused_style: &Style) -> Element {
+    fn render_group_overlay(
+        &self,
+        group_name: &str,
+        instances: &[&InstanceInfo],
+        focused_style: &Style,
+    ) -> Element {
         let group_id = format!("group-{}", group_name);
 
         // Build overlay items

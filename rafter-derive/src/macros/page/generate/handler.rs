@@ -106,10 +106,8 @@ fn generate_single_insertion(handler: &HandlerAttr) -> TokenStream {
 ///
 /// Returns a TokenStream with all registration blocks.
 pub fn generate_handler_registrations(handlers: &[HandlerAttr]) -> TokenStream {
-    let registrations: Vec<TokenStream> = handlers
-        .iter()
-        .map(generate_single_registration)
-        .collect();
+    let registrations: Vec<TokenStream> =
+        handlers.iter().map(generate_single_registration).collect();
 
     quote! { #(#registrations)* }
 }

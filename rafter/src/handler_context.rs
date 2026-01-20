@@ -133,7 +133,9 @@ impl EventData {
     /// Get scroll offset (x, y) from a Scroll event.
     pub fn scroll_offset(&self) -> Option<(u16, u16)> {
         match self {
-            EventData::Scroll { offset_x, offset_y, .. } => Some((*offset_x, *offset_y)),
+            EventData::Scroll {
+                offset_x, offset_y, ..
+            } => Some((*offset_x, *offset_y)),
             _ => None,
         }
     }
@@ -141,7 +143,12 @@ impl EventData {
     /// Get vertical scroll progress (0.0 = top, 1.0 = bottom).
     pub fn scroll_progress_y(&self) -> Option<f32> {
         match self {
-            EventData::Scroll { offset_y, content_height, viewport_height, .. } => {
+            EventData::Scroll {
+                offset_y,
+                content_height,
+                viewport_height,
+                ..
+            } => {
                 let max_scroll = content_height.saturating_sub(*viewport_height);
                 if max_scroll == 0 {
                     Some(0.0)
@@ -161,7 +168,12 @@ impl EventData {
     /// Returns false if not a Scroll event.
     pub fn is_near_bottom(&self, threshold: f32) -> bool {
         match self {
-            EventData::Scroll { offset_y, content_height, viewport_height, .. } => {
+            EventData::Scroll {
+                offset_y,
+                content_height,
+                viewport_height,
+                ..
+            } => {
                 let max_scroll = content_height.saturating_sub(*viewport_height);
                 if max_scroll == 0 {
                     return true; // No scrolling needed, we're at the bottom
@@ -181,7 +193,12 @@ impl EventData {
     /// Returns false if not a Scroll event.
     pub fn is_near_top(&self, threshold: f32) -> bool {
         match self {
-            EventData::Scroll { offset_y, content_height, viewport_height, .. } => {
+            EventData::Scroll {
+                offset_y,
+                content_height,
+                viewport_height,
+                ..
+            } => {
                 let max_scroll = content_height.saturating_sub(*viewport_height);
                 if max_scroll == 0 {
                     return true; // No scrolling needed
@@ -196,7 +213,9 @@ impl EventData {
     /// Get scroll input delta (x, y) from a ScrollInput event.
     pub fn scroll_delta(&self) -> Option<(i16, i16)> {
         match self {
-            EventData::ScrollInput { delta_x, delta_y, .. } => Some((*delta_x, *delta_y)),
+            EventData::ScrollInput {
+                delta_x, delta_y, ..
+            } => Some((*delta_x, *delta_y)),
             _ => None,
         }
     }
@@ -212,7 +231,12 @@ impl EventData {
     /// Get layout dimensions (x, y, width, height) from a Layout event.
     pub fn layout(&self) -> Option<(u16, u16, u16, u16)> {
         match self {
-            EventData::Layout { x, y, width, height } => Some((*x, *y, *width, *height)),
+            EventData::Layout {
+                x,
+                y,
+                width,
+                height,
+            } => Some((*x, *y, *width, *height)),
             _ => None,
         }
     }
@@ -293,10 +317,7 @@ impl HandlerRegistry {
 
     /// Check if the registry is empty.
     pub fn is_empty(&self) -> bool {
-        self.handlers
-            .read()
-            .map(|h| h.is_empty())
-            .unwrap_or(true)
+        self.handlers.read().map(|h| h.is_empty()).unwrap_or(true)
     }
 
     /// Get the number of registered handlers.
@@ -467,7 +488,8 @@ impl<'a> HandlerContext<'a> {
     /// Panics if called from a system handler. With compile-time checks
     /// in `#[system_impl]`, this should never happen in correctly written code.
     pub fn cx(&self) -> &AppContext {
-        self.cx.expect("cx() called in system context (no AppContext available)")
+        self.cx
+            .expect("cx() called in system context (no AppContext available)")
     }
 
     /// Try to get the app context (returns None for systems).
@@ -569,7 +591,7 @@ impl HandlerCallResult {
 ///
 /// Panics are always logged at ERROR level.
 pub fn call_handler(handler: &Handler, hx: &HandlerContext) -> HandlerCallResult {
-    use std::panic::{catch_unwind, AssertUnwindSafe};
+    use std::panic::{AssertUnwindSafe, catch_unwind};
 
     let result = catch_unwind(AssertUnwindSafe(|| {
         handler(hx);
@@ -594,7 +616,7 @@ pub fn call_handler_for_app(
     app_name: &str,
     instance_id: crate::InstanceId,
 ) -> HandlerCallResult {
-    use std::panic::{catch_unwind, AssertUnwindSafe};
+    use std::panic::{AssertUnwindSafe, catch_unwind};
 
     let result = catch_unwind(AssertUnwindSafe(|| {
         handler(hx);

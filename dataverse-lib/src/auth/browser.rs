@@ -6,15 +6,15 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
+use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use http_body_util::Full;
+use hyper::Request;
+use hyper::Response;
 use hyper::body::Bytes;
 use hyper::body::Incoming;
 use hyper::server::conn::http1;
 use hyper::service::service_fn;
-use hyper::Request;
-use hyper::Response;
 use hyper_util::rt::TokioIo;
 use rand::Rng;
 use sha2::Digest;
@@ -23,11 +23,11 @@ use tokio::net::TcpListener;
 use tokio::sync::oneshot;
 use tokio_util::sync::CancellationToken;
 
+use super::AccessToken;
 use super::auto_refresh::AuthFlow;
+use super::common::TokenExchange;
 use super::common::authorize_url_v2;
 use super::common::scope_from_resource;
-use super::common::TokenExchange;
-use super::AccessToken;
 use crate::error::AuthError;
 
 // =============================================================================

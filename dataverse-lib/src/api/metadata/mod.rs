@@ -33,13 +33,13 @@ pub use option_set::GlobalOptionSetBuilder;
 pub use relationship::RelationshipMetadataBuilder;
 pub use relationship::RelationshipsBuilder;
 
+use reqwest::Method;
 use reqwest::header::HeaderMap;
 use reqwest::header::HeaderValue;
-use reqwest::Method;
 
+use crate::DataverseClient;
 use crate::error::ApiError;
 use crate::error::Error;
-use crate::DataverseClient;
 
 /// Cache key prefix for minimal entity metadata (EntityCore).
 pub(crate) const CACHE_KEY_ENTITY_CORE: &str = "entity_core:";

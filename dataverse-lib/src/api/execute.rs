@@ -11,6 +11,7 @@ use reqwest::header::HeaderValue;
 use serde_json::json;
 use uuid::Uuid;
 
+use super::aggregate::AggregateBuilder;
 use super::batch::Batch;
 use super::batch::BatchResults;
 use super::batch::ChangesetBuilder;
@@ -21,9 +22,8 @@ use super::crud::CreateResult;
 use super::crud::Operation;
 use super::crud::OperationOptions;
 use super::crud::UpsertResult;
-use super::aggregate::AggregateBuilder;
-use super::metadata::entity::fetch_entity_core;
 use super::metadata::MetadataClient;
+use super::metadata::entity::fetch_entity_core;
 use super::query::fetchxml::FetchBuilder;
 use super::query::odata::ExpandBuilder;
 use super::query::odata::QueryBuilder;
@@ -67,7 +67,9 @@ impl DataverseClient {
                 expand,
                 options,
             } => {
-                let result = self.execute_retrieve(entity, id, select, expand, options).await?;
+                let result = self
+                    .execute_retrieve(entity, id, select, expand, options)
+                    .await?;
                 Ok(OperationResult::Retrieve(result))
             }
             Operation::Update {
@@ -361,7 +363,10 @@ impl DataverseClient {
             // Existing record updated
             if options.return_record {
                 let record: Record = response.json().await.map_err(ApiError::from)?;
-                Ok(UpsertResult::Updated { id, record: Some(record) })
+                Ok(UpsertResult::Updated {
+                    id,
+                    record: Some(record),
+                })
             } else {
                 Ok(UpsertResult::Updated { id, record: None })
             }
@@ -657,7 +662,10 @@ impl DataverseClient {
             request = request.body(body);
         }
 
-        request.send().await.map_err(|e| Error::Api(ApiError::from(e)))
+        request
+            .send()
+            .await
+            .map_err(|e| Error::Api(ApiError::from(e)))
     }
 }
 
@@ -707,7 +715,9 @@ impl OperationResult {
             OperationResult::Create(CreateResult::Record(r)) => Some(r),
             OperationResult::Update(Some(r)) => Some(r),
             OperationResult::Upsert(UpsertResult::Created(CreateResult::Record(r))) => Some(r),
-            OperationResult::Upsert(UpsertResult::Updated { record: Some(r), .. }) => Some(r),
+            OperationResult::Upsert(UpsertResult::Updated {
+                record: Some(r), ..
+            }) => Some(r),
             _ => None,
         }
     }
@@ -1139,7 +1149,10 @@ impl DataverseClient {
         );
 
         if batch.options.continue_on_error {
-            headers.insert("Prefer", HeaderValue::from_static("odata.continue-on-error"));
+            headers.insert(
+                "Prefer",
+                HeaderValue::from_static("odata.continue-on-error"),
+            );
         }
 
         // Add batch-level bypass headers
@@ -1149,7 +1162,9 @@ impl DataverseClient {
             }
         }
 
-        let response = self.request(Method::POST, &url, headers, Some(body)).await?;
+        let response = self
+            .request(Method::POST, &url, headers, Some(body))
+            .await?;
 
         // Extract boundary from response Content-Type
         let response_content_type = response

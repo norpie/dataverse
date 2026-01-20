@@ -10,12 +10,12 @@ use dataverse_lib::auth::PublicClientPasswordFlow;
 use dataverse_lib::auth::TokenProvider;
 use dataverse_lib::error::AuthError;
 
+use super::CredentialsError;
+use super::CredentialsProvider;
 use super::models::Account;
 use super::models::AuthType;
 use super::models::CachedTokens;
 use super::models::Environment;
-use super::CredentialsError;
-use super::CredentialsProvider;
 
 /// Buffer time before expiry to trigger refresh (5 minutes).
 const REFRESH_BUFFER_SECS: i64 = 300;
@@ -42,7 +42,11 @@ pub struct StoredTokenProvider {
 
 impl StoredTokenProvider {
     /// Create a new stored token provider.
-    pub fn new(credentials: CredentialsProvider, account: Account, environment: Environment) -> Self {
+    pub fn new(
+        credentials: CredentialsProvider,
+        account: Account,
+        environment: Environment,
+    ) -> Self {
         Self {
             credentials,
             account_id: account.id,
@@ -96,9 +100,7 @@ impl StoredTokenProvider {
             (Some(expires_at), Some(refresh_token)) => {
                 AccessToken::with_refresh(&tokens.access_token, Some(*expires_at), refresh_token)
             }
-            (Some(expires_at), None) => {
-                AccessToken::with_expiry(&tokens.access_token, *expires_at)
-            }
+            (Some(expires_at), None) => AccessToken::with_expiry(&tokens.access_token, *expires_at),
             (None, Some(refresh_token)) => {
                 AccessToken::with_refresh(&tokens.access_token, None, refresh_token)
             }

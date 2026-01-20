@@ -19,7 +19,9 @@ fn main() -> std::io::Result<()> {
             .style(Style::new().background(Color::oklch(0.15, 0.01, 250.0)))
             .padding(Edges::all(2))
             .gap(1)
-            .child(Element::text("Text Input Demo - type something, Esc to quit"))
+            .child(Element::text(
+                "Text Input Demo - type something, Esc to quit",
+            ))
             .child(Element::text("Shift+Arrow to select, Ctrl+A to select all"))
             .child(Element::text(""))
             .child(

@@ -45,7 +45,6 @@ struct ListExample {
 
 #[app_impl]
 impl ListExample {
-
     #[on_start]
     async fn on_start(&self) {
         // Initialize file list with sample data

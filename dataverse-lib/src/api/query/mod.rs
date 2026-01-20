@@ -14,8 +14,8 @@
 //! - [`odata`] - OData query builder (uses `$filter`, `$select`, `$expand`, etc.)
 //! - [`fetchxml`] - FetchXML query builder (uses XML-based query language)
 
-mod filter;
 pub mod fetchxml;
+mod filter;
 pub mod odata;
 mod order;
 mod page;

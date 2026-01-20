@@ -1,11 +1,11 @@
 //! FetchXML query builder.
 
+use crate::DataverseClient;
 use crate::api::query::Filter;
 use crate::api::query::OrderBy;
 use crate::error::Error;
 use crate::model::Entity;
 use crate::model::Record;
-use crate::DataverseClient;
 
 use super::link::LinkEntityBuilder;
 use super::pages::FetchXmlPages;

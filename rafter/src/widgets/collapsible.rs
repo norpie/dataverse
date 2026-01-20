@@ -150,10 +150,7 @@ impl<'a> Collapsible<HasState<'a>> {
             .gap(1)
             .focusable(true)
             .clickable(true)
-            .children(vec![
-                Element::text(arrow),
-                Element::text(&self.header),
-            ]);
+            .children(vec![Element::text(arrow), Element::text(&self.header)]);
 
         if let Some(style) = self.header_style {
             header_row = header_row.style(style);

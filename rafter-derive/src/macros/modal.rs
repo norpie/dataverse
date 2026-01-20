@@ -50,7 +50,11 @@ impl ModalAttrs {
         let mut pages = false;
 
         if attr.is_empty() {
-            return Ok(Self { size, position, pages });
+            return Ok(Self {
+                size,
+                position,
+                pages,
+            });
         }
 
         let parser = syn::meta::parser(|meta| {
@@ -166,7 +170,11 @@ impl ModalAttrs {
         });
 
         syn::parse::Parser::parse2(parser, attr)?;
-        Ok(Self { size, position, pages })
+        Ok(Self {
+            size,
+            position,
+            pages,
+        })
     }
 }
 
@@ -224,7 +232,11 @@ fn transform_field(field: &Field) -> TokenStream {
 }
 
 /// Generate Default impl.
-fn generate_default_impl(name: &Ident, fields: Option<&FieldsNamed>, attrs: &ModalAttrs) -> TokenStream {
+fn generate_default_impl(
+    name: &Ident,
+    fields: Option<&FieldsNamed>,
+    attrs: &ModalAttrs,
+) -> TokenStream {
     let page_field = if attrs.pages {
         quote! { __page: rafter::State::new(Page::default()), }
     } else {
@@ -279,7 +291,11 @@ fn generate_default_impl(name: &Ident, fields: Option<&FieldsNamed>, attrs: &Mod
 }
 
 /// Generate Clone impl.
-fn generate_clone_impl(name: &Ident, fields: Option<&FieldsNamed>, attrs: &ModalAttrs) -> TokenStream {
+fn generate_clone_impl(
+    name: &Ident,
+    fields: Option<&FieldsNamed>,
+    attrs: &ModalAttrs,
+) -> TokenStream {
     let page_field = if attrs.pages {
         quote! { __page: self.__page.clone(), }
     } else {

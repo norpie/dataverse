@@ -6,18 +6,18 @@ use std::pin::Pin;
 
 use reqwest::Method;
 
-use super::metadata_request;
-use super::metadata_url;
 use super::CACHE_KEY_ALL_ENTITIES;
 use super::CACHE_KEY_ENTITY_CORE;
 use super::CACHE_KEY_ENTITY_FULL;
+use super::metadata_request;
+use super::metadata_url;
+use crate::DataverseClient;
 use crate::cache::CachedValue;
 use crate::error::ApiError;
 use crate::error::Error;
 use crate::error::MetadataError;
 use crate::model::metadata::EntityCore;
 use crate::model::metadata::EntityMetadata;
-use crate::DataverseClient;
 
 // =============================================================================
 // EntityMetadataBuilder
@@ -190,7 +190,9 @@ pub(crate) async fn fetch_entity_core(
     if let Some(cache) = &client.inner.cache {
         if let Ok(data) = bincode::serialize(&core) {
             let ttl = client.inner.cache_config.metadata_ttl;
-            cache.set(&cache_key, CachedValue::with_ttl(data, ttl)).await;
+            cache
+                .set(&cache_key, CachedValue::with_ttl(data, ttl))
+                .await;
         }
     }
 
@@ -282,7 +284,9 @@ async fn fetch_entity_metadata_from_api(
 }
 
 /// Fetches all entity metadata from the API.
-async fn fetch_all_entities_from_api(client: &DataverseClient) -> Result<Vec<EntityMetadata>, Error> {
+async fn fetch_all_entities_from_api(
+    client: &DataverseClient,
+) -> Result<Vec<EntityMetadata>, Error> {
     let url = metadata_url(client, "EntityDefinitions");
 
     let response = metadata_request(client, Method::GET, &url).await?;

@@ -92,7 +92,7 @@ pub fn render_to_buffer(
         (0, 0), // Initial layout offset
         (0, 0), // Initial inherited scroll
         animation,
-        0,      // Initial scope_order (root stacking context)
+        0, // Initial scope_order (root stacking context)
         &mut next_scope_order,
     );
     let t1 = Instant::now();
@@ -177,8 +177,12 @@ fn collect_elements<'a>(
     let now = Instant::now();
     let position_offset = if let Some(layout_rect) = layout.get(&element.id) {
         let (interp_x, interp_y) = animation.get_interpolated_position(&element.id, now);
-        let dx = interp_x.map(|x| x as i16 - layout_rect.x as i16).unwrap_or(0);
-        let dy = interp_y.map(|y| y as i16 - layout_rect.y as i16).unwrap_or(0);
+        let dx = interp_x
+            .map(|x| x as i16 - layout_rect.x as i16)
+            .unwrap_or(0);
+        let dy = interp_y
+            .map(|y| y as i16 - layout_rect.y as i16)
+            .unwrap_or(0);
         (dx, dy)
     } else {
         (0, 0)
@@ -192,7 +196,8 @@ fn collect_elements<'a>(
 
     // Compute this element's clip rect for its children
     // Clip if either axis has non-Visible overflow
-    let clips_children = element.overflow_x != Overflow::Visible || element.overflow_y != Overflow::Visible;
+    let clips_children =
+        element.overflow_x != Overflow::Visible || element.overflow_y != Overflow::Visible;
     let child_clip = if clips_children {
         // This element clips its children - compute inner bounds
         if let Some(rect) = layout.get(&element.id) {
@@ -210,8 +215,14 @@ fn collect_elements<'a>(
                         let viewport_h = rect.height.saturating_sub(
                             element.padding.top + element.padding.bottom + border_size * 2,
                         );
-                        if ch > viewport_h { 1 } else { 0 }
-                    } else { 0 }
+                        if ch > viewport_h {
+                            1
+                        } else {
+                            0
+                        }
+                    } else {
+                        0
+                    }
                 }
                 _ => 0,
             };
@@ -221,16 +232,29 @@ fn collect_elements<'a>(
                 Overflow::Auto => {
                     if let Some((cw, _)) = layout.content_size(&element.id) {
                         let viewport_w = rect.width.saturating_sub(
-                            element.padding.left + element.padding.right + border_size * 2 + scrollbar_right,
+                            element.padding.left
+                                + element.padding.right
+                                + border_size * 2
+                                + scrollbar_right,
                         );
-                        if cw > viewport_w { 1 } else { 0 }
-                    } else { 0 }
+                        if cw > viewport_w {
+                            1
+                        } else {
+                            0
+                        }
+                    } else {
+                        0
+                    }
                 }
                 _ => 0,
             };
             log::debug!(
                 "[clip] id={} overflow_x={:?} overflow_y={:?} scrollbar_reserve=({},{})",
-                element.id, element.overflow_x, element.overflow_y, scrollbar_right, scrollbar_bottom
+                element.id,
+                element.overflow_x,
+                element.overflow_y,
+                scrollbar_right,
+                scrollbar_bottom
             );
             let inner = rect.shrink(
                 element.padding.top + border_size,
@@ -240,7 +264,17 @@ fn collect_elements<'a>(
             );
             log::debug!(
                 "[clip] id={} rect=({},{},{},{}) inner=({},{},{},{}) scrollbar_reserve=({},{})",
-                element.id, rect.x, rect.y, rect.width, rect.height, inner.x, inner.y, inner.width, inner.height, scrollbar_right, scrollbar_bottom
+                element.id,
+                rect.x,
+                rect.y,
+                rect.width,
+                rect.height,
+                inner.x,
+                inner.y,
+                inner.width,
+                inner.height,
+                scrollbar_right,
+                scrollbar_bottom
             );
             // Intersect with parent's clip (if any)
             Some(intersect_rects(inner, parent_clip))
@@ -266,8 +300,12 @@ fn collect_elements<'a>(
     // When this element has overflow scroll, its children inherit this scroll offset
     // so their content is rendered shifted within the clipping region.
     let child_scroll = (
-        parent_inherited_scroll.0.saturating_add(element.scroll_offset.0),
-        parent_inherited_scroll.1.saturating_add(element.scroll_offset.1),
+        parent_inherited_scroll
+            .0
+            .saturating_add(element.scroll_offset.0),
+        parent_inherited_scroll
+            .1
+            .saturating_add(element.scroll_offset.1),
     );
 
     match &element.content {
@@ -419,7 +457,16 @@ fn render_single_element_timed(
     match &element.content {
         Content::None | Content::Children(_) | Content::Frames { .. } => {}
         Content::Text(text) => {
-            render_text(text, element, rect, buf, clip, (0, 0), animation, oklch_cache);
+            render_text(
+                text,
+                element,
+                rect,
+                buf,
+                clip,
+                (0, 0),
+                animation,
+                oklch_cache,
+            );
         }
         Content::TextInput {
             value,
@@ -956,8 +1003,10 @@ fn render_scrollbar(
     viewport_size: Option<(u16, u16)>,
 ) {
     // Only render scrollbar if at least one axis has Scroll/Auto
-    let has_scrollbar_x = element.overflow_x == Overflow::Scroll || element.overflow_x == Overflow::Auto;
-    let has_scrollbar_y = element.overflow_y == Overflow::Scroll || element.overflow_y == Overflow::Auto;
+    let has_scrollbar_x =
+        element.overflow_x == Overflow::Scroll || element.overflow_x == Overflow::Auto;
+    let has_scrollbar_y =
+        element.overflow_y == Overflow::Scroll || element.overflow_y == Overflow::Auto;
     if !has_scrollbar_x && !has_scrollbar_y {
         return;
     }
@@ -979,7 +1028,13 @@ fn render_scrollbar(
 
     log::debug!(
         "render_scrollbar id={} content=({}, {}) viewport=({}, {}) scroll=({}, {})",
-        element.id, content_width, content_height, inner_width, inner_height, scroll_x, scroll_y
+        element.id,
+        content_width,
+        content_height,
+        inner_width,
+        inner_height,
+        scroll_x,
+        scroll_y
     );
 
     // Determine if content overflows
@@ -988,12 +1043,17 @@ fn render_scrollbar(
 
     // For Auto, only show scrollbar if content overflows
     // For Scroll, always show the scrollbar
-    let show_vertical = element.overflow_y == Overflow::Scroll || (element.overflow_y == Overflow::Auto && overflows_vertical);
-    let show_horizontal = element.overflow_x == Overflow::Scroll || (element.overflow_x == Overflow::Auto && overflows_horizontal);
+    let show_vertical = element.overflow_y == Overflow::Scroll
+        || (element.overflow_y == Overflow::Auto && overflows_vertical);
+    let show_horizontal = element.overflow_x == Overflow::Scroll
+        || (element.overflow_x == Overflow::Auto && overflows_horizontal);
 
     log::debug!(
         "  overflows_v={} overflows_h={} show_v={} show_h={}",
-        overflows_vertical, overflows_horizontal, show_vertical, show_horizontal
+        overflows_vertical,
+        overflows_horizontal,
+        show_vertical,
+        show_horizontal
     );
 
     // Scrollbar colors in OKLCH (gray tones)
@@ -1012,7 +1072,9 @@ fn render_scrollbar(
         let track_end = rect.bottom() - border_size;
         let track_height = track_end.saturating_sub(track_start);
 
-        if let Some(geom) = crate::ScrollbarGeometry::new(track_start, track_height, inner_height, content_height) {
+        if let Some(geom) =
+            crate::ScrollbarGeometry::new(track_start, track_height, inner_height, content_height)
+        {
             let thumb_start = geom.thumb_screen_start(scroll_y);
             let thumb_end = thumb_start + geom.thumb_size;
 
@@ -1041,7 +1103,9 @@ fn render_scrollbar(
         };
         let track_width = track_end.saturating_sub(track_start);
 
-        if let Some(geom) = crate::ScrollbarGeometry::new(track_start, track_width, inner_width, content_width) {
+        if let Some(geom) =
+            crate::ScrollbarGeometry::new(track_start, track_width, inner_width, content_width)
+        {
             let thumb_start = geom.thumb_screen_start(scroll_x);
             let thumb_end = thumb_start + geom.thumb_size;
 

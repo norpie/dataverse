@@ -263,7 +263,9 @@ impl<T: TableRow> TableState<T> {
 
     /// Rebuild scroller from current rows.
     fn rebuild_scroller(&mut self) {
-        let total = self.scroller.rebuild(self.rows.iter().map(|row| row.height()));
+        let total = self
+            .scroller
+            .rebuild(self.rows.iter().map(|row| row.height()));
         self.scroll.set_content_height(total);
     }
 
@@ -553,14 +555,7 @@ impl<'a, T: TableRow> Table<HasTableState<'a, T>> {
 
         // Build the table structure based on whether we have frozen columns
         if current.has_frozen_columns() {
-            self.build_with_frozen_columns(
-                &current,
-                &visible,
-                &table_id,
-                registry,
-                handlers,
-                state,
-            )
+            self.build_with_frozen_columns(&current, &visible, &table_id, registry, handlers, state)
         } else {
             self.build_simple_table(&current, &visible, &table_id, registry, handlers, state)
         }
@@ -627,7 +622,15 @@ impl<'a, T: TableRow> Table<HasTableState<'a, T>> {
             .children(row_elements);
 
         // Register scroll handlers
-        self.register_scroll_handlers(&body_id, &content_id, registry, handlers, state, table_id, "row");
+        self.register_scroll_handlers(
+            &body_id,
+            &content_id,
+            registry,
+            handlers,
+            state,
+            table_id,
+            "row",
+        );
 
         // Register layout handler (no horizontal scrollbar in simple table)
         self.register_layout_handler(&body_id, registry, state, false);
@@ -711,14 +714,26 @@ impl<'a, T: TableRow> Table<HasTableState<'a, T>> {
 
         // Build frozen header
         let frozen_header = if self.show_header {
-            Some(self.build_header_row(frozen_columns, &frozen_header_id, registry, handlers, state))
+            Some(self.build_header_row(
+                frozen_columns,
+                &frozen_header_id,
+                registry,
+                handlers,
+                state,
+            ))
         } else {
             None
         };
 
         // Build scrollable header row (will be inside same scroll container as body)
         let scrollable_header = if self.show_header {
-            Some(self.build_header_row(scrollable_columns, &scrollable_header_id, registry, handlers, state))
+            Some(self.build_header_row(
+                scrollable_columns,
+                &scrollable_header_id,
+                registry,
+                handlers,
+                state,
+            ))
         } else {
             None
         };
@@ -1258,7 +1273,8 @@ impl<'a, T: TableRow> Table<HasTableState<'a, T>> {
                         s.scroll.scroll_by(delta_y);
                         // Horizontal scroll - track offset for header sync
                         if delta_x != 0 {
-                            let new_offset = (s.horizontal_scroll_offset as i32 + delta_x as i32).max(0);
+                            let new_offset =
+                                (s.horizontal_scroll_offset as i32 + delta_x as i32).max(0);
                             s.horizontal_scroll_offset = new_offset as u16;
                         }
                     });
@@ -1276,7 +1292,9 @@ impl<'a, T: TableRow> Table<HasTableState<'a, T>> {
                         tuidom::ScrollAction::End => current.rows.len() - 1,
                         tuidom::ScrollAction::PageUp => {
                             // Move up by viewport size
-                            current.first_visible_index().saturating_sub(current.scroll.viewport as usize)
+                            current
+                                .first_visible_index()
+                                .saturating_sub(current.scroll.viewport as usize)
                         }
                         tuidom::ScrollAction::PageDown => {
                             let first = current.first_visible_index();
@@ -1301,7 +1319,8 @@ impl<'a, T: TableRow> Table<HasTableState<'a, T>> {
                             s.focused_key = Some(key.clone());
                         });
 
-                        let row_id = format!("{}-{}-{}", table_id_clone, row_type_clone, key.to_string());
+                        let row_id =
+                            format!("{}-{}-{}", table_id_clone, row_type_clone, key.to_string());
                         hx.cx().focus(&row_id);
                         scrolled = true;
                     }

@@ -18,17 +18,20 @@ use std::io;
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant};
 
-use tuidom::{scroll::find_scrollable_ancestor, Content, Element, FocusState, LayoutResult, ScrollState, Terminal, TextInputState};
+use tuidom::{
+    Content, Element, FocusState, LayoutResult, ScrollState, Terminal, TextInputState,
+    scroll::find_scrollable_ancestor,
+};
 
 use enrich::enrich_elements;
 
+use crate::event::{FocusChanged, InstanceClosed, InstanceSpawned};
 use crate::global_context::{DataStore, InstanceCommand, InstanceQuery, RequestTarget};
 use crate::instance::{AnyAppInstance, AppInstance, InstanceId, InstanceRegistry, RequestError};
-use crate::registration::{registered_systems, AnySystem};
+use crate::registration::{AnySystem, registered_systems};
 use crate::system::System;
 use crate::toast::Toast;
-use crate::wakeup::{channel as wakeup_channel, WakeupReceiver};
-use crate::event::{FocusChanged, InstanceClosed, InstanceSpawned};
+use crate::wakeup::{WakeupReceiver, channel as wakeup_channel};
 use crate::{App, AppContext, BlurPolicy, GlobalContext, HandlerContext};
 
 use dispatch::AnyModal;
@@ -225,8 +228,14 @@ impl Runtime {
         }
 
         // Publish events for initial app (after systems are initialized)
-        gx.publish(InstanceSpawned { id: instance_id, name: instance_name });
-        gx.publish(FocusChanged { old: None, new: instance_id });
+        gx.publish(InstanceSpawned {
+            id: instance_id,
+            name: instance_name,
+        });
+        gx.publish(FocusChanged {
+            old: None,
+            new: instance_id,
+        });
 
         // Active toasts
         let mut active_toasts: Vec<ActiveToast> = Vec::new();
@@ -313,13 +322,18 @@ impl Runtime {
                         let reg = registry.read().unwrap();
                         if let Some(instance) = reg.focused_instance() {
                             let cx = instance.app_context();
-                            let hx = HandlerContext::for_modal_any(&cx, gx, request.entry.modal_context());
+                            let hx = HandlerContext::for_modal_any(
+                                &cx,
+                                gx,
+                                request.entry.modal_context(),
+                            );
                             request.entry.lifecycle_hooks().call_on_start(&hx);
                         }
                     }
                     crate::ModalKind::System => {
                         // System modals don't get AppContext even when spawned from an app
-                        let hx = HandlerContext::for_system_modal(gx, request.entry.modal_context());
+                        let hx =
+                            HandlerContext::for_system_modal(gx, request.entry.modal_context());
                         request.entry.lifecycle_hooks().call_on_start(&hx);
                     }
                 }
@@ -441,7 +455,12 @@ impl Runtime {
                                     height: rect.height,
                                 },
                             );
-                            let _ = crate::handler_context::call_handler_for_app(&handler, &hx, app_name, instance_id);
+                            let _ = crate::handler_context::call_handler_for_app(
+                                &handler,
+                                &hx,
+                                app_name,
+                                instance_id,
+                            );
                         }
                     }
 
@@ -464,7 +483,12 @@ impl Runtime {
                                             height: rect.height,
                                         },
                                     );
-                                    let _ = crate::handler_context::call_handler_for_app(&handler, &hx, app_name, instance_id);
+                                    let _ = crate::handler_context::call_handler_for_app(
+                                        &handler,
+                                        &hx,
+                                        app_name,
+                                        instance_id,
+                                    );
                                 }
                             }
                         }
@@ -506,7 +530,10 @@ impl Runtime {
                 match toast.phase {
                     ToastPhase::PendingSlideIn => {
                         // Transition to SlidingIn now that off-screen position is captured
-                        log::debug!("Toast {} transitioning PendingSlideIn -> SlidingIn", toast.id);
+                        log::debug!(
+                            "Toast {} transitioning PendingSlideIn -> SlidingIn",
+                            toast.id
+                        );
                         toast.phase = ToastPhase::SlidingIn;
                         toast.phase_started = now;
                     }
@@ -554,15 +581,16 @@ impl Runtime {
                     .filter_map(|t| {
                         match t.phase {
                             ToastPhase::PendingSlideIn => Some(Duration::ZERO), // Immediate
-                            ToastPhase::SlidingIn => {
-                                Some(SLIDE_DURATION.saturating_sub(now.duration_since(t.phase_started)))
-                            }
-                            ToastPhase::Visible => {
-                                Some(t.duration.saturating_sub(now.duration_since(t.phase_started)))
-                            }
-                            ToastPhase::SlidingOut => {
-                                Some(SLIDE_DURATION.saturating_sub(now.duration_since(t.phase_started)))
-                            }
+                            ToastPhase::SlidingIn => Some(
+                                SLIDE_DURATION.saturating_sub(now.duration_since(t.phase_started)),
+                            ),
+                            ToastPhase::Visible => Some(
+                                t.duration
+                                    .saturating_sub(now.duration_since(t.phase_started)),
+                            ),
+                            ToastPhase::SlidingOut => Some(
+                                SLIDE_DURATION.saturating_sub(now.duration_since(t.phase_started)),
+                            ),
                         }
                     })
                     .min();
@@ -607,7 +635,9 @@ impl Runtime {
                         if focus.focus(&target_id) {
                             log::debug!("[runtime] Focus changed to: {}", target_id);
                             // Scroll the newly focused element into view
-                            if let Some(change) = scroll_to_element(&root, layout, scroll, &target_id) {
+                            if let Some(change) =
+                                scroll_to_element(&root, layout, scroll, &target_id)
+                            {
                                 focus_scroll_changes.push(change);
                             }
                         }
@@ -620,7 +650,9 @@ impl Runtime {
                             log::debug!("[runtime] Processing modal focus request: {}", target_id);
                             if focus.focus(&target_id) {
                                 log::debug!("[runtime] Modal focus changed to: {}", target_id);
-                                if let Some(change) = scroll_to_element(&root, layout, scroll, &target_id) {
+                                if let Some(change) =
+                                    scroll_to_element(&root, layout, scroll, &target_id)
+                                {
                                     focus_scroll_changes.push(change);
                                 }
                             }
@@ -632,7 +664,10 @@ impl Runtime {
             // 14b. Process focus requests from global modals
             if let Some(modal) = global_modals.last() {
                 if let Some(target_id) = modal.take_focus_request() {
-                    log::debug!("[runtime] Processing global modal focus request: {}", target_id);
+                    log::debug!(
+                        "[runtime] Processing global modal focus request: {}",
+                        target_id
+                    );
                     if focus.focus(&target_id) {
                         log::debug!("[runtime] Global modal focus changed to: {}", target_id);
                         if let Some(change) = scroll_to_element(&root, layout, scroll, &target_id) {
@@ -646,7 +681,8 @@ impl Runtime {
             sync_text_inputs(&root, text_inputs);
 
             // 16. Process scrollbar drag events (before focus so clicks on scrollbar don't propagate)
-            let (raw_events, scrollbar_changes) = scroll.process_raw_events(&raw_events, &root, layout);
+            let (raw_events, scrollbar_changes) =
+                scroll.process_raw_events(&raw_events, &root, layout);
 
             // 17. Process focus events (Tab navigation, focus-follows-mouse)
             let events = focus.process_events(&raw_events, &root, layout);
@@ -691,55 +727,74 @@ impl Runtime {
                                     viewport_height: change.viewport_height,
                                 },
                             );
-                            let _ = crate::handler_context::call_handler_for_app(&handler, &hx, app_name, instance_id);
+                            let _ = crate::handler_context::call_handler_for_app(
+                                &handler,
+                                &hx,
+                                app_name,
+                                instance_id,
+                            );
                         }
                     }
                 }
             }
 
             // 19c. Apply drag capture - redirect drag events to the click target
-            let events: Vec<tuidom::Event> = events.into_iter().map(|event| {
-                match &event {
-                    tuidom::Event::Click { target, .. } => {
-                        // Store click target for drag capture
-                        drag_target = target.clone();
-                        event
-                    }
-                    tuidom::Event::Drag { target: _, x, y, button } => {
-                        // Redirect drag to the captured target
-                        if let Some(ref captured) = drag_target {
-                            tuidom::Event::Drag {
-                                target: Some(captured.clone()),
-                                x: *x,
-                                y: *y,
-                                button: *button,
-                            }
-                        } else {
+            let events: Vec<tuidom::Event> = events
+                .into_iter()
+                .map(|event| {
+                    match &event {
+                        tuidom::Event::Click { target, .. } => {
+                            // Store click target for drag capture
+                            drag_target = target.clone();
                             event
                         }
-                    }
-                    tuidom::Event::Release { target: _, x, y, button } => {
-                        // Redirect release to the captured target, then clear it
-                        let result = if let Some(ref captured) = drag_target {
-                            tuidom::Event::Release {
-                                target: Some(captured.clone()),
-                                x: *x,
-                                y: *y,
-                                button: *button,
+                        tuidom::Event::Drag {
+                            target: _,
+                            x,
+                            y,
+                            button,
+                        } => {
+                            // Redirect drag to the captured target
+                            if let Some(ref captured) = drag_target {
+                                tuidom::Event::Drag {
+                                    target: Some(captured.clone()),
+                                    x: *x,
+                                    y: *y,
+                                    button: *button,
+                                }
+                            } else {
+                                event
                             }
-                        } else {
-                            event
-                        };
-                        drag_target = None;
-                        result
+                        }
+                        tuidom::Event::Release {
+                            target: _,
+                            x,
+                            y,
+                            button,
+                        } => {
+                            // Redirect release to the captured target, then clear it
+                            let result = if let Some(ref captured) = drag_target {
+                                tuidom::Event::Release {
+                                    target: Some(captured.clone()),
+                                    x: *x,
+                                    y: *y,
+                                    button: *button,
+                                }
+                            } else {
+                                event
+                            };
+                            drag_target = None;
+                            result
+                        }
+                        _ => event,
                     }
-                    _ => event,
-                }
-            }).collect();
+                })
+                .collect();
 
             // 20. Dispatch events to keybinds and apps
             for event in &events {
-                let result = dispatch::dispatch_event(event, global_modals, systems, registry, gx, layout);
+                let result =
+                    dispatch::dispatch_event(event, global_modals, systems, registry, gx, layout);
 
                 // Handle panics according to PanicBehavior
                 if let dispatch::DispatchResult::HandlerPanicked { message } = result {
@@ -754,7 +809,9 @@ impl Runtime {
                             crate::PanicBehavior::Close => {
                                 log::warn!(
                                     "[{}:{}] Closing instance due to handler panic (PanicBehavior::Close): {}",
-                                    app_name, instance_id, message
+                                    app_name,
+                                    instance_id,
+                                    message
                                 );
                                 let mut reg = registry.write().unwrap();
                                 reg.close(instance_id);
@@ -762,14 +819,18 @@ impl Runtime {
                             crate::PanicBehavior::Restart => {
                                 log::warn!(
                                     "[{}:{}] Restart not yet implemented for handler panics (PanicBehavior::Restart): {}",
-                                    app_name, instance_id, message
+                                    app_name,
+                                    instance_id,
+                                    message
                                 );
                                 // TODO: Implement restart - requires creating new instance
                             }
                             crate::PanicBehavior::Ignore => {
                                 log::warn!(
                                     "[{}:{}] Ignoring handler panic (PanicBehavior::Ignore): {}",
-                                    app_name, instance_id, message
+                                    app_name,
+                                    instance_id,
+                                    message
                                 );
                             }
                         }
@@ -784,7 +845,10 @@ impl Runtime {
                 if let Some(instance) = reg.focused_instance() {
                     let cx = instance.app_context();
                     if let Some(target_id) = cx.take_focus_request() {
-                        log::debug!("[runtime] Processing post-dispatch focus request: {}", target_id);
+                        log::debug!(
+                            "[runtime] Processing post-dispatch focus request: {}",
+                            target_id
+                        );
                         if focus.focus(&target_id) {
                             log::debug!("[runtime] Focus changed to: {}", target_id);
                         }
@@ -901,7 +965,10 @@ impl Runtime {
         {
             let reg = registry.read().unwrap();
             if let Some(instance) = reg.focused_instance() {
-                log::debug!("[runtime] Calling instance.element() for {}", instance.config().name);
+                log::debug!(
+                    "[runtime] Calling instance.element() for {}",
+                    instance.config().name
+                );
                 let app_element = instance.element();
                 log::debug!("[runtime] instance.element() returned");
                 middle_row = middle_row.child(app_element.width(Size::Fill).height(Size::Fill));
@@ -927,10 +994,8 @@ impl Runtime {
             if let Some(instance) = reg.focused_instance() {
                 let modals = instance.modals().read().unwrap();
                 for (i, modal) in modals.iter().enumerate() {
-                    let modal_wrapper = Self::build_modal_wrapper(
-                        &format!("__modal_{}__", i),
-                        modal.as_ref(),
-                    );
+                    let modal_wrapper =
+                        Self::build_modal_wrapper(&format!("__modal_{}__", i), modal.as_ref());
                     root = root.child(modal_wrapper);
                 }
             }
@@ -939,10 +1004,8 @@ impl Runtime {
         // Add global modals (highest z-order, overlays everything including app modals)
         // Each modal is rendered in order, stacking on top of each other
         for (i, modal) in global_modals.iter().enumerate() {
-            let modal_wrapper = Self::build_modal_wrapper(
-                &format!("__global_modal_{}__", i),
-                modal.as_ref(),
-            );
+            let modal_wrapper =
+                Self::build_modal_wrapper(&format!("__global_modal_{}__", i), modal.as_ref());
             root = root.child(modal_wrapper);
         }
 
@@ -969,9 +1032,7 @@ impl Runtime {
             crate::ModalSize::Sm => (Size::Percent(0.3), Size::Percent(0.3)),
             crate::ModalSize::Md => (Size::Percent(0.5), Size::Percent(0.5)),
             crate::ModalSize::Lg => (Size::Percent(0.8), Size::Percent(0.8)),
-            crate::ModalSize::Fixed { width, height } => {
-                (Size::Fixed(width), Size::Fixed(height))
-            }
+            crate::ModalSize::Fixed { width, height } => (Size::Fixed(width), Size::Fixed(height)),
             crate::ModalSize::Proportional { width, height } => {
                 (Size::Percent(width), Size::Percent(height))
             }
@@ -983,20 +1044,18 @@ impl Runtime {
         // Build wrapper based on position
         // interaction_scope creates stacking context (replaces z_index) and scopes focus/clicks
         match modal_position {
-            crate::ModalPosition::Centered => {
-                Element::col()
-                    .id(id)
-                    .position(Position::Absolute)
-                    .left(0)
-                    .top(0)
-                    .width(Size::Fill)
-                    .height(Size::Fill)
-                    .backdrop(Backdrop::Dim(0.5))
-                    .justify(Justify::Center)
-                    .align(Align::Center)
-                    .interaction_scope(true)
-                    .child(modal_content)
-            }
+            crate::ModalPosition::Centered => Element::col()
+                .id(id)
+                .position(Position::Absolute)
+                .left(0)
+                .top(0)
+                .width(Size::Fill)
+                .height(Size::Fill)
+                .backdrop(Backdrop::Dim(0.5))
+                .justify(Justify::Center)
+                .align(Align::Center)
+                .interaction_scope(true)
+                .child(modal_content),
             crate::ModalPosition::At { x, y } => {
                 // For absolute positioning, we still need the full-screen backdrop
                 // but position the modal content at specific coordinates
@@ -1035,9 +1094,7 @@ impl Runtime {
         for active in active_toasts.iter().take(MAX_VISIBLE_TOASTS) {
             // Right position based on phase
             let right: i16 = match active.phase {
-                ToastPhase::PendingSlideIn | ToastPhase::SlidingOut => {
-                    -(TOAST_WIDTH as i16 + 2)
-                }
+                ToastPhase::PendingSlideIn | ToastPhase::SlidingOut => -(TOAST_WIDTH as i16 + 2),
                 ToastPhase::SlidingIn | ToastPhase::Visible => 0,
             };
 
@@ -1193,7 +1250,10 @@ impl Runtime {
                     }
 
                     // Publish FocusChanged event
-                    gx.publish(FocusChanged { old: old_focused, new: id });
+                    gx.publish(FocusChanged {
+                        old: old_focused,
+                        new: id,
+                    });
                 }
 
                 InstanceCommand::PublishEvent { event } => {
@@ -1202,19 +1262,34 @@ impl Runtime {
                     // Dispatch to app instances
                     {
                         let reg = registry.read().unwrap();
-                        log::debug!("[PublishEvent] event_type={:?}, instances={}", event_type, reg.len());
+                        log::debug!(
+                            "[PublishEvent] event_type={:?}, instances={}",
+                            event_type,
+                            reg.len()
+                        );
 
                         for instance in reg.iter() {
                             let has_handler = instance.has_event_handler(event_type);
                             log::debug!(
                                 "[PublishEvent] instance={} sleeping={} has_handler={}",
-                                instance.config().name, instance.is_sleeping(), has_handler
+                                instance.config().name,
+                                instance.is_sleeping(),
+                                has_handler
                             );
                             if !instance.is_sleeping() && has_handler {
                                 // Create AppContext for this instance
-                                let cx = AppContext::new(instance.id(), gx.clone(), instance.config().name);
-                                let handled = instance.dispatch_event(event_type, event.as_ref(), &cx, gx);
-                                log::debug!("[PublishEvent] dispatched to {}, handled={}", instance.config().name, handled);
+                                let cx = AppContext::new(
+                                    instance.id(),
+                                    gx.clone(),
+                                    instance.config().name,
+                                );
+                                let handled =
+                                    instance.dispatch_event(event_type, event.as_ref(), &cx, gx);
+                                log::debug!(
+                                    "[PublishEvent] dispatched to {}, handled={}",
+                                    instance.config().name,
+                                    handled
+                                );
                             }
                         }
                     }
@@ -1224,11 +1299,16 @@ impl Runtime {
                         let has_handler = system.has_event_handler(event_type);
                         log::debug!(
                             "[PublishEvent] system={} has_handler={}",
-                            system.name(), has_handler
+                            system.name(),
+                            has_handler
                         );
                         if has_handler {
                             let handled = system.dispatch_event(event_type, event.as_ref(), gx);
-                            log::debug!("[PublishEvent] dispatched to system {}, handled={}", system.name(), handled);
+                            log::debug!(
+                                "[PublishEvent] dispatched to system {}, handled={}",
+                                system.name(),
+                                handled
+                            );
                         }
                     }
                 }
@@ -1239,7 +1319,9 @@ impl Runtime {
                     request_type,
                     response_tx,
                 } => {
-                    let result = self.handle_request(registry, systems, gx, target, request, request_type).await;
+                    let result = self
+                        .handle_request(registry, systems, gx, target, request, request_type)
+                        .await;
                     let _ = response_tx.send(result);
                 }
             }
@@ -1264,7 +1346,10 @@ impl Runtime {
             log::debug!(
                 "[SendRequest] Looking for system with type_id={:?}, available systems: {:?}",
                 target_type_id,
-                systems.iter().map(|s| (s.name(), AnySystem::type_id(s.as_ref()))).collect::<Vec<_>>()
+                systems
+                    .iter()
+                    .map(|s| (s.name(), AnySystem::type_id(s.as_ref())))
+                    .collect::<Vec<_>>()
             );
             let mut found_system = None;
             for system in systems.iter() {
@@ -1295,7 +1380,9 @@ impl Runtime {
                 RequestTarget::AppType(target_type_id) => {
                     let mut found_id = None;
                     for instance in reg.iter() {
-                        if AnyAppInstance::type_id(instance) == target_type_id && !instance.is_sleeping() {
+                        if AnyAppInstance::type_id(instance) == target_type_id
+                            && !instance.is_sleeping()
+                        {
                             found_id = Some(instance.id());
                             break;
                         }
@@ -1329,7 +1416,6 @@ impl Runtime {
             None => Err(RequestError::NoHandler),
         }
     }
-
 }
 
 impl Default for Runtime {
@@ -1347,10 +1433,7 @@ struct RegistryQuery(Arc<RwLock<InstanceRegistry>>);
 
 impl InstanceQuery for RegistryQuery {
     fn instances(&self) -> Vec<crate::instance::InstanceInfo> {
-        self.0
-            .read()
-            .map(|r| r.instances())
-            .unwrap_or_default()
+        self.0.read().map(|r| r.instances()).unwrap_or_default()
     }
 
     fn instances_of_type(&self, type_id: TypeId) -> Vec<crate::instance::InstanceInfo> {
@@ -1391,8 +1474,8 @@ fn sync_text_inputs(element: &Element, text_inputs: &mut TextInputState) {
     // Check if this element is a text input
     if let Content::TextInput { value, .. } = &element.content {
         let should_init = match text_inputs.get_data(&element.id) {
-            None => true,                        // New input
-            Some(data) => data.text != *value,   // Value changed externally
+            None => true,                      // New input
+            Some(data) => data.text != *value, // Value changed externally
         };
 
         if should_init {

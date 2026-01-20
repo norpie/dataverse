@@ -10,10 +10,10 @@
 use std::fs::File;
 use std::time::Duration;
 
+use rafter::EventData;
 use rafter::page;
 use rafter::prelude::*;
 use rafter::widgets::{List, ListItem, ListState, Text};
-use rafter::EventData;
 use simplelog::{Config, LevelFilter, WriteLogger};
 use tuidom::{Element, Style};
 
@@ -98,8 +98,7 @@ impl PaginationExample {
         self.next_cursor.set(response.next_cursor);
         self.total_loaded.set(50);
         self.loading.set(false);
-        self.message
-            .set("Scroll down to load more records".into());
+        self.message.set("Scroll down to load more records".into());
     }
 
     #[keybinds]
@@ -126,8 +125,7 @@ impl PaginationExample {
         self.next_cursor.set(response.next_cursor);
         self.total_loaded.set(50);
         self.loading.set(false);
-        self.message
-            .set("Scroll down to load more records".into());
+        self.message.set("Scroll down to load more records".into());
     }
 
     #[handler]
@@ -168,10 +166,8 @@ impl PaginationExample {
         // Don't load if no more pages
         let cursor = self.next_cursor.get();
         if cursor.is_none() {
-            self.message.set(format!(
-                "All {} records loaded!",
-                self.total_loaded.get()
-            ));
+            self.message
+                .set(format!("All {} records loaded!", self.total_loaded.get()));
             return;
         }
 
@@ -198,10 +194,8 @@ impl PaginationExample {
                 self.total_loaded.get()
             ));
         } else {
-            self.message.set(format!(
-                "All {} records loaded!",
-                self.total_loaded.get()
-            ));
+            self.message
+                .set(format!("All {} records loaded!", self.total_loaded.get()));
         }
     }
 

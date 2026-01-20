@@ -249,19 +249,31 @@ fn layout_children(
     let is_row = element.direction == Direction::Row;
 
     // Calculate content size for Auto mode (only if needed)
-    let content_size = if element.overflow_x == Overflow::Auto || element.overflow_y == Overflow::Auto {
-        Some(compute_content_size(&flow_children, inner_no_scroll, is_row, element.gap))
-    } else {
-        None
-    };
+    let content_size =
+        if element.overflow_x == Overflow::Auto || element.overflow_y == Overflow::Auto {
+            Some(compute_content_size(
+                &flow_children,
+                inner_no_scroll,
+                is_row,
+                element.gap,
+            ))
+        } else {
+            None
+        };
 
     // Vertical scrollbar (right side) based on overflow_y
     let scrollbar_right = match element.overflow_y {
         Overflow::Scroll => 1, // Always show vertical scrollbar
         Overflow::Auto => {
             if let Some((_, content_height)) = content_size {
-                if content_height > inner_no_scroll.height { 1 } else { 0 }
-            } else { 0 }
+                if content_height > inner_no_scroll.height {
+                    1
+                } else {
+                    0
+                }
+            } else {
+                0
+            }
         }
         _ => 0,
     };
@@ -273,8 +285,14 @@ fn layout_children(
             if let Some((content_width, _)) = content_size {
                 // Account for vertical scrollbar when checking horizontal overflow
                 let available_width = inner_no_scroll.width.saturating_sub(scrollbar_right);
-                if content_width > available_width { 1 } else { 0 }
-            } else { 0 }
+                if content_width > available_width {
+                    1
+                } else {
+                    0
+                }
+            } else {
+                0
+            }
         }
         _ => 0,
     };
@@ -291,8 +309,10 @@ fn layout_children(
     // Determine scroll context for children:
     // - If this element is scrollable, create new scroll context
     // - Otherwise, inherit from parent
-    let is_scrollable = element.overflow_x == Overflow::Scroll || element.overflow_x == Overflow::Auto
-        || element.overflow_y == Overflow::Scroll || element.overflow_y == Overflow::Auto
+    let is_scrollable = element.overflow_x == Overflow::Scroll
+        || element.overflow_x == Overflow::Auto
+        || element.overflow_y == Overflow::Scroll
+        || element.overflow_y == Overflow::Auto
         || element.scrollable;
     let child_scroll_ctx = if is_scrollable {
         Some(ScrollContext {
@@ -394,9 +414,12 @@ fn layout_children(
     }
 
     // Store content size for scrollable elements using natural/unconstrained child sizes
-    if element.overflow_x == Overflow::Scroll || element.overflow_x == Overflow::Auto
-        || element.overflow_y == Overflow::Scroll || element.overflow_y == Overflow::Auto
-        || element.scrollable {
+    if element.overflow_x == Overflow::Scroll
+        || element.overflow_x == Overflow::Auto
+        || element.overflow_y == Overflow::Scroll
+        || element.overflow_y == Overflow::Auto
+        || element.scrollable
+    {
         // Calculate natural content size (what children would take if unconstrained)
         let (content_width, content_height) =
             compute_content_size(&flow_children, inner, is_row, element.gap);
@@ -432,12 +455,7 @@ fn layout_children(
 /// Compute the natural content size from children's intrinsic sizes.
 /// This calculates what size the content WOULD be if unconstrained,
 /// which is needed for scroll containers to know the scrollable extent.
-fn compute_content_size(
-    children: &[&Element],
-    inner: Rect,
-    is_row: bool,
-    gap: u16,
-) -> (u16, u16) {
+fn compute_content_size(children: &[&Element], inner: Rect, is_row: bool, gap: u16) -> (u16, u16) {
     if children.is_empty() {
         return (inner.width, inner.height);
     }
@@ -613,7 +631,11 @@ fn layout_line(
     // Check if parent allows overflow in the main axis direction.
     // For rows, main axis is horizontal (check overflow_x).
     // For columns, main axis is vertical (check overflow_y).
-    let main_overflow = if is_row { parent.overflow_x } else { parent.overflow_y };
+    let main_overflow = if is_row {
+        parent.overflow_x
+    } else {
+        parent.overflow_y
+    };
     let allow_main_overflow = main_overflow == Overflow::Scroll || main_overflow == Overflow::Auto;
 
     // Second pass: apply flex grow or shrink
@@ -707,12 +729,21 @@ fn layout_line(
         // Check if parent allows overflow in the cross axis direction.
         // For rows, cross axis is vertical (check overflow_y).
         // For columns, cross axis is horizontal (check overflow_x).
-        let cross_overflow = if is_row { parent.overflow_y } else { parent.overflow_x };
-        let allow_cross_overflow = cross_overflow == Overflow::Scroll || cross_overflow == Overflow::Auto;
+        let cross_overflow = if is_row {
+            parent.overflow_y
+        } else {
+            parent.overflow_x
+        };
+        let allow_cross_overflow =
+            cross_overflow == Overflow::Scroll || cross_overflow == Overflow::Auto;
 
         let cross = match child_cross_size {
             Size::Fixed(n) => {
-                if allow_cross_overflow { n } else { n.min(cross_available) }
+                if allow_cross_overflow {
+                    n
+                } else {
+                    n.min(cross_available)
+                }
             }
             Size::Fill | Size::Flex(_) => cross_available,
             Size::Auto => {
@@ -720,12 +751,20 @@ fn layout_line(
                     cross_available
                 } else {
                     let estimated = estimate_size(child, !is_row);
-                    if allow_cross_overflow { estimated } else { estimated.min(cross_available) }
+                    if allow_cross_overflow {
+                        estimated
+                    } else {
+                        estimated.min(cross_available)
+                    }
                 }
             }
             Size::Percent(p) => {
                 let pct = (available_cross as f32 * p) as u16;
-                if allow_cross_overflow { pct } else { pct.min(cross_available) }
+                if allow_cross_overflow {
+                    pct
+                } else {
+                    pct.min(cross_available)
+                }
             }
         };
 
@@ -872,7 +911,11 @@ fn estimate_size(element: &Element, is_width: bool) -> u16 {
     // Reserve space for scrollbars in scrollable containers
     // Width calculation needs to account for vertical scrollbar (overflow_y)
     // Height calculation needs to account for horizontal scrollbar (overflow_x)
-    let overflow_for_axis = if is_width { element.overflow_y } else { element.overflow_x };
+    let overflow_for_axis = if is_width {
+        element.overflow_y
+    } else {
+        element.overflow_x
+    };
     let scrollbar_size = match overflow_for_axis {
         Overflow::Scroll | Overflow::Auto => 1,
         _ => 0,
@@ -1100,8 +1143,13 @@ fn layout_children_virtualized(
     scroll_ctx: Option<ScrollContext>,
 ) -> (u16, u16) {
     let fixed_item_height = element.item_height;
-    let (visible_start, visible_end, total_height) =
-        compute_visible_range(flow_children, scroll_y, viewport_height, gap, fixed_item_height);
+    let (visible_start, visible_end, total_height) = compute_visible_range(
+        flow_children,
+        scroll_y,
+        viewport_height,
+        gap,
+        fixed_item_height,
+    );
 
     log::debug!(
         "[virtualize] id={} children={} visible={}..{} scroll_y={} viewport={} content_height={} fixed_height={:?}",
@@ -1143,7 +1191,9 @@ fn layout_children_virtualized(
         // Calculate child rect
         let child_x = inner.x + child.margin.left;
         let child_y = inner.y + y_offset + child.margin.top;
-        let child_width = inner.width.saturating_sub(child.margin.left + child.margin.right);
+        let child_width = inner
+            .width
+            .saturating_sub(child.margin.left + child.margin.right);
 
         let child_rect = Rect::new(child_x, child_y, child_width, child_height);
         result.insert(child.id.clone(), child_rect);

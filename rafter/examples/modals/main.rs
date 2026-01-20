@@ -111,9 +111,7 @@ impl ModalShowcase {
     // Input modals
     #[handler]
     async fn show_input(&self, cx: &AppContext) {
-        let result = cx
-            .modal(InputModal::with_prompt("Enter some text:"))
-            .await;
+        let result = cx.modal(InputModal::with_prompt("Enter some text:")).await;
         match result {
             Some(text) => self.last_result.set(format!("Input: \"{}\"", text)),
             None => self.last_result.set("Input cancelled".to_string()),
@@ -274,7 +272,9 @@ impl GlobalModalSystem {
     #[handler]
     async fn show_global_input(&self, gx: &GlobalContext) {
         let result = gx
-            .modal(InputModal::with_prompt("Global input (works from anywhere):"))
+            .modal(InputModal::with_prompt(
+                "Global input (works from anywhere):",
+            ))
             .await;
         log::info!("Global input result: {:?}", result);
     }

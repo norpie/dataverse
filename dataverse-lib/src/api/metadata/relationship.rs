@@ -6,9 +6,10 @@ use std::pin::Pin;
 
 use reqwest::Method;
 
+use super::CACHE_KEY_RELATIONSHIP;
 use super::metadata_request;
 use super::metadata_url;
-use super::CACHE_KEY_RELATIONSHIP;
+use crate::DataverseClient;
 use crate::cache::CachedValue;
 use crate::error::ApiError;
 use crate::error::Error;
@@ -16,7 +17,6 @@ use crate::error::MetadataError;
 use crate::model::metadata::ManyToManyRelationship;
 use crate::model::metadata::OneToManyRelationship;
 use crate::model::metadata::RelationshipMetadata;
-use crate::DataverseClient;
 
 // =============================================================================
 // RelationshipMetadataBuilder
@@ -162,10 +162,7 @@ async fn fetch_relationship_from_api(
     // Try one-to-many first
     let url = metadata_url(
         client,
-        &format!(
-            "RelationshipDefinitions(SchemaName='{}')",
-            schema_name
-        ),
+        &format!("RelationshipDefinitions(SchemaName='{}')", schema_name),
     );
 
     let response = metadata_request(client, Method::GET, &url).await?;

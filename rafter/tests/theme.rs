@@ -147,6 +147,12 @@ fn test_color_values() {
 
     // Verify actual color values
     assert_eq!(theme.resolve("primary"), Some(&Color::rgb(255, 0, 0)));
-    assert_eq!(theme.resolve("button.hover"), Some(&Color::rgb(120, 120, 120)));
-    assert_eq!(theme.resolve("input.border.focus"), Some(&Color::rgb(0, 100, 200)));
+    assert_eq!(
+        theme.resolve("button.hover"),
+        Some(&Color::rgb(120, 120, 120))
+    );
+    assert_eq!(
+        theme.resolve("input.border.focus"),
+        Some(&Color::rgb(0, 100, 200))
+    );
 }

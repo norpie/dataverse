@@ -1,15 +1,15 @@
 //! Async iterator for OData query pagination.
 
+use reqwest::Method;
 use reqwest::header::HeaderMap;
 use reqwest::header::HeaderValue;
-use reqwest::Method;
 use serde::Deserialize;
 
+use crate::DataverseClient;
 use crate::api::query::Page;
 use crate::error::ApiError;
 use crate::error::Error;
 use crate::model::Record;
-use crate::DataverseClient;
 
 use super::builder::QueryBuilder;
 
@@ -123,19 +123,22 @@ impl ODataPages {
                         "odata.include-annotations=\"*\",odata.maxpagesize={}",
                         size
                     ))
-                    .unwrap_or_else(|_| HeaderValue::from_static("odata.include-annotations=\"*\"")),
+                    .unwrap_or_else(|_| {
+                        HeaderValue::from_static("odata.include-annotations=\"*\"")
+                    }),
                 );
             }
         }
 
         // Make request
-        let response: reqwest::Response = match self.client.request(Method::GET, &url, headers, None).await {
-            Ok(resp) => resp,
-            Err(e) => {
-                self.done = true;
-                return Some(Err(e));
-            }
-        };
+        let response: reqwest::Response =
+            match self.client.request(Method::GET, &url, headers, None).await {
+                Ok(resp) => resp,
+                Err(e) => {
+                    self.done = true;
+                    return Some(Err(e));
+                }
+            };
 
         // Parse response
         let odata_response: ODataResponse = match response.json().await {

@@ -1,7 +1,7 @@
 //! Centralized formatting utilities for Dataverse data display.
 
-use dataverse_lib::model::metadata::AttributeType;
 use dataverse_lib::model::Value;
+use dataverse_lib::model::metadata::AttributeType;
 
 /// Returns the default column width for a given attribute type.
 pub fn default_column_width(attr_type: &AttributeType) -> u16 {
@@ -51,10 +51,7 @@ impl FormattedValue {
 pub fn format_value(value: &Value) -> FormattedValue {
     match value {
         Value::Null => FormattedValue::default(),
-        Value::Bool(b) => FormattedValue::new(
-            if *b { "Yes" } else { "No" },
-            b.to_string(),
-        ),
+        Value::Bool(b) => FormattedValue::new(if *b { "Yes" } else { "No" }, b.to_string()),
         Value::Int(n) => FormattedValue::same(n.to_string()),
         Value::Long(n) => FormattedValue::same(n.to_string()),
         Value::Float(n) => FormattedValue::same(format!("{:.2}", n)),

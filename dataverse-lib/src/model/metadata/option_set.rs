@@ -3,9 +3,9 @@
 use serde::Deserialize;
 use serde::Serialize;
 
-use super::entity::Label;
 use super::attribute::OptionMetadata;
 use super::attribute::OptionSetType;
+use super::entity::Label;
 
 /// Metadata for a global option set.
 ///

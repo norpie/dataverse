@@ -25,36 +25,38 @@ pub mod widgets;
 
 pub use app::{App, AppConfig, BlurPolicy, PanicBehavior};
 pub use app_context::{
-    extract_panic_message, AppContext, AppError, AppErrorKind, AppModalRequest, ErrorReceiver,
-    ErrorSender,
+    AppContext, AppError, AppErrorKind, AppModalRequest, ErrorReceiver, ErrorSender,
+    extract_panic_message,
 };
 pub use event::{Event, FocusChanged, InstanceClosed, InstanceSpawned};
-pub use handler_context::{EventData, Handler, HandlerContext, HandlerRegistry, WidgetHandlers};
 pub use global_context::{
     ArcEvent, DataStore, GlobalContext, GlobalModalRequest, InstanceCommand, InstanceQuery,
     RequestTarget,
 };
+pub use handler_context::{EventData, Handler, HandlerContext, HandlerRegistry, WidgetHandlers};
 pub use instance::{
     AnyAppInstance, AppInstance, InstanceId, InstanceInfo, InstanceRegistry, RequestError,
     SpawnError,
 };
 pub use keybinds::{
-    parse_key_string, HandlerId, KeyCombo, Keybind, KeybindClosures, KeybindEntry, KeybindError,
-    KeybindInfo, KeybindScope, Keybinds, ParseKeyError,
+    HandlerId, KeyCombo, Keybind, KeybindClosures, KeybindEntry, KeybindError, KeybindInfo,
+    KeybindScope, Keybinds, ParseKeyError, parse_key_string,
 };
 pub use lifecycle::LifecycleHooks;
-pub use modal::{Modal, ModalContext, ModalEntry, ModalKind, ModalPosition, ModalSize, SystemModal};
+pub use modal::{
+    Modal, ModalContext, ModalEntry, ModalKind, ModalPosition, ModalSize, SystemModal,
+};
 pub use registration::{
-    registered_apps, registered_systems, AnySystem, AppRegistration, CloneableApp,
-    SystemRegistration,
+    AnySystem, AppRegistration, CloneableApp, SystemRegistration, registered_apps,
+    registered_systems,
 };
 pub use request::Request;
 pub use resource::{ProgressState, Resource, ResourceError, ResourceState};
 pub use state::State;
 pub use system::{Overlay, OverlayPosition, System};
-pub use theme::{default_theme, RafterTheme};
-pub use toast::{Toast, DEFAULT_TOAST_DURATION};
-pub use wakeup::{channel as wakeup_channel, WakeupHandle, WakeupReceiver, WakeupSender};
+pub use theme::{RafterTheme, default_theme};
+pub use toast::{DEFAULT_TOAST_DURATION, Toast};
+pub use wakeup::{WakeupHandle, WakeupReceiver, WakeupSender, channel as wakeup_channel};
 pub use widget::{Widget, WidgetResult};
 
 // Runtime
@@ -62,8 +64,8 @@ pub use runtime::{Runtime, RuntimeError};
 
 // Re-export derive macros
 pub use rafter_derive::{
-    app, app_impl, event_handler, handler, keybinds, modal, modal_impl, page, request_handler,
-    system, system_impl, theme, Event, Request,
+    Event, Request, app, app_impl, event_handler, handler, keybinds, modal, modal_impl, page,
+    request_handler, system, system_impl, theme,
 };
 
 // =============================================================================

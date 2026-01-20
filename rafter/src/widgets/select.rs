@@ -77,7 +77,9 @@ impl<T: Clone + Eq + Hash> SelectState<T> {
     pub fn set_options(&mut self, options: impl IntoIterator<Item = (T, impl Into<String>)>) {
         self.options = options.into_iter().map(|(v, l)| (v, l.into())).collect();
         // Each option is 1 row high
-        let total = self.scroller.rebuild(std::iter::repeat(1).take(self.options.len()));
+        let total = self
+            .scroller
+            .rebuild(std::iter::repeat(1).take(self.options.len()));
         self.scroll.set_content_height(total);
     }
 
@@ -369,7 +371,10 @@ impl<'a, T: Clone + Eq + Hash + PartialEq + Send + Sync + 'static> Select<HasSta
                 &id,
                 "on_activate",
                 Arc::new(move |_hx| {
-                    log::debug!("[select] toggle on_activate: id={}, toggling open state", toggle_id);
+                    log::debug!(
+                        "[select] toggle on_activate: id={}, toggling open state",
+                        toggle_id
+                    );
                     state_clone.update(|s| s.open = !s.open);
                 }),
             );
@@ -389,7 +394,9 @@ impl<'a, T: Clone + Eq + Hash + PartialEq + Send + Sync + 'static> Select<HasSta
                     };
                     log::debug!(
                         "[select] on_blur: base_id={}, blur_target={:?}, should_close={}",
-                        base_id, blur_target, should_close
+                        base_id,
+                        blur_target,
+                        should_close
                     );
                     if should_close {
                         state_clone.update(|s| s.open = false);
@@ -517,7 +524,8 @@ impl<'a, T: Clone + Eq + Hash + PartialEq + Send + Sync + 'static> Select<HasSta
                             "on_key_up",
                             Arc::new(move |hx| {
                                 state_clone.update(|s| {
-                                    s.scroll.apply_request(super::scroll::ScrollRequest::Delta(-1));
+                                    s.scroll
+                                        .apply_request(super::scroll::ScrollRequest::Delta(-1));
                                 });
                                 let target_id = format!("{}-opt-{}", id_clone, target_index);
                                 hx.cx().focus(&target_id);
@@ -534,7 +542,8 @@ impl<'a, T: Clone + Eq + Hash + PartialEq + Send + Sync + 'static> Select<HasSta
                             "on_key_down",
                             Arc::new(move |hx| {
                                 state_clone.update(|s| {
-                                    s.scroll.apply_request(super::scroll::ScrollRequest::Delta(1));
+                                    s.scroll
+                                        .apply_request(super::scroll::ScrollRequest::Delta(1));
                                 });
                                 let target_id = format!("{}-opt-{}", id_clone, target_index);
                                 hx.cx().focus(&target_id);
@@ -555,7 +564,8 @@ impl<'a, T: Clone + Eq + Hash + PartialEq + Send + Sync + 'static> Select<HasSta
                         // Mouse wheel
                         if let Some((_, delta_y)) = hx.event().scroll_delta() {
                             state_clone.update(|s| {
-                                s.scroll.apply_request(super::scroll::ScrollRequest::Delta(delta_y));
+                                s.scroll
+                                    .apply_request(super::scroll::ScrollRequest::Delta(delta_y));
                             });
                         }
                         // Keyboard scroll actions (PageUp/Down/Home/End)
@@ -664,8 +674,7 @@ impl<'a, T: Clone + Eq + Hash + PartialEq + Send + Sync + 'static> Select<HasSta
         if let Some(label) = &self.label {
             Element::col()
                 .child(
-                    Element::text(label)
-                        .style(Style::new().foreground(Color::var("text.muted"))),
+                    Element::text(label).style(Style::new().foreground(Color::var("text.muted"))),
                 )
                 .child(elem)
         } else {

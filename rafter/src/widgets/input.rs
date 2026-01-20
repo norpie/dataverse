@@ -221,8 +221,7 @@ impl<'a> Input<HasState<'a>> {
         if let Some(label) = &self.label {
             Element::col()
                 .child(
-                    Element::text(label)
-                        .style(Style::new().foreground(Color::var("text.muted"))),
+                    Element::text(label).style(Style::new().foreground(Color::var("text.muted"))),
                 )
                 .child(elem)
         } else {

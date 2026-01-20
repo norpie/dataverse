@@ -7,8 +7,8 @@ use rafter::widgets::{Button, Input, Text};
 use url::Url;
 
 use crate::credentials::{Account, AuthType, CachedTokens, CredentialsProvider};
-use crate::systems::client_management::{ClientManagement, GetClient};
 use crate::modals::BrowserAuthModal;
+use crate::systems::client_management::{ClientManagement, GetClient};
 
 /// Wizard step for the setup modal.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -190,10 +190,7 @@ impl SetupModal {
             expires_at: token.expires_at,
             refresh_token: token.refresh_token,
         };
-        if let Err(e) = credentials
-            .save_tokens(account.id, env.id, &cached)
-            .await
-        {
+        if let Err(e) = credentials.save_tokens(account.id, env.id, &cached).await {
             self.error.set(Some(e.to_string()));
             self.step.set(SetupStep::Error);
             return;
@@ -214,7 +211,10 @@ impl SetupModal {
             account_id: account.id,
             env_id: env.id,
         };
-        match gx.request_system::<ClientManagement, GetClient>(request).await {
+        match gx
+            .request_system::<ClientManagement, GetClient>(request)
+            .await
+        {
             Ok(Ok(_)) => {}
             Ok(Err(e)) => {
                 self.error.set(Some(e.to_string()));
@@ -290,7 +290,10 @@ impl SetupModal {
     }
 
     fn render_error_step(&self) -> Element {
-        let error_msg = self.error.get().unwrap_or_else(|| "Unknown error".to_string());
+        let error_msg = self
+            .error
+            .get()
+            .unwrap_or_else(|| "Unknown error".to_string());
 
         page! {
             column (padding: (1, 2), gap: 1, width: fill, height: fill) style (bg: surface) {

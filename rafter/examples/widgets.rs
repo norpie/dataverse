@@ -14,7 +14,9 @@ use std::fs::File;
 
 use rafter::page;
 use rafter::prelude::*;
-use rafter::widgets::{Button, Card, Checkbox, Collapsible, Input, RadioGroup, RadioState, Select, SelectState, Text};
+use rafter::widgets::{
+    Button, Card, Checkbox, Collapsible, Input, RadioGroup, RadioState, Select, SelectState, Text,
+};
 use simplelog::{Config, LevelFilter, WriteLogger};
 
 #[app]
@@ -69,9 +71,15 @@ impl WidgetShowcase {
             ("cz".to_string(), "Czech Republic"),
             ("hu".to_string(), "Hungary"),
         ]);
-        log::debug!("on_start: setting country with {} options", state.options.len());
+        log::debug!(
+            "on_start: setting country with {} options",
+            state.options.len()
+        );
         self.country.set(state);
-        log::debug!("on_start: country now has {} options", self.country.get().options.len());
+        log::debug!(
+            "on_start: country now has {} options",
+            self.country.get().options.len()
+        );
 
         // Initialize radio group options
         self.priority.set(RadioState::new([
@@ -94,8 +102,10 @@ impl WidgetShowcase {
     #[handler]
     async fn toggle_agree(&self) {
         let value = self.agree.get();
-        self.message
-            .set(format!("Terms accepted: {}", if value { "Yes" } else { "No" }));
+        self.message.set(format!(
+            "Terms accepted: {}",
+            if value { "Yes" } else { "No" }
+        ));
     }
 
     #[handler]

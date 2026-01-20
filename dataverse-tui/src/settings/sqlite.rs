@@ -17,10 +17,7 @@ pub struct SqliteBackend {
 impl SqliteBackend {
     /// Create a new SQLite backend at the given path.
     pub async fn new(path: impl AsRef<Path>) -> Result<Self, SettingsError> {
-        let client = async_sqlite::ClientBuilder::new()
-            .path(path)
-            .open()
-            .await?;
+        let client = async_sqlite::ClientBuilder::new().path(path).open().await?;
 
         client
             .conn(|conn| {

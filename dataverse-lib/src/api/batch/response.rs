@@ -13,16 +13,11 @@ use crate::model::Record;
 #[derive(Debug, Clone)]
 pub enum OperationResult {
     /// Create succeeded, returning the new record's ID.
-    Created {
-        id: Uuid,
-        record: Option<Record>,
-    },
+    Created { id: Uuid, record: Option<Record> },
     /// Retrieve succeeded.
     Retrieved(Record),
     /// Update succeeded.
-    Updated {
-        record: Option<Record>,
-    },
+    Updated { record: Option<Record> },
     /// Delete succeeded.
     Deleted,
     /// Upsert succeeded.
@@ -239,16 +234,11 @@ fn parse_operation_response(
 
     // Parse status code
     let parts: Vec<&str> = status_line.split_whitespace().collect();
-    let status: u16 = parts
-        .get(1)
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(500);
+    let status: u16 = parts.get(1).and_then(|s| s.parse().ok()).unwrap_or(500);
 
     // Find where headers end and body begins (empty line)
     let body_start = response.find("\r\n\r\n").or_else(|| response.find("\n\n"));
-    let body = body_start
-        .map(|idx| response[idx..].trim())
-        .unwrap_or("");
+    let body = body_start.map(|idx| response[idx..].trim()).unwrap_or("");
 
     // Check for success (2xx status codes)
     if (200..300).contains(&status) {

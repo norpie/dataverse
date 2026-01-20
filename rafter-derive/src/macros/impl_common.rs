@@ -265,10 +265,7 @@ impl Parse for KeybindDslEntry {
         // Expect: bind("key1", "key2", handler) or bind("key", handler(args))
         let bind_ident: Ident = input.parse()?;
         if bind_ident != "bind" {
-            return Err(syn::Error::new(
-                bind_ident.span(),
-                "expected `bind`",
-            ));
+            return Err(syn::Error::new(bind_ident.span(), "expected `bind`"));
         }
 
         let content;
@@ -303,8 +300,7 @@ impl Parse for KeybindDslEntry {
         let args = if content.peek(syn::token::Paren) {
             let args_content;
             syn::parenthesized!(args_content in content);
-            let args_punctuated =
-                args_content.parse_terminated(parse_arg_expr, Token![,])?;
+            let args_punctuated = args_content.parse_terminated(parse_arg_expr, Token![,])?;
             args_punctuated.into_iter().collect()
         } else {
             Vec::new()
@@ -361,16 +357,14 @@ fn parse_arg_expr(input: ParseStream) -> syn::Result<TokenStream> {
         // Parse other tokens
         let tt: proc_macro2::TokenTree = input.parse()?;
         match &tt {
-            proc_macro2::TokenTree::Group(g) => {
-                match g.delimiter() {
-                    proc_macro2::Delimiter::Parenthesis
-                    | proc_macro2::Delimiter::Bracket
-                    | proc_macro2::Delimiter::Brace => {
-                        depth += 1;
-                    }
-                    _ => {}
+            proc_macro2::TokenTree::Group(g) => match g.delimiter() {
+                proc_macro2::Delimiter::Parenthesis
+                | proc_macro2::Delimiter::Bracket
+                | proc_macro2::Delimiter::Brace => {
+                    depth += 1;
                 }
-            }
+                _ => {}
+            },
             _ => {}
         }
         tokens.extend(std::iter::once(tt));
@@ -869,10 +863,7 @@ pub struct LifecycleHooksDefined {
 /// Generate a single lifecycle hook call within a closure.
 ///
 /// Generates the code to call one method with its requested parameters.
-fn generate_lifecycle_hook_call(
-    hook: &LifecycleHookInfo,
-    self_ty: &Type,
-) -> TokenStream {
+fn generate_lifecycle_hook_call(hook: &LifecycleHookInfo, self_ty: &Type) -> TokenStream {
     let method_ident = &hook.method_name;
 
     // Generate context clones and refs based on what the method requests
@@ -944,8 +935,10 @@ pub fn generate_lifecycle_hooks_impl(
     self_ty: &Type,
 ) -> TokenStream {
     let on_start = generate_lifecycle_closure_for_hooks(&hooks.on_start, "on_start", self_ty);
-    let on_foreground = generate_lifecycle_closure_for_hooks(&hooks.on_foreground, "on_foreground", self_ty);
-    let on_background = generate_lifecycle_closure_for_hooks(&hooks.on_background, "on_background", self_ty);
+    let on_foreground =
+        generate_lifecycle_closure_for_hooks(&hooks.on_foreground, "on_foreground", self_ty);
+    let on_background =
+        generate_lifecycle_closure_for_hooks(&hooks.on_background, "on_background", self_ty);
     let on_close = generate_lifecycle_closure_for_hooks(&hooks.on_close, "on_close", self_ty);
 
     quote! {
@@ -979,8 +972,14 @@ pub fn validate_lifecycle_hook_contexts(
     available: LifecycleContext,
     sig: &Signature,
 ) -> Result<(), syn::Error> {
-    let has_app = matches!(available, LifecycleContext::App | LifecycleContext::AppModal);
-    let has_modal = matches!(available, LifecycleContext::AppModal | LifecycleContext::SystemModal);
+    let has_app = matches!(
+        available,
+        LifecycleContext::App | LifecycleContext::AppModal
+    );
+    let has_modal = matches!(
+        available,
+        LifecycleContext::AppModal | LifecycleContext::SystemModal
+    );
 
     // Check for AppContext when not available
     if hook.contexts.app_context && !has_app {
@@ -1165,8 +1164,7 @@ pub fn generate_keybinds_closures_impl(
 
         // Generate closure code for each entry
         for entry in &dsl.entries {
-            let closure_code =
-                generate_closure_for_keybind(entry, handler_contexts, type_name);
+            let closure_code = generate_closure_for_keybind(entry, handler_contexts, type_name);
 
             // Apply scope if page-scoped
             let scoped_code = match &method.scope {
@@ -1223,7 +1221,8 @@ pub fn generate_event_dispatch(
         .map(|h| {
             let name = &h.name;
             let event_type: syn::Type = syn::parse_str(&h.event_type).unwrap();
-            let (call, clones) = generate_event_handler_call_and_clones(name, &h.contexts, context_type);
+            let (call, clones) =
+                generate_event_handler_call_and_clones(name, &h.contexts, context_type);
 
             quote! {
                 t if t == std::any::TypeId::of::<#event_type>() => {
@@ -1305,7 +1304,8 @@ pub fn generate_request_dispatch(
         .map(|h| {
             let name = &h.name;
             let request_type: syn::Type = syn::parse_str(&h.request_type).unwrap();
-            let (call, clones) = generate_request_handler_call_and_clones(name, &h.contexts, context_type);
+            let (call, clones) =
+                generate_request_handler_call_and_clones(name, &h.contexts, context_type);
 
             quote! {
                 t if t == std::any::TypeId::of::<#request_type>() => {
@@ -1387,7 +1387,9 @@ fn generate_event_handler_call_and_clones(
                 (false, false) => quote! { let this = self.clone(); },
                 (true, false) => quote! { let this = self.clone(); let cx = cx.clone(); },
                 (false, true) => quote! { let this = self.clone(); let gx = gx.clone(); },
-                (true, true) => quote! { let this = self.clone(); let cx = cx.clone(); let gx = gx.clone(); },
+                (true, true) => {
+                    quote! { let this = self.clone(); let cx = cx.clone(); let gx = gx.clone(); }
+                }
             };
             (call, clones)
         }
@@ -1426,7 +1428,9 @@ fn generate_request_handler_call_and_clones(
                 (false, false) => quote! { let this = self.clone(); },
                 (true, false) => quote! { let this = self.clone(); let cx = cx.clone(); },
                 (false, true) => quote! { let this = self.clone(); let gx = gx.clone(); },
-                (true, true) => quote! { let this = self.clone(); let cx = cx.clone(); let gx = gx.clone(); },
+                (true, true) => {
+                    quote! { let this = self.clone(); let cx = cx.clone(); let gx = gx.clone(); }
+                }
             };
             (call, clones)
         }
@@ -1547,10 +1551,7 @@ fn generate_single_wrapper(handler: &HandlerInfo) -> TokenStream {
         .collect();
 
     // Combine args and contexts for the handler call
-    let call_params: Vec<TokenStream> = arg_usages
-        .into_iter()
-        .chain(context_refs)
-        .collect();
+    let call_params: Vec<TokenStream> = arg_usages.into_iter().chain(context_refs).collect();
 
     quote! {
         #[doc(hidden)]

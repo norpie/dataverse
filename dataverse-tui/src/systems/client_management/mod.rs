@@ -5,8 +5,8 @@ mod requests;
 
 pub use requests::*;
 
-use dataverse_lib::cache::SqliteCache;
 use dataverse_lib::DataverseClient;
+use dataverse_lib::cache::SqliteCache;
 use modal::ClientManagementModal;
 use rafter::prelude::*;
 
@@ -61,22 +61,24 @@ impl ClientManagement {
         };
 
         // Get account info
-        let account = credentials
-            .get_account(account_id)
-            .await?
-            .ok_or(ClientManagerError::NotFound {
-                entity: "account",
-                id: account_id,
-            })?;
+        let account =
+            credentials
+                .get_account(account_id)
+                .await?
+                .ok_or(ClientManagerError::NotFound {
+                    entity: "account",
+                    id: account_id,
+                })?;
 
         // Get environment info
-        let environment = credentials
-            .get_environment(env_id)
-            .await?
-            .ok_or(ClientManagerError::NotFound {
-                entity: "environment",
-                id: env_id,
-            })?;
+        let environment =
+            credentials
+                .get_environment(env_id)
+                .await?
+                .ok_or(ClientManagerError::NotFound {
+                    entity: "environment",
+                    id: env_id,
+                })?;
 
         // Try to open persistent cache
         let cache = self.open_cache(&environment.url, gx).await;
@@ -108,22 +110,20 @@ impl ClientManagement {
         let credentials = gx.data::<CredentialsProvider>();
 
         // Get account info
-        let account = credentials
-            .get_account(request.account_id)
-            .await?
-            .ok_or(ClientManagerError::NotFound {
+        let account = credentials.get_account(request.account_id).await?.ok_or(
+            ClientManagerError::NotFound {
                 entity: "account",
                 id: request.account_id,
-            })?;
+            },
+        )?;
 
         // Get environment info
-        let environment = credentials
-            .get_environment(request.env_id)
-            .await?
-            .ok_or(ClientManagerError::NotFound {
+        let environment = credentials.get_environment(request.env_id).await?.ok_or(
+            ClientManagerError::NotFound {
                 entity: "environment",
                 id: request.env_id,
-            })?;
+            },
+        )?;
 
         // Try to open persistent cache
         let cache = self.open_cache(&environment.url, gx).await;

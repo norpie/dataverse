@@ -25,11 +25,24 @@ use super::fields::{has_state_skip, has_widget_attribute, is_resource_type};
 /// Overlay position from attributes.
 #[derive(Clone)]
 enum OverlayPosition {
-    Top { height: u16 },
-    Bottom { height: u16 },
-    Left { width: u16 },
-    Right { width: u16 },
-    Absolute { x: u16, y: u16, width: u16, height: u16 },
+    Top {
+        height: u16,
+    },
+    Bottom {
+        height: u16,
+    },
+    Left {
+        width: u16,
+    },
+    Right {
+        width: u16,
+    },
+    Absolute {
+        x: u16,
+        y: u16,
+        width: u16,
+        height: u16,
+    },
 }
 
 /// Parsed attributes for #[system].
@@ -114,12 +127,19 @@ impl SystemAttrs {
                     let height = height.ok_or_else(|| {
                         syn::Error::new(proc_macro2::Span::call_site(), "Absolute requires height")
                     })?;
-                    OverlayPosition::Absolute { x, y, width, height }
+                    OverlayPosition::Absolute {
+                        x,
+                        y,
+                        width,
+                        height,
+                    }
                 }
                 other => {
                     return Err(syn::Error::new(
                         proc_macro2::Span::call_site(),
-                        format!("invalid position: {other}. Expected Top, Bottom, Left, Right, or Absolute"),
+                        format!(
+                            "invalid position: {other}. Expected Top, Bottom, Left, Right, or Absolute"
+                        ),
                     ));
                 }
             })
@@ -271,14 +291,23 @@ fn generate_position_const(position: &OverlayPosition) -> TokenStream {
         OverlayPosition::Right { width } => {
             quote! { rafter::OverlayPosition::Right { width: #width } }
         }
-        OverlayPosition::Absolute { x, y, width, height } => {
+        OverlayPosition::Absolute {
+            x,
+            y,
+            width,
+            height,
+        } => {
             quote! { rafter::OverlayPosition::Absolute { x: #x, y: #y, width: #width, height: #height } }
         }
     }
 }
 
 /// Generate metadata for #[system_impl].
-fn generate_metadata(name: &Ident, attrs: &SystemAttrs, fields: Option<&FieldsNamed>) -> TokenStream {
+fn generate_metadata(
+    name: &Ident,
+    attrs: &SystemAttrs,
+    fields: Option<&FieldsNamed>,
+) -> TokenStream {
     let name_str = name.to_string();
 
     let position_const = attrs.position.as_ref().map(|p| {
@@ -309,10 +338,17 @@ fn generate_metadata(name: &Ident, attrs: &SystemAttrs, fields: Option<&FieldsNa
         .unwrap_or_default();
 
     let is_dirty_checks = dirty_fields.iter().map(|f| quote! { system.#f.is_dirty() });
-    let clear_dirty_calls = dirty_fields.iter().map(|f| quote! { system.#f.clear_dirty(); });
-    let install_wakeup_calls = wakeup_fields.iter().map(|f| quote! { system.#f.install_wakeup(sender.clone()); });
+    let clear_dirty_calls = dirty_fields
+        .iter()
+        .map(|f| quote! { system.#f.clear_dirty(); });
+    let install_wakeup_calls = wakeup_fields
+        .iter()
+        .map(|f| quote! { system.#f.install_wakeup(sender.clone()); });
 
-    let metadata_name = format_ident!("__rafter_system_metadata_{}", name.to_string().to_lowercase());
+    let metadata_name = format_ident!(
+        "__rafter_system_metadata_{}",
+        name.to_string().to_lowercase()
+    );
 
     quote! {
         #[doc(hidden)]

@@ -127,10 +127,7 @@ impl<T: Clone + Eq + Hash> AutocompleteState<T> {
     ///
     /// Defaults to single-select mode. Use `with_selection()` for multi-select.
     pub fn new(options: impl IntoIterator<Item = (T, impl Into<String>)>) -> Self {
-        let options: Vec<(T, String)> = options
-            .into_iter()
-            .map(|(v, l)| (v, l.into()))
-            .collect();
+        let options: Vec<(T, String)> = options.into_iter().map(|(v, l)| (v, l.into())).collect();
         let labels: Vec<String> = options.iter().map(|(_, l)| l.clone()).collect();
         let filtered = fuzzy_filter("", &labels);
 
@@ -214,7 +211,9 @@ impl<T: Clone + Eq + Hash> AutocompleteState<T> {
             self.cursor = 0;
         }
         // Rebuild scroller for new filtered items
-        let total = self.scroller.rebuild(std::iter::repeat(1).take(self.filtered.len()));
+        let total = self
+            .scroller
+            .rebuild(std::iter::repeat(1).take(self.filtered.len()));
         self.scroll.set_content_height(total);
         self.scroll.offset = 0; // Reset scroll on filter change
     }
@@ -625,7 +624,8 @@ impl<'a, T: Clone + Eq + Hash + PartialEq + Send + Sync + 'static> Autocomplete<
                             &opt_id,
                             "on_activate",
                             Arc::new(move |hx| {
-                                let is_multi = state_clone.get().selection.mode == SelectionMode::Multi;
+                                let is_multi =
+                                    state_clone.get().selection.mode == SelectionMode::Multi;
                                 state_clone.update(|s| {
                                     s.selection.toggle(value_clone.clone());
                                     if !is_multi {
@@ -660,7 +660,8 @@ impl<'a, T: Clone + Eq + Hash + PartialEq + Send + Sync + 'static> Autocomplete<
 
                         // Register boundary scroll handlers
                         let is_at_top = pos_in_visible == 0 && i > 0;
-                        let is_at_bottom = pos_in_visible == visible_count - 1 && i < total_filtered - 1;
+                        let is_at_bottom =
+                            pos_in_visible == visible_count - 1 && i < total_filtered - 1;
 
                         if is_at_top {
                             let state_clone = state.clone();
@@ -671,7 +672,8 @@ impl<'a, T: Clone + Eq + Hash + PartialEq + Send + Sync + 'static> Autocomplete<
                                 "on_key_up",
                                 Arc::new(move |hx| {
                                     state_clone.update(|s| {
-                                        s.scroll.apply_request(super::scroll::ScrollRequest::Delta(-1));
+                                        s.scroll
+                                            .apply_request(super::scroll::ScrollRequest::Delta(-1));
                                         s.cursor = target_index;
                                     });
                                     let target_id = format!("{}-opt-{}", id_clone, target_index);
@@ -689,7 +691,8 @@ impl<'a, T: Clone + Eq + Hash + PartialEq + Send + Sync + 'static> Autocomplete<
                                 "on_key_down",
                                 Arc::new(move |hx| {
                                     state_clone.update(|s| {
-                                        s.scroll.apply_request(super::scroll::ScrollRequest::Delta(1));
+                                        s.scroll
+                                            .apply_request(super::scroll::ScrollRequest::Delta(1));
                                         s.cursor = target_index;
                                     });
                                     let target_id = format!("{}-opt-{}", id_clone, target_index);
@@ -712,7 +715,8 @@ impl<'a, T: Clone + Eq + Hash + PartialEq + Send + Sync + 'static> Autocomplete<
                         // Mouse wheel
                         if let Some((_, delta_y)) = hx.event().scroll_delta() {
                             state_clone.update(|s| {
-                                s.scroll.apply_request(super::scroll::ScrollRequest::Delta(delta_y));
+                                s.scroll
+                                    .apply_request(super::scroll::ScrollRequest::Delta(delta_y));
                             });
                         }
                         // Keyboard scroll actions (PageUp/Down/Home/End)
@@ -821,8 +825,7 @@ impl<'a, T: Clone + Eq + Hash + PartialEq + Send + Sync + 'static> Autocomplete<
         if let Some(label) = &self.label {
             Element::col()
                 .child(
-                    Element::text(label)
-                        .style(Style::new().foreground(Color::var("text.muted"))),
+                    Element::text(label).style(Style::new().foreground(Color::var("text.muted"))),
                 )
                 .child(elem)
         } else {

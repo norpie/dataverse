@@ -6,15 +6,15 @@ use std::pin::Pin;
 
 use reqwest::Method;
 
+use super::CACHE_KEY_ATTRIBUTE;
 use super::metadata_request;
 use super::metadata_url;
-use super::CACHE_KEY_ATTRIBUTE;
+use crate::DataverseClient;
 use crate::cache::CachedValue;
 use crate::error::ApiError;
 use crate::error::Error;
 use crate::error::MetadataError;
 use crate::model::metadata::AttributeMetadata;
-use crate::DataverseClient;
 
 // =============================================================================
 // AttributeMetadataBuilder

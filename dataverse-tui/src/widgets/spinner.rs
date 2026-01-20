@@ -92,7 +92,8 @@ impl Spinner {
     ///
     /// Use this when building the spinner outside of the page! macro context.
     pub fn build_standalone(self) -> Element {
-        let mut elem = Element::frames(self.generate_frames(), Duration::from_millis(self.frame_ms));
+        let mut elem =
+            Element::frames(self.generate_frames(), Duration::from_millis(self.frame_ms));
         if let Some(id) = &self.id {
             elem = elem.id(id);
         }

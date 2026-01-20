@@ -6,16 +6,16 @@ use std::pin::Pin;
 
 use reqwest::Method;
 
-use super::metadata_request;
-use super::metadata_url;
 use super::CACHE_KEY_ALL_GLOBAL_OPTIONSETS;
 use super::CACHE_KEY_GLOBAL_OPTIONSET;
+use super::metadata_request;
+use super::metadata_url;
+use crate::DataverseClient;
 use crate::cache::CachedValue;
 use crate::error::ApiError;
 use crate::error::Error;
 use crate::error::MetadataError;
 use crate::model::metadata::GlobalOptionSetMetadata;
-use crate::DataverseClient;
 
 // =============================================================================
 // GlobalOptionSetBuilder

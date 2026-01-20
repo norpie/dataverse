@@ -71,10 +71,7 @@ impl TextInputState {
 
     /// Get the text value for an input.
     pub fn get(&self, id: &str) -> &str {
-        self.inputs
-            .get(id)
-            .map(|d| d.text.as_str())
-            .unwrap_or("")
+        self.inputs.get(id).map(|d| d.text.as_str()).unwrap_or("")
     }
 
     /// Get the full input data (text, cursor, selection).
@@ -220,7 +217,8 @@ impl TextInputState {
 
         if let Some((start, end)) = data.selection() {
             // Replace selection
-            let mut new_text = String::with_capacity(data.text.len() - (end - start) + c.len_utf8());
+            let mut new_text =
+                String::with_capacity(data.text.len() - (end - start) + c.len_utf8());
             new_text.push_str(&data.text[..start]);
             new_text.push(c);
             new_text.push_str(&data.text[end..]);

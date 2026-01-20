@@ -2,10 +2,10 @@
 
 use std::path::Path;
 
-use async_sqlite::rusqlite;
 use async_sqlite::Client;
 use async_sqlite::ClientBuilder;
 use async_sqlite::JournalMode;
+use async_sqlite::rusqlite;
 use async_trait::async_trait;
 use chrono::TimeZone;
 use chrono::Utc;
@@ -53,10 +53,7 @@ impl SqliteCache {
     ///
     /// Useful for testing. Data is lost when the cache is dropped.
     pub async fn open_in_memory() -> Result<Self, async_sqlite::Error> {
-        let client = ClientBuilder::new()
-            .path(":memory:")
-            .open()
-            .await?;
+        let client = ClientBuilder::new().path(":memory:").open().await?;
 
         Self::init_schema(&client).await?;
 

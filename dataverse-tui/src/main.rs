@@ -86,7 +86,8 @@ async fn init_settings() -> Result<settings::SettingsProvider, settings::Setting
     Ok(settings::SettingsProvider::new(backend))
 }
 
-async fn init_credentials() -> Result<credentials::CredentialsProvider, credentials::CredentialsError> {
+async fn init_credentials()
+-> Result<credentials::CredentialsProvider, credentials::CredentialsError> {
     let creds_path = paths::credentials_db().unwrap_or_else(|| "credentials.db".into());
     let backend = credentials::SqliteCredentialsBackend::new(&creds_path).await?;
     Ok(credentials::CredentialsProvider::new(backend))

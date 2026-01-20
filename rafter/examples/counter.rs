@@ -162,7 +162,9 @@ impl Counter {
             self.value.set(0);
             self.step.set(1);
             self.data.set_idle();
-            gx.toast(Toast::success("Counter reset - Value and step restored to defaults."));
+            gx.toast(Toast::success(
+                "Counter reset - Value and step restored to defaults.",
+            ));
         }
     }
 
@@ -211,7 +213,9 @@ impl Counter {
             );
         } else {
             self.data.set_ready("API response received".to_string());
-            gx.toast(Toast::success("Data loaded - Successfully fetched 42 records."));
+            gx.toast(Toast::success(
+                "Data loaded - Successfully fetched 42 records.",
+            ));
         }
     }
 

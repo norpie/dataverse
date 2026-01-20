@@ -324,7 +324,10 @@ fn test_overflow_scroll_clips_children() {
     // Outside container - should be clipped (transparent or different color)
     let outside = buf.get(12, 1).unwrap();
     let outside_bg_is_red = outside.bg.map(|bg| to_rgb(bg).r == 255).unwrap_or(false);
-    assert!(!outside_bg_is_red, "Scroll overflow should clip like Hidden");
+    assert!(
+        !outside_bg_is_red,
+        "Scroll overflow should clip like Hidden"
+    );
 }
 
 #[test]
@@ -404,7 +407,11 @@ fn test_nested_overflow_hidden() {
 
     // Inside inner container - should show red
     let inside_inner = buf.get(10, 1).unwrap();
-    let inside_inner_bg = to_rgb(inside_inner.bg.expect("cell should have explicit background"));
+    let inside_inner_bg = to_rgb(
+        inside_inner
+            .bg
+            .expect("cell should have explicit background"),
+    );
     assert_eq!(
         inside_inner_bg.r, 255,
         "Content visible inside inner container"
@@ -412,17 +419,17 @@ fn test_nested_overflow_hidden() {
 
     // Outside inner but inside outer - should NOT show red (clipped by inner)
     let outside_inner = buf.get(17, 1).unwrap();
-    let outside_inner_is_red = outside_inner.bg.map(|bg| to_rgb(bg).r == 255).unwrap_or(false);
-    assert!(
-        !outside_inner_is_red,
-        "Content clipped by inner container"
-    );
+    let outside_inner_is_red = outside_inner
+        .bg
+        .map(|bg| to_rgb(bg).r == 255)
+        .unwrap_or(false);
+    assert!(!outside_inner_is_red, "Content clipped by inner container");
 
     // Outside outer - should also not show red (transparent or different)
     let outside_outer = buf.get(22, 1).unwrap();
-    let outside_outer_is_red = outside_outer.bg.map(|bg| to_rgb(bg).r == 255).unwrap_or(false);
-    assert!(
-        !outside_outer_is_red,
-        "Content clipped by outer container"
-    );
+    let outside_outer_is_red = outside_outer
+        .bg
+        .map(|bg| to_rgb(bg).r == 255)
+        .unwrap_or(false);
+    assert!(!outside_outer_is_red, "Content clipped by outer container");
 }

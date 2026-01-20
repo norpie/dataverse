@@ -1,8 +1,8 @@
 //! Related records query builder and pagination.
 
+use reqwest::Method;
 use reqwest::header::HeaderMap;
 use reqwest::header::HeaderValue;
-use reqwest::Method;
 use serde::Deserialize;
 use uuid::Uuid;
 
@@ -10,6 +10,7 @@ use super::expand::ExpandBuilder;
 use super::url::build_select_expand_params;
 use super::url::odata_filter_to_string;
 use super::url::order_to_odata;
+use crate::DataverseClient;
 use crate::api::query::ODataFilter;
 use crate::api::query::OrderBy;
 use crate::api::query::Page;
@@ -17,7 +18,6 @@ use crate::error::ApiError;
 use crate::error::Error;
 use crate::model::Entity;
 use crate::model::Record;
-use crate::DataverseClient;
 
 /// Builder for querying records related through a navigation property.
 ///
@@ -192,10 +192,7 @@ impl RelatedQueryBuilder {
     /// The entity_set_name is the resolved entity set name for the source entity.
     pub(crate) fn build_url(&self, entity_set_name: &str) -> String {
         // Base path: /{entity_set}({id})/{nav_property}
-        let mut url = format!(
-            "/{}({})/{}",
-            entity_set_name, self.id, self.nav_property
-        );
+        let mut url = format!("/{}({})/{}", entity_set_name, self.id, self.nav_property);
 
         // Build query parameters
         let mut params = Vec::new();

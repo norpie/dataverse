@@ -11,8 +11,8 @@ use std::sync::Arc;
 
 use tuidom::{Color, Element, Size, Style};
 
-use crate::state::State;
 use crate::HandlerRegistry;
+use crate::state::State;
 
 // =============================================================================
 // ScrollRequest
@@ -254,8 +254,16 @@ impl Default for ScrollbarStyle {
             track_char: '░',
             thumb_char: '█',
             // Match tuidom's scrollbar colors: dark gray track, lighter gray thumb
-            track_style: Style::new().foreground(Color::Rgb { r: 60, g: 60, b: 60 }),
-            thumb_style: Style::new().foreground(Color::Rgb { r: 150, g: 150, b: 150 }),
+            track_style: Style::new().foreground(Color::Rgb {
+                r: 60,
+                g: 60,
+                b: 60,
+            }),
+            thumb_style: Style::new().foreground(Color::Rgb {
+                r: 150,
+                g: 150,
+                b: 150,
+            }),
         }
     }
 }
@@ -381,11 +389,7 @@ impl<'a, S: ScrollableWidgetState> Scrollbar<HasScrollState<'a, S>> {
     ///
     /// Registers handlers for click, drag, and layout events.
     /// Calls `on_scroll` handler when scrolling occurs.
-    pub fn build(
-        self,
-        registry: &HandlerRegistry,
-        handlers: &crate::WidgetHandlers,
-    ) -> Element {
+    pub fn build(self, registry: &HandlerRegistry, handlers: &crate::WidgetHandlers) -> Element {
         let state = self.state_marker.0;
         let current = state.get();
         let scroll = current.scroll();
@@ -394,7 +398,9 @@ impl<'a, S: ScrollableWidgetState> Scrollbar<HasScrollState<'a, S>> {
 
         log::debug!(
             "[Scrollbar::build] viewport={} content_size={} offset={}",
-            scroll.viewport, scroll.content_height, scroll.offset
+            scroll.viewport,
+            scroll.content_height,
+            scroll.offset
         );
 
         // Calculate thumb size and position
@@ -403,7 +409,10 @@ impl<'a, S: ScrollableWidgetState> Scrollbar<HasScrollState<'a, S>> {
 
         // If viewport is 0, return empty element (happens on first frame before layout)
         if track_size == 0 {
-            return Element::col().id(&id).width(Size::Fixed(1)).height(Size::Fill);
+            return Element::col()
+                .id(&id)
+                .width(Size::Fixed(1))
+                .height(Size::Fill);
         }
 
         // Thumb size proportional to viewport/content ratio
@@ -484,7 +493,15 @@ impl<'a, S: ScrollableWidgetState> Scrollbar<HasScrollState<'a, S>> {
                             })
                         });
 
-                        if let Some((track_y, track_height, content_size, viewport, max_offset, current_offset)) = scroll_data {
+                        if let Some((
+                            track_y,
+                            track_height,
+                            content_size,
+                            viewport,
+                            max_offset,
+                            current_offset,
+                        )) = scroll_data
+                        {
                             if track_height > 0 {
                                 // Calculate thumb size and position
                                 let thumb_size = if content_size == 0 {
@@ -545,14 +562,15 @@ impl<'a, S: ScrollableWidgetState> Scrollbar<HasScrollState<'a, S>> {
 
                                     // Call on_scroll handler with proper scroll event
                                     if let Some(ref handler) = on_scroll {
-                                        let scroll_event = crate::handler_context::EventData::Scroll {
-                                            offset_x: 0,
-                                            offset_y: new_offset,
-                                            content_width: 0,
-                                            content_height: content_size,
-                                            viewport_width: 0,
-                                            viewport_height: viewport,
-                                        };
+                                        let scroll_event =
+                                            crate::handler_context::EventData::Scroll {
+                                                offset_x: 0,
+                                                offset_y: new_offset,
+                                                content_width: 0,
+                                                content_height: content_size,
+                                                viewport_width: 0,
+                                                viewport_height: viewport,
+                                            };
                                         let scroll_hx = hx.with_event(scroll_event);
                                         handler(&scroll_hx);
                                     }
@@ -588,7 +606,15 @@ impl<'a, S: ScrollableWidgetState> Scrollbar<HasScrollState<'a, S>> {
                             })
                         });
 
-                        if let Some((track_y, track_height, content_size, viewport, max_offset, grab_offset)) = scroll_data {
+                        if let Some((
+                            track_y,
+                            track_height,
+                            content_size,
+                            viewport,
+                            max_offset,
+                            grab_offset,
+                        )) = scroll_data
+                        {
                             if track_height > 0 {
                                 let thumb_size = if content_size == 0 {
                                     track_height
@@ -611,7 +637,8 @@ impl<'a, S: ScrollableWidgetState> Scrollbar<HasScrollState<'a, S>> {
                                     ((thumb_pos_in_track as u32 * max_offset as u32
                                         + scroll_range as u32 / 2)
                                         / scroll_range as u32)
-                                        .min(max_offset as u32) as u16
+                                        .min(max_offset as u32)
+                                        as u16
                                 };
 
                                 state_clone.update(|s| {
@@ -735,4 +762,3 @@ pub trait ScrollableWidgetState: Clone + Send + Sync + 'static {
     /// Set the drag grab offset.
     fn set_drag_grab_offset(&mut self, offset: Option<u16>);
 }
-

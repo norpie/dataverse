@@ -171,7 +171,8 @@ impl Keybinds {
     pub fn add_str(&mut self, key_string: &str, handler: &str) -> bool {
         match parse_key_string(key_string) {
             Ok(keys) => {
-                self.binds.push(Keybind::new(handler, key_string, keys, handler));
+                self.binds
+                    .push(Keybind::new(handler, key_string, keys, handler));
                 true
             }
             Err(e) => {
@@ -592,7 +593,8 @@ impl KeybindClosures {
     pub fn add(&mut self, key_string: &str, id: &str, handler: Handler) -> bool {
         match parse_key_string(key_string) {
             Ok(keys) => {
-                self.binds.push(KeybindEntry::new(id, key_string, keys, handler));
+                self.binds
+                    .push(KeybindEntry::new(id, key_string, keys, handler));
                 true
             }
             Err(e) => {
@@ -704,13 +706,17 @@ impl std::fmt::Debug for KeybindClosures {
 impl Clone for KeybindClosures {
     fn clone(&self) -> Self {
         Self {
-            binds: self.binds.iter().map(|b| KeybindEntry {
-                id: b.id.clone(),
-                default_keys: b.default_keys.clone(),
-                keys: b.keys.clone(),
-                handler: b.handler.clone(),
-                scope: b.scope.clone(),
-            }).collect(),
+            binds: self
+                .binds
+                .iter()
+                .map(|b| KeybindEntry {
+                    id: b.id.clone(),
+                    default_keys: b.default_keys.clone(),
+                    keys: b.keys.clone(),
+                    handler: b.handler.clone(),
+                    scope: b.scope.clone(),
+                })
+                .collect(),
         }
     }
 }

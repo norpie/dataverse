@@ -260,17 +260,14 @@ impl<T: TreeItem> TreeState<T> {
         self.flatten_nodes(&self.roots.clone(), 0, None);
 
         // Rebuild scroller from flattened node heights
-        let total_height = self.scroller.rebuild(self.flattened.iter().map(|n| n.height));
+        let total_height = self
+            .scroller
+            .rebuild(self.flattened.iter().map(|n| n.height));
         self.scroll.set_content_height(total_height);
     }
 
     /// Recursively flatten nodes into the flattened list.
-    fn flatten_nodes(
-        &mut self,
-        nodes: &[TreeNode<T>],
-        depth: usize,
-        parent_key: Option<T::Key>,
-    ) {
+    fn flatten_nodes(&mut self, nodes: &[TreeNode<T>], depth: usize, parent_key: Option<T::Key>) {
         for node in nodes {
             let key = node.value.key();
             let is_expanded = self.expanded.contains(&key);
@@ -652,7 +649,8 @@ impl<'a, T: TreeItem> Tree<HasTreeState<'a, T>> {
                             tuidom::ScrollAction::PageDown => {
                                 let first = current.first_visible_index();
                                 let viewport = current.scroll.viewport as usize;
-                                (first + viewport.saturating_sub(1)).min(current.flattened.len() - 1)
+                                (first + viewport.saturating_sub(1))
+                                    .min(current.flattened.len() - 1)
                             }
                         };
 
@@ -726,7 +724,8 @@ impl<'a, T: TreeItem> Tree<HasTreeState<'a, T>> {
         let range = state.scroller.visible_range(&state.scroll);
         log::debug!(
             "[TREE] calculate_visible_nodes: range {:?}, viewport={}",
-            range, state.scroll.viewport
+            range,
+            state.scroll.viewport
         );
         range.map(|index| VisibleNode { index }).collect()
     }
@@ -758,7 +757,12 @@ impl<'a, T: TreeItem> Tree<HasTreeState<'a, T>> {
 
         log::trace!(
             "[TREE] build_node_row: key={}, node_index={}, pos_in_visible={}, visible_count={}, total_nodes={}, is_bottom_boundary={}",
-            key.to_string(), node_index, pos_in_visible, visible_count, total_nodes, is_at_bottom_boundary
+            key.to_string(),
+            node_index,
+            pos_in_visible,
+            visible_count,
+            total_nodes,
+            is_at_bottom_boundary
         );
 
         // Build indentation
@@ -934,8 +938,11 @@ impl<'a, T: TreeItem> Tree<HasTreeState<'a, T>> {
                             // Go to first child
                             let current = state_clone.get();
                             if let Some(child_node) = current.flattened.get(child_idx) {
-                                let node_id =
-                                    format!("{}-node-{}", tree_id_clone, child_node.key.to_string());
+                                let node_id = format!(
+                                    "{}-node-{}",
+                                    tree_id_clone,
+                                    child_node.key.to_string()
+                                );
                                 hx.cx().focus(&node_id);
                             }
                         }

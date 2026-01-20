@@ -291,7 +291,8 @@ impl<A: App> AppInstance<A> {
         let type_id = TypeId::of::<A>();
         log::debug!(
             "[AppInstance::new] name={} type_id={:?}",
-            config.name, type_id
+            config.name,
+            type_id
         );
         let info = InstanceInfo::new(id, type_id, config.name, title);
         let context = AppContext::new(id, gx, config.name);
@@ -318,7 +319,11 @@ impl<A: App> AnyAppInstance for AppInstance<A> {
 
     fn type_id(&self) -> TypeId {
         let tid = TypeId::of::<A>();
-        log::debug!("[AnyAppInstance::type_id] A={} type_id={:?}", std::any::type_name::<A>(), tid);
+        log::debug!(
+            "[AnyAppInstance::type_id] A={} type_id={:?}",
+            std::any::type_name::<A>(),
+            tid
+        );
         tid
     }
 
@@ -346,7 +351,10 @@ impl<A: App> AnyAppInstance for AppInstance<A> {
     }
 
     fn app_context(&self) -> AppContext {
-        self.context.read().unwrap_or_else(|e| e.into_inner()).clone()
+        self.context
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
     }
 
     fn push_modal(&self, modal: Box<dyn crate::runtime::dispatch::AnyModal>) {
@@ -419,7 +427,12 @@ impl<A: App> AnyAppInstance for AppInstance<A> {
             app: self.app.clone(),
             id: self.id,
             info: RwLock::new(self.info.read().unwrap_or_else(|e| e.into_inner()).clone()),
-            context: RwLock::new(self.context.read().unwrap_or_else(|e| e.into_inner()).clone()),
+            context: RwLock::new(
+                self.context
+                    .read()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .clone(),
+            ),
             modals: RwLock::new(Vec::new()), // Modals don't transfer on clone
         })
     }
@@ -437,10 +450,7 @@ impl<A: App> AnyAppInstance for AppInstance<A> {
     }
 
     fn is_sleeping(&self) -> bool {
-        self.info
-            .read()
-            .map(|i| i.is_sleeping)
-            .unwrap_or(false)
+        self.info.read().map(|i| i.is_sleeping).unwrap_or(false)
     }
 
     fn set_sleeping(&self, sleeping: bool) {
@@ -484,10 +494,7 @@ impl InstanceRegistry {
         let id = instance.id();
         let type_id = AnyAppInstance::type_id(instance.as_ref());
 
-        log::debug!(
-            "[registry.insert] id={:?} type_id={:?}",
-            id, type_id
-        );
+        log::debug!("[registry.insert] id={:?} type_id={:?}", id, type_id);
 
         self.instances.insert(id, instance);
         *self.instance_counts.entry(type_id).or_insert(0) += 1;
@@ -627,13 +634,15 @@ impl InstanceQuery for InstanceRegistry {
     fn instance_of_type(&self, target_type_id: TypeId) -> Option<InstanceId> {
         log::debug!(
             "[registry.instance_of_type] looking for {:?}, have {} instances",
-            target_type_id, self.instances.len()
+            target_type_id,
+            self.instances.len()
         );
         for instance in self.instances.values() {
             let inst_type_id = AnyAppInstance::type_id(instance.as_ref());
             log::debug!(
                 "[registry.instance_of_type] checking {:?} (type={:?})",
-                instance.id(), inst_type_id
+                instance.id(),
+                inst_type_id
             );
             if inst_type_id == target_type_id {
                 return Some(instance.id());

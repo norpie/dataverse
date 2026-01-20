@@ -73,19 +73,27 @@ fn enrich_elements_inner(
     let offset = scroll.get(&element.id);
 
     // Apply horizontal scroll offset if overflow_x is Scroll/Auto
-    let use_tuidom_scroll_x = element.overflow_x == Overflow::Scroll || element.overflow_x == Overflow::Auto;
+    let use_tuidom_scroll_x =
+        element.overflow_x == Overflow::Scroll || element.overflow_x == Overflow::Auto;
     let scroll_x = if use_tuidom_scroll_x { offset.x } else { 0 };
 
     // Apply vertical scroll offset if overflow_y is Scroll/Auto
     // BUT: if element has .scrollable(true), it handles vertical scroll via handlers instead
-    let use_tuidom_scroll_y = (element.overflow_y == Overflow::Scroll || element.overflow_y == Overflow::Auto)
+    let use_tuidom_scroll_y = (element.overflow_y == Overflow::Scroll
+        || element.overflow_y == Overflow::Auto)
         && !element.scrollable;
     let scroll_y = if use_tuidom_scroll_y { offset.y } else { 0 };
 
     // Log for debugging
     if use_tuidom_scroll_x {
-        log::debug!("[enrich] {} use_tuidom_scroll_x=true offset=({},{}) setting scroll_offset=({},{})",
-            element.id, offset.x, offset.y, scroll_x, scroll_y);
+        log::debug!(
+            "[enrich] {} use_tuidom_scroll_x=true offset=({},{}) setting scroll_offset=({},{})",
+            element.id,
+            offset.x,
+            offset.y,
+            scroll_x,
+            scroll_y
+        );
     }
 
     element.scroll_offset = (scroll_x, scroll_y);

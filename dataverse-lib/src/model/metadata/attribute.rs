@@ -121,9 +121,7 @@ impl AttributeMetadata {
 
     /// Returns the option set for this attribute (local or global).
     pub fn options(&self) -> Option<&OptionSetMetadata> {
-        self.option_set
-            .as_ref()
-            .or(self.global_option_set.as_ref())
+        self.option_set.as_ref().or(self.global_option_set.as_ref())
     }
 }
 

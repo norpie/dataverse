@@ -3,9 +3,9 @@
 //! Provides shared rate limiting and caching for multiple Dataverse clients.
 
 use dashmap::DashMap;
+use dataverse_lib::DataverseClient;
 use dataverse_lib::cache::CacheProvider;
 use dataverse_lib::rate_limit::RateLimiter;
-use dataverse_lib::DataverseClient;
 use thiserror::Error;
 
 use crate::credentials::{
@@ -104,23 +104,19 @@ impl ClientManager {
         }
 
         // Get account and environment
-        let account = self
-            .credentials
-            .get_account(account_id)
-            .await?
-            .ok_or(ClientManagerError::NotFound {
+        let account = self.credentials.get_account(account_id).await?.ok_or(
+            ClientManagerError::NotFound {
                 entity: "account",
                 id: account_id,
-            })?;
+            },
+        )?;
 
-        let environment = self
-            .credentials
-            .get_environment(env_id)
-            .await?
-            .ok_or(ClientManagerError::NotFound {
+        let environment = self.credentials.get_environment(env_id).await?.ok_or(
+            ClientManagerError::NotFound {
                 entity: "environment",
                 id: env_id,
-            })?;
+            },
+        )?;
 
         // Create client
         let client = self.create_client(account, environment, cache).await?;

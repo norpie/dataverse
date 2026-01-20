@@ -491,7 +491,11 @@ impl Element {
     }
 
     /// Set all text input state from TextInputData.
-    pub fn input_state(mut self, data: &crate::text_input::TextInputData, is_focused: bool) -> Self {
+    pub fn input_state(
+        mut self,
+        data: &crate::text_input::TextInputData,
+        is_focused: bool,
+    ) -> Self {
         if let Content::TextInput {
             value,
             cursor,

@@ -1,11 +1,11 @@
 //! OData query builder.
 
+use crate::DataverseClient;
 use crate::api::query::ODataFilter;
 use crate::api::query::OrderBy;
 use crate::error::Error;
 use crate::model::Entity;
 use crate::model::Record;
-use crate::DataverseClient;
 
 use super::expand::ExpandBuilder;
 use super::pages::ODataPages;
@@ -252,9 +252,18 @@ impl QueryBuilder {
 
         // Build OData headers
         let mut headers = reqwest::header::HeaderMap::new();
-        headers.insert("OData-MaxVersion", reqwest::header::HeaderValue::from_static("4.0"));
-        headers.insert("OData-Version", reqwest::header::HeaderValue::from_static("4.0"));
-        headers.insert("Accept", reqwest::header::HeaderValue::from_static("application/json"));
+        headers.insert(
+            "OData-MaxVersion",
+            reqwest::header::HeaderValue::from_static("4.0"),
+        );
+        headers.insert(
+            "OData-Version",
+            reqwest::header::HeaderValue::from_static("4.0"),
+        );
+        headers.insert(
+            "Accept",
+            reqwest::header::HeaderValue::from_static("application/json"),
+        );
 
         let response: reqwest::Response = self
             .client
@@ -262,7 +271,10 @@ impl QueryBuilder {
             .await?;
 
         // Parse JSON response: {"value": [{"count": 12345}]}
-        let json: serde_json::Value = response.json().await.map_err(crate::error::ApiError::from)?;
+        let json: serde_json::Value = response
+            .json()
+            .await
+            .map_err(crate::error::ApiError::from)?;
 
         let count = json
             .get("value")

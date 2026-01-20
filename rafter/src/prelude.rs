@@ -17,9 +17,7 @@ pub use crate::system::System;
 pub use crate::toast::Toast;
 
 // Derive macros
-pub use rafter_derive::{
-    app, app_impl, handler, keybinds, modal, modal_impl, system, system_impl,
-};
+pub use rafter_derive::{app, app_impl, handler, keybinds, modal, modal_impl, system, system_impl};
 
 // Re-export tuidom Element for page! macro
 pub use tuidom::Element;

@@ -2,11 +2,11 @@
 
 use async_trait::async_trait;
 
+use super::AccessToken;
 use super::auto_refresh::AuthFlow;
-use super::common::map_error_response;
 use super::common::ErrorResponse;
 use super::common::TokenResponse;
-use super::AccessToken;
+use super::common::map_error_response;
 use crate::error::AuthError;
 
 /// Internal implementation handling both v1.0 and v2.0 endpoints.
@@ -177,10 +177,8 @@ impl PasswordFlow {
     ///
     /// * `client_id` - The Azure AD application (client) ID
     /// * `client_secret` - The Azure AD application client secret
-    pub fn for_refresh(
-        client_id: impl Into<String>,
-        client_secret: impl Into<String>,
-    ) -> Self { // FIXME: needs implicit null username/password, better way?
+    pub fn for_refresh(client_id: impl Into<String>, client_secret: impl Into<String>) -> Self {
+        // FIXME: needs implicit null username/password, better way?
         Self {
             inner: PasswordFlowInner {
                 client_id: client_id.into(),
@@ -285,10 +283,8 @@ impl PublicClientPasswordFlow {
     ///
     /// * `client_id` - The Azure AD application (client) ID
     /// * `tenant_id` - The Azure AD tenant ID or domain
-    pub fn for_refresh(
-        client_id: impl Into<String>,
-        tenant_id: impl Into<String>,
-    ) -> Self {// FIXME: needs implicit null username/password, better way?
+    pub fn for_refresh(client_id: impl Into<String>, tenant_id: impl Into<String>) -> Self {
+        // FIXME: needs implicit null username/password, better way?
         Self {
             inner: PasswordFlowInner {
                 client_id: client_id.into(),

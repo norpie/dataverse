@@ -126,12 +126,9 @@ impl Button {
             // Fall back to label/hint
             let label = self.label.unwrap_or_default();
             if let Some(hint) = &self.hint {
-                Element::row()
-                    .gap(1)
-                    .child(Element::text(&label))
-                    .child(
-                        Element::text(hint).style(Style::new().foreground(Color::var("text.muted"))),
-                    )
+                Element::row().gap(1).child(Element::text(&label)).child(
+                    Element::text(hint).style(Style::new().foreground(Color::var("text.muted"))),
+                )
             } else {
                 Element::text(&label)
             }

@@ -9,8 +9,8 @@ use std::sync::Arc;
 use tuidom::ScrollAction;
 
 use super::scroll::{ScrollRequest, ScrollState, ScrollableWidgetState, Scrollbar};
-use crate::state::State;
 use crate::HandlerRegistry;
+use crate::state::State;
 
 // =============================================================================
 // VirtualScroller
@@ -210,7 +210,10 @@ pub fn register_scroll_handlers<S, F>(
 
                 // Mouse wheel: delta
                 if let Some((_, delta_y)) = hx.event().scroll_delta() {
-                    log::debug!("[VirtualScroller::on_scroll] scroll_delta delta_y={}", delta_y);
+                    log::debug!(
+                        "[VirtualScroller::on_scroll] scroll_delta delta_y={}",
+                        delta_y
+                    );
                     state_clone.update(|s| {
                         s.scroll_mut().scroll_by(delta_y);
                     });

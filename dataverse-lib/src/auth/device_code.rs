@@ -9,13 +9,13 @@ use chrono::Utc;
 use serde::Deserialize;
 use tokio_util::sync::CancellationToken;
 
+use super::AccessToken;
 use super::auto_refresh::AuthFlow;
-use super::common::device_code_url_v2;
-use super::common::scope_from_resource;
 use super::common::DeviceCodeTokenResult;
 use super::common::ErrorResponse;
 use super::common::TokenExchange;
-use super::AccessToken;
+use super::common::device_code_url_v2;
+use super::common::scope_from_resource;
 use crate::error::AuthError;
 
 // =============================================================================

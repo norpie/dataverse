@@ -8,7 +8,9 @@ pub mod transition;
 use proc_macro2::TokenStream;
 use quote::quote;
 
-use super::ast::{AttrValue, AttrValueElse, AttrValueIf, ElseBranch, ForNode, IfNode, MatchNode, Page, ViewNode};
+use super::ast::{
+    AttrValue, AttrValueElse, AttrValueIf, ElseBranch, ForNode, IfNode, MatchNode, Page, ViewNode,
+};
 
 /// Generate code for a conditional attribute value.
 ///
