@@ -1151,6 +1151,13 @@ impl Runtime {
                         instance.lifecycle_hooks().call_on_start(&hx);
                     }
 
+                    let old_focused = if focus {
+                        let reg = registry.read().unwrap();
+                        reg.focused()
+                    } else {
+                        None
+                    };
+
                     {
                         let mut reg = registry.write().unwrap();
                         reg.insert(instance);
@@ -1161,6 +1168,84 @@ impl Runtime {
 
                     // Publish InstanceSpawned event
                     gx.publish(InstanceSpawned { id, name });
+
+                    // Handle blur policy for old focused instance if we just focused
+                    if focus {
+                        let mut to_close = None;
+
+                        if let Some(old_id) = old_focused {
+                            if old_id != id {
+                                // Get blur policy
+                                let blur_policy = {
+                                    let reg = registry.read().unwrap();
+                                    reg.get(old_id).map(|i| i.config().on_blur)
+                                };
+
+                                // Call on_background lifecycle hook
+                                {
+                                    let reg = registry.read().unwrap();
+                                    if let Some(instance) = reg.get(old_id) {
+                                        let cx = instance.app_context();
+                                        let hx = HandlerContext::for_app(&cx, gx);
+                                        instance.lifecycle_hooks().call_on_background(&hx);
+                                    }
+                                }
+
+                                // Apply blur policy
+                                match blur_policy {
+                                    Some(BlurPolicy::Sleep) => {
+                                        let reg = registry.read().unwrap();
+                                        if let Some(instance) = reg.get(old_id) {
+                                            instance.set_sleeping(true);
+                                        }
+                                    }
+                                    Some(BlurPolicy::Close) => {
+                                        to_close = Some(old_id);
+                                    }
+                                    _ => {}
+                                }
+                            }
+                        }
+
+                        // Call on_foreground for new instance
+                        {
+                            let reg = registry.read().unwrap();
+                            if let Some(instance) = reg.get(id) {
+                                let cx = instance.app_context();
+                                let hx = HandlerContext::for_app(&cx, gx);
+                                instance.lifecycle_hooks().call_on_foreground(&hx);
+                            }
+                        }
+
+                        // Close old instance if BlurPolicy::Close
+                        if let Some(close_id) = to_close {
+                            let name = {
+                                let reg = registry.read().unwrap();
+                                reg.get(close_id).map(|i| i.config().name)
+                            };
+
+                            {
+                                let mut reg = registry.write().unwrap();
+                                reg.close(close_id);
+                            }
+
+                            // Publish InstanceClosed event
+                            if let Some(name) = name {
+                                log::info!(
+                                    "[Spawn with focus] Publishing InstanceClosed event for {} (id={:?})",
+                                    name,
+                                    close_id
+                                );
+                                gx.publish(InstanceClosed { id: close_id, name });
+                            }
+                        }
+
+                        // Publish FocusChanged event
+                        gx.publish(FocusChanged {
+                            old: old_focused,
+                            new: id,
+                        });
+                    }
                 }
 
                 InstanceCommand::Close { id, force: _ } => {
@@ -1245,8 +1330,25 @@ impl Runtime {
 
                     // Close old instance if BlurPolicy::Close
                     if let Some(close_id) = to_close {
-                        let mut reg = registry.write().unwrap();
-                        reg.close(close_id);
+                        let name = {
+                            let reg = registry.read().unwrap();
+                            reg.get(close_id).map(|i| i.config().name)
+                        };
+
+                        {
+                            let mut reg = registry.write().unwrap();
+                            reg.close(close_id);
+                        }
+
+                        // Publish InstanceClosed event
+                        if let Some(name) = name {
+                            log::info!(
+                                "[BlurPolicy::Close] Publishing InstanceClosed event for {} (id={:?})",
+                                name,
+                                close_id
+                            );
+                            gx.publish(InstanceClosed { id: close_id, name });
+                        }
                     }
 
                     // Publish FocusChanged event
