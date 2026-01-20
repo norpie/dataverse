@@ -10,33 +10,10 @@ mod widgets;
 
 use std::fs::File;
 
-use rafter::page;
 use rafter::prelude::*;
-use rafter::widgets::Text;
 use simplelog::{Config, LevelFilter, WriteLogger};
 
-use widgets::Spinner;
-
-#[app(name = "Dataverse", singleton)]
-struct DataverseTui {}
-
-#[app_impl]
-impl DataverseTui {
-    fn title(&self) -> String {
-        "Home".to_string()
-    }
-
-    fn element(&self) -> Element {
-        page! {
-            column (padding: 2, gap: 1) style (bg: background) {
-                text (content: "Dataverse TUI") style (bold, fg: interact)
-                text (content: "Press Ctrl+P to open launcher") style (fg: muted)
-                text (content: "Press Ctrl+Q to quit") style (fg: muted)
-                spinner (id: "main-spinner")
-            }
-        }
-    }
-}
+use apps::Welcome;
 
 #[tokio::main]
 async fn main() {
@@ -56,7 +33,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     Runtime::new()?
         .data(settings)
         .data(credentials)
-        .run(DataverseTui::default())
+        .run(Welcome::default())
         .await?;
 
     Ok(())

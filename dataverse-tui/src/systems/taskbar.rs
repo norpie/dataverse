@@ -168,13 +168,33 @@ impl Taskbar {
     }
 
     #[event_handler]
-    async fn on_instance_spawned(&self, _event: InstanceSpawned, gx: &GlobalContext) {
-        self.instances.set(gx.instances());
+    async fn on_instance_spawned(&self, event: InstanceSpawned, gx: &GlobalContext) {
+        log::info!(
+            "[Taskbar] Received InstanceSpawned event for {} (id={:?})",
+            event.name,
+            event.id
+        );
+        let instances = gx.instances();
+        log::info!(
+            "[Taskbar] After spawn, instances: {:?}",
+            instances.iter().map(|i| i.name).collect::<Vec<_>>()
+        );
+        self.instances.set(instances);
     }
 
     #[event_handler]
-    async fn on_instance_closed(&self, _event: InstanceClosed, gx: &GlobalContext) {
-        self.instances.set(gx.instances());
+    async fn on_instance_closed(&self, event: InstanceClosed, gx: &GlobalContext) {
+        log::info!(
+            "[Taskbar] Received InstanceClosed event for {} (id={:?})",
+            event.name,
+            event.id
+        );
+        let instances = gx.instances();
+        log::info!(
+            "[Taskbar] After close, instances: {:?}",
+            instances.iter().map(|i| i.name).collect::<Vec<_>>()
+        );
+        self.instances.set(instances);
     }
 
     #[handler]
