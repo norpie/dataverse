@@ -1,10 +1,9 @@
 //! Entity Browser app for viewing Dataverse entity records.
 
-use std::collections::HashMap;
+mod row;
+mod service;
 
 use dataverse_lib::api::query::odata::ODataPages;
-use dataverse_lib::model::metadata::{AttributeMetadata, EntityMetadata};
-use dataverse_lib::model::{Entity, Value};
 use dataverse_lib::DataverseClient;
 use rafter::page;
 use rafter::prelude::*;
@@ -15,48 +14,14 @@ use rafter::EventData;
 use tuidom::Element;
 
 use crate::formatting::default_column_width;
-use crate::systems::client_management::{ActiveClientInfo, ClientManagement, GetActiveClient};
+use crate::systems::client_management::{ClientManagement, GetActiveClient};
 use crate::widgets::{loading_overlay, Spinner};
 
-/// Entity data including metadata and readable fields.
-#[derive(Clone, Debug)]
-pub struct EntityData {
-    pub metadata: EntityMetadata,
-    pub readable_fields: Vec<AttributeMetadata>,
-}
-
-/// A record row for the table.
-#[derive(Clone, Debug)]
-pub struct RecordRow {
-    id: String,
-    cells: HashMap<String, String>,
-}
-
-impl RecordRow {
-    fn new(id: String) -> Self {
-        Self {
-            id,
-            cells: HashMap::new(),
-        }
-    }
-
-    fn set_cell(&mut self, column: String, value: String) {
-        self.cells.insert(column, value);
-    }
-}
-
-impl TableRow for RecordRow {
-    type Key = String;
-
-    fn key(&self) -> String {
-        self.id.clone()
-    }
-
-    fn cell(&self, column_id: &str) -> Element {
-        let text = self.cells.get(column_id).cloned().unwrap_or_default();
-        Element::text(&text)
-    }
-}
+use row::{EntityData, RecordRow};
+use service::{
+    build_field_options, default_columns, fetch_all_entities, fetch_entity_data, fetch_next_page,
+    fetch_records,
+};
 
 #[app(name = "Entity Browser")]
 pub struct EntityBrowser {
@@ -118,8 +83,8 @@ impl EntityBrowser {
             .set(Some("Loading Dataverse metadata...".to_string()));
 
         // Load all entities
-        let all_entities = match info.client.metadata().all_entities().await {
-            Ok(entities) => entities,
+        let result = match fetch_all_entities(&info.client).await {
+            Ok(r) => r,
             Err(e) => {
                 gx.toast(Toast::error(format!("Failed to load entities: {}", e)));
                 self.loading_message.set(None);
@@ -127,34 +92,12 @@ impl EntityBrowser {
             }
         };
 
-        // Build autocomplete options: (logical_name, display_name)
-        let mut options: Vec<(String, String)> = all_entities
-            .iter()
-            .map(|e| {
-                let display = e
-                    .display_name
-                    .text()
-                    .unwrap_or(&e.core.logical_name)
-                    .to_string();
-                (e.core.logical_name.clone(), display)
-            })
-            .collect();
+        self.entities.set(result.options.clone());
+        self.entity_autocomplete
+            .set(AutocompleteState::new(result.options));
 
-        // Sort by display name
-        options.sort_by(|a, b| a.1.to_lowercase().cmp(&b.1.to_lowercase()));
-
-        self.entities.set(options.clone());
-        self.entity_autocomplete.set(AutocompleteState::new(options));
-
-        // Auto-select: contact > account > first available
-        let auto_select = all_entities
-            .iter()
-            .find(|e| e.core.logical_name == "contact")
-            .or_else(|| all_entities.iter().find(|e| e.core.logical_name == "account"))
-            .or_else(|| all_entities.first());
-
-        let selected_logical_name = match auto_select {
-            Some(entity) => entity.core.logical_name.clone(),
+        let selected_logical_name = match result.auto_select {
+            Some(name) => name,
             None => {
                 gx.toast(Toast::error("No entities available"));
                 self.loading_message.set(None);
@@ -162,8 +105,8 @@ impl EntityBrowser {
             }
         };
 
-        // Load the selected entity's full metadata
-        self.load_entity_data(gx, cx, &selected_logical_name).await;
+        // Load the selected entity's full metadata and records
+        self.load_entity(&selected_logical_name, gx).await;
 
         self.loading_message.set(None);
         cx.focus("field-autocomplete");
@@ -189,16 +132,9 @@ impl EntityBrowser {
         }
     }
 
-    /// Get the stored client, or toast an error and close the app if unavailable.
-    fn client(&self, gx: &GlobalContext, cx: &AppContext) -> Option<DataverseClient> {
-        match self.client.get() {
-            Some(c) => Some(c),
-            None => {
-                gx.toast(Toast::error("Client connection lost"));
-                cx.close();
-                None
-            }
-        }
+    /// Get the stored client.
+    fn client(&self) -> Option<DataverseClient> {
+        self.client.get()
     }
 
     #[keybinds]
@@ -207,7 +143,7 @@ impl EntityBrowser {
     }
 
     #[handler]
-    async fn refresh(&self, gx: &GlobalContext, cx: &AppContext) {
+    async fn refresh(&self, gx: &GlobalContext, _cx: &AppContext) {
         let entity_data = match self.entity_data.get() {
             Some(data) => data,
             None => return,
@@ -232,10 +168,10 @@ impl EntityBrowser {
             .cloned()
             .collect();
 
-        // Reload entity data (metadata + records)
-        self.load_entity_data(gx, cx, &logical_name).await;
+        // Reload entity and records
+        self.load_entity(&logical_name, gx).await;
 
-        // Restore field selection and reload with those fields
+        // Restore field selection if any were selected
         if !selected_fields.is_empty() {
             self.field_autocomplete.update(|state| {
                 state.selection.selected.clear();
@@ -243,8 +179,9 @@ impl EntityBrowser {
                     state.selection.selected.insert(field.clone());
                 }
             });
-            self.load_records(gx, cx, &entity_data.metadata, selected_fields)
-                .await;
+
+            // Reload records with the restored field selection
+            self.load_records_for_fields(&selected_fields, gx).await;
         }
 
         self.loading_message.set(None);
@@ -272,61 +209,39 @@ impl EntityBrowser {
         self.loading_message
             .set(Some(format!("Loading {}...", display_name)));
 
-        self.load_entity_data(gx, cx, &selected_key).await;
+        self.load_entity(&selected_key, gx).await;
 
         self.loading_message.set(None);
         cx.focus("field-autocomplete");
     }
 
-    async fn load_entity_data(&self, gx: &GlobalContext, cx: &AppContext, logical_name: &str) {
-        let client = match self.client(gx, cx) {
+    /// Load an entity's metadata, set up field autocomplete, and load initial records.
+    async fn load_entity(&self, logical_name: &str, gx: &GlobalContext) {
+        let client = match self.client() {
             Some(c) => c,
-            None => return,
+            None => {
+                gx.toast(Toast::error("Client connection lost"));
+                return;
+            }
         };
 
-        // Load full entity metadata (with attributes)
-        let entity = match client.metadata().entity(logical_name).await {
-            Ok(e) => e,
+        // Fetch entity metadata
+        let entity_data = match fetch_entity_data(&client, logical_name).await {
+            Ok(data) => data,
             Err(e) => {
                 gx.toast(Toast::error(format!("Failed to load entity: {}", e)));
                 return;
             }
         };
 
-        // Filter readable attributes for field selection
-        let readable_attrs: Vec<AttributeMetadata> = entity
-            .attributes
-            .iter()
-            .filter(|a| a.is_valid_for_read && a.attribute_of.is_none())
-            .cloned()
-            .collect();
-
         // Build field autocomplete options
-        let mut field_options: Vec<(String, String)> = readable_attrs
-            .iter()
-            .map(|a| {
-                let display = a.display_name.text().unwrap_or(&a.logical_name).to_string();
-                (a.logical_name.clone(), display)
-            })
-            .collect();
-
-        field_options.sort_by(|a, b| a.1.to_lowercase().cmp(&b.1.to_lowercase()));
-
-        // Set up field autocomplete with multi-select
+        let field_options = build_field_options(&entity_data);
         self.field_autocomplete.set(
             AutocompleteState::new(field_options).with_selection(SelectionMode::Multi),
         );
 
-        // Update entity data
-        let entity_data = EntityData {
-            metadata: entity.clone(),
-            readable_fields: readable_attrs,
-        };
-        self.entity_data.set(Some(entity_data));
-
         // Update autocomplete selection to show current entity
         self.entity_autocomplete.update(|state| {
-            // Find the label for this logical name
             if let Some((_, label)) = state.options.iter().find(|(k, _)| k == logical_name) {
                 state.text = label.clone();
             }
@@ -334,38 +249,55 @@ impl EntityBrowser {
             state.selection.selected.insert(logical_name.to_string());
         });
 
+        // Store entity data
+        self.entity_data.set(Some(entity_data.clone()));
+
         // Load initial records with default columns
-        self.load_records(gx, cx, &entity, Vec::new()).await;
+        let columns = default_columns(&entity_data.metadata);
+        self.do_load_records(&client, &entity_data, &columns, gx)
+            .await;
     }
 
     #[handler]
-    async fn on_field_change(&self, gx: &GlobalContext, cx: &AppContext) {
+    async fn on_field_change(&self, gx: &GlobalContext, _cx: &AppContext) {
+        let state = self.field_autocomplete.get();
+        let selected_fields: Vec<String> = state.selected_values().cloned().collect();
+
+        self.load_records_for_fields(&selected_fields, gx).await;
+    }
+
+    /// Load records for the given field selection.
+    async fn load_records_for_fields(&self, selected_fields: &[String], gx: &GlobalContext) {
+        let client = match self.client() {
+            Some(c) => c,
+            None => {
+                gx.toast(Toast::error("Client connection lost"));
+                return;
+            }
+        };
+
         let entity_data = match self.entity_data.get() {
             Some(data) => data,
             None => return,
         };
 
-        let state = self.field_autocomplete.get();
-        let selected_fields: Vec<String> = state.selected_values().cloned().collect();
+        let columns: Vec<String> = if selected_fields.is_empty() {
+            default_columns(&entity_data.metadata)
+        } else {
+            selected_fields.to_vec()
+        };
 
-        self.load_records(gx, cx, &entity_data.metadata, selected_fields)
+        self.do_load_records(&client, &entity_data, &columns, gx)
             .await;
     }
 
-    #[handler]
-    async fn on_table_scroll(&self, gx: &GlobalContext, cx: &AppContext, event: &EventData) {
-        // Check if near bottom (80% scrolled)
-        if event.is_near_bottom(0.8) {
-            self.load_more_records(gx, cx).await;
-        }
-    }
-
-    async fn load_records(
+    /// Internal method to load records with given columns.
+    async fn do_load_records(
         &self,
+        client: &DataverseClient,
+        entity_data: &EntityData,
+        columns: &[String],
         gx: &GlobalContext,
-        cx: &AppContext,
-        entity: &EntityMetadata,
-        selected_fields: Vec<String>,
     ) {
         // Don't start a new fetch if already loading
         if self.records_loading.is_loading() {
@@ -373,37 +305,16 @@ impl EntityBrowser {
         }
 
         self.records_loading.set_loading();
-
-        let client = match self.client(gx, cx) {
-            Some(c) => c,
-            None => return,
-        };
-
-        // Determine columns to fetch
-        let columns: Vec<String> = if selected_fields.is_empty() {
-            // Default: primary name + createdon + modifiedon
-            let mut cols = Vec::new();
-            if let Some(primary) = &entity.core.primary_name_attribute {
-                cols.push(primary.clone());
-            }
-            cols.push("createdon".to_string());
-            cols.push("modifiedon".to_string());
-            cols
-        } else {
-            selected_fields
-        };
+        self.total_count.set(None);
 
         // Build table columns
-        let entity_data = self.entity_data.get();
-        let available = entity_data
-            .as_ref()
-            .map(|d| d.readable_fields.clone())
-            .unwrap_or_default();
-
         let table_columns: Vec<Column> = columns
             .iter()
             .map(|col_name| {
-                let attr = available.iter().find(|a| &a.logical_name == col_name);
+                let attr = entity_data
+                    .readable_fields
+                    .iter()
+                    .find(|a| &a.logical_name == col_name);
 
                 let display = attr
                     .and_then(|a| a.display_name.text())
@@ -418,74 +329,29 @@ impl EntityBrowser {
             })
             .collect();
 
-        // Build select list including ID
-        let mut select_cols: Vec<&str> = columns.iter().map(|s| s.as_str()).collect();
-        select_cols.push(&entity.core.primary_id_attribute);
-
-        // Reset total count for new query
-        self.total_count.set(None);
-
-        // Create query
-        let query = client
-            .query(Entity::Set(entity.core.entity_set_name.clone()))
-            .select(&select_cols)
-            .page_size(50);
-
-        // Run count query and first page fetch in parallel
-        let count_query = query.clone();
-        let (count_result, mut pages) = tokio::join!(
-            count_query.count(),
-            async { query.into_async_iter() }
-        );
-
-        // Store total count if successful
-        match count_result {
-            Ok(count) => {
-                log::debug!("[EntityBrowser] Total count: {}", count);
-                self.total_count.set(Some(count));
-            }
+        // Fetch records
+        let result = match fetch_records(client, &entity_data.metadata, columns, 50).await {
+            Ok(r) => r,
             Err(e) => {
-                log::error!("[EntityBrowser] Count query failed: {}", e);
-                gx.toast(Toast::error(format!("Failed to get record count: {}", e)));
-            }
-        }
-        let page = match pages.next().await {
-            Some(Ok(p)) => p,
-            Some(Err(e)) => {
                 log::error!("[EntityBrowser] Failed to fetch records: {}", e);
                 self.records_loading
                     .set_error(format!("Failed to load records: {}", e));
                 self.pages.set(None);
                 return;
             }
-            None => {
-                let frozen_col = table_columns.first().map(|c| c.id.clone());
-                let mut state =
-                    TableState::new(Vec::new(), table_columns).with_selection(SelectionMode::None);
-                if let Some(col) = &frozen_col {
-                    state = state.with_frozen(&[col.as_str()]);
-                }
-                self.records.set(state);
-                self.pages.set(None);
-                self.records_loading.set_ready(());
-                return;
-            }
         };
 
-        // Convert records to table rows
-        let rows = convert_records_to_rows(page.records(), &entity.core.primary_id_attribute);
-
-        // Store pages iterator for pagination (if more pages exist)
-        if page.has_more() {
-            self.pages.set(Some(pages));
-        } else {
-            self.pages.set(None);
+        if let Some(count) = result.total_count {
+            log::debug!("[EntityBrowser] Total count: {}", count);
+            self.total_count.set(Some(count));
         }
+
+        self.pages.set(result.pages);
 
         // Update table
         let frozen_col = table_columns.first().map(|c| c.id.clone());
         let mut state =
-            TableState::new(rows, table_columns).with_selection(SelectionMode::None);
+            TableState::new(result.rows, table_columns).with_selection(SelectionMode::None);
         if let Some(col) = &frozen_col {
             state = state.with_frozen(&[col.as_str()]);
         }
@@ -494,7 +360,15 @@ impl EntityBrowser {
         self.records_loading.set_ready(());
     }
 
-    async fn load_more_records(&self, gx: &GlobalContext, _cx: &AppContext) {
+    #[handler]
+    async fn on_table_scroll(&self, gx: &GlobalContext, _cx: &AppContext, event: &EventData) {
+        // Check if near bottom (80% scrolled)
+        if event.is_near_bottom(0.8) {
+            self.load_more_records(gx).await;
+        }
+    }
+
+    async fn load_more_records(&self, gx: &GlobalContext) {
         // Don't load more if already loading
         if self.records_loading.is_loading() {
             return;
@@ -518,34 +392,33 @@ impl EntityBrowser {
         });
 
         // Fetch next page
-        let page: dataverse_lib::api::query::Page = match pages.next().await {
-            Some(Ok(p)) => p,
-            Some(Err(e)) => {
+        let (new_rows, has_more) = match fetch_next_page(
+            &mut pages,
+            &entity_data.metadata.core.primary_id_attribute,
+        )
+        .await
+        {
+            Ok(Some((rows, has_more))) => (rows, has_more),
+            Ok(None) => {
+                self.pages.set(None);
+                self.records_loading.set_ready(());
+                return;
+            }
+            Err(e) => {
                 log::error!("[EntityBrowser] Failed to fetch more records: {}", e);
                 gx.toast(Toast::error("Failed to load more records"));
                 self.pages.set(None);
                 self.records_loading.set_ready(());
                 return;
             }
-            None => {
-                self.pages.set(None);
-                self.records_loading.set_ready(());
-                return;
-            }
         };
-
-        // Convert and append records
-        let new_rows = convert_records_to_rows(
-            page.records(),
-            &entity_data.metadata.core.primary_id_attribute,
-        );
 
         self.records.update(|state| {
             state.extend_rows(new_rows);
         });
 
         // Store pages iterator back (if more pages exist)
-        if page.has_more() {
+        if has_more {
             self.pages.set(Some(pages));
         } else {
             self.pages.set(None);
@@ -649,77 +522,5 @@ impl EntityBrowser {
                 }
             }
         }
-    }
-}
-
-/// Convert dataverse records to table rows.
-fn convert_records_to_rows(
-    records: &[dataverse_lib::model::Record],
-    id_attribute: &str,
-) -> Vec<RecordRow> {
-    records
-        .iter()
-        .enumerate()
-        .map(|(idx, record)| {
-            let id = record
-                .id()
-                .map(|u| u.to_string())
-                .or_else(|| {
-                    record
-                        .get_guid(id_attribute)
-                        .ok()
-                        .flatten()
-                        .map(|u| u.to_string())
-                })
-                .unwrap_or_else(|| format!("unknown-{}", idx));
-
-            let mut row = RecordRow::new(id);
-
-            // Populate cells - prefer formatted values
-            for (key, _value) in record.fields() {
-                let formatted = record
-                    .get_formatted(key)
-                    .map(|s| s.to_string())
-                    .unwrap_or_else(|| {
-                        record
-                            .get(key)
-                            .map(|v| format_value(v))
-                            .unwrap_or_default()
-                    });
-                row.set_cell(key.clone(), formatted);
-            }
-
-            row
-        })
-        .collect()
-}
-
-/// Format a Value for display.
-fn format_value(value: &Value) -> String {
-    match value {
-        Value::Null => String::new(),
-        Value::Bool(b) => if *b { "Yes" } else { "No" }.to_string(),
-        Value::Int(n) => n.to_string(),
-        Value::Long(n) => n.to_string(),
-        Value::Float(n) => format!("{:.2}", n),
-        Value::Decimal(d) => d.to_string(),
-        Value::String(s) => s.clone(),
-        Value::Guid(g) => g.to_string(),
-        Value::DateTime(dt) => dt.format("%Y-%m-%d %H:%M").to_string(),
-        Value::Money(m) => format!("{}", m.value()),
-        Value::EntityReference(r) => r.name.clone().unwrap_or_else(|| r.id.to_string()),
-        Value::OptionSet(o) => o.label.clone().unwrap_or_else(|| o.value.to_string()),
-        Value::MultiOptionSet(o) => o
-            .labels
-            .as_ref()
-            .map(|labels| labels.join(", "))
-            .unwrap_or_else(|| {
-                o.values
-                    .iter()
-                    .map(|v| v.to_string())
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            }),
-        _ => "[complex]".to_string(),
     }
 }
