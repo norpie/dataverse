@@ -15,6 +15,7 @@ pub use sqlite::*;
 use async_trait::async_trait;
 use chrono::DateTime;
 use chrono::Utc;
+use serde::{Deserialize, Serialize};
 
 /// A cached value with metadata about when it was cached and when it expires.
 #[derive(Debug, Clone)]
@@ -109,4 +110,19 @@ pub trait CacheProvider: Send + Sync {
     ///
     /// Returns the number of entries removed.
     async fn gc(&self) -> usize;
+}
+
+// Bincode v2 serialization helpers with serde compatibility
+const BINCODE_CONFIG: bincode::config::Configuration = bincode::config::standard();
+
+/// Serializes a value using bincode v2 with serde compatibility.
+pub(crate) fn serialize<T: Serialize>(value: &T) -> Result<Vec<u8>, bincode::error::EncodeError> {
+    bincode::serde::encode_to_vec(value, BINCODE_CONFIG)
+}
+
+/// Deserializes a value using bincode v2 with serde compatibility.
+pub(crate) fn deserialize<T: for<'de> Deserialize<'de>>(
+    bytes: &[u8],
+) -> Result<T, bincode::error::DecodeError> {
+    bincode::serde::decode_from_slice(bytes, BINCODE_CONFIG).map(|(value, _)| value)
 }

@@ -12,7 +12,7 @@ use super::CACHE_KEY_ENTITY_FULL;
 use super::metadata_request;
 use super::metadata_url;
 use crate::DataverseClient;
-use crate::cache::CachedValue;
+use crate::cache::{self, CachedValue};
 use crate::error::ApiError;
 use crate::error::Error;
 use crate::error::MetadataError;
@@ -53,7 +53,7 @@ impl<'a> EntityMetadataBuilder<'a> {
         if !self.bypass_cache {
             if let Some(cache) = &self.client.inner.cache {
                 if let Some(cached) = cache.get(&cache_key_full).await {
-                    if let Ok(metadata) = bincode::deserialize::<EntityMetadata>(&cached.data) {
+                    if let Ok(metadata) = cache::deserialize::<EntityMetadata>(&cached.data) {
                         return Ok(metadata);
                     }
                 }
@@ -68,7 +68,7 @@ impl<'a> EntityMetadataBuilder<'a> {
             let ttl = self.client.inner.cache_config.metadata_ttl;
 
             // Cache full metadata
-            if let Ok(data) = bincode::serialize(&metadata) {
+            if let Ok(data) = cache::serialize(&metadata) {
                 cache
                     .set(&cache_key_full, CachedValue::with_ttl(data, ttl))
                     .await;
@@ -76,7 +76,7 @@ impl<'a> EntityMetadataBuilder<'a> {
 
             // Also cache core metadata (so CRUD resolution benefits from full fetch)
             let cache_key_core = format!("{}{}", CACHE_KEY_ENTITY_CORE, self.logical_name);
-            if let Ok(data) = bincode::serialize(&metadata.core) {
+            if let Ok(data) = cache::serialize(&metadata.core()) {
                 cache
                     .set(&cache_key_core, CachedValue::with_ttl(data, ttl))
                     .await;
@@ -125,13 +125,33 @@ impl<'a> AllEntitiesBuilder<'a> {
         // Check cache first (unless bypassed)
         if !self.bypass_cache {
             if let Some(cache) = &self.client.inner.cache {
+                log::debug!("Checking cache for key '{}'", CACHE_KEY_ALL_ENTITIES);
                 if let Some(cached) = cache.get(CACHE_KEY_ALL_ENTITIES).await {
-                    if let Ok(entities) = bincode::deserialize::<Vec<EntityMetadata>>(&cached.data)
-                    {
-                        return Ok(entities);
+                    log::debug!(
+                        "Cache hit for '{}', {} bytes, attempting deserialize",
+                        CACHE_KEY_ALL_ENTITIES,
+                        cached.data.len()
+                    );
+                    match cache::deserialize::<Vec<EntityMetadata>>(&cached.data) {
+                        Ok(entities) => {
+                            log::debug!(
+                                "Cache hit: returning {} entities from cache",
+                                entities.len()
+                            );
+                            return Ok(entities);
+                        }
+                        Err(e) => {
+                            log::error!("Failed to deserialize cached entities: {}", e);
+                        }
                     }
+                } else {
+                    log::debug!("Cache miss for '{}'", CACHE_KEY_ALL_ENTITIES);
                 }
+            } else {
+                log::warn!("No cache available for reading entities");
             }
+        } else {
+            log::debug!("Cache bypassed for '{}'", CACHE_KEY_ALL_ENTITIES);
         }
 
         // Fetch from API
@@ -140,11 +160,29 @@ impl<'a> AllEntitiesBuilder<'a> {
         // Cache the result
         if let Some(cache) = &self.client.inner.cache {
             let ttl = self.client.inner.cache_config.metadata_ttl;
-            if let Ok(data) = bincode::serialize(&entities) {
-                cache
-                    .set(CACHE_KEY_ALL_ENTITIES, CachedValue::with_ttl(data, ttl))
-                    .await;
+            match cache::serialize(&entities) {
+                Ok(data) => {
+                    log::debug!(
+                        "Serialized {} entities ({} bytes), caching with key '{}'",
+                        entities.len(),
+                        data.len(),
+                        CACHE_KEY_ALL_ENTITIES
+                    );
+                    cache
+                        .set(CACHE_KEY_ALL_ENTITIES, CachedValue::with_ttl(data, ttl))
+                        .await;
+                    log::debug!("Cache set completed for '{}'", CACHE_KEY_ALL_ENTITIES);
+                }
+                Err(e) => {
+                    log::error!(
+                        "Failed to serialize {} entities for caching: {}",
+                        entities.len(),
+                        e
+                    );
+                }
             }
+        } else {
+            log::warn!("No cache available for storing entities");
         }
 
         Ok(entities)
@@ -176,7 +214,7 @@ pub(crate) async fn fetch_entity_core(
     if !bypass_cache {
         if let Some(cache) = &client.inner.cache {
             if let Some(cached) = cache.get(&cache_key).await {
-                if let Ok(core) = bincode::deserialize::<EntityCore>(&cached.data) {
+                if let Ok(core) = cache::deserialize::<EntityCore>(&cached.data) {
                     return Ok(core);
                 }
             }
@@ -188,7 +226,7 @@ pub(crate) async fn fetch_entity_core(
 
     // Cache the result
     if let Some(cache) = &client.inner.cache {
-        if let Ok(data) = bincode::serialize(&core) {
+        if let Ok(data) = cache::serialize(&core) {
             let ttl = client.inner.cache_config.metadata_ttl;
             cache
                 .set(&cache_key, CachedValue::with_ttl(data, ttl))

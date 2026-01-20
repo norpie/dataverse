@@ -11,7 +11,7 @@ use super::CACHE_KEY_GLOBAL_OPTIONSET;
 use super::metadata_request;
 use super::metadata_url;
 use crate::DataverseClient;
-use crate::cache::CachedValue;
+use crate::cache::{self, CachedValue};
 use crate::error::ApiError;
 use crate::error::Error;
 use crate::error::MetadataError;
@@ -51,7 +51,7 @@ impl<'a> GlobalOptionSetBuilder<'a> {
         if !self.bypass_cache {
             if let Some(cache) = &self.client.inner.cache {
                 if let Some(cached) = cache.get(&cache_key).await {
-                    if let Ok(os) = bincode::deserialize::<GlobalOptionSetMetadata>(&cached.data) {
+                    if let Ok(os) = cache::deserialize::<GlobalOptionSetMetadata>(&cached.data) {
                         return Ok(os);
                     }
                 }
@@ -64,7 +64,7 @@ impl<'a> GlobalOptionSetBuilder<'a> {
         // Cache the result
         if let Some(cache) = &self.client.inner.cache {
             let ttl = self.client.inner.cache_config.metadata_ttl;
-            if let Ok(data) = bincode::serialize(&os) {
+            if let Ok(data) = cache::serialize(&os) {
                 cache
                     .set(&cache_key, CachedValue::with_ttl(data, ttl))
                     .await;
@@ -115,7 +115,7 @@ impl<'a> AllGlobalOptionSetsBuilder<'a> {
             if let Some(cache) = &self.client.inner.cache {
                 if let Some(cached) = cache.get(CACHE_KEY_ALL_GLOBAL_OPTIONSETS).await {
                     if let Ok(option_sets) =
-                        bincode::deserialize::<Vec<GlobalOptionSetMetadata>>(&cached.data)
+                        cache::deserialize::<Vec<GlobalOptionSetMetadata>>(&cached.data)
                     {
                         return Ok(option_sets);
                     }
@@ -129,7 +129,7 @@ impl<'a> AllGlobalOptionSetsBuilder<'a> {
         // Cache the result
         if let Some(cache) = &self.client.inner.cache {
             let ttl = self.client.inner.cache_config.metadata_ttl;
-            if let Ok(data) = bincode::serialize(&option_sets) {
+            if let Ok(data) = cache::serialize(&option_sets) {
                 cache
                     .set(
                         CACHE_KEY_ALL_GLOBAL_OPTIONSETS,

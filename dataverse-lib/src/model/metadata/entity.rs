@@ -42,9 +42,25 @@ pub struct EntityCore {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct EntityMetadata {
-    /// Core entity information (logical name, entity set name, etc.).
-    #[serde(flatten)]
-    pub core: EntityCore,
+    /// The logical name of the entity (e.g., "account").
+    pub logical_name: String,
+
+    /// The entity set name used in Web API URLs (e.g., "accounts").
+    pub entity_set_name: String,
+
+    /// The schema name of the entity (e.g., "Account").
+    pub schema_name: String,
+
+    /// The logical name of the primary ID attribute (e.g., "accountid").
+    pub primary_id_attribute: String,
+
+    /// The logical name of the primary name attribute (e.g., "name").
+    /// Some entities (like intersection tables) don't have a primary name attribute.
+    #[serde(default)]
+    pub primary_name_attribute: Option<String>,
+
+    /// The entity type code (object type code).
+    pub object_type_code: i32,
 
     /// The unique metadata identifier.
     pub metadata_id: uuid::Uuid,
@@ -116,28 +132,35 @@ pub struct EntityMetadata {
 
 impl EntityMetadata {
     /// Returns a reference to the core entity metadata.
-    pub fn core(&self) -> &EntityCore {
-        &self.core
+    pub fn core(&self) -> EntityCore {
+        EntityCore {
+            logical_name: self.logical_name.clone(),
+            entity_set_name: self.entity_set_name.clone(),
+            schema_name: self.schema_name.clone(),
+            primary_id_attribute: self.primary_id_attribute.clone(),
+            primary_name_attribute: self.primary_name_attribute.clone(),
+            object_type_code: self.object_type_code,
+        }
     }
 
     /// Returns the logical name of the entity.
     pub fn logical_name(&self) -> &str {
-        &self.core.logical_name
+        &self.logical_name
     }
 
     /// Returns the entity set name for Web API URLs.
     pub fn entity_set_name(&self) -> &str {
-        &self.core.entity_set_name
+        &self.entity_set_name
     }
 
     /// Returns the primary ID attribute name.
     pub fn primary_id_attribute(&self) -> &str {
-        &self.core.primary_id_attribute
+        &self.primary_id_attribute
     }
 
     /// Returns the primary name attribute name, if any.
     pub fn primary_name_attribute(&self) -> Option<&str> {
-        self.core.primary_name_attribute.as_deref()
+        self.primary_name_attribute.as_deref()
     }
 
     /// Finds an attribute by logical name.

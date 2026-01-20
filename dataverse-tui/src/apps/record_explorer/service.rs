@@ -56,7 +56,7 @@ pub fn build_field_options(entity_data: &EntityData, advanced: bool) -> Vec<(Str
 /// Get default columns for an entity.
 pub fn default_columns(entity: &EntityMetadata) -> Vec<String> {
     let mut cols = Vec::new();
-    if let Some(primary) = &entity.core.primary_name_attribute {
+    if let Some(primary) = &entity.primary_name_attribute {
         cols.push(primary.clone());
     }
     cols.push("createdon".to_string());
@@ -81,11 +81,11 @@ pub async fn fetch_records(
 ) -> Result<RecordsResult, Error> {
     // Build select list including ID
     let mut select_cols: Vec<&str> = columns.iter().map(|s| s.as_str()).collect();
-    select_cols.push(&entity.core.primary_id_attribute);
+    select_cols.push(&entity.primary_id_attribute);
 
     // Create query
     let query = client
-        .query(Entity::Set(entity.core.entity_set_name.clone()))
+        .query(Entity::Set(entity.entity_set_name.clone()))
         .select(&select_cols)
         .page_size(page_size);
 
@@ -108,11 +108,7 @@ pub async fn fetch_records(
         }
     };
 
-    let rows = convert_records_to_rows(
-        page.records(),
-        &entity.core.primary_id_attribute,
-        advanced_mode,
-    );
+    let rows = convert_records_to_rows(page.records(), &entity.primary_id_attribute, advanced_mode);
 
     let pages = if page.has_more() { Some(pages) } else { None };
 

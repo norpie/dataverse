@@ -69,6 +69,9 @@ fn init_directories() -> Result<(), std::io::Error> {
     if let Some(data_dir) = paths::data_dir() {
         std::fs::create_dir_all(&data_dir)?;
     }
+    if let Some(cache_dir) = paths::cache_dir() {
+        std::fs::create_dir_all(&cache_dir)?;
+    }
     Ok(())
 }
 

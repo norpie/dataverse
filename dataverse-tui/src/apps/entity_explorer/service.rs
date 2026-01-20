@@ -16,12 +16,8 @@ pub async fn fetch_all_entities(client: &DataverseClient) -> Result<AllEntitiesR
     let mut entities: Vec<(String, String)> = all_entities
         .iter()
         .map(|e| {
-            let display = e
-                .display_name
-                .text()
-                .unwrap_or(&e.core.logical_name)
-                .to_string();
-            (e.core.logical_name.clone(), display)
+            let display = e.display_name.text().unwrap_or(&e.logical_name).to_string();
+            (e.logical_name.clone(), display)
         })
         .collect();
 

@@ -5,6 +5,8 @@ mod requests;
 
 pub use requests::*;
 
+use std::sync::Arc;
+
 use dataverse_lib::DataverseClient;
 use dataverse_lib::cache::SqliteCache;
 use modal::ClientManagementModal;
@@ -17,7 +19,7 @@ use crate::paths;
 /// System for managing Dataverse client connections.
 #[system]
 pub struct ClientManagement {
-    manager: Option<ClientManager>,
+    manager: Option<Arc<ClientManager>>,
 }
 
 #[system_impl]
@@ -25,7 +27,8 @@ impl ClientManagement {
     #[on_start]
     async fn on_start(&self, gx: &GlobalContext) {
         let credentials = gx.data::<CredentialsProvider>().clone();
-        self.manager.set(Some(ClientManager::new(credentials)));
+        self.manager
+            .set(Some(Arc::new(ClientManager::new(credentials))));
     }
 
     #[keybinds]
@@ -44,12 +47,9 @@ impl ClientManagement {
         _request: GetActiveClient,
         gx: &GlobalContext,
     ) -> Result<ActiveClientInfo, ClientManagerError> {
-        let manager = self
-            .manager
-            .get()
-            .as_ref()
-            .expect("ClientManager not initialized")
-            .clone();
+        let manager_opt = self.manager.get();
+        let manager = manager_opt.as_ref().expect("ClientManager not initialized");
+        let manager = Arc::clone(manager);
 
         let credentials = gx.data::<CredentialsProvider>();
 
@@ -82,9 +82,18 @@ impl ClientManagement {
 
         // Try to open persistent cache
         let cache = self.open_cache(&environment.url, gx).await;
+        log::debug!(
+            "open_cache returned: {}",
+            if cache.is_some() {
+                "Some(SqliteCache)"
+            } else {
+                "None"
+            }
+        );
 
         // Get or create client
         let client = manager.get_client(account_id, env_id, cache).await?;
+        log::debug!("get_client returned client");
 
         Ok(ActiveClientInfo {
             client,

@@ -100,8 +100,18 @@ impl ClientManager {
 
         // Check cache first
         if let Some(client) = self.clients.get(&key) {
+            log::debug!(
+                "get_client: returning cached client for ({}, {})",
+                account_id,
+                env_id
+            );
             return Ok(client.clone());
         }
+        log::debug!(
+            "get_client: creating new client for ({}, {})",
+            account_id,
+            env_id
+        );
 
         // Get account and environment
         let account = self.credentials.get_account(account_id).await?.ok_or(
@@ -123,6 +133,12 @@ impl ClientManager {
 
         // Cache and return
         self.clients.insert(key, client.clone());
+        log::debug!(
+            "get_client: cached client for ({}, {}), DashMap size = {}",
+            account_id,
+            env_id,
+            self.clients.len()
+        );
         Ok(client)
     }
 
@@ -152,7 +168,10 @@ impl ClientManager {
             .shared_rate_limiter(self.rate_limiter.clone());
 
         if let Some(cache) = cache {
+            log::debug!("create_client: using provided SqliteCache");
             builder = builder.cache(cache);
+        } else {
+            log::warn!("create_client: no cache provided, will use default InMemoryCache");
         }
 
         let client = builder.build();

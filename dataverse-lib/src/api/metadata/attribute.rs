@@ -11,7 +11,7 @@ use super::CACHE_KEY_ATTRIBUTES;
 use super::metadata_request;
 use super::metadata_url;
 use crate::DataverseClient;
-use crate::cache::CachedValue;
+use crate::cache::{self, CachedValue};
 use crate::error::ApiError;
 use crate::error::Error;
 use crate::error::MetadataError;
@@ -53,7 +53,7 @@ impl<'a> AttributeMetadataBuilder<'a> {
         if !self.bypass_cache {
             if let Some(cache) = &self.client.inner.cache {
                 if let Some(cached) = cache.get(&cache_key).await {
-                    if let Ok(attr) = bincode::deserialize::<AttributeMetadata>(&cached.data) {
+                    if let Ok(attr) = cache::deserialize::<AttributeMetadata>(&cached.data) {
                         return Ok(attr);
                     }
                 }
@@ -67,7 +67,7 @@ impl<'a> AttributeMetadataBuilder<'a> {
         // Cache the result
         if let Some(cache) = &self.client.inner.cache {
             let ttl = self.client.inner.cache_config.metadata_ttl;
-            if let Ok(data) = bincode::serialize(&attr) {
+            if let Ok(data) = cache::serialize(&attr) {
                 cache
                     .set(&cache_key, CachedValue::with_ttl(data, ttl))
                     .await;
@@ -121,8 +121,7 @@ impl<'a> AttributesBuilder<'a> {
         if !self.bypass_cache {
             if let Some(cache) = &self.client.inner.cache {
                 if let Some(cached) = cache.get(&cache_key).await {
-                    if let Ok(attrs) = bincode::deserialize::<Vec<AttributeMetadata>>(&cached.data)
-                    {
+                    if let Ok(attrs) = cache::deserialize::<Vec<AttributeMetadata>>(&cached.data) {
                         return Ok(attrs);
                     }
                 }
@@ -135,7 +134,7 @@ impl<'a> AttributesBuilder<'a> {
         // Cache the result
         if let Some(cache) = &self.client.inner.cache {
             let ttl = self.client.inner.cache_config.metadata_ttl;
-            if let Ok(data) = bincode::serialize(&attrs) {
+            if let Ok(data) = cache::serialize(&attrs) {
                 cache
                     .set(&cache_key, CachedValue::with_ttl(data, ttl))
                     .await;

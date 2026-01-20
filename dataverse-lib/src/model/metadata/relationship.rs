@@ -8,11 +8,13 @@ use serde::Serialize;
 /// Wraps both one-to-many and many-to-many relationships for APIs that
 /// return mixed relationship types.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(untagged)]
+#[serde(tag = "RelationshipType")]
 pub enum RelationshipMetadata {
     /// A one-to-many (or many-to-one) relationship.
+    #[serde(rename = "OneToManyRelationship")]
     OneToMany(OneToManyRelationship),
     /// A many-to-many relationship.
+    #[serde(rename = "ManyToManyRelationship")]
     ManyToMany(ManyToManyRelationship),
 }
 
@@ -119,8 +121,8 @@ pub struct OneToManyRelationship {
     #[serde(default)]
     pub is_managed: bool,
 
-    /// The relationship type.
-    #[serde(default)]
+    /// The relationship type (stored in the enum tag, not as a field).
+    #[serde(skip, default)]
     pub relationship_type: RelationshipType,
 
     /// The cascade configuration for this relationship.
@@ -171,8 +173,8 @@ pub struct ManyToManyRelationship {
     #[serde(default)]
     pub is_managed: bool,
 
-    /// The relationship type.
-    #[serde(default)]
+    /// The relationship type (stored in the enum tag, not as a field).
+    #[serde(skip, default)]
     pub relationship_type: RelationshipType,
 }
 

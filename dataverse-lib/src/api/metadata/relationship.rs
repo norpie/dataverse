@@ -10,7 +10,7 @@ use super::CACHE_KEY_RELATIONSHIP;
 use super::metadata_request;
 use super::metadata_url;
 use crate::DataverseClient;
-use crate::cache::CachedValue;
+use crate::cache::{self, CachedValue};
 use crate::error::ApiError;
 use crate::error::Error;
 use crate::error::MetadataError;
@@ -52,7 +52,7 @@ impl<'a> RelationshipMetadataBuilder<'a> {
         if !self.bypass_cache {
             if let Some(cache) = &self.client.inner.cache {
                 if let Some(cached) = cache.get(&cache_key).await {
-                    if let Ok(rel) = bincode::deserialize::<RelationshipMetadata>(&cached.data) {
+                    if let Ok(rel) = cache::deserialize::<RelationshipMetadata>(&cached.data) {
                         return Ok(rel);
                     }
                 }
@@ -65,7 +65,7 @@ impl<'a> RelationshipMetadataBuilder<'a> {
         // Cache the result
         if let Some(cache) = &self.client.inner.cache {
             let ttl = self.client.inner.cache_config.metadata_ttl;
-            if let Ok(data) = bincode::serialize(&rel) {
+            if let Ok(data) = cache::serialize(&rel) {
                 cache
                     .set(&cache_key, CachedValue::with_ttl(data, ttl))
                     .await;

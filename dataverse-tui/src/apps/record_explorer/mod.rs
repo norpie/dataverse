@@ -393,7 +393,7 @@ impl RecordExplorer {
         // Fetch next page
         let (new_rows, has_more) = match fetch_next_page(
             &mut pages,
-            &entity_data.metadata.core.primary_id_attribute,
+            &entity_data.metadata.primary_id_attribute,
             self.advanced_mode.clone(),
         )
         .await

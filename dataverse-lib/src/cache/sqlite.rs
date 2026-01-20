@@ -102,15 +102,17 @@ impl SqliteCache {
 #[async_trait]
 impl CacheProvider for SqliteCache {
     async fn get(&self, key: &str) -> Option<CachedValue> {
-        let key = key.to_string();
+        let key_str = key.to_string();
         let now = Utc::now().timestamp();
+
+        log::debug!("SqliteCache::get - key='{}'", key);
 
         let result = self
             .client
             .conn(move |conn| {
                 conn.query_row(
                     "SELECT data, created_at, expires_at FROM cache WHERE key = ? AND expires_at > ?",
-                    rusqlite::params![key, now],
+                    rusqlite::params![key_str, now],
                     |row| {
                         let data: Vec<u8> = row.get(0)?;
                         let created_at: i64 = row.get(1)?;
@@ -123,29 +125,48 @@ impl CacheProvider for SqliteCache {
 
         match result {
             Ok((data, created_at, expires_at)) => {
+                log::debug!(
+                    "SqliteCache::get - HIT key='{}', data_len={}",
+                    key,
+                    data.len()
+                );
                 let created_at = Utc.timestamp_opt(created_at, 0).single()?;
                 let expires_at = Utc.timestamp_opt(expires_at, 0).single()?;
                 Some(CachedValue::new(data, created_at, expires_at))
             }
-            Err(_) => None,
+            Err(e) => {
+                log::debug!("SqliteCache::get - MISS key='{}': {}", key, e);
+                None
+            }
         }
     }
 
     async fn set(&self, key: &str, value: CachedValue) {
-        let key = key.to_string();
+        let key_str = key.to_string();
         let data = value.data;
+        let data_len = data.len();
         let created_at = value.created_at.timestamp();
         let expires_at = value.expires_at.timestamp();
 
-        let _ = self
+        log::debug!("SqliteCache::set - key='{}', data_len={}", key, data_len);
+
+        match self
             .client
             .conn(move |conn| {
                 conn.execute(
                     "INSERT OR REPLACE INTO cache (key, data, created_at, expires_at) VALUES (?, ?, ?, ?)",
-                    rusqlite::params![key, data, created_at, expires_at],
+                    rusqlite::params![key_str, data, created_at, expires_at],
                 )
             })
-            .await;
+            .await
+        {
+            Ok(_) => {
+                log::debug!("SqliteCache::set - success for key='{}'", key);
+            }
+            Err(e) => {
+                log::error!("SqliteCache::set - FAILED for key='{}': {}", key, e);
+            }
+        }
     }
 
     async fn remove(&self, key: &str) {
