@@ -180,9 +180,11 @@ fn fuzzy_filter(query: &str, entries: &[LauncherEntry]) -> Vec<FuzzyMatch> {
 }
 
 fn create_launcher_entries() -> Vec<LauncherEntry> {
-    vec![
-        // Entity Browser removed - will be replaced by Entity Explorer in Phase 2
-    ]
+    vec![LauncherEntry::new(
+        "entity-explorer",
+        "Entity Explorer",
+        "Data",
+    )]
 }
 
 #[modal(size = Sm)]
