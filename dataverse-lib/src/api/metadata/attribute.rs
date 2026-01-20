@@ -7,6 +7,7 @@ use std::pin::Pin;
 use reqwest::Method;
 
 use super::CACHE_KEY_ATTRIBUTE;
+use super::CACHE_KEY_ATTRIBUTES;
 use super::metadata_request;
 use super::metadata_url;
 use crate::DataverseClient;
@@ -114,11 +115,33 @@ impl<'a> AttributesBuilder<'a> {
 
     /// Execute the request.
     pub async fn execute(self) -> Result<Vec<AttributeMetadata>, Error> {
-        // For attributes, we fetch via the entity metadata endpoint
-        // since that's more efficient than fetching each attribute individually.
-        // We could add a dedicated cache key for "all attributes of entity X"
-        // but for now we just fetch from the entity metadata.
+        let cache_key = format!("{}{}", CACHE_KEY_ATTRIBUTES, self.entity);
+
+        // Check cache first (unless bypassed)
+        if !self.bypass_cache {
+            if let Some(cache) = &self.client.inner.cache {
+                if let Some(cached) = cache.get(&cache_key).await {
+                    if let Ok(attrs) = bincode::deserialize::<Vec<AttributeMetadata>>(&cached.data)
+                    {
+                        return Ok(attrs);
+                    }
+                }
+            }
+        }
+
+        // Fetch from API
         let attrs = fetch_attributes_from_api(self.client, &self.entity).await?;
+
+        // Cache the result
+        if let Some(cache) = &self.client.inner.cache {
+            let ttl = self.client.inner.cache_config.metadata_ttl;
+            if let Ok(data) = bincode::serialize(&attrs) {
+                cache
+                    .set(&cache_key, CachedValue::with_ttl(data, ttl))
+                    .await;
+            }
+        }
+
         Ok(attrs)
     }
 }

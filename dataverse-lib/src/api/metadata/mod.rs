@@ -50,6 +50,9 @@ pub(crate) const CACHE_KEY_ENTITY_FULL: &str = "entity_full:";
 /// Cache key prefix for single attribute metadata.
 pub(crate) const CACHE_KEY_ATTRIBUTE: &str = "attribute:";
 
+/// Cache key prefix for all attributes of an entity.
+pub(crate) const CACHE_KEY_ATTRIBUTES: &str = "attributes:";
+
 /// Cache key prefix for single relationship metadata.
 pub(crate) const CACHE_KEY_RELATIONSHIP: &str = "relationship:";
 
@@ -209,6 +212,14 @@ impl<'a> MetadataClient<'a> {
     pub async fn invalidate_attribute(&self, entity: &str, attribute: &str) {
         if let Some(cache) = &self.client.inner.cache {
             let cache_key = format!("{}{}:{}", CACHE_KEY_ATTRIBUTE, entity, attribute);
+            cache.remove(&cache_key).await;
+        }
+    }
+
+    /// Invalidates cached metadata for all attributes of an entity.
+    pub async fn invalidate_attributes(&self, entity: &str) {
+        if let Some(cache) = &self.client.inner.cache {
+            let cache_key = format!("{}{}", CACHE_KEY_ATTRIBUTES, entity);
             cache.remove(&cache_key).await;
         }
     }
