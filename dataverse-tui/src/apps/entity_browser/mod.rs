@@ -3,6 +3,9 @@
 mod row;
 mod service;
 
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+
 use dataverse_lib::api::query::odata::ODataPages;
 use dataverse_lib::DataverseClient;
 use rafter::page;
@@ -45,6 +48,10 @@ pub struct EntityBrowser {
     records_loading: Resource<()>,
     pages: Option<ODataPages>,
     total_count: Option<usize>,
+
+    // Advanced mode - shared with rows for efficient rendering
+    #[state(skip)]
+    advanced_mode: Arc<AtomicBool>,
 }
 
 #[app_impl]
@@ -140,6 +147,7 @@ impl EntityBrowser {
     #[keybinds]
     fn keybinds() {
         bind("r", refresh);
+        bind("f2", toggle_advanced);
     }
 
     #[handler]
@@ -189,6 +197,73 @@ impl EntityBrowser {
     }
 
     #[handler]
+    async fn toggle_advanced(&self, gx: &GlobalContext, _cx: &AppContext) {
+        let new_mode = !self.advanced_mode.load(Ordering::Relaxed);
+        self.advanced_mode.store(new_mode, Ordering::Relaxed);
+
+        // Swap entity autocomplete labels (display_name <-> logical_name)
+        let entities = self.entities.get();
+        self.entity_autocomplete.update(|state| {
+            for (key, label) in &mut state.options {
+                if new_mode {
+                    // Advanced: show logical name
+                    *label = key.clone();
+                } else {
+                    // Normal: show display name
+                    if let Some((_, display)) = entities.iter().find(|(k, _)| k == key) {
+                        *label = display.clone();
+                    }
+                }
+            }
+            // Update current text if entity is selected
+            if let Some(selected_key) = state.selection.selected.iter().next() {
+                if let Some((_, label)) = state.options.iter().find(|(k, _)| k == selected_key) {
+                    state.text = label.clone();
+                }
+            }
+        });
+
+        // Swap field autocomplete labels
+        if let Some(entity_data) = self.entity_data.get() {
+            self.field_autocomplete.update(|state| {
+                for (key, label) in &mut state.options {
+                    if new_mode {
+                        *label = key.clone();
+                    } else if let Some(attr) = entity_data
+                        .readable_fields
+                        .iter()
+                        .find(|a| &a.logical_name == key)
+                    {
+                        *label = attr.display_name.text().unwrap_or(key).to_string();
+                    }
+                }
+            });
+
+            // Swap table column headers
+            self.records.update(|state| {
+                for col in &mut state.columns {
+                    if new_mode {
+                        col.header = col.id.clone();
+                    } else if let Some(attr) = entity_data
+                        .readable_fields
+                        .iter()
+                        .find(|a| a.logical_name == col.id)
+                    {
+                        col.header = attr.display_name.text().unwrap_or(&col.id).to_string();
+                    }
+                }
+            });
+        }
+
+        // Row cell values automatically pick up new mode on next render (via Arc<AtomicBool>)
+        gx.toast(Toast::info(if new_mode {
+            "Advanced mode"
+        } else {
+            "Normal mode"
+        }));
+    }
+
+    #[handler]
     async fn on_entity_select(&self, gx: &GlobalContext, cx: &AppContext) {
         let state = self.entity_autocomplete.get();
         let selected_key = match state.value() {
@@ -235,7 +310,8 @@ impl EntityBrowser {
         };
 
         // Build field autocomplete options
-        let field_options = build_field_options(&entity_data);
+        let is_advanced = self.advanced_mode.load(Ordering::Relaxed);
+        let field_options = build_field_options(&entity_data, is_advanced);
         self.field_autocomplete.set(
             AutocompleteState::new(field_options).with_selection(SelectionMode::Multi),
         );
@@ -308,6 +384,7 @@ impl EntityBrowser {
         self.total_count.set(None);
 
         // Build table columns
+        let is_advanced = self.advanced_mode.load(Ordering::Relaxed);
         let table_columns: Vec<Column> = columns
             .iter()
             .map(|col_name| {
@@ -316,21 +393,32 @@ impl EntityBrowser {
                     .iter()
                     .find(|a| &a.logical_name == col_name);
 
-                let display = attr
-                    .and_then(|a| a.display_name.text())
-                    .unwrap_or(col_name)
-                    .to_string();
+                let header = if is_advanced {
+                    col_name.clone()
+                } else {
+                    attr.and_then(|a| a.display_name.text())
+                        .unwrap_or(col_name)
+                        .to_string()
+                };
 
                 let width = attr
                     .map(|a| default_column_width(&a.attribute_type))
                     .unwrap_or(20);
 
-                Column::new(col_name, &display).fixed(width)
+                Column::new(col_name, &header).fixed(width)
             })
             .collect();
 
         // Fetch records
-        let result = match fetch_records(client, &entity_data.metadata, columns, 50).await {
+        let result = match fetch_records(
+            client,
+            &entity_data.metadata,
+            columns,
+            50,
+            self.advanced_mode.clone(),
+        )
+        .await
+        {
             Ok(r) => r,
             Err(e) => {
                 log::error!("[EntityBrowser] Failed to fetch records: {}", e);
@@ -395,6 +483,7 @@ impl EntityBrowser {
         let (new_rows, has_more) = match fetch_next_page(
             &mut pages,
             &entity_data.metadata.core.primary_id_attribute,
+            self.advanced_mode.clone(),
         )
         .await
         {

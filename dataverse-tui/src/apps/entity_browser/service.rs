@@ -1,12 +1,15 @@
 //! Data fetching service for the entity browser.
 
+use std::sync::atomic::AtomicBool;
+use std::sync::Arc;
+
 use dataverse_lib::api::query::odata::ODataPages;
 use dataverse_lib::error::Error;
 use dataverse_lib::model::metadata::{AttributeMetadata, EntityMetadata};
 use dataverse_lib::model::Entity;
 use dataverse_lib::DataverseClient;
 
-use crate::formatting::format_value;
+use crate::formatting::{format_value, FormattedValue};
 
 use super::row::{EntityData, RecordRow};
 
@@ -76,13 +79,17 @@ pub async fn fetch_entity_data(
 }
 
 /// Build sorted field options from entity data.
-pub fn build_field_options(entity_data: &EntityData) -> Vec<(String, String)> {
+pub fn build_field_options(entity_data: &EntityData, advanced: bool) -> Vec<(String, String)> {
     let mut options: Vec<(String, String)> = entity_data
         .readable_fields
         .iter()
         .map(|a| {
-            let display = a.display_name.text().unwrap_or(&a.logical_name).to_string();
-            (a.logical_name.clone(), display)
+            let label = if advanced {
+                a.logical_name.clone()
+            } else {
+                a.display_name.text().unwrap_or(&a.logical_name).to_string()
+            };
+            (a.logical_name.clone(), label)
         })
         .collect();
 
@@ -114,6 +121,7 @@ pub async fn fetch_records(
     entity: &EntityMetadata,
     columns: &[String],
     page_size: usize,
+    advanced_mode: Arc<AtomicBool>,
 ) -> Result<RecordsResult, Error> {
     // Build select list including ID
     let mut select_cols: Vec<&str> = columns.iter().map(|s| s.as_str()).collect();
@@ -144,7 +152,11 @@ pub async fn fetch_records(
         }
     };
 
-    let rows = convert_records_to_rows(page.records(), &entity.core.primary_id_attribute);
+    let rows = convert_records_to_rows(
+        page.records(),
+        &entity.core.primary_id_attribute,
+        advanced_mode,
+    );
 
     let pages = if page.has_more() { Some(pages) } else { None };
 
@@ -159,10 +171,11 @@ pub async fn fetch_records(
 pub async fn fetch_next_page(
     pages: &mut ODataPages,
     id_attribute: &str,
+    advanced_mode: Arc<AtomicBool>,
 ) -> Result<Option<(Vec<RecordRow>, bool)>, Error> {
     match pages.next().await {
         Some(Ok(page)) => {
-            let rows = convert_records_to_rows(page.records(), id_attribute);
+            let rows = convert_records_to_rows(page.records(), id_attribute, advanced_mode);
             Ok(Some((rows, page.has_more())))
         }
         Some(Err(e)) => Err(e),
@@ -174,6 +187,7 @@ pub async fn fetch_next_page(
 pub fn convert_records_to_rows(
     records: &[dataverse_lib::model::Record],
     id_attribute: &str,
+    advanced_mode: Arc<AtomicBool>,
 ) -> Vec<RecordRow> {
     records
         .iter()
@@ -191,19 +205,24 @@ pub fn convert_records_to_rows(
                 })
                 .unwrap_or_else(|| format!("unknown-{}", idx));
 
-            let mut row = RecordRow::new(id);
+            let mut row = RecordRow::new(id, advanced_mode.clone());
 
-            // Populate cells - prefer formatted values
+            // Populate cells - prefer formatted values from API, fall back to our formatting
             for (key, _value) in record.fields() {
-                let formatted = record
-                    .get_formatted(key)
-                    .map(|s| s.to_string())
-                    .unwrap_or_else(|| {
-                        record
-                            .get(key)
-                            .map(|v| format_value(v))
-                            .unwrap_or_default()
-                    });
+                let formatted = if let Some(api_formatted) = record.get_formatted(key) {
+                    // API provided a formatted value - use it for display, get raw from Value
+                    let raw = record
+                        .get(key)
+                        .map(|v| format_value(v).raw)
+                        .unwrap_or_default();
+                    FormattedValue::new(api_formatted, raw)
+                } else {
+                    // No API formatted value - use our formatting
+                    record
+                        .get(key)
+                        .map(|v| format_value(v))
+                        .unwrap_or_default()
+                };
                 row.set_cell(key.clone(), formatted);
             }
 
