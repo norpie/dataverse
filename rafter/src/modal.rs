@@ -164,6 +164,14 @@ pub trait Modal: Clone + Send + Sync + 'static {
         ModalSize::default()
     }
 
+    /// Get the modal's aspect ratio (width multiplier).
+    ///
+    /// Applied to Sm/Md/Lg preset sizes. Default is 1.0.
+    /// Values < 1.0 make the modal narrower, > 1.0 make it wider.
+    fn aspect_ratio(&self) -> f32 {
+        1.0
+    }
+
     /// Render the modal's content.
     fn element(&self) -> Element;
 

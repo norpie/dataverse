@@ -130,6 +130,7 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
     let mut has_element = false;
     let mut has_position = false;
     let mut has_size = false;
+    let mut has_aspect_ratio = false;
     let mut has_default_result = false;
     let mut inferred_result_type: Option<Type> = None;
 
@@ -252,6 +253,9 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
         if method.is_named("size") {
             has_size = true;
         }
+        if method.is_named("aspect_ratio") {
+            has_aspect_ratio = true;
+        }
         if method.is_named("default_result") {
             has_default_result = true;
         }
@@ -349,6 +353,24 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
         }
     };
 
+    // Generate aspect_ratio method
+    // Priority: user-defined method > attribute from #[modal] > trait default
+    let aspect_ratio_impl = if has_aspect_ratio {
+        // User defined aspect_ratio() method
+        quote! {
+            fn aspect_ratio(&self) -> f32 {
+                #self_ty::aspect_ratio(self)
+            }
+        }
+    } else {
+        // Use attribute from #[modal] if available, otherwise trait default (1.0)
+        quote! {
+            fn aspect_ratio(&self) -> f32 {
+                #metadata_mod::aspect_ratio()
+            }
+        }
+    };
+
     // Generate kind method
     let kind_impl = match attrs.kind {
         ModalKindAttr::App => quote! {
@@ -426,6 +448,7 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
             #kind_impl
             #position_impl
             #size_impl
+            #aspect_ratio_impl
             #default_result_impl
             #lifecycle_hooks_impl
             #keybinds_impl

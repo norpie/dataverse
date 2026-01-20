@@ -187,7 +187,7 @@ fn create_launcher_entries() -> Vec<LauncherEntry> {
     )]
 }
 
-#[modal(size = Sm)]
+#[modal(size = Md, aspect_ratio = 0.6)]
 pub struct LauncherModal {
     input: String,
     entries: Vec<LauncherEntry>,

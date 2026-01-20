@@ -1025,13 +1025,14 @@ impl Runtime {
 
         let modal_size = modal.size();
         let modal_position = modal.position();
+        let aspect_ratio = modal.aspect_ratio();
 
-        // Convert ModalSize to tuidom Size
+        // Convert ModalSize to tuidom Size, applying aspect ratio to width
         let (width, height) = match modal_size {
             crate::ModalSize::Auto => (Size::Auto, Size::Auto),
-            crate::ModalSize::Sm => (Size::Percent(0.3), Size::Percent(0.3)),
-            crate::ModalSize::Md => (Size::Percent(0.5), Size::Percent(0.5)),
-            crate::ModalSize::Lg => (Size::Percent(0.8), Size::Percent(0.8)),
+            crate::ModalSize::Sm => (Size::Percent(0.3 * aspect_ratio), Size::Percent(0.3)),
+            crate::ModalSize::Md => (Size::Percent(0.5 * aspect_ratio), Size::Percent(0.5)),
+            crate::ModalSize::Lg => (Size::Percent(0.8 * aspect_ratio), Size::Percent(0.8)),
             crate::ModalSize::Fixed { width, height } => (Size::Fixed(width), Size::Fixed(height)),
             crate::ModalSize::Proportional { width, height } => {
                 (Size::Percent(width), Size::Percent(height))

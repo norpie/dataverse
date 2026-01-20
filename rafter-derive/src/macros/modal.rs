@@ -10,6 +10,7 @@
 //! - `#[modal(size = Proportional { width: 0.5, height: 0.3 })]` - proportional size
 //! - `#[modal(position = At { x: 5, y: 3 })]` - absolute position
 //! - `#[modal(position = Centered)]` - centered (default)
+//! - `#[modal(aspect_ratio = 0.6)]` - aspect ratio (0.1-2.0, default 1.0)
 
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
@@ -39,6 +40,7 @@ enum ModalPosition {
 struct ModalAttrs {
     size: Option<ModalSize>,
     position: Option<ModalPosition>,
+    aspect_ratio: Option<f32>,
     /// Whether page routing is enabled (expects `Page` enum in scope)
     pages: bool,
 }
@@ -47,12 +49,14 @@ impl ModalAttrs {
     fn parse(attr: TokenStream) -> syn::Result<Self> {
         let mut size: Option<ModalSize> = None;
         let mut position: Option<ModalPosition> = None;
+        let mut aspect_ratio: Option<f32> = None;
         let mut pages = false;
 
         if attr.is_empty() {
             return Ok(Self {
                 size,
                 position,
+                aspect_ratio,
                 pages,
             });
         }
@@ -128,6 +132,21 @@ impl ModalAttrs {
                     }
                     _ => {}
                 }
+            } else if meta.path.is_ident("aspect_ratio") {
+                // Parse: aspect_ratio = 0.6
+                let _eq: syn::Token![=] = meta.input.parse()?;
+                let value: syn::LitFloat = meta.input.parse()?;
+                let ratio: f32 = value.base10_parse()?;
+
+                // Validate range at compile time
+                if ratio < 0.1 || ratio > 2.0 {
+                    return Err(syn::Error::new(
+                        value.span(),
+                        "aspect_ratio must be between 0.1 and 2.0",
+                    ));
+                }
+
+                aspect_ratio = Some(ratio);
             } else if meta.path.is_ident("position") {
                 // Parse: position = Centered or position = At { x: 5, y: 3 }
                 let _eq: syn::Token![=] = meta.input.parse()?;
@@ -173,6 +192,7 @@ impl ModalAttrs {
         Ok(Self {
             size,
             position,
+            aspect_ratio,
             pages,
         })
     }
@@ -200,6 +220,11 @@ fn generate_position_const(position: &ModalPosition) -> TokenStream {
         ModalPosition::Centered => quote! { rafter::ModalPosition::Centered },
         ModalPosition::At { x, y } => quote! { rafter::ModalPosition::At { x: #x, y: #y } },
     }
+}
+
+/// Generate aspect ratio constant.
+fn generate_aspect_ratio_const(ratio: f32) -> TokenStream {
+    quote! { #ratio }
 }
 
 /// Transform a field, wrapping in State<T> if needed.
@@ -396,6 +421,25 @@ fn generate_metadata(
         }
     };
 
+    // Generate aspect_ratio function - returns the configured ratio or default (1.0)
+    let aspect_ratio_fn = match attrs.aspect_ratio {
+        Some(ratio) => {
+            let ratio_const = generate_aspect_ratio_const(ratio);
+            quote! {
+                pub fn aspect_ratio() -> f32 {
+                    #ratio_const
+                }
+            }
+        }
+        None => {
+            quote! {
+                pub fn aspect_ratio() -> f32 {
+                    1.0
+                }
+            }
+        }
+    };
+
     let has_pages = attrs.pages;
 
     // Include __page in dirty checking if pages is enabled
@@ -421,6 +465,7 @@ fn generate_metadata(
 
             #size_fn
             #position_fn
+            #aspect_ratio_fn
 
             pub fn is_dirty(modal: &#name) -> bool {
                 false #(|| modal.#dirty_fields.is_dirty())* #page_dirty
