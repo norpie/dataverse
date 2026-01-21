@@ -10,8 +10,8 @@ use tuidom::{Color, Edges, Overflow, Position, Size, Style};
 
 use crate::widgets::ScrollingText;
 
-const COLLAPSED_WIDTH: u16 = 3;
-const EXPANDED_WIDTH: u16 = 45;
+const COLLAPSED_WIDTH: u16 = 1;
+const EXPANDED_WIDTH: u16 = 42;
 const GROUP_OVERLAY_WIDTH: u16 = 30;
 
 /// Status indicator for various subsystems.
