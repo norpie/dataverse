@@ -3,7 +3,7 @@
 //! Displays a centered spinner with message over a dimmed backdrop.
 //! Used for operations where the user should wait (e.g., loading metadata).
 
-use tuidom::{Align, Backdrop, Color, Element, Justify, Position, Size, Style};
+use tuidom::{Align, Backdrop, Color, Edges, Element, Justify, Position, Size, Style};
 
 use super::Spinner;
 
@@ -27,10 +27,10 @@ pub fn loading_overlay(id: &str, message: &str) -> Element {
         .interaction_scope(true)
         .child(
             Element::col()
-                .gap(1)
                 .align(Align::Center)
+                .margin(Edges::symmetric(2, 1))
                 .style(Style::new().background(Color::var("surface")))
-                .child(Spinner::default().id(&spinner_id).build_standalone())
-                .child(Element::text(message).style(Style::new().foreground(Color::var("muted")))),
-        )
+                .child(Element::text(message).style(Style::new().foreground(Color::var("muted"))))
+                .child(Spinner::default().id(&spinner_id).build_standalone()
+                ))
 }
