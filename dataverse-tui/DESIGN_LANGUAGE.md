@@ -142,9 +142,10 @@ Use default rafter widget styling for selection highlighting.
 Colored dot (●) with label showing system state.
 
 ```rust
-Element::row()
-    .child(Element::text("●").style(Style::new().foreground(Color::var("success"))))
-    .child(Element::text("Running"))
+row (gap: 1) {
+    text (content: "●") style (fg: success)
+    text (content: "Running")
+}
 ```
 
 ## Emphasis Point
@@ -152,12 +153,13 @@ Element::row()
 Accent dot (●) with interact label, followed by secondary text. Keys in primary color.
 
 ```rust
-Element::row()
-    .child(Element::text("●").style(Style::new().foreground(Color::var("interact"))))
-    .child(Element::text("Tip").style(Style::new().foreground(Color::var("interact"))))
-    .child(Element::text(" Use "))
-    .child(Element::text("ctrl+q").style(Style::new().foreground(Color::var("primary"))))
-    .child(Element::text(" to quickly quit"))
+row (gap: 1) {
+    text (content: "●") style (fg: interact)
+    text (content: "Tip") style (fg: interact)
+    text (content: " Use ")
+    text (content: "ctrl+q") style (fg: primary)
+    text (content: " to quickly quit")
+}
 ```
 
 Example: "● Tip Use the ctrl+q shortcut to quickly quit the program"
