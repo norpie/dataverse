@@ -125,12 +125,8 @@ impl ContextMenuDemo {
     }
 
     #[handler]
-    async fn show_menu(&self, cx: &AppContext) {
-        // LIMITATION: We don't currently have access to element layout positions
-        // Ideally this would spawn at the button's position, but for now we hardcode
-        // coordinates that are near where the button appears on screen
-        let x = 20;
-        let y = 12;
+    async fn show_menu(&self, cx: &AppContext, gx: &GlobalContext) {
+        let (x, y) = gx.mouse_position();
         let menu = self.main_menu(x, y);
         cx.context_menu(menu, x, y);
     }

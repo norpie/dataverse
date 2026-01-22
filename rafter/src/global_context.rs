@@ -15,7 +15,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 
 use tokio::sync::oneshot;
-use tuidom::Theme;
+use tuidom::{CursorState, Theme};
 
 use crate::context_menu::ContextMenuRequest;
 use crate::instance::{InstanceId, InstanceInfo, RequestError, SpawnError};
@@ -206,16 +206,19 @@ pub struct GlobalContext {
     data: Arc<DataStore>,
     /// Wakeup sender for notifying the event loop.
     wakeup_sender: Option<WakeupSender>,
+    /// Cursor state for mouse position tracking.
+    cursor_state: Arc<RwLock<CursorState>>,
 }
 
 impl GlobalContext {
     /// Create a new global context.
-    pub fn new(data: Arc<DataStore>) -> Self {
+    pub fn new(data: Arc<DataStore>, cursor_state: Arc<RwLock<CursorState>>) -> Self {
         Self {
             inner: Arc::new(RwLock::new(GlobalContextInner::default())),
             registry: None,
             data,
             wakeup_sender: None,
+            cursor_state,
         }
     }
 
@@ -233,11 +236,31 @@ impl GlobalContext {
         self.registry = Some(registry);
     }
 
+    /// Get the cursor state for internal runtime use.
+    pub(crate) fn cursor_state(&self) -> &Arc<RwLock<CursorState>> {
+        &self.cursor_state
+    }
+
     /// Send a wakeup signal to the event loop.
     fn send_wakeup(&self) {
         if let Some(sender) = &self.wakeup_sender {
             sender.send();
         }
+    }
+
+    // =========================================================================
+    // Cursor Position
+    // =========================================================================
+
+    /// Get the current mouse cursor position.
+    ///
+    /// Returns the last known cursor position as (x, y) coordinates.
+    /// Starts at (0, 0) and updates on mouse move events.
+    pub fn mouse_position(&self) -> (u16, u16) {
+        self.cursor_state
+            .read()
+            .map(|state| state.position())
+            .unwrap_or((0, 0))
     }
 
     // =========================================================================
@@ -696,6 +719,7 @@ impl Default for GlobalContext {
             registry: None,
             data: Arc::new(HashMap::new()),
             wakeup_sender: None,
+            cursor_state: Arc::new(RwLock::new(CursorState::new())),
         }
     }
 }

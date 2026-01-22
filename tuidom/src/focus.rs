@@ -403,7 +403,12 @@ impl FocusState {
                                                     // Navigation would leave the scrollable - emit Key event first
                                                     // so widget's on_key_up/on_key_down handler can fire and override focus
                                                     // Note: use `old` not `self.focused` since focus_direction mutates it
-                                                    log::debug!("[focus] Up/Down would leave scrollable {}, emitting Key event for {} (focus moved to {})", scrollable_id, old, new);
+                                                    log::debug!(
+                                                        "[focus] Up/Down would leave scrollable {}, emitting Key event for {} (focus moved to {})",
+                                                        scrollable_id,
+                                                        old,
+                                                        new
+                                                    );
                                                     events.push(Event::Key {
                                                         target: Some(old.clone()),
                                                         key,
@@ -488,7 +493,11 @@ impl FocusState {
 
                             log::debug!(
                                 "[focus] MouseDown at ({}, {}), clickable={:?}, focusable={:?}, current_focus={:?}",
-                                x, y, clickable_target, focusable_target, self.focused
+                                x,
+                                y,
+                                clickable_target,
+                                focusable_target,
+                                self.focused
                             );
 
                             // Blur focus if clicking on non-focusable area
@@ -532,7 +541,10 @@ impl FocusState {
                             let focusable_target = hit_test_focusable(layout, root, x, y);
                             log::trace!(
                                 "[focus] MouseMove at ({}, {}), focusable_target={:?}, current_focus={:?}",
-                                x, y, focusable_target, self.focused
+                                x,
+                                y,
+                                focusable_target,
+                                self.focused
                             );
                             if let Some(focusable_target) = focusable_target {
                                 // Respect interaction scope - only focus elements within active scope
@@ -546,7 +558,10 @@ impl FocusState {
 
                                 log::debug!(
                                     "[focus] MouseMove hover: target={}, active_scope={:?}, in_scope={}, current_focus={:?}",
-                                    focusable_target, active_scope, in_scope, self.focused
+                                    focusable_target,
+                                    active_scope,
+                                    in_scope,
+                                    self.focused
                                 );
 
                                 // Only change focus if different AND target is in scope
@@ -567,7 +582,11 @@ impl FocusState {
                                         target: focusable_target,
                                     });
                                 } else if !in_scope {
-                                    log::debug!("[focus] MouseMove blocked - target {} not in active scope {:?}", focusable_target, active_scope);
+                                    log::debug!(
+                                        "[focus] MouseMove blocked - target {} not in active scope {:?}",
+                                        focusable_target,
+                                        active_scope
+                                    );
                                 }
                             }
 

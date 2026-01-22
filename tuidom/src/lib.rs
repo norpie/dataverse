@@ -1,5 +1,6 @@
 pub mod animation;
 pub mod buffer;
+pub mod cursor;
 pub mod element;
 pub mod event;
 pub mod focus;
@@ -15,6 +16,7 @@ pub mod types;
 
 pub use animation::AnimationState;
 pub use buffer::Buffer;
+pub use cursor::CursorState;
 pub use element::{find_element, Content, Element};
 pub use event::{Event, Key, Modifiers, MouseButton, NavDirection, ScrollAction};
 pub use focus::{collect_focusable, FocusState};

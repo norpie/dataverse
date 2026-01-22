@@ -19,7 +19,7 @@ use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant};
 
 use tuidom::{
-    Content, Element, FocusState, LayoutResult, ScrollState, Terminal, TextInputState,
+    Content, CursorState, Element, FocusState, LayoutResult, ScrollState, Terminal, TextInputState,
     scroll::find_scrollable_ancestor,
 };
 
@@ -187,9 +187,10 @@ impl Runtime {
         // Create wakeup channel
         let (wakeup_tx, wakeup_rx) = wakeup_channel();
 
-        // Create global context
+        // Create global context (includes cursor state for mouse position tracking)
         let data_store: Arc<DataStore> = Arc::new(std::mem::take(&mut self.data));
-        let mut gx = GlobalContext::new(Arc::clone(&data_store));
+        let cursor_state = Arc::new(RwLock::new(CursorState::new()));
+        let mut gx = GlobalContext::new(Arc::clone(&data_store), cursor_state);
         gx.set_wakeup_sender(wakeup_tx.clone());
 
         // Create registry query wrapper
@@ -720,6 +721,11 @@ impl Runtime {
 
             // 17. Process focus events (Tab navigation, focus-follows-mouse)
             let events = focus.process_events(&raw_events, &root, layout);
+
+            // 17a. Update cursor position from mouse move events
+            if let Ok(mut cursor_state) = gx.cursor_state().write() {
+                cursor_state.process_events(&events);
+            }
 
             // 17b. Scroll focused element into view
             for event in &events {

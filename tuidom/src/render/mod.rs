@@ -437,9 +437,18 @@ fn render_single_element_timed(
             log::debug!(
                 "[render-bg] id={} layout=({},{},{},{}) render=({},{},{},{}) visible=({},{},{},{}) bg={:?}",
                 element.id,
-                layout_rect.x, layout_rect.y, layout_rect.width, layout_rect.height,
-                rect.x, rect.y, rect.width, rect.height,
-                visible_rect.x, visible_rect.y, visible_rect.width, visible_rect.height,
+                layout_rect.x,
+                layout_rect.y,
+                layout_rect.width,
+                layout_rect.height,
+                rect.x,
+                rect.y,
+                rect.width,
+                rect.height,
+                visible_rect.x,
+                visible_rect.y,
+                visible_rect.width,
+                visible_rect.height,
                 oklch
             );
         }

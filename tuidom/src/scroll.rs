@@ -361,7 +361,10 @@ impl ScrollState {
                     let has_horizontal_delta = *delta_x != 0;
 
                     if handler_handles_vertical && !has_horizontal_delta {
-                        log::debug!("[scroll] Skipping automatic scroll - target {:?} handles vertical via dispatcher", target);
+                        log::debug!(
+                            "[scroll] Skipping automatic scroll - target {:?} handles vertical via dispatcher",
+                            target
+                        );
                         continue;
                     }
 
@@ -601,8 +604,14 @@ impl ScrollState {
                                 let scroll_pos =
                                     drag.geom.scroll_from_drag(mouse_pos, drag.grab_offset);
                                 let current = self.get(&drag.element_id);
-                                log::debug!("[scroll-drag] Drag: is_vertical={} mouse_pos={} scroll_pos={} current=({},{})",
-                                    drag.is_vertical, mouse_pos, scroll_pos, current.x, current.y);
+                                log::debug!(
+                                    "[scroll-drag] Drag: is_vertical={} mouse_pos={} scroll_pos={} current=({},{})",
+                                    drag.is_vertical,
+                                    mouse_pos,
+                                    scroll_pos,
+                                    current.x,
+                                    current.y
+                                );
 
                                 let (new_x, new_y) = if drag.is_vertical {
                                     (current.x, scroll_pos)
@@ -772,9 +781,16 @@ fn check_scrollbar_hit(
     }
     let h_track_length = h_track_end.saturating_sub(h_track_start);
 
-    log::debug!("[scrollbar-hit] horizontal: scrollbar_y={} h_track={}..{} (len={}) click_y={} in_y_range={} in_x_range={}",
-        scrollbar_y, h_track_start, h_track_end, h_track_length,
-        y, y == scrollbar_y, x >= h_track_start && x < h_track_end);
+    log::debug!(
+        "[scrollbar-hit] horizontal: scrollbar_y={} h_track={}..{} (len={}) click_y={} in_y_range={} in_x_range={}",
+        scrollbar_y,
+        h_track_start,
+        h_track_end,
+        h_track_length,
+        y,
+        y == scrollbar_y,
+        x >= h_track_start && x < h_track_end
+    );
 
     if y == scrollbar_y && x >= h_track_start && x < h_track_end {
         if let Some(geom) =
@@ -899,8 +915,13 @@ fn find_scrollable_ancestor_recursive(
         || element.overflow_y == Overflow::Auto
         || element.scrollable;
     let scrollable = if is_scrollable {
-        log::trace!("[find_scrollable_ancestor] {} is scrollable (overflow_x={:?}, overflow_y={:?}, scrollable={})",
-            element.id, element.overflow_x, element.overflow_y, element.scrollable);
+        log::trace!(
+            "[find_scrollable_ancestor] {} is scrollable (overflow_x={:?}, overflow_y={:?}, scrollable={})",
+            element.id,
+            element.overflow_x,
+            element.overflow_y,
+            element.scrollable
+        );
         Some(element.id.as_str())
     } else {
         current_scrollable
