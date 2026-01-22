@@ -1,6 +1,7 @@
-//! Request types for client management.
+//! Request and event types for client management.
 
 use dataverse_lib::DataverseClient;
+use rafter::Event;
 use rafter::Request;
 
 use crate::client_manager::ClientManagerError;
@@ -29,4 +30,22 @@ pub struct GetActiveClient;
 pub struct GetClient {
     pub account_id: i64,
     pub env_id: i64,
+}
+
+// =============================================================================
+// Events
+// =============================================================================
+
+/// Event published when an environment is added.
+#[derive(Clone, Event)]
+pub struct EnvironmentAdded {
+    pub id: i64,
+    pub url: String,
+    pub display_name: String,
+}
+
+/// Event published when an environment is removed.
+#[derive(Clone, Event)]
+pub struct EnvironmentRemoved {
+    pub id: i64,
 }

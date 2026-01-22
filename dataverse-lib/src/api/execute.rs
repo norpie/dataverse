@@ -1128,7 +1128,10 @@ impl DataverseClient {
     }
 
     /// Executes a batch request.
-    async fn execute_batch(&self, batch: Batch) -> Result<BatchResults, Error> {
+    ///
+    /// For building batches fluently, use the [`batch()`](Self::batch) method instead.
+    /// This method is useful when you have a pre-constructed `Batch` object.
+    pub async fn execute_batch(&self, batch: Batch) -> Result<BatchResults, Error> {
         batch.validate()?;
 
         let batch_boundary = generate_boundary("batch");

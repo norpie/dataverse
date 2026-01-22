@@ -12,6 +12,8 @@ use tuidom::{Color, Element, Style};
 use crate::credentials::CredentialsProvider;
 use crate::modals::{BrowserAuthModal, ConfirmModal};
 
+use super::{EnvironmentAdded, EnvironmentRemoved};
+
 /// Page enum for the client management modal tabs.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum Page {
@@ -321,10 +323,15 @@ impl ClientManagementModal {
 
         let credentials = gx.data::<CredentialsProvider>();
         match credentials.create_environment(&url, &display_name).await {
-            Ok(_) => {
+            Ok(env) => {
                 self.env_adding.set(false);
                 self.reload_data(gx).await;
                 gx.toast(Toast::success("Environment added"));
+                gx.publish(EnvironmentAdded {
+                    id: env.id,
+                    url: env.url,
+                    display_name: env.display_name,
+                });
             }
             Err(e) => {
                 gx.toast(Toast::error(format!("Failed to add environment: {}", e)));
@@ -352,6 +359,7 @@ impl ClientManagementModal {
             Ok(_) => {
                 self.reload_data(gx).await;
                 gx.toast(Toast::success("Environment deleted"));
+                gx.publish(EnvironmentRemoved { id: env_id });
             }
             Err(e) => {
                 gx.toast(Toast::error(format!("Failed to delete: {}", e)));

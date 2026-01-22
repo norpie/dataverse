@@ -1,6 +1,7 @@
 //! Queue app for executing Dataverse operations.
 
 pub mod api;
+mod executor;
 pub mod migrations;
 pub mod repository;
 pub mod types;
@@ -10,7 +11,10 @@ use rafter::page;
 use rafter::prelude::*;
 use rafter::widgets::Text;
 
+use crate::credentials::CredentialsProvider;
 use crate::paths;
+use crate::systems::client_management::EnvironmentAdded;
+use crate::systems::client_management::EnvironmentRemoved;
 use crate::widgets::Spinner;
 
 use api::AddItems;
@@ -109,11 +113,22 @@ impl Queue {
             return AddItemsResponse { ids: vec![] };
         };
 
+        let credentials = gx.data::<CredentialsProvider>();
         let mut ids = Vec::with_capacity(request.items.len());
 
         for item in request.items {
-            // TODO: Check if environment exists, set status accordingly
-            let status = ItemStatus::Ready;
+            // Check if environment exists to determine initial status
+            let env_exists = credentials
+                .get_environment(item.env_id)
+                .await
+                .ok()
+                .flatten()
+                .is_some();
+            let status = if env_exists {
+                ItemStatus::Ready
+            } else {
+                ItemStatus::Blocked
+            };
 
             let new_item = NewQueueItem {
                 priority: item.priority,
@@ -158,6 +173,60 @@ impl Queue {
     // =========================================================================
 
     #[event_handler]
+    async fn on_environment_added(&self, event: EnvironmentAdded, gx: &GlobalContext) {
+        let Some(repo) = self.repository.get() else {
+            return;
+        };
+
+        // Transition Blocked → Ready for items targeting this environment
+        match repo.update_environment_availability(event.id, true).await {
+            Ok(count) if count > 0 => {
+                log::info!(
+                    "{} queue items unblocked for environment {}",
+                    count,
+                    event.display_name
+                );
+                // Refresh counts
+                if let Ok(counts) = repo.count_by_status().await {
+                    self.status_counts.set(counts);
+                    self.publish_status_changed(gx);
+                }
+                // Try to start items if running
+                if self.is_running.get() {
+                    self.try_start_next_items(gx).await;
+                }
+            }
+            Ok(_) => {}
+            Err(e) => {
+                log::error!("Failed to update environment availability: {}", e);
+            }
+        }
+    }
+
+    #[event_handler]
+    async fn on_environment_removed(&self, event: EnvironmentRemoved, gx: &GlobalContext) {
+        let Some(repo) = self.repository.get() else {
+            return;
+        };
+
+        // Transition Ready → Blocked for items targeting this environment
+        match repo.update_environment_availability(event.id, false).await {
+            Ok(count) if count > 0 => {
+                log::info!("{} queue items blocked (environment removed)", count);
+                // Refresh counts
+                if let Ok(counts) = repo.count_by_status().await {
+                    self.status_counts.set(counts);
+                    self.publish_status_changed(gx);
+                }
+            }
+            Ok(_) => {}
+            Err(e) => {
+                log::error!("Failed to update environment availability: {}", e);
+            }
+        }
+    }
+
+    #[event_handler]
     async fn on_item_completed(&self, event: QueueItemCompleted, gx: &GlobalContext) {
         // Update running count
         let running = self.running_count.get().saturating_sub(1);
@@ -199,7 +268,7 @@ impl Queue {
     // Internal Methods
     // =========================================================================
 
-    async fn try_start_next_items(&self, _gx: &GlobalContext) {
+    async fn try_start_next_items(&self, gx: &GlobalContext) {
         let Some(repo) = self.repository.get() else {
             return;
         };
@@ -218,8 +287,13 @@ impl Queue {
                         .is_ok()
                     {
                         self.running_count.set(self.running_count.get() + 1);
-                        // TODO: Spawn execution task
-                        log::debug!("Would execute item {}: {}", item.id, item.description);
+
+                        // Spawn execution task
+                        let gx = gx.clone();
+                        let repo = repo.clone();
+                        tokio::spawn(async move {
+                            Self::execute_and_complete(item, repo, gx).await;
+                        });
                     }
                 }
                 Ok(None) => break, // No more items
@@ -229,6 +303,48 @@ impl Queue {
                 }
             }
         }
+    }
+
+    /// Execute an item and publish completion event.
+    async fn execute_and_complete(
+        item: types::QueueItem,
+        repo: QueueRepository,
+        gx: GlobalContext,
+    ) {
+        log::info!("Executing queue item {}: {}", item.id, item.description);
+
+        // Execute the item
+        let result = executor::execute_item(&item, &gx).await;
+
+        // Update item status
+        if let Err(e) = repo.update_status(item.id, result.status).await {
+            log::error!("Failed to update item {} status: {}", item.id, e);
+        }
+
+        // Extract error before moving record
+        let error = result.record.error.clone();
+
+        // Save execution record
+        if let Err(e) = repo.insert_execution(result.record).await {
+            log::error!(
+                "Failed to save execution record for item {}: {}",
+                item.id,
+                e
+            );
+        }
+
+        // Publish completion event
+        gx.publish(QueueItemCompleted {
+            item_id: item.id,
+            status: result.status,
+            error,
+        });
+
+        log::info!(
+            "Queue item {} completed with status {:?}",
+            item.id,
+            result.status
+        );
     }
 
     fn publish_status_changed(&self, gx: &GlobalContext) {
