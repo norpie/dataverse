@@ -61,6 +61,8 @@ pub enum DispatchResult {
     HandledByKeybind,
     /// Event was handled by a modal.
     HandledByModal,
+    /// Event was handled by a context menu.
+    HandledByContextMenu,
     /// Event was handled by a widget.
     HandledByWidget(WidgetResult),
     /// Handler panicked.
@@ -88,6 +90,10 @@ impl DispatchResult {
 pub struct EventDispatcher<'a> {
     /// Global modals (type-erased).
     global_modals: &'a mut Vec<Box<dyn AnyModal>>,
+    /// App context menu.
+    app_context_menu: &'a mut Option<crate::ContextMenuState>,
+    /// Global context menu.
+    global_context_menu: &'a mut Option<crate::ContextMenuState>,
     /// Systems.
     systems: &'a [Box<dyn AnySystem>],
     /// Instance registry.
@@ -102,6 +108,8 @@ impl<'a> EventDispatcher<'a> {
     /// Create a new event dispatcher.
     pub fn new(
         global_modals: &'a mut Vec<Box<dyn AnyModal>>,
+        app_context_menu: &'a mut Option<crate::ContextMenuState>,
+        global_context_menu: &'a mut Option<crate::ContextMenuState>,
         systems: &'a [Box<dyn AnySystem>],
         registry: &'a Arc<RwLock<InstanceRegistry>>,
         gx: &'a GlobalContext,
@@ -109,6 +117,8 @@ impl<'a> EventDispatcher<'a> {
     ) -> Self {
         Self {
             global_modals,
+            app_context_menu,
+            global_context_menu,
             systems,
             registry,
             gx,
@@ -118,27 +128,37 @@ impl<'a> EventDispatcher<'a> {
 
     /// Dispatch an event through the handler chain.
     pub fn dispatch(&mut self, event: &Event) -> DispatchResult {
-        // 1. Global modals capture all input
+        // 1. Global context menu (highest priority when active)
+        if let Some(result) = self.dispatch_to_global_context_menu(event) {
+            return result;
+        }
+
+        // 2. Global modals capture all input
         if let Some(result) = self.dispatch_to_global_modals(event) {
             return result;
         }
 
-        // 2. App-scoped modals capture input for focused app
+        // 3. App context menu
+        if let Some(result) = self.dispatch_to_app_context_menu(event) {
+            return result;
+        }
+
+        // 4. App-scoped modals capture input for focused app
         if let Some(result) = self.dispatch_to_app_modals(event) {
             return result;
         }
 
-        // 3. System keybinds
+        // 5. System keybinds
         if let Some(result) = self.dispatch_to_system_keybinds(event) {
             return result;
         }
 
-        // 4. App keybinds
+        // 6. App keybinds
         if let Some(result) = self.dispatch_to_app_keybinds(event) {
             return result;
         }
 
-        // 5. Widget dispatch
+        // 7. Widget dispatch
         if let Some(result) = self.dispatch_to_widgets(event) {
             return result;
         }
@@ -408,6 +428,274 @@ impl<'a> EventDispatcher<'a> {
         let app_info = Some((instance.config().name, instance.id()));
 
         self.dispatch_event_to_modal(modal.as_ref(), event, &cx, mx, app_info)
+    }
+
+    // =========================================================================
+    // Context Menu Dispatch
+    // =========================================================================
+
+    fn dispatch_to_global_context_menu(&mut self, event: &Event) -> Option<DispatchResult> {
+        // If no global context menu is active, don't handle
+        if self.global_context_menu.is_none() {
+            return None;
+        }
+
+        // Handle escape key - dismiss menu
+        if let Event::Key {
+            key: Key::Escape, ..
+        } = event
+        {
+            *self.global_context_menu = None;
+            return Some(DispatchResult::HandledByContextMenu);
+        }
+
+        // Handle focus events - open submenu if hovering over option with submenu
+        if let Event::Focus { target } = event {
+            if target.contains("_option_") {
+                // Check if this is a submenu option (don't handle submenu-of-submenu)
+                if target.contains("_submenu_") {
+                    // Submenu options are focusable but don't open sub-submenus
+                    // Just allow the focus, don't modify menu state
+                } else {
+                    // This is a main menu option
+                    if let Some(parts) = target.rsplit_once("_option_") {
+                        if let Ok(option_index) = parts.1.parse::<usize>() {
+                            let menu = self.global_context_menu.as_mut().unwrap();
+                            if menu.definition.has_submenu(option_index) {
+                                // Open submenu - calculate actual menu width
+                                let menu_width = menu.definition.calculate_width();
+                                menu.open_submenu(
+                                    option_index,
+                                    (menu.position.0 + menu_width, menu.position.1),
+                                );
+                            } else {
+                                // Not a submenu option - close any open submenus
+                                menu.close_submenus();
+                            }
+                        }
+                    }
+                }
+            }
+            return Some(DispatchResult::HandledByContextMenu);
+        }
+
+        // Handle blur events - dismiss whole menu if leaving menu tree
+        if let Event::Blur {
+            target: _,
+            new_target,
+        } = event
+        {
+            // If focus leaves the menu entirely, dismiss the whole menu
+            if let Some(new_target) = new_target {
+                if !new_target.contains("__global_context_menu__") {
+                    *self.global_context_menu = None;
+                    return Some(DispatchResult::HandledByContextMenu);
+                }
+            }
+            return Some(DispatchResult::HandledByContextMenu);
+        }
+
+        // Handle click events
+        if let Event::Click { target, .. } = event {
+            // Click on backdrop - dismiss
+            if target.as_deref() == Some("__global_context_menu___backdrop") {
+                *self.global_context_menu = None;
+                return Some(DispatchResult::HandledByContextMenu);
+            }
+
+            // Click on option - invoke handler and dismiss
+            if let Some(target_id) = target.as_deref() {
+                if target_id.contains("_option_") {
+                    // Find the handler by navigating the menu path
+                    let handler = {
+                        let menu = self.global_context_menu.as_ref().unwrap();
+                        Self::find_handler_by_id(target_id, &menu.definition, &menu.open_submenus)
+                    };
+
+                    if let Some(handler) = handler {
+                        // Invoke handler with system context (global menus are system-scoped)
+                        let hx = HandlerContext::for_system(self.gx);
+                        if let Some(panic_result) = call_and_check(&handler, &hx) {
+                            *self.global_context_menu = None;
+                            return Some(panic_result);
+                        }
+                        *self.global_context_menu = None;
+                        return Some(DispatchResult::HandledByContextMenu);
+                    }
+                }
+            }
+
+            // Any other click inside menu - capture but don't dismiss
+            return Some(DispatchResult::HandledByContextMenu);
+        }
+
+        // Capture all other events when menu is active
+        Some(DispatchResult::HandledByContextMenu)
+    }
+
+    fn dispatch_to_app_context_menu(&mut self, event: &Event) -> Option<DispatchResult> {
+        // If no app context menu is active, don't handle
+        if self.app_context_menu.is_none() {
+            return None;
+        }
+
+        // Get app context from focused instance
+        let reg = self.registry.read().unwrap();
+        let instance = reg.focused_instance()?;
+        let cx = instance.app_context();
+
+        // Handle escape key - dismiss menu
+        if let Event::Key {
+            key: Key::Escape, ..
+        } = event
+        {
+            drop(reg);
+            *self.app_context_menu = None;
+            return Some(DispatchResult::HandledByContextMenu);
+        }
+
+        // Handle focus events - open submenu if hovering over option with submenu
+        if let Event::Focus { target } = event {
+            if target.contains("_option_") {
+                // Check if this is a submenu option (don't handle submenu-of-submenu)
+                if target.contains("_submenu_") {
+                    // Submenu options are focusable but don't open sub-submenus
+                    // Just allow the focus, don't modify menu state
+                } else {
+                    // This is a main menu option
+                    if let Some(parts) = target.rsplit_once("_option_") {
+                        if let Ok(option_index) = parts.1.parse::<usize>() {
+                            let menu = self.app_context_menu.as_mut().unwrap();
+                            if menu.definition.has_submenu(option_index) {
+                                // Open submenu - calculate actual menu width
+                                let menu_width = menu.definition.calculate_width();
+                                menu.open_submenu(
+                                    option_index,
+                                    (menu.position.0 + menu_width, menu.position.1),
+                                );
+                            } else {
+                                // Not a submenu option - close any open submenus
+                                menu.close_submenus();
+                            }
+                        }
+                    }
+                }
+            }
+            return Some(DispatchResult::HandledByContextMenu);
+        }
+
+        // Handle blur events - dismiss whole menu if leaving menu tree
+        if let Event::Blur {
+            target: _,
+            new_target,
+        } = event
+        {
+            // If focus leaves the menu entirely, dismiss the whole menu
+            if let Some(new_target) = new_target {
+                if !new_target.contains("__app_context_menu__") {
+                    drop(reg);
+                    *self.app_context_menu = None;
+                    return Some(DispatchResult::HandledByContextMenu);
+                }
+            }
+            return Some(DispatchResult::HandledByContextMenu);
+        }
+
+        // Handle click events
+        if let Event::Click { target, .. } = event {
+            // Click on backdrop - dismiss
+            if target.as_deref() == Some("__app_context_menu___backdrop") {
+                drop(reg);
+                *self.app_context_menu = None;
+                return Some(DispatchResult::HandledByContextMenu);
+            }
+
+            // Click on option - invoke handler and dismiss
+            if let Some(target_id) = target.as_deref() {
+                if target_id.contains("_option_") {
+                    // Find the handler by navigating the menu path
+                    let handler = {
+                        let menu = self.app_context_menu.as_ref().unwrap();
+                        Self::find_handler_by_id(target_id, &menu.definition, &menu.open_submenus)
+                    };
+
+                    if let Some(handler) = handler {
+                        // Invoke handler with app context
+                        let hx = HandlerContext::for_app(&cx, self.gx);
+                        if let Some(panic_result) =
+                            call_app_and_check(&handler, &hx, instance.config().name, instance.id())
+                        {
+                            drop(reg);
+                            *self.app_context_menu = None;
+                            return Some(panic_result);
+                        }
+                        drop(reg);
+                        *self.app_context_menu = None;
+                        return Some(DispatchResult::HandledByContextMenu);
+                    }
+                }
+            }
+
+            // Any other click inside menu - capture but don't dismiss
+            return Some(DispatchResult::HandledByContextMenu);
+        }
+
+        // Capture all other events when menu is active
+        Some(DispatchResult::HandledByContextMenu)
+    }
+
+    // =========================================================================
+    // Context Menu Helpers
+    // =========================================================================
+
+    /// Find a handler by navigating the element ID path through the menu structure.
+    ///
+    /// Element IDs have the format:
+    /// - Main menu option: `{prefix}_option_{i}`
+    /// - Submenu option: `{prefix}_submenu_{parent}_option_{i}`
+    ///
+    /// Returns a cloned Handler (Arc clone, cheap).
+    fn find_handler_by_id(
+        element_id: &str,
+        root_definition: &crate::ContextMenuDefinition,
+        open_submenus: &[crate::OpenSubmenu],
+    ) -> Option<crate::Handler> {
+        // Check if this is a submenu option
+        if element_id.contains("_submenu_") {
+            // Parse submenu path: ...._submenu_{parent_idx}_option_{option_idx}
+            // Find the last _submenu_ to get the deepest level
+            if let Some(submenu_start) = element_id.rfind("_submenu_") {
+                let after_submenu = &element_id[submenu_start + 9..]; // Skip "_submenu_"
+
+                // Parse parent index and option index
+                if let Some(option_pos) = after_submenu.find("_option_") {
+                    let parent_idx_str = &after_submenu[..option_pos];
+                    let option_idx_str = &after_submenu[option_pos + 8..]; // Skip "_option_"
+
+                    if let (Ok(parent_idx), Ok(option_idx)) = (
+                        parent_idx_str.parse::<usize>(),
+                        option_idx_str.parse::<usize>(),
+                    ) {
+                        // Find the open submenu for this parent
+                        if let Some(submenu) = open_submenus
+                            .iter()
+                            .find(|sm| sm.parent_index == parent_idx)
+                        {
+                            return submenu.definition.get_handler(option_idx).cloned();
+                        }
+                    }
+                }
+            }
+        } else {
+            // This is a main menu option
+            if let Some(parts) = element_id.rsplit_once("_option_") {
+                if let Ok(option_index) = parts.1.parse::<usize>() {
+                    return root_definition.get_handler(option_index).cloned();
+                }
+            }
+        }
+
+        None
     }
 
     // =========================================================================
@@ -1100,11 +1388,21 @@ impl<M: Modal> AnyModal for ModalEntry<M> {
 pub fn dispatch_event(
     event: &Event,
     global_modals: &mut Vec<Box<dyn AnyModal>>,
+    app_context_menu: &mut Option<crate::ContextMenuState>,
+    global_context_menu: &mut Option<crate::ContextMenuState>,
     systems: &[Box<dyn AnySystem>],
     registry: &Arc<RwLock<InstanceRegistry>>,
     gx: &GlobalContext,
     layout: &LayoutResult,
 ) -> DispatchResult {
-    let mut dispatcher = EventDispatcher::new(global_modals, systems, registry, gx, layout);
+    let mut dispatcher = EventDispatcher::new(
+        global_modals,
+        app_context_menu,
+        global_context_menu,
+        systems,
+        registry,
+        gx,
+        layout,
+    );
     dispatcher.dispatch(event)
 }

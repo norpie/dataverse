@@ -102,6 +102,7 @@ pub struct RafterTheme {
     // Core colors
     pub background: Color,
     pub surface: Color,
+    pub elevated: Color,
     pub border: Color,
     pub primary: Color,
     pub secondary: Color,
@@ -150,6 +151,7 @@ pub fn default_theme() -> RafterTheme {
         // Core: dark purple-gray bg, black surface, purple interact
         background: Color::oklch(0.1684, 0.0, 0.0),
         surface: Color::oklch(0.1957, 0.014, 291.6),
+        elevated: Color::oklch(0.25, 0.02, 291.6), // Lighter than surface for popups/menus
         border: Color::oklch(0.3, 0.02, 280.0),
         primary: Color::oklch(0.9, 0.0, 0.0),
         secondary: Color::oklch(0.75, 0.02, 280.0),

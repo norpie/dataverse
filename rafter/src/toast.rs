@@ -89,7 +89,7 @@ impl Toast {
     pub fn element(&self) -> Element {
         Element::box_()
             .width(Size::Fill)
-            .style(Style::new().background(Color::var("surface")))
+            .style(Style::new().background(Color::var("elevated")))
             .padding(Edges::symmetric(1, 1))
             .child(self.content.clone())
     }

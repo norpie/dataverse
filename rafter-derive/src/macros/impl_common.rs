@@ -448,6 +448,134 @@ pub struct KeybindsMethod {
     pub scope: KeybindScope,
 }
 
+// =============================================================================
+// Context Menu DSL
+// =============================================================================
+
+/// A single entry in a context menu DSL.
+#[derive(Clone, Debug)]
+pub enum ContextMenuDslEntry {
+    /// option("label", handler) or option("label", handler(args))
+    Option {
+        label: syn::LitStr,
+        handler: Ident,
+        args: Vec<TokenStream>,
+    },
+    /// separator()
+    Separator,
+    /// submenu("label") { entries... }
+    Submenu {
+        label: syn::LitStr,
+        entries: Vec<ContextMenuDslEntry>,
+    },
+}
+
+impl Parse for ContextMenuDslEntry {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        let ident: Ident = input.parse()?;
+
+        match ident.to_string().as_str() {
+            "option" => {
+                // Parse: option("label", handler) or option("label", handler(args))
+                let content;
+                syn::parenthesized!(content in input);
+
+                // Parse label
+                let label: syn::LitStr = content.parse()?;
+                content.parse::<Token![,]>()?;
+
+                // Parse handler name
+                let handler: Ident = content.parse()?;
+
+                // Parse optional arguments: handler(arg1, arg2) or handler()
+                let args = if content.peek(syn::token::Paren) {
+                    let args_content;
+                    syn::parenthesized!(args_content in content);
+                    if args_content.is_empty() {
+                        Vec::new()
+                    } else {
+                        let args_punctuated =
+                            args_content.parse_terminated(parse_arg_expr, Token![,])?;
+                        args_punctuated.into_iter().collect()
+                    }
+                } else {
+                    Vec::new()
+                };
+
+                Ok(Self::Option {
+                    label,
+                    handler,
+                    args,
+                })
+            }
+            "separator" => {
+                // Parse: separator()
+                let content;
+                syn::parenthesized!(content in input);
+                // Empty parens
+                Ok(Self::Separator)
+            }
+            "submenu" => {
+                // Parse: submenu("label") { entries... }
+                let paren_content;
+                syn::parenthesized!(paren_content in input);
+                let label: syn::LitStr = paren_content.parse()?;
+
+                let brace_content;
+                syn::braced!(brace_content in input);
+
+                let mut entries = Vec::new();
+                while !brace_content.is_empty() {
+                    entries.push(brace_content.parse()?);
+                    // Consume trailing semicolon if present
+                    if brace_content.peek(Token![;]) {
+                        brace_content.parse::<Token![;]>()?;
+                    }
+                }
+
+                Ok(Self::Submenu { label, entries })
+            }
+            _ => Err(syn::Error::new(
+                ident.span(),
+                format!(
+                    "expected `option`, `separator`, or `submenu`, found `{}`",
+                    ident
+                ),
+            )),
+        }
+    }
+}
+
+/// Parsed context menu DSL - all entries in a method body
+#[derive(Clone, Debug)]
+pub struct ContextMenuDsl {
+    pub entries: Vec<ContextMenuDslEntry>,
+}
+
+impl Parse for ContextMenuDsl {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        let mut entries = Vec::new();
+
+        while !input.is_empty() {
+            entries.push(input.parse()?);
+            // Consume trailing semicolon if present
+            if input.peek(Token![;]) {
+                input.parse::<Token![;]>()?;
+            }
+        }
+
+        Ok(Self { entries })
+    }
+}
+
+/// Information about a context_menu method
+pub struct ContextMenuMethod {
+    /// Method name
+    pub name: Ident,
+    /// Method parameters (for argument capture)
+    pub params: Vec<HandlerArg>,
+}
+
 /// Information about a handler method (legacy - unused)
 pub struct HandlerMethod {
     /// Method name
@@ -1187,6 +1315,191 @@ pub fn generate_keybinds_closures_impl(
             let mut __keybinds = rafter::KeybindClosures::new();
             #(#all_closure_code)*
             __keybinds
+        }
+    }
+}
+
+// =============================================================================
+// Context Menu Generation
+// =============================================================================
+
+/// Generate code to build a context menu (top-level, including build()).
+fn generate_context_menu_builder(
+    entries: &[ContextMenuDslEntry],
+    handler_contexts: &HashMap<String, HandlerContexts>,
+    type_name: &Ident,
+    method_params: &[HandlerArg],
+) -> TokenStream {
+    let param_captures: Vec<TokenStream> = method_params
+        .iter()
+        .map(|param| {
+            let pat = &param.pattern;
+            quote! { let #pat = #pat.clone(); }
+        })
+        .collect();
+
+    let option_code = generate_menu_options(entries, handler_contexts, type_name, method_params);
+
+    quote! {
+        #(#param_captures)*
+        #(#option_code;)*
+        __builder.build()
+    }
+}
+
+/// Generate the option/separator/submenu calls (without build()).
+fn generate_menu_options(
+    entries: &[ContextMenuDslEntry],
+    handler_contexts: &HashMap<String, HandlerContexts>,
+    type_name: &Ident,
+    method_params: &[HandlerArg],
+) -> Vec<TokenStream> {
+    let mut option_code = Vec::new();
+
+    for entry in entries {
+        match entry {
+            ContextMenuDslEntry::Option {
+                label,
+                handler,
+                args,
+            } => {
+                // Get handler context requirements
+                let handler_name = handler.to_string();
+                let contexts = handler_contexts
+                    .get(&handler_name)
+                    .cloned()
+                    .unwrap_or_default();
+
+                // Capture arguments
+                let arg_captures: Vec<TokenStream> = args
+                    .iter()
+                    .enumerate()
+                    .map(|(i, arg_expr)| {
+                        let arg_name = format_ident!("__arg{}", i);
+                        quote! { let #arg_name = #arg_expr; }
+                    })
+                    .collect();
+
+                let arg_clones: Vec<TokenStream> = (0..args.len())
+                    .map(|i| {
+                        let arg_name = format_ident!("__arg{}", i);
+                        quote! { let #arg_name = #arg_name.clone(); }
+                    })
+                    .collect();
+
+                let arg_names: Vec<_> = (0..args.len())
+                    .map(|i| format_ident!("__arg{}", i))
+                    .collect();
+
+                // Build context clones
+                let context_clones: Vec<TokenStream> = contexts
+                    .param_order
+                    .iter()
+                    .enumerate()
+                    .map(|(i, param)| {
+                        let ctx_name = format_ident!("__ctx{}", i);
+                        match param {
+                            ContextParam::App => quote! { let #ctx_name = __hx.cx().clone(); },
+                            ContextParam::Global => quote! { let #ctx_name = __hx.gx().clone(); },
+                            ContextParam::Modal => {
+                                quote! { panic!("Context menus cannot use ModalContext"); }
+                            }
+                            ContextParam::Event => quote! { let #ctx_name = __hx.event().clone(); },
+                        }
+                    })
+                    .collect();
+
+                // Build handler call
+                let context_args: Vec<TokenStream> = contexts
+                    .param_order
+                    .iter()
+                    .enumerate()
+                    .map(|(i, _)| {
+                        let ctx_name = format_ident!("__ctx{}", i);
+                        quote! { &#ctx_name }
+                    })
+                    .collect();
+
+                let handler_call = if context_args.is_empty() && arg_names.is_empty() {
+                    quote! { __self.#handler().await; }
+                } else {
+                    quote! { __self.#handler(#(#arg_names,)* #(#context_args,)*).await; }
+                };
+
+                option_code.push(quote! {
+                    __builder = {
+                        #(#arg_captures)*
+                        __builder.option(
+                            #label,
+                            std::sync::Arc::new({
+                                let __self = __self.clone();
+                                #(#arg_clones)*
+                                move |__hx: &rafter::HandlerContext| {
+                                    #(#context_clones)*
+                                    let __self = __self.clone();
+                                    #(#arg_clones)*
+                                    tokio::spawn(async move {
+                                        #handler_call
+                                    });
+                                }
+                            })
+                        )
+                    }
+                });
+            }
+            ContextMenuDslEntry::Separator => {
+                option_code.push(quote! {
+                    __builder = __builder.separator()
+                });
+            }
+            ContextMenuDslEntry::Submenu { label, entries } => {
+                let submenu_options =
+                    generate_menu_options(entries, handler_contexts, type_name, method_params);
+                option_code.push(quote! {
+                    __builder = __builder.submenu(#label, |mut __builder| {
+                        #(#submenu_options;)*
+                        __builder
+                    })
+                });
+            }
+        }
+    }
+
+    option_code
+}
+
+/// Generate a context menu method implementation.
+///
+/// Takes a #[context_menu] annotated method body (DSL) and generates
+/// a method that returns a ContextMenuDefinition.
+pub fn generate_context_menu_method(
+    method: &ContextMenuMethod,
+    body: &TokenStream,
+    handler_contexts: &HashMap<String, HandlerContexts>,
+    type_name: &Ident,
+) -> TokenStream {
+    // Parse the body as DSL
+    let dsl: ContextMenuDsl = match syn::parse2(body.clone()) {
+        Ok(d) => d,
+        Err(e) => {
+            return e.to_compile_error();
+        }
+    };
+
+    // Generate builder code
+    let builder_code =
+        generate_context_menu_builder(&dsl.entries, handler_contexts, type_name, &method.params);
+
+    // Generate method signature
+    let method_name = &method.name;
+    let param_patterns: Vec<_> = method.params.iter().map(|p| &p.pattern).collect();
+    let param_types: Vec<_> = method.params.iter().map(|p| &p.ty).collect();
+
+    quote! {
+        pub fn #method_name(&self, #(#param_patterns: #param_types),*) -> rafter::ContextMenuDefinition {
+            let __self = self.clone();
+            let mut __builder = rafter::ContextMenuBuilder::new();
+            #builder_code
         }
     }
 }

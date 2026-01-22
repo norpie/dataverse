@@ -31,6 +31,6 @@ pub fn loading_overlay(id: &str, message: &str) -> Element {
                 .margin(Edges::symmetric(2, 1))
                 .style(Style::new().background(Color::var("surface")))
                 .child(Element::text(message).style(Style::new().foreground(Color::var("muted"))))
-                .child(Spinner::default().id(&spinner_id).build_standalone()
-                ))
+                .child(Spinner::default().id(&spinner_id).build_standalone()),
+        )
 }

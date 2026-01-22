@@ -11,14 +11,15 @@ use quote::quote;
 use syn::{Attribute, Type, parse2};
 
 use super::impl_common::{
-    DispatchContextType, EventHandlerMethod, HandlerContexts, HandlerInfo, KeybindScope,
-    KeybindsMethod, LifecycleContext, LifecycleHookInfo, LifecycleHooksDefined, PageMethod,
-    PartialImplBlock, RequestHandlerMethod, app_metadata_mod, extract_handler_info,
-    extract_lifecycle_hook_info, generate_config_impl, generate_element_impl,
-    generate_event_dispatch, generate_handler_wrappers, generate_keybinds_closures_impl,
-    generate_lifecycle_hooks_impl, generate_request_dispatch, get_type_name,
-    parse_event_handler_metadata, parse_request_handler_metadata, reconstruct_method,
-    reconstruct_method_stripped, validate_lifecycle_hook_contexts,
+    ContextMenuMethod, DispatchContextType, EventHandlerMethod, HandlerArg, HandlerContexts,
+    HandlerInfo, KeybindScope, KeybindsMethod, LifecycleContext, LifecycleHookInfo,
+    LifecycleHooksDefined, PageMethod, PartialImplBlock, RequestHandlerMethod, app_metadata_mod,
+    extract_handler_info, extract_lifecycle_hook_info, generate_config_impl,
+    generate_context_menu_method, generate_element_impl, generate_event_dispatch,
+    generate_handler_wrappers, generate_keybinds_closures_impl, generate_lifecycle_hooks_impl,
+    generate_request_dispatch, get_type_name, parse_event_handler_metadata,
+    parse_request_handler_metadata, reconstruct_method, reconstruct_method_stripped,
+    validate_lifecycle_hook_contexts,
 };
 
 /// Attributes for the #[app_impl] macro
@@ -74,6 +75,57 @@ fn parse_keybinds_scope(attrs: &[Attribute]) -> KeybindScope {
     KeybindScope::Global
 }
 
+/// Extract non-self parameters from a method signature.
+fn extract_method_params(sig: &syn::Signature) -> Vec<HandlerArg> {
+    sig.inputs
+        .iter()
+        .filter_map(|arg| match arg {
+            syn::FnArg::Receiver(_) => None,
+            syn::FnArg::Typed(pat_type) => {
+                let pat = &pat_type.pat;
+                let ty = &pat_type.ty;
+                let pattern = quote::quote! { #pat }.into();
+                let ty_tokens = quote::quote! { #ty }.into();
+                Some(HandlerArg {
+                    pattern,
+                    ty: ty_tokens,
+                })
+            }
+        })
+        .collect()
+}
+
+/// Extract the contents of a `context_menu!` macro invocation from a method body.
+fn extract_context_menu_macro(body: &TokenStream) -> syn::Result<TokenStream> {
+    use quote::quote;
+
+    // Parse the body as a macro invocation
+    // Expected: context_menu! { ... }
+    let tokens = body.clone();
+
+    // Try to parse as a single macro invocation
+    let mac: syn::Macro = match syn::parse2(tokens.clone()) {
+        Ok(m) => m,
+        Err(_) => {
+            return Err(syn::Error::new_spanned(
+                tokens,
+                "Expected a single `context_menu! { ... }` macro invocation in the method body",
+            ));
+        }
+    };
+
+    // Check that it's the context_menu macro
+    if !mac.path.is_ident("context_menu") {
+        return Err(syn::Error::new_spanned(
+            mac.path,
+            "Expected `context_menu!` macro, found a different macro",
+        ));
+    }
+
+    // Return the macro's tokens (the contents inside the braces)
+    Ok(mac.tokens)
+}
+
 pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
     // Parse attributes
     let attrs = match AppImplAttrs::parse(attr) {
@@ -101,6 +153,7 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
 
     // Collect method information
     let mut keybinds_methods: Vec<(KeybindsMethod, TokenStream)> = Vec::new();
+    let mut context_menu_methods: Vec<(ContextMenuMethod, TokenStream)> = Vec::new();
     let mut handler_contexts: HashMap<String, HandlerContexts> = HashMap::new();
     let mut handler_infos: Vec<HandlerInfo> = Vec::new();
     let mut event_handlers: Vec<EventHandlerMethod> = Vec::new();
@@ -126,6 +179,28 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
                 method.body.clone(),
             ));
             // Don't add keybinds methods to reconstructed output - they're consumed
+            continue;
+        }
+
+        // Check for context_menu method
+        if method.has_attr("context_menu") {
+            // Extract method parameters (excluding &self)
+            let params = extract_method_params(&method.sig);
+
+            // Extract the context_menu! macro body from the method
+            let dsl_body = match extract_context_menu_macro(&method.body) {
+                Ok(body) => body,
+                Err(e) => return e.to_compile_error(),
+            };
+
+            context_menu_methods.push((
+                ContextMenuMethod {
+                    name: method.sig.ident.clone(),
+                    params,
+                },
+                dsl_body,
+            ));
+            // Don't add context_menu methods to reconstructed output - they're consumed
             continue;
         }
 
@@ -265,6 +340,14 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
     let keybinds_impl =
         generate_keybinds_closures_impl(&keybinds_methods, &handler_contexts, &type_name);
 
+    // Generate context menu methods
+    let context_menu_methods_impl: Vec<TokenStream> = context_menu_methods
+        .iter()
+        .map(|(method_info, body)| {
+            generate_context_menu_method(method_info, body, &handler_contexts, &type_name)
+        })
+        .collect();
+
     // Generate element impl - use page routing if enabled
     let element_impl = if has_page_routing {
         generate_page_routing_element_impl(&named_page_methods, &attrs.layout, &self_ty)
@@ -361,6 +444,9 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
 
             // Handler wrappers for page! macro integration
             #handler_wrappers
+
+            // Context menu methods
+            #(#context_menu_methods_impl)*
 
             // Page routing helpers (if page routing is enabled)
             #page_routing_helpers

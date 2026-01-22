@@ -71,3 +71,10 @@ pub fn modal_impl(attr: TokenStream, item: TokenStream) -> TokenStream {
 pub fn system_impl(attr: TokenStream, item: TokenStream) -> TokenStream {
     macros::system_impl::expand(attr.into(), item.into()).into()
 }
+
+#[proc_macro]
+pub fn context_menu(input: TokenStream) -> TokenStream {
+    // This is a transparent macro - it just returns its input
+    // It exists to provide nice DSL syntax within #[context_menu] methods
+    input
+}

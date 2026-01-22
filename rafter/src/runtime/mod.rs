@@ -244,6 +244,10 @@ impl Runtime {
         // Global modals
         let mut global_modals: Vec<Box<dyn AnyModal>> = Vec::new();
 
+        // Context menus
+        let mut app_context_menu: Option<crate::ContextMenuState> = None;
+        let mut global_context_menu: Option<crate::ContextMenuState> = None;
+
         // Run event loop
         let mut wakeup_rx = wakeup_rx;
         self.event_loop(
@@ -258,6 +262,8 @@ impl Runtime {
             &mut active_toasts,
             &mut next_toast_id,
             &mut global_modals,
+            &mut app_context_menu,
+            &mut global_context_menu,
         )
         .await
     }
@@ -277,6 +283,8 @@ impl Runtime {
         active_toasts: &mut Vec<ActiveToast>,
         next_toast_id: &mut usize,
         global_modals: &mut Vec<Box<dyn AnyModal>>,
+        app_context_menu: &mut Option<crate::ContextMenuState>,
+        global_context_menu: &mut Option<crate::ContextMenuState>,
     ) -> Result<(), RuntimeError> {
         // Default poll timeout (16ms for ~60fps when animations active)
         let animation_timeout = Duration::from_millis(16);
@@ -366,6 +374,25 @@ impl Runtime {
                 global_modals.pop();
             }
 
+            // 3c. Process app context menu requests
+            {
+                let reg = registry.read().unwrap();
+                if let Some(instance) = reg.focused_instance() {
+                    if let Some(request) = instance.app_context().take_context_menu_request() {
+                        // Convert request to state
+                        *app_context_menu = Some(crate::ContextMenuState::from_request(request));
+                    }
+                }
+            }
+
+            // 3d. Process global context menu requests
+            if let Some(request) = gx.take_context_menu_request() {
+                // Convert request to state
+                // Global context menu takes priority - dismiss app menu if present
+                *app_context_menu = None;
+                *global_context_menu = Some(crate::ContextMenuState::from_request(request));
+            }
+
             let t_modals = Instant::now();
 
             // 4. Collect new toasts
@@ -407,7 +434,14 @@ impl Runtime {
             let t_clear_handlers = Instant::now();
 
             // 6b. Build UI
-            let mut root = self.build_root_element(registry, systems, active_toasts, global_modals);
+            let mut root = self.build_root_element(
+                registry,
+                systems,
+                active_toasts,
+                global_modals,
+                app_context_menu,
+                global_context_menu,
+            );
             let t_build_ui = Instant::now();
 
             // 7. Process cursor position requests (before enrichment uses TextInputState)
@@ -793,8 +827,16 @@ impl Runtime {
 
             // 20. Dispatch events to keybinds and apps
             for event in &events {
-                let result =
-                    dispatch::dispatch_event(event, global_modals, systems, registry, gx, layout);
+                let result = dispatch::dispatch_event(
+                    event,
+                    global_modals,
+                    app_context_menu,
+                    global_context_menu,
+                    systems,
+                    registry,
+                    gx,
+                    layout,
+                );
 
                 // Handle panics according to PanicBehavior
                 if let dispatch::DispatchResult::HandlerPanicked { message } = result {
@@ -908,6 +950,8 @@ impl Runtime {
         systems: &[Box<dyn AnySystem>],
         active_toasts: &[ActiveToast],
         global_modals: &[Box<dyn AnyModal>],
+        app_context_menu: &Option<crate::ContextMenuState>,
+        global_context_menu: &Option<crate::ContextMenuState>,
     ) -> Element {
         use tuidom::{Position, Size};
 
@@ -1001,12 +1045,24 @@ impl Runtime {
             }
         }
 
+        // Add app context menu (after app modals, before global modals)
+        if let Some(menu) = app_context_menu {
+            let menu_wrapper = Self::build_context_menu("__app_context_menu__", menu);
+            root = root.child(menu_wrapper);
+        }
+
         // Add global modals (highest z-order, overlays everything including app modals)
         // Each modal is rendered in order, stacking on top of each other
         for (i, modal) in global_modals.iter().enumerate() {
             let modal_wrapper =
                 Self::build_modal_wrapper(&format!("__global_modal_{}__", i), modal.as_ref());
             root = root.child(modal_wrapper);
+        }
+
+        // Add global context menu (after global modals)
+        if let Some(menu) = global_context_menu {
+            let menu_wrapper = Self::build_context_menu("__global_context_menu__", menu);
+            root = root.child(menu_wrapper);
         }
 
         // Add toasts (absolute positioned, stacked from bottom-right)
@@ -1077,6 +1133,145 @@ impl Runtime {
                     )
             }
         }
+    }
+
+    /// Build a context menu wrapper element.
+    fn build_context_menu(id: &str, menu: &crate::ContextMenuState) -> Element {
+        use tuidom::{Color, Edges, Position, Size, Style};
+
+        let (menu_x, menu_y) = menu.position;
+
+        // Build the menu content
+        let menu_content = Self::build_menu_panel(
+            &format!("{}_content", id),
+            &menu.definition,
+            &menu.open_submenus,
+        );
+
+        // Position the menu at the requested coordinates
+        let positioned_menu = menu_content
+            .position(Position::Absolute)
+            .left(menu_x as i16)
+            .top(menu_y as i16);
+
+        // Full-screen transparent backdrop for dismiss on outside click
+        let backdrop = Element::box_()
+            .id(format!("{}_backdrop", id))
+            .position(Position::Absolute)
+            .left(0)
+            .top(0)
+            .width(Size::Fill)
+            .height(Size::Fill)
+            .clickable(true); // Capture clicks outside menu
+
+        // Stack backdrop behind menu
+        Element::box_()
+            .id(id)
+            .position(Position::Absolute)
+            .left(0)
+            .top(0)
+            .width(Size::Fill)
+            .height(Size::Fill)
+            .child(backdrop)
+            .child(positioned_menu)
+    }
+
+    /// Build a single menu panel (used recursively for submenus).
+    fn build_menu_panel(
+        id: &str,
+        definition: &crate::ContextMenuDefinition,
+        open_submenus: &[crate::OpenSubmenu],
+    ) -> Element {
+        use tuidom::{Color, Edges, Position, Size, Style};
+
+        // Container for this panel and any open submenus
+        let mut container = Element::box_().position(Position::Relative);
+
+        // Calculate menu width based on content
+        let menu_width = definition.calculate_width();
+
+        // Build the menu panel with explicit width
+        let mut menu_panel = Element::col()
+            .id(id)
+            .gap(0)
+            .width(Size::Fixed(menu_width))
+            .style(Style::new().background(Color::var("elevated")));
+
+        // Track vertical position for submenu alignment
+        let mut current_row = 0i16;
+
+        // Add each menu option
+        for (i, option) in definition.options.iter().enumerate() {
+            match option {
+                crate::MenuOption::Item {
+                    label,
+                    disabled,
+                    submenu,
+                    ..
+                } => {
+                    let option_id = format!("{}_option_{}", id, i);
+                    let mut option_elem = Element::row().id(&option_id).width(Size::Fill).gap(1);
+
+                    // Add label
+                    let label_color = if *disabled { "muted" } else { "primary" };
+                    option_elem = option_elem.child(
+                        Element::text(label)
+                            .style(Style::new().foreground(Color::var(label_color))),
+                    );
+
+                    // Add submenu indicator if has submenu
+                    if submenu.is_some() {
+                        option_elem = option_elem.child(
+                            Element::text("→").style(Style::new().foreground(Color::var("muted"))),
+                        );
+                    }
+
+                    // Make clickable and focusable unless disabled
+                    if !disabled {
+                        option_elem = option_elem.focusable(true).clickable(true).style_focused(
+                            Style::new().background(Color::oklch(0.30, 0.02, 291.6)),
+                        );
+                    }
+
+                    menu_panel = menu_panel.child(option_elem);
+
+                    // If this option has an open submenu, render it as a sibling
+                    if let Some(open_submenu) = open_submenus.iter().find(|sm| sm.parent_index == i)
+                    {
+                        let submenu_panel = Self::build_menu_panel(
+                            &format!("{}_submenu_{}", id, i),
+                            &open_submenu.definition,
+                            &open_submenu.open_submenus,
+                        );
+
+                        // Position submenu to the right of parent, aligned with the parent option
+                        let positioned_submenu = submenu_panel
+                            .position(Position::Absolute)
+                            .left(menu_width as i16)
+                            .top(current_row);
+
+                        container = container.child(positioned_submenu);
+                    }
+
+                    // Increment row count (1 for the option row)
+                    current_row += 1;
+                }
+                crate::MenuOption::Separator => {
+                    menu_panel = menu_panel.child(
+                        Element::box_()
+                            .height(Size::Fixed(1))
+                            .width(Size::Fill)
+                            .style(Style::new().background(Color::var("elevated"))),
+                    );
+
+                    // Increment row count (1 for the separator row)
+                    current_row += 1;
+                }
+            }
+        }
+
+        // Add menu panel to container
+        container.child(menu_panel)
     }
 
     /// Build the toast container element.

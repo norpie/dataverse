@@ -17,6 +17,7 @@ use std::sync::{Arc, RwLock};
 use tokio::sync::oneshot;
 use tuidom::Theme;
 
+use crate::context_menu::ContextMenuRequest;
 use crate::instance::{InstanceId, InstanceInfo, RequestError, SpawnError};
 use crate::modal::{Modal, ModalContext, ModalEntry};
 use crate::registration::CloneableApp;
@@ -144,6 +145,8 @@ struct GlobalContextInner {
     theme_request: Option<Arc<dyn Theme>>,
     /// Pending global modal.
     modal_request: Option<GlobalModalRequest>,
+    /// Pending global context menu request.
+    context_menu_request: Option<ContextMenuRequest>,
     /// Pending instance commands.
     instance_commands: Vec<InstanceCommand>,
 }
@@ -155,6 +158,7 @@ impl Default for GlobalContextInner {
             pending_toasts: Vec::new(),
             theme_request: None,
             modal_request: None,
+            context_menu_request: None,
             instance_commands: Vec::new(),
         }
     }
@@ -455,6 +459,45 @@ impl GlobalContext {
     }
 
     // =========================================================================
+    // Global Context Menu
+    // =========================================================================
+
+    /// Show a global context menu at the given screen position.
+    ///
+    /// Global context menus overlay everything and are not tied to a specific app.
+    /// Only one context menu can be active at a time. Clicking outside the menu
+    /// or selecting an option will dismiss it.
+    ///
+    /// Global context menus take priority over app context menus.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// #[handler]
+    /// fn show_global_menu(&self, gx: &GlobalContext) {
+    ///     let menu = ContextMenuBuilder::new()
+    ///         .option("Settings", open_settings_handler())
+    ///         .option("About", show_about_handler())
+    ///         .separator()
+    ///         .option("Quit", quit_handler())
+    ///         .build();
+    ///     
+    ///     gx.context_menu(menu, 10, 20);
+    /// }
+    /// ```
+    pub fn context_menu(
+        &self,
+        definition: crate::context_menu::ContextMenuDefinition,
+        x: u16,
+        y: u16,
+    ) {
+        if let Ok(mut inner) = self.inner.write() {
+            inner.context_menu_request = Some(ContextMenuRequest::new(definition, (x, y)));
+            self.send_wakeup();
+        }
+    }
+
+    // =========================================================================
     // Inter-App Communication
     // =========================================================================
 
@@ -621,6 +664,14 @@ impl GlobalContext {
             .write()
             .ok()
             .and_then(|mut inner| inner.modal_request.take())
+    }
+
+    /// Take the global context menu request (runtime use).
+    pub(crate) fn take_context_menu_request(&self) -> Option<ContextMenuRequest> {
+        self.inner
+            .write()
+            .ok()
+            .and_then(|mut inner| inner.context_menu_request.take())
     }
 
     /// Take pending instance commands (runtime use).

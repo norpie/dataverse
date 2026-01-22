@@ -2,6 +2,7 @@
 
 mod app;
 mod app_context;
+mod context_menu;
 mod event;
 mod global_context;
 mod handler_context;
@@ -27,6 +28,10 @@ pub use app::{App, AppConfig, BlurPolicy, PanicBehavior};
 pub use app_context::{
     AppContext, AppError, AppErrorKind, AppModalRequest, ErrorReceiver, ErrorSender,
     extract_panic_message,
+};
+pub use context_menu::{
+    ContextMenuBuilder, ContextMenuDefinition, ContextMenuRequest, ContextMenuState, MenuOption,
+    OpenSubmenu,
 };
 pub use event::{Event, FocusChanged, InstanceClosed, InstanceSpawned};
 pub use global_context::{
@@ -64,8 +69,8 @@ pub use runtime::{Runtime, RuntimeError};
 
 // Re-export derive macros
 pub use rafter_derive::{
-    Event, Request, app, app_impl, event_handler, handler, keybinds, modal, modal_impl, page,
-    request_handler, system, system_impl, theme,
+    Event, Request, app, app_impl, context_menu, event_handler, handler, keybinds, modal,
+    modal_impl, page, request_handler, system, system_impl, theme,
 };
 
 // =============================================================================

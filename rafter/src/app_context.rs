@@ -17,6 +17,7 @@ use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
 
 use crate::GlobalContext;
+use crate::context_menu::ContextMenuRequest;
 use crate::instance::InstanceId;
 use crate::modal::{Modal, ModalContext, ModalEntry};
 use crate::wakeup::WakeupSender;
@@ -84,6 +85,8 @@ struct AppContextInner {
     focus_request: Option<String>,
     /// Pending app-scoped modal.
     modal_request: Option<AppModalRequest>,
+    /// Pending context menu request.
+    context_menu_request: Option<ContextMenuRequest>,
     /// Requests to scroll elements into view.
     scroll_requests: Vec<String>,
     /// Requests to set cursor position for text inputs.
@@ -119,6 +122,7 @@ impl AppContext {
                 instance_id,
                 focus_request: None,
                 modal_request: None,
+                context_menu_request: None,
                 scroll_requests: Vec::new(),
                 cursor_requests: Vec::new(),
             })),
@@ -317,6 +321,46 @@ impl AppContext {
     }
 
     // =========================================================================
+    // App-Scoped Context Menu
+    // =========================================================================
+
+    /// Show an app-scoped context menu at the given screen position.
+    ///
+    /// Context menus are right-click menus with options and submenus.
+    /// Only one context menu can be active at a time. Clicking outside
+    /// the menu or selecting an option will dismiss it.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// #[handler]
+    /// async fn show_menu(&self, cx: &AppContext, gx: &GlobalContext) {
+    ///     let menu = ContextMenuBuilder::new()
+    ///         .option("Delete", delete_handler())
+    ///         .option("Edit", edit_handler())
+    ///         .separator()
+    ///         .submenu("Export", |sub| {
+    ///             sub.option("CSV", export_csv_handler())
+    ///                .option("JSON", export_json_handler())
+    ///         })
+    ///         .build();
+    ///     
+    ///     cx.context_menu(menu, 10, 20);
+    /// }
+    /// ```
+    pub fn context_menu(
+        &self,
+        definition: crate::context_menu::ContextMenuDefinition,
+        x: u16,
+        y: u16,
+    ) {
+        if let Ok(mut inner) = self.inner.write() {
+            inner.context_menu_request = Some(ContextMenuRequest::new(definition, (x, y)));
+            self.send_wakeup();
+        }
+    }
+
+    // =========================================================================
     // Internal (runtime use)
     // =========================================================================
 
@@ -334,6 +378,14 @@ impl AppContext {
             .write()
             .ok()
             .and_then(|mut inner| inner.modal_request.take())
+    }
+
+    /// Take the context menu request (runtime use).
+    pub(crate) fn take_context_menu_request(&self) -> Option<ContextMenuRequest> {
+        self.inner
+            .write()
+            .ok()
+            .and_then(|mut inner| inner.context_menu_request.take())
     }
 
     /// Take scroll requests (runtime use).
@@ -362,6 +414,7 @@ impl Default for AppContext {
                 instance_id: InstanceId::default(),
                 focus_request: None,
                 modal_request: None,
+                context_menu_request: None,
                 scroll_requests: Vec::new(),
                 cursor_requests: Vec::new(),
             })),
