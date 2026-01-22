@@ -4,28 +4,32 @@ pub mod api;
 mod executor;
 pub mod migrations;
 pub mod repository;
+mod tree;
 pub mod types;
+
+use std::collections::VecDeque;
 
 use chrono::Utc;
 use rafter::page;
 use rafter::prelude::*;
-use rafter::widgets::Text;
+use rafter::widgets::{Text, Tree, TreeState};
+use tuidom::Color;
 
 use crate::credentials::CredentialsProvider;
 use crate::paths;
 use crate::systems::client_management::EnvironmentAdded;
 use crate::systems::client_management::EnvironmentRemoved;
-use crate::widgets::Spinner;
 
 use api::AddItems;
 use api::AddItemsResponse;
 use api::GetQueueStatus;
-use api::NewItem;
 use api::QueueItemCompleted;
 use api::QueueStatusChanged;
+use repository::ListFilter;
 use repository::NewQueueItem;
 use repository::QueueRepository;
 use repository::StatusCounts;
+use tree::{QueueTreeNode, build_tree_nodes};
 use types::ItemStatus;
 
 /// Queue app for executing Dataverse operations in priority order.
@@ -45,41 +49,52 @@ pub struct Queue {
     max_failures: usize,
     /// Current status counts.
     status_counts: StatusCounts,
-    /// Initialization error, if any.
-    init_error: Option<String>,
+    /// Tree state for the queue items.
+    tree_state: TreeState<QueueTreeNode>,
+    /// Last 7 execution durations for ETA calculation.
+    recent_durations: VecDeque<i64>,
 }
 
 #[app_impl]
 impl Queue {
-    async fn on_start(&self, gx: &GlobalContext) {
-        // Initialize repository
-        let db_path = paths::queue_db().unwrap_or_else(|| "queue.db".into());
+    #[on_start]
+    async fn on_start(&self, gx: &GlobalContext, cx: &AppContext) {
+        let Some(db_path) = paths::queue_db() else {
+            log::error!("Failed to resolve queue database path");
+            gx.toast(Toast::error("Failed to resolve queue database path"));
+            cx.close();
+            return;
+        };
 
-        match QueueRepository::new(&db_path).await {
-            Ok(repo) => {
-                // Check for interrupted items (crash recovery)
-                if let Ok(count) = repo.mark_running_as_interrupted().await {
-                    if count > 0 {
-                        gx.toast(Toast::warning(format!(
-                            "{} item(s) were interrupted, please review",
-                            count
-                        )));
-                    }
-                }
-
-                // Load initial counts
-                if let Ok(counts) = repo.count_by_status().await {
-                    self.status_counts.set(counts);
-                }
-
-                self.repository.set(Some(repo));
-            }
+        let repo = match QueueRepository::new(&db_path).await {
+            Ok(repo) => repo,
             Err(e) => {
                 log::error!("Failed to initialize queue database: {}", e);
-                self.init_error.set(Some(format!("Database error: {}", e)));
                 gx.toast(Toast::error("Failed to initialize queue database"));
+                cx.close();
+                return;
+            }
+        };
+
+        // Check for interrupted items (crash recovery)
+        if let Ok(count) = repo.mark_running_as_interrupted().await {
+            if count > 0 {
+                gx.toast(Toast::warning(format!(
+                    "{} item(s) were interrupted, please review",
+                    count
+                )));
             }
         }
+
+        // Load initial counts
+        if let Ok(counts) = repo.count_by_status().await {
+            self.status_counts.set(counts);
+        }
+
+        // Load initial tree
+        self.refresh_tree(&repo).await;
+
+        self.repository.set(Some(repo));
 
         // Set defaults
         self.is_running.set(false);
@@ -100,6 +115,92 @@ impl Queue {
             format!("Queue ({})", pending)
         } else {
             "Queue".to_string()
+        }
+    }
+
+    // =========================================================================
+    // Keybinds
+    // =========================================================================
+
+    #[keybinds]
+    fn keybinds() {
+        bind("P", toggle_running);
+        bind("s", step_one);
+        bind("C", clear_completed);
+    }
+
+    #[handler]
+    async fn toggle_running(&self, gx: &GlobalContext) {
+        let running = !self.is_running.get();
+        self.is_running.set(running);
+
+        if running {
+            self.failure_count.set(0);
+            self.try_start_next_items(gx).await;
+            gx.toast(Toast::info("Queue started"));
+        } else {
+            gx.toast(Toast::info("Queue paused"));
+        }
+
+        self.publish_status_changed(gx);
+    }
+
+    #[handler]
+    async fn step_one(&self, gx: &GlobalContext) {
+        if self.is_running.get() {
+            return;
+        }
+
+        let Some(repo) = self.repository.get() else {
+            return;
+        };
+
+        match repo.get_next_ready().await {
+            Ok(Some(item)) => {
+                if repo
+                    .update_status(item.id, ItemStatus::Running)
+                    .await
+                    .is_ok()
+                {
+                    self.running_count.set(self.running_count.get() + 1);
+                    self.refresh_tree(&repo).await;
+
+                    let gx = gx.clone();
+                    let repo = repo.clone();
+                    tokio::spawn(async move {
+                        Self::execute_and_complete(item, repo, gx).await;
+                    });
+                }
+            }
+            Ok(None) => {
+                gx.toast(Toast::info("No ready items"));
+            }
+            Err(e) => {
+                log::error!("Failed to get next ready item: {}", e);
+            }
+        }
+    }
+
+    #[handler]
+    async fn clear_completed(&self, gx: &GlobalContext) {
+        let Some(repo) = self.repository.get() else {
+            return;
+        };
+
+        match repo.clear_completed().await {
+            Ok(count) => {
+                if count > 0 {
+                    gx.toast(Toast::info(format!("Cleared {} completed item(s)", count)));
+                    if let Ok(counts) = repo.count_by_status().await {
+                        self.status_counts.set(counts);
+                    }
+                    self.refresh_tree(&repo).await;
+                    self.publish_status_changed(gx);
+                }
+            }
+            Err(e) => {
+                log::error!("Failed to clear completed items: {}", e);
+            }
         }
     }
 
@@ -149,11 +250,12 @@ impl Queue {
             }
         }
 
-        // Refresh counts
+        // Refresh counts and tree
         if let Ok(counts) = repo.count_by_status().await {
             self.status_counts.set(counts.clone());
             self.publish_status_changed(gx);
         }
+        self.refresh_tree(&repo).await;
 
         // Try to start execution if running
         if self.is_running.get() {
@@ -186,12 +288,11 @@ impl Queue {
                     count,
                     event.display_name
                 );
-                // Refresh counts
                 if let Ok(counts) = repo.count_by_status().await {
                     self.status_counts.set(counts);
                     self.publish_status_changed(gx);
                 }
-                // Try to start items if running
+                self.refresh_tree(&repo).await;
                 if self.is_running.get() {
                     self.try_start_next_items(gx).await;
                 }
@@ -213,11 +314,11 @@ impl Queue {
         match repo.update_environment_availability(event.id, false).await {
             Ok(count) if count > 0 => {
                 log::info!("{} queue items blocked (environment removed)", count);
-                // Refresh counts
                 if let Ok(counts) = repo.count_by_status().await {
                     self.status_counts.set(counts);
                     self.publish_status_changed(gx);
                 }
+                self.refresh_tree(&repo).await;
             }
             Ok(_) => {}
             Err(e) => {
@@ -249,11 +350,26 @@ impl Queue {
             self.failure_count.set(0);
         }
 
-        // Refresh counts
+        // Track duration for ETA
+        if let Some(repo) = self.repository.get() {
+            if let Ok(executions) = repo.get_executions(event.item_id).await {
+                if let Some(exec) = executions.first() {
+                    self.recent_durations.update(|d| {
+                        d.push_back(exec.duration_ms);
+                        if d.len() > 7 {
+                            d.pop_front();
+                        }
+                    });
+                }
+            }
+        }
+
+        // Refresh counts and tree
         if let Some(repo) = self.repository.get() {
             if let Ok(counts) = repo.count_by_status().await {
                 self.status_counts.set(counts);
             }
+            self.refresh_tree(&repo).await;
         }
 
         self.publish_status_changed(gx);
@@ -268,6 +384,31 @@ impl Queue {
     // Internal Methods
     // =========================================================================
 
+    async fn refresh_tree(&self, repo: &QueueRepository) {
+        let filter = ListFilter {
+            statuses: Some(vec![
+                ItemStatus::Blocked,
+                ItemStatus::Ready,
+                ItemStatus::Paused,
+                ItemStatus::Running,
+                ItemStatus::Interrupted,
+            ]),
+            ..Default::default()
+        };
+
+        match repo.list(filter).await {
+            Ok(items) => {
+                let nodes = build_tree_nodes(&items);
+                self.tree_state.update(|s| {
+                    s.set_roots(nodes);
+                });
+            }
+            Err(e) => {
+                log::error!("Failed to load queue items: {}", e);
+            }
+        }
+    }
+
     async fn try_start_next_items(&self, gx: &GlobalContext) {
         let Some(repo) = self.repository.get() else {
             return;
@@ -280,7 +421,6 @@ impl Queue {
         for _ in current..max {
             match repo.get_next_ready().await {
                 Ok(Some(item)) => {
-                    // Mark as running
                     if repo
                         .update_status(item.id, ItemStatus::Running)
                         .await
@@ -288,7 +428,6 @@ impl Queue {
                     {
                         self.running_count.set(self.running_count.get() + 1);
 
-                        // Spawn execution task
                         let gx = gx.clone();
                         let repo = repo.clone();
                         tokio::spawn(async move {
@@ -296,7 +435,7 @@ impl Queue {
                         });
                     }
                 }
-                Ok(None) => break, // No more items
+                Ok(None) => break,
                 Err(e) => {
                     log::error!("Failed to get next ready item: {}", e);
                     break;
@@ -305,7 +444,6 @@ impl Queue {
         }
     }
 
-    /// Execute an item and publish completion event.
     async fn execute_and_complete(
         item: types::QueueItem,
         repo: QueueRepository,
@@ -313,18 +451,14 @@ impl Queue {
     ) {
         log::info!("Executing queue item {}: {}", item.id, item.description);
 
-        // Execute the item
         let result = executor::execute_item(&item, &gx).await;
 
-        // Update item status
         if let Err(e) = repo.update_status(item.id, result.status).await {
             log::error!("Failed to update item {} status: {}", item.id, e);
         }
 
-        // Extract error before moving record
         let error = result.record.error.clone();
 
-        // Save execution record
         if let Err(e) = repo.insert_execution(result.record).await {
             log::error!(
                 "Failed to save execution record for item {}: {}",
@@ -333,7 +467,6 @@ impl Queue {
             );
         }
 
-        // Publish completion event
         gx.publish(QueueItemCompleted {
             item_id: item.id,
             status: result.status,
@@ -354,57 +487,162 @@ impl Queue {
         });
     }
 
+    fn format_eta(&self) -> String {
+        let durations = self.recent_durations.get();
+        if durations.is_empty() {
+            return String::new();
+        }
+
+        let counts = self.status_counts.get();
+        let remaining = counts.ready + counts.paused;
+        if remaining == 0 {
+            return String::new();
+        }
+
+        let avg_ms: i64 = durations.iter().sum::<i64>() / durations.len() as i64;
+        let total_ms = avg_ms * remaining as i64;
+        let total_secs = total_ms / 1000;
+
+        if total_secs < 60 {
+            format!("~{}s", total_secs)
+        } else if total_secs < 3600 {
+            format!("~{}m", total_secs / 60)
+        } else {
+            format!("~{}h{}m", total_secs / 3600, (total_secs % 3600) / 60)
+        }
+    }
+
     // =========================================================================
     // UI
     // =========================================================================
 
     fn element(&self) -> Element {
-        if let Some(error) = self.init_error.get() {
-            return page! {
-                column (padding: 2, gap: 1) style (bg: background) {
-                    text (content: "Queue") style (bold, fg: interact)
-                    text (content: error) style (fg: error)
-                }
-            };
-        }
-
         let counts = self.status_counts.get();
         let is_running = self.is_running.get();
 
-        let status_text = if is_running {
-            format!(
-                "Running ({} active, {} pending)",
-                counts.running,
-                counts.pending()
-            )
+        let (status_color, status_label) = if !is_running {
+            (Color::var("warning"), "Paused")
+        } else if counts.running > 0 {
+            (Color::var("success"), "Running")
         } else {
-            format!("Paused ({} pending)", counts.pending())
+            (Color::var("primary"), "Ready")
         };
+        let toggle_hint = if is_running { "pause" } else { "start" };
 
-        let total_text = format!(
-            "Total: {} | Done: {} | Failed: {}",
-            counts.total(),
+        let counts_text = format!(
+            "{} ready  {} running  {} done  {} failed",
+            counts.ready,
+            counts.running,
             counts.done,
-            counts.failed + counts.partially_failed
+            counts.failed + counts.partially_failed,
         );
+        let eta_text = self.format_eta();
+
+        let preview = self.render_preview();
 
         page! {
-            column (padding: 2, gap: 1, width: fill, height: fill) style (bg: background) {
+            column (padding: (1, 2), gap: 1, width: fill, height: fill) style (bg: background) {
                 // Header
-                row (gap: 2) {
-                    text (content: "Queue") style (bold, fg: interact)
-                    text (content: status_text) style (fg: muted)
+                row (width: fill, justify: between) {
+                    row (gap: 1) {
+                        text (content: "Queue") style (bold, fg: interact)
+                        text (content: "●") style (fg: {status_color})
+                        text (content: {status_label}) style (fg: muted)
+                    }
+                    row (gap: 2) {
+                        row (gap: 1) {
+                            text (content: "P") style (fg: primary)
+                            text (content: {toggle_hint}) style (fg: muted)
+                        }
+                        row (gap: 1) {
+                            text (content: "s") style (fg: primary)
+                            text (content: "step") style (fg: muted)
+                        }
+                        row (gap: 1) {
+                            text (content: "C") style (fg: primary)
+                            text (content: "clear") style (fg: muted)
+                        }
+                    }
                 }
 
-                // Placeholder for tree
-                column (width: fill, height: fill, justify: center, align: center) {
-                    text (content: "Queue UI coming in Phase 3") style (fg: muted)
-                    spinner (id: "queue-spinner")
+                // Main content: 50/50 tree + preview
+                row (width: fill, height: fill, gap: 1) {
+                    tree (state: self.tree_state, id: "queue-tree", width: fill, height: fill)
+                    column (width: fill, height: fill) {
+                        { preview }
+                    }
                 }
 
                 // Footer
-                row (gap: 2) {
-                    text (content: total_text) style (fg: muted)
+                row (width: fill, justify: between) {
+                    text (content: {counts_text}) style (fg: muted)
+                    text (content: {eta_text}) style (fg: muted)
+                }
+            }
+        }
+    }
+
+    fn render_preview(&self) -> Element {
+        let focused_key = self.tree_state.with_ref(|s| s.focused_key.clone());
+
+        let Some(key) = focused_key else {
+            return Element::col();
+        };
+
+        // Find the item from the tree
+        let item = self.tree_state.with_ref(|s| {
+            // Extract item ID from key
+            let item_id: Option<i64> = key
+                .strip_prefix("item-")
+                .and_then(|rest| rest.split('-').next())
+                .and_then(|id_str| id_str.parse().ok());
+
+            item_id.and_then(|id| {
+                // Search roots for the matching item
+                s.roots.iter().find_map(|node| {
+                    if let QueueTreeNode::Item(item) = &node.value {
+                        if item.id == id {
+                            return Some(item.clone());
+                        }
+                    }
+                    None
+                })
+            })
+        });
+
+        let Some(item) = item else {
+            return Element::col();
+        };
+
+        let status_text = format!("{:?}", item.status);
+        let status_color = Color::var(item.status.color());
+        let created = item.created_at.format("%Y-%m-%d %H:%M").to_string();
+        let priority_text = item.priority.to_string();
+        let ops_text = format!("{} operation(s)", item.payload.operation_count());
+
+        page! {
+            column (gap: 1) {
+                text (content: {item.description.clone()}) style (bold, fg: primary)
+
+                row (gap: 1) {
+                    text (content: "●") style (fg: {status_color})
+                    text (content: {status_text})
+                }
+                row (gap: 1) {
+                    text (content: "source") style (fg: muted)
+                    text (content: {item.source.clone()})
+                }
+                row (gap: 1) {
+                    text (content: "priority") style (fg: muted)
+                    text (content: {priority_text})
+                }
+                row (gap: 1) {
+                    text (content: "created") style (fg: muted)
+                    text (content: {created})
+                }
+                row (gap: 1) {
+                    text (content: "ops") style (fg: muted)
+                    text (content: {ops_text})
                 }
             }
         }

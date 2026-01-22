@@ -483,6 +483,7 @@ dependencies = [
  "tokio-util",
  "tuidom",
  "url",
+ "uuid",
 ]
 
 [[package]]

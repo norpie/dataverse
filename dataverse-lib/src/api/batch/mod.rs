@@ -103,6 +103,13 @@ pub struct Changeset {
     pub(crate) operations: Vec<Operation>,
 }
 
+impl Changeset {
+    /// Returns a reference to the operations in this changeset.
+    pub fn operations(&self) -> &[Operation] {
+        &self.operations
+    }
+}
+
 // =============================================================================
 // Batch Item
 // =============================================================================
@@ -257,6 +264,11 @@ impl Batch {
     /// Returns the number of items (operations + changesets) in the batch.
     pub fn len(&self) -> usize {
         self.items.len()
+    }
+
+    /// Returns a reference to the batch items.
+    pub fn items(&self) -> &[BatchItem] {
+        &self.items
     }
 }
 

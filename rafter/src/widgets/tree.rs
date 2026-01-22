@@ -139,6 +139,8 @@ pub struct TreeState<T: TreeItem> {
     pub scroll: ScrollState,
     /// The key of the last activated item.
     pub last_activated: Option<T::Key>,
+    /// The key of the currently focused node.
+    pub focused_key: Option<T::Key>,
 
     /// Cached flattened view of visible nodes.
     flattened: Vec<FlatNode<T::Key>>,
@@ -161,6 +163,7 @@ impl<T: TreeItem> Default for TreeState<T> {
             selection: Selection::none(),
             scroll: ScrollState::new(),
             last_activated: None,
+            focused_key: None,
             flattened: Vec::new(),
             scroller: VirtualScroller::new(),
             scrollbar_rect: None,
@@ -971,6 +974,26 @@ impl<'a, T: TreeItem> Tree<HasTreeState<'a, T>> {
                         handler(hx);
                     }
                     if let Some(ref handler) = on_activate {
+                        handler(hx);
+                    }
+                }),
+            );
+        }
+
+        // Register focus/blur handlers to track focused_key
+        {
+            let state_clone = state.clone();
+            let key_clone = key.clone();
+            let on_focus = handlers.get("on_focus").cloned();
+
+            registry.register(
+                &row_id,
+                "on_focus",
+                Arc::new(move |hx| {
+                    state_clone.update(|s| {
+                        s.focused_key = Some(key_clone.clone());
+                    });
+                    if let Some(ref handler) = on_focus {
                         handler(hx);
                     }
                 }),
