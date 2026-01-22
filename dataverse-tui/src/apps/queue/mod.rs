@@ -6,6 +6,7 @@ pub mod migrations;
 pub mod repository;
 mod tree;
 pub mod types;
+mod ui;
 
 use std::collections::VecDeque;
 
@@ -167,9 +168,7 @@ impl Queue {
 
                     let gx = gx.clone();
                     let repo = repo.clone();
-                    tokio::spawn(async move {
-                        Self::execute_and_complete(item, repo, gx).await;
-                    });
+                    tokio::spawn(executor::execute_and_complete(item, repo, gx));
                 }
             }
             Ok(None) => {
@@ -430,9 +429,7 @@ impl Queue {
 
                         let gx = gx.clone();
                         let repo = repo.clone();
-                        tokio::spawn(async move {
-                            Self::execute_and_complete(item, repo, gx).await;
-                        });
+                        tokio::spawn(executor::execute_and_complete(item, repo, gx));
                     }
                 }
                 Ok(None) => break,
@@ -444,72 +441,11 @@ impl Queue {
         }
     }
 
-    async fn execute_and_complete(
-        item: types::QueueItem,
-        repo: QueueRepository,
-        gx: GlobalContext,
-    ) {
-        log::info!("Executing queue item {}: {}", item.id, item.description);
-
-        let result = executor::execute_item(&item, &gx).await;
-
-        if let Err(e) = repo.update_status(item.id, result.status).await {
-            log::error!("Failed to update item {} status: {}", item.id, e);
-        }
-
-        let error = result.record.error.clone();
-
-        if let Err(e) = repo.insert_execution(result.record).await {
-            log::error!(
-                "Failed to save execution record for item {}: {}",
-                item.id,
-                e
-            );
-        }
-
-        gx.publish(QueueItemCompleted {
-            item_id: item.id,
-            status: result.status,
-            error,
-        });
-
-        log::info!(
-            "Queue item {} completed with status {:?}",
-            item.id,
-            result.status
-        );
-    }
-
     fn publish_status_changed(&self, gx: &GlobalContext) {
         gx.publish(QueueStatusChanged {
             is_running: self.is_running.get(),
             counts: self.status_counts.get(),
         });
-    }
-
-    fn format_eta(&self) -> String {
-        let durations = self.recent_durations.get();
-        if durations.is_empty() {
-            return String::new();
-        }
-
-        let counts = self.status_counts.get();
-        let remaining = counts.ready + counts.paused;
-        if remaining == 0 {
-            return String::new();
-        }
-
-        let avg_ms: i64 = durations.iter().sum::<i64>() / durations.len() as i64;
-        let total_ms = avg_ms * remaining as i64;
-        let total_secs = total_ms / 1000;
-
-        if total_secs < 60 {
-            format!("~{}s", total_secs)
-        } else if total_secs < 3600 {
-            format!("~{}m", total_secs / 60)
-        } else {
-            format!("~{}h{}m", total_secs / 3600, (total_secs % 3600) / 60)
-        }
     }
 
     // =========================================================================
@@ -536,7 +472,7 @@ impl Queue {
             counts.done,
             counts.failed + counts.partially_failed,
         );
-        let eta_text = self.format_eta();
+        let eta_text = ui::format_eta(&self.recent_durations.get(), &counts);
 
         let preview = self.render_preview();
 
@@ -577,72 +513,6 @@ impl Queue {
                 row (width: fill, justify: between) {
                     text (content: {counts_text}) style (fg: muted)
                     text (content: {eta_text}) style (fg: muted)
-                }
-            }
-        }
-    }
-
-    fn render_preview(&self) -> Element {
-        let focused_key = self.tree_state.with_ref(|s| s.focused_key.clone());
-
-        let Some(key) = focused_key else {
-            return Element::col();
-        };
-
-        // Find the item from the tree
-        let item = self.tree_state.with_ref(|s| {
-            // Extract item ID from key
-            let item_id: Option<i64> = key
-                .strip_prefix("item-")
-                .and_then(|rest| rest.split('-').next())
-                .and_then(|id_str| id_str.parse().ok());
-
-            item_id.and_then(|id| {
-                // Search roots for the matching item
-                s.roots.iter().find_map(|node| {
-                    if let QueueTreeNode::Item(item) = &node.value {
-                        if item.id == id {
-                            return Some(item.clone());
-                        }
-                    }
-                    None
-                })
-            })
-        });
-
-        let Some(item) = item else {
-            return Element::col();
-        };
-
-        let status_text = format!("{:?}", item.status);
-        let status_color = Color::var(item.status.color());
-        let created = item.created_at.format("%Y-%m-%d %H:%M").to_string();
-        let priority_text = item.priority.to_string();
-        let ops_text = format!("{} operation(s)", item.payload.operation_count());
-
-        page! {
-            column (gap: 1) {
-                text (content: {item.description.clone()}) style (bold, fg: primary)
-
-                row (gap: 1) {
-                    text (content: "●") style (fg: {status_color})
-                    text (content: {status_text})
-                }
-                row (gap: 1) {
-                    text (content: "source") style (fg: muted)
-                    text (content: {item.source.clone()})
-                }
-                row (gap: 1) {
-                    text (content: "priority") style (fg: muted)
-                    text (content: {priority_text})
-                }
-                row (gap: 1) {
-                    text (content: "created") style (fg: muted)
-                    text (content: {created})
-                }
-                row (gap: 1) {
-                    text (content: "ops") style (fg: muted)
-                    text (content: {ops_text})
                 }
             }
         }

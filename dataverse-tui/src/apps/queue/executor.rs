@@ -8,7 +8,9 @@ use rafter::GlobalContext;
 use crate::systems::client_management::ClientManagement;
 use crate::systems::client_management::GetClient;
 
+use super::api::QueueItemCompleted;
 use super::repository::NewExecutionRecord;
+use super::repository::QueueRepository;
 use super::types::ExecutionStatus;
 use super::types::ItemStatus;
 use super::types::QueueItem;
@@ -225,4 +227,40 @@ fn make_error_result(
             failure_count: 1,
         },
     }
+}
+
+/// Execute a queue item and persist results.
+///
+/// This handles the full lifecycle: execute, update status, save execution record,
+/// and publish the completion event. Designed to be spawned as a tokio task.
+pub async fn execute_and_complete(item: QueueItem, repo: QueueRepository, gx: GlobalContext) {
+    log::info!("Executing queue item {}: {}", item.id, item.description);
+
+    let result = execute_item(&item, &gx).await;
+
+    if let Err(e) = repo.update_status(item.id, result.status).await {
+        log::error!("Failed to update item {} status: {}", item.id, e);
+    }
+
+    let error = result.record.error.clone();
+
+    if let Err(e) = repo.insert_execution(result.record).await {
+        log::error!(
+            "Failed to save execution record for item {}: {}",
+            item.id,
+            e
+        );
+    }
+
+    gx.publish(QueueItemCompleted {
+        item_id: item.id,
+        status: result.status,
+        error,
+    });
+
+    log::info!(
+        "Queue item {} completed with status {:?}",
+        item.id,
+        result.status
+    );
 }
