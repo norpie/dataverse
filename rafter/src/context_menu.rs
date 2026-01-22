@@ -10,20 +10,23 @@
 //!
 //! ```ignore
 //! #[context_menu]
-//! fn record_menu(&self, record_id: String) {
+//! fn record_menu(&self, record_id: String, is_editable: bool) {
 //!     option("Delete", delete(record_id.clone()));
-//!     option("Edit", edit(record_id.clone()));
+//!
+//!     if is_editable {
+//!         option("Edit", edit(record_id.clone()));
+//!     };
 //!     
 //!     separator();
 //!     
 //!     submenu("Export") {
 //!         option("CSV", export_csv(record_id.clone()));
 //!         option("JSON", export_json(record_id.clone()));
-//!     }
+//!     };
 //! }
 //!
 //! // In a handler:
-//! cx.context_menu(self.record_menu(row.id), x, y).await;
+//! cx.context_menu(self.record_menu(row.id, true), x, y).await;
 //! ```
 
 use crate::handler_context::Handler;

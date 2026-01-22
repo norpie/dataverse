@@ -468,10 +468,37 @@ pub enum ContextMenuDslEntry {
         label: syn::LitStr,
         entries: Vec<ContextMenuDslEntry>,
     },
+    /// if condition { entries... }
+    Conditional {
+        condition: syn::Expr,
+        entries: Vec<ContextMenuDslEntry>,
+    },
 }
 
 impl Parse for ContextMenuDslEntry {
     fn parse(input: ParseStream) -> syn::Result<Self> {
+        // Check for `if` keyword (not an ident, it's a keyword)
+        if input.peek(Token![if]) {
+            input.parse::<Token![if]>()?;
+
+            // Parse the condition expression (everything before the brace)
+            let condition: syn::Expr = input.call(syn::Expr::parse_without_eager_brace)?;
+
+            // Parse the body entries inside braces
+            let brace_content;
+            syn::braced!(brace_content in input);
+
+            let mut entries = Vec::new();
+            while !brace_content.is_empty() {
+                entries.push(brace_content.parse()?);
+                if brace_content.peek(Token![;]) {
+                    brace_content.parse::<Token![;]>()?;
+                }
+            }
+
+            return Ok(Self::Conditional { condition, entries });
+        }
+
         let ident: Ident = input.parse()?;
 
         match ident.to_string().as_str() {
@@ -538,7 +565,7 @@ impl Parse for ContextMenuDslEntry {
             _ => Err(syn::Error::new(
                 ident.span(),
                 format!(
-                    "expected `option`, `separator`, or `submenu`, found `{}`",
+                    "expected `option`, `separator`, `submenu`, or `if`, found `{}`",
                     ident
                 ),
             )),
@@ -1460,6 +1487,15 @@ fn generate_menu_options(
                         #(#submenu_options;)*
                         __builder
                     })
+                });
+            }
+            ContextMenuDslEntry::Conditional { condition, entries } => {
+                let conditional_options =
+                    generate_menu_options(entries, handler_contexts, type_name, method_params);
+                option_code.push(quote! {
+                    if #condition {
+                        #(#conditional_options;)*
+                    }
                 });
             }
         }
