@@ -14,12 +14,22 @@ pub struct AppRegistration {
     pub name: &'static str,
     /// Factory function to create the app.
     pub factory: fn() -> Box<dyn CloneableApp>,
+    /// Whether this app should auto-start in the background on runtime init.
+    pub autostart: bool,
 }
 
 impl AppRegistration {
     /// Create a new app registration.
-    pub const fn new(name: &'static str, factory: fn() -> Box<dyn CloneableApp>) -> Self {
-        Self { name, factory }
+    pub const fn new(
+        name: &'static str,
+        factory: fn() -> Box<dyn CloneableApp>,
+        autostart: bool,
+    ) -> Self {
+        Self {
+            name,
+            factory,
+            autostart,
+        }
     }
 }
 

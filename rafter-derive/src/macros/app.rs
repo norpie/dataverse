@@ -23,6 +23,8 @@ struct AppAttrs {
     on_blur: Option<Ident>,
     /// Whether page routing is enabled (expects `Page` enum in scope)
     pages: bool,
+    /// Whether this app should auto-start in the background on runtime init.
+    autostart: bool,
 }
 
 impl AppAttrs {
@@ -33,6 +35,7 @@ impl AppAttrs {
             on_panic: None,
             on_blur: None,
             pages: false,
+            autostart: false,
         };
 
         if !attr.is_empty() {
@@ -42,6 +45,8 @@ impl AppAttrs {
                     attrs.name = Some(value.value());
                 } else if meta.path.is_ident("singleton") {
                     attrs.singleton = true;
+                } else if meta.path.is_ident("autostart") {
+                    attrs.autostart = true;
                 } else if meta.path.is_ident("pages") {
                     attrs.pages = true;
                 } else if meta.path.is_ident("on_panic") {
@@ -203,14 +208,16 @@ fn generate_clone_impl(name: &Ident, fields: &FieldsNamed, attrs: &AppAttrs) -> 
 }
 
 /// Generate inventory registration.
-fn generate_registration(name: &Ident) -> TokenStream {
+fn generate_registration(name: &Ident, attrs: &AppAttrs) -> TokenStream {
     let name_str = name.to_string();
+    let autostart = attrs.autostart;
 
     quote! {
         inventory::submit! {
             rafter::AppRegistration::new(
                 #name_str,
-                || Box::new(#name::default()) as Box<dyn rafter::CloneableApp>
+                || Box::new(#name::default()) as Box<dyn rafter::CloneableApp>,
+                #autostart,
             )
         }
     }
@@ -245,6 +252,7 @@ fn generate_metadata(name: &Ident, attrs: &AppAttrs, fields: &FieldsNamed) -> To
     };
 
     let has_pages = attrs.pages;
+    let autostart = attrs.autostart;
 
     // Fields for dirty checking (all non-skipped fields)
     let dirty_fields: Vec<_> = fields
@@ -307,6 +315,7 @@ fn generate_metadata(name: &Ident, attrs: &AppAttrs, fields: &FieldsNamed) -> To
                     on_blur: #blur_policy,
                     max_instances: #max_instances,
                     panic_behavior: PANIC_BEHAVIOR,
+                    autostart: #autostart,
                 }
             }
 
@@ -395,7 +404,7 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
     let transformed_fields: Vec<_> = fields.named.iter().map(transform_field).collect();
     let default_impl = generate_default_impl(name, fields, &attrs);
     let clone_impl = generate_clone_impl(name, fields, &attrs);
-    let registration = generate_registration(name);
+    let registration = generate_registration(name, &attrs);
     let metadata = generate_metadata(name, &attrs, fields);
     let singleton_methods = generate_singleton_methods(name, &attrs);
 

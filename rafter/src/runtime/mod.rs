@@ -238,6 +238,42 @@ impl Runtime {
             new: instance_id,
         });
 
+        // Auto-start apps marked with #[app(autostart)]
+        for reg in crate::registration::registered_apps() {
+            if !reg.autostart {
+                continue;
+            }
+            // Skip if already spawned as the initial app
+            if reg.name == instance_name {
+                continue;
+            }
+            let app = (reg.factory)();
+            let bg_instance = app.into_instance(gx.clone());
+            let bg_id = bg_instance.id();
+            let bg_name = bg_instance.config().name;
+
+            bg_instance.install_wakeup(wakeup_tx.clone(), &gx);
+
+            // Call on_start lifecycle method
+            {
+                let cx = bg_instance.app_context();
+                let hx = HandlerContext::for_app(&cx, &gx);
+                bg_instance.lifecycle_hooks().call_on_start(&hx);
+            }
+
+            {
+                let mut reg = registry.write().unwrap();
+                reg.insert(bg_instance);
+                // Don't focus - stays in background
+            }
+
+            gx.publish(InstanceSpawned {
+                id: bg_id,
+                name: bg_name,
+            });
+            log::info!("[runtime] Auto-started background app: {}", bg_name);
+        }
+
         // Active toasts
         let mut active_toasts: Vec<ActiveToast> = Vec::new();
         let mut next_toast_id: usize = 0;

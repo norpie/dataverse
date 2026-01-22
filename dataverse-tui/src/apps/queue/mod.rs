@@ -29,7 +29,7 @@ use repository::StatusCounts;
 use types::ItemStatus;
 
 /// Queue app for executing Dataverse operations in priority order.
-#[app(name = "Queue", singleton, on_blur = Continue)]
+#[app(name = "Queue", singleton, on_blur = Continue, autostart)]
 pub struct Queue {
     /// Database repository.
     repository: Option<QueueRepository>,

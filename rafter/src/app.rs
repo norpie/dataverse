@@ -28,6 +28,8 @@ pub struct AppConfig {
     pub max_instances: Option<usize>,
     /// Panic behavior.
     pub panic_behavior: PanicBehavior,
+    /// Whether this app should be auto-started in the background on runtime init.
+    pub autostart: bool,
 }
 
 impl Default for AppConfig {
@@ -37,6 +39,7 @@ impl Default for AppConfig {
             on_blur: BlurPolicy::Continue,
             max_instances: None,
             panic_behavior: PanicBehavior::default(),
+            autostart: false,
         }
     }
 }
