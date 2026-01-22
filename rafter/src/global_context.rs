@@ -15,7 +15,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 
 use tokio::sync::oneshot;
-use tuidom::{CursorState, Theme};
+use tuidom::{CursorState, Rect, Theme};
 
 use crate::context_menu::ContextMenuRequest;
 use crate::instance::{InstanceId, InstanceInfo, RequestError, SpawnError};
@@ -149,6 +149,8 @@ struct GlobalContextInner {
     context_menu_request: Option<ContextMenuRequest>,
     /// Pending instance commands.
     instance_commands: Vec<InstanceCommand>,
+    /// Bounding rect of the currently focused element.
+    focused_element_rect: Option<Rect>,
 }
 
 impl Default for GlobalContextInner {
@@ -160,6 +162,7 @@ impl Default for GlobalContextInner {
             modal_request: None,
             context_menu_request: None,
             instance_commands: Vec::new(),
+            focused_element_rect: None,
         }
     }
 }
@@ -261,6 +264,27 @@ impl GlobalContext {
             .read()
             .map(|state| state.position())
             .unwrap_or((0, 0))
+    }
+
+    // =========================================================================
+    // Focused Element
+    // =========================================================================
+
+    /// Get the bounding rect of the currently focused element.
+    ///
+    /// Returns `None` if no element is focused.
+    pub fn focused_element_rect(&self) -> Option<Rect> {
+        self.inner
+            .read()
+            .ok()
+            .and_then(|inner| inner.focused_element_rect)
+    }
+
+    /// Set the focused element rect (runtime use).
+    pub(crate) fn set_focused_element_rect(&self, rect: Option<Rect>) {
+        if let Ok(mut inner) = self.inner.write() {
+            inner.focused_element_rect = rect;
+        }
     }
 
     // =========================================================================

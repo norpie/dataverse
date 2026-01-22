@@ -64,6 +64,9 @@ pub use toast::{DEFAULT_TOAST_DURATION, Toast};
 pub use wakeup::{WakeupHandle, WakeupReceiver, WakeupSender, channel as wakeup_channel};
 pub use widget::{Widget, WidgetResult};
 
+// Re-export tuidom types
+pub use tuidom::Rect;
+
 // Runtime
 pub use runtime::{Runtime, RuntimeError};
 

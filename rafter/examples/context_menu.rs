@@ -3,6 +3,7 @@
 //! Demonstrates how to create and show context menus with options, separators, and submenus.
 //! Right-click anywhere in the app to show a context menu.
 
+use rafter::EventData;
 use rafter::page;
 use rafter::prelude::*;
 use rafter::widgets::{Button, Text};
@@ -125,8 +126,20 @@ impl ContextMenuDemo {
     }
 
     #[handler]
-    async fn show_menu(&self, cx: &AppContext, gx: &GlobalContext) {
-        let (x, y) = gx.mouse_position();
+    async fn show_menu(&self, cx: &AppContext, gx: &GlobalContext, event: &EventData) {
+        // If activated via keyboard (Enter on button) or click, position menu below the element.
+        // Otherwise (keybind), use focused element rect or mouse position as fallback.
+        let (x, y) = if let Some(rect) = event.element_rect() {
+            // Position menu at bottom-left of the activated element
+            (rect.x, rect.y + rect.height)
+        } else if let Some(rect) = gx.focused_element_rect() {
+            // Fallback: use focused element rect (for keybind activation)
+            (rect.x, rect.y + rect.height)
+        } else {
+            // Final fallback: use mouse position
+            gx.mouse_position()
+        };
+
         let menu = self.main_menu(x, y);
         cx.context_menu(menu, x, y);
     }
@@ -161,6 +174,9 @@ impl ContextMenuDemo {
                         text (content: "• Submenus (Export, Theme)")
                         text (content: "• Handler arguments (position)")
                         text (content: "• Toast notifications")
+                        text (content: "")
+                        text (content: "Try: Tab to button, Enter to show menu (appears below button)")
+                        text (content: "     vs pressing 'm' keybind (appears at mouse position)")
                         text (content: "")
                         text (content: "m show menu  q quit")
                     }

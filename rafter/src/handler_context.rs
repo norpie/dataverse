@@ -13,6 +13,8 @@ use std::any::Any;
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 
+use tuidom::Rect;
+
 use crate::{AppContext, GlobalContext, ModalContext};
 
 // =============================================================================
@@ -57,11 +59,23 @@ pub enum EventData {
     Submit,
     /// Element lost focus.
     Blur {
+        /// The element's bounding rectangle.
+        rect: Rect,
         /// The element that received focus (if any).
         new_target: Option<String>,
     },
     /// Element gained focus.
-    Focus,
+    Focus {
+        /// The element's bounding rectangle.
+        rect: Rect,
+    },
+    /// Element was activated (click or Enter key).
+    Activate {
+        /// The element's bounding rectangle.
+        rect: Rect,
+        /// Mouse position if triggered by click (None if keyboard).
+        click_position: Option<(u16, u16)>,
+    },
     /// Scroll position changed (for observing automatic scroll results).
     Scroll {
         /// Current horizontal scroll offset.
@@ -97,18 +111,18 @@ pub enum EventData {
         /// Element height.
         height: u16,
     },
-    /// Click event with position.
-    Click {
-        /// Screen X position of click.
-        x: u16,
-        /// Screen Y position of click.
-        y: u16,
-    },
     /// Drag event with position.
     Drag {
         /// Screen X position during drag.
         x: u16,
         /// Screen Y position during drag.
+        y: u16,
+    },
+    /// Scope click event (click on interaction_scope backdrop).
+    ScopeClick {
+        /// Screen X position of click.
+        x: u16,
+        /// Screen Y position of click.
         y: u16,
     },
 }
@@ -125,7 +139,7 @@ impl EventData {
     /// Get the new focus target from a Blur event.
     pub fn blur_target(&self) -> Option<&str> {
         match self {
-            EventData::Blur { new_target } => new_target.as_deref(),
+            EventData::Blur { new_target, .. } => new_target.as_deref(),
             _ => None,
         }
     }
@@ -249,10 +263,23 @@ impl EventData {
         }
     }
 
-    /// Get click position (x, y) from a Click event.
+    /// Get click position (x, y) from an Activate event.
+    ///
+    /// Returns `Some((x, y))` if the activation was triggered by a mouse click,
+    /// or `None` if it was triggered by keyboard (Enter key).
     pub fn click_position(&self) -> Option<(u16, u16)> {
         match self {
-            EventData::Click { x, y } => Some((*x, *y)),
+            EventData::Activate { click_position, .. } => *click_position,
+            _ => None,
+        }
+    }
+
+    /// Get the element's bounding rectangle from Activate, Focus, or Blur events.
+    pub fn element_rect(&self) -> Option<Rect> {
+        match self {
+            EventData::Activate { rect, .. } => Some(*rect),
+            EventData::Focus { rect } => Some(*rect),
+            EventData::Blur { rect, .. } => Some(*rect),
             _ => None,
         }
     }

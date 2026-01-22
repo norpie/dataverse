@@ -736,6 +736,10 @@ impl Runtime {
                 }
             }
 
+            // 17c. Update focused element rect in GlobalContext
+            let focused_rect = focus.focused().and_then(|id| layout.get(id)).copied();
+            gx.set_focused_element_rect(focused_rect);
+
             // 18. Process text input events (keyboard → Change/Submit events)
             let events = text_inputs.process_events(&events, &root, layout);
 

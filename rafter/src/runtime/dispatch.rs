@@ -213,7 +213,16 @@ impl<'a> EventDispatcher<'a> {
                 if *key == Key::Enter {
                     if let Some(target_id) = target {
                         if let Some(handler) = handlers.get(target_id, "on_activate") {
-                            let hx = HandlerContext::for_modal_any(cx, self.gx, mx);
+                            let rect = self.layout.get(target_id).copied().unwrap_or_default();
+                            let hx = HandlerContext::for_modal_any_with_event(
+                                cx,
+                                self.gx,
+                                mx,
+                                EventData::Activate {
+                                    rect,
+                                    click_position: None,
+                                },
+                            );
                             if let Some(panic_result) = call(&handler, &hx) {
                                 return Some(panic_result);
                             }
@@ -255,11 +264,15 @@ impl<'a> EventDispatcher<'a> {
             Event::Click { target, x, y, .. } => {
                 if let Some(target_id) = target {
                     if let Some(handler) = handlers.get(target_id, "on_activate") {
+                        let rect = self.layout.get(target_id).copied().unwrap_or_default();
                         let hx = HandlerContext::for_modal_any_with_event(
                             cx,
                             self.gx,
                             mx,
-                            EventData::Click { x: *x, y: *y },
+                            EventData::Activate {
+                                rect,
+                                click_position: Some((*x, *y)),
+                            },
                         );
                         if let Some(panic_result) = call(&handler, &hx) {
                             return Some(panic_result);
@@ -301,8 +314,13 @@ impl<'a> EventDispatcher<'a> {
 
             Event::Focus { target } => {
                 if let Some(handler) = handlers.get(target, "on_focus") {
-                    let hx =
-                        HandlerContext::for_modal_any_with_event(cx, self.gx, mx, EventData::Focus);
+                    let rect = self.layout.get(target).copied().unwrap_or_default();
+                    let hx = HandlerContext::for_modal_any_with_event(
+                        cx,
+                        self.gx,
+                        mx,
+                        EventData::Focus { rect },
+                    );
                     if let Some(panic_result) = call(&handler, &hx) {
                         return Some(panic_result);
                     }
@@ -317,11 +335,13 @@ impl<'a> EventDispatcher<'a> {
                     );
                 }
                 if let Some(handler) = handlers.get(target, "on_blur") {
+                    let rect = self.layout.get(target).copied().unwrap_or_default();
                     let hx = HandlerContext::for_modal_any_with_event(
                         cx,
                         self.gx,
                         mx,
                         EventData::Blur {
+                            rect,
                             new_target: new_target.clone(),
                         },
                     );
@@ -793,11 +813,20 @@ impl<'a> EventDispatcher<'a> {
                 // Enter key triggers on_activate on focused element (like click)
                 if *key == tuidom::Key::Enter && modifiers.none() {
                     if let Some(target_id) = target {
+                        let rect = self.layout.get(target_id).copied().unwrap_or_default();
                         // First check app instance handlers
                         if let Some(handler) = handlers.get(target_id, "on_activate") {
+                            let hx_with_event = HandlerContext::for_app_with_event(
+                                &cx,
+                                self.gx,
+                                EventData::Activate {
+                                    rect,
+                                    click_position: None,
+                                },
+                            );
                             if let Some(panic_result) = call_app_and_check(
                                 &handler,
-                                &hx,
+                                &hx_with_event,
                                 instance.config().name,
                                 instance.id(),
                             ) {
@@ -810,7 +839,13 @@ impl<'a> EventDispatcher<'a> {
                         for system in self.systems {
                             let system_handlers = system.handlers();
                             if let Some(handler) = system_handlers.get(target_id, "on_activate") {
-                                let system_hx = HandlerContext::for_system(self.gx);
+                                let system_hx = HandlerContext::for_system_with_event(
+                                    self.gx,
+                                    EventData::Activate {
+                                        rect,
+                                        click_position: None,
+                                    },
+                                );
                                 if let Some(panic_result) = call_and_check(&handler, &system_hx) {
                                     return Some(panic_result);
                                 }
@@ -899,11 +934,15 @@ impl<'a> EventDispatcher<'a> {
                     y
                 );
                 if let Some(target_id) = target {
-                    // Create handler context with click position
-                    let hx_with_click = HandlerContext::for_app_with_event(
+                    let rect = self.layout.get(target_id).copied().unwrap_or_default();
+                    // Create handler context with activation data
+                    let hx_with_activate = HandlerContext::for_app_with_event(
                         &cx,
                         self.gx,
-                        EventData::Click { x: *x, y: *y },
+                        EventData::Activate {
+                            rect,
+                            click_position: Some((*x, *y)),
+                        },
                     );
 
                     // Click is an activation - look up on_activate handler
@@ -917,7 +956,7 @@ impl<'a> EventDispatcher<'a> {
                         log::debug!("dispatch_to_widgets: found app handler, calling");
                         if let Some(panic_result) = call_app_and_check(
                             &handler,
-                            &hx_with_click,
+                            &hx_with_activate,
                             instance.config().name,
                             instance.id(),
                         ) {
@@ -935,7 +974,13 @@ impl<'a> EventDispatcher<'a> {
                                 "dispatch_to_widgets: found system handler for {}, calling",
                                 system.name()
                             );
-                            let system_hx = HandlerContext::for_system(self.gx);
+                            let system_hx = HandlerContext::for_system_with_event(
+                                self.gx,
+                                EventData::Activate {
+                                    rect,
+                                    click_position: Some((*x, *y)),
+                                },
+                            );
                             if let Some(panic_result) = call_and_check(&handler, &system_hx) {
                                 return Some(panic_result);
                             }
@@ -1076,6 +1121,7 @@ impl<'a> EventDispatcher<'a> {
             // Focus events: dispatch to on_focus handlers
             Event::Focus { target } => {
                 log::debug!("dispatch_to_widgets: Focus event, target={}", target);
+                let rect = self.layout.get(target).copied().unwrap_or_default();
                 // First check app instance handlers
                 if let Some(handler) = handlers.get(target, "on_focus") {
                     log::debug!(
@@ -1083,7 +1129,7 @@ impl<'a> EventDispatcher<'a> {
                         target
                     );
                     let hx_with_event =
-                        HandlerContext::for_app_with_event(&cx, self.gx, EventData::Focus);
+                        HandlerContext::for_app_with_event(&cx, self.gx, EventData::Focus { rect });
                     if let Some(panic_result) = call_app_and_check(
                         &handler,
                         &hx_with_event,
@@ -1102,8 +1148,10 @@ impl<'a> EventDispatcher<'a> {
                                 target,
                                 system.name()
                             );
-                            let system_hx =
-                                HandlerContext::for_system_with_event(self.gx, EventData::Focus);
+                            let system_hx = HandlerContext::for_system_with_event(
+                                self.gx,
+                                EventData::Focus { rect },
+                            );
                             if let Some(panic_result) = call_and_check(&handler, &system_hx) {
                                 return Some(panic_result);
                             }
@@ -1125,12 +1173,14 @@ impl<'a> EventDispatcher<'a> {
                         target
                     );
                 }
+                let rect = self.layout.get(target).copied().unwrap_or_default();
                 // First check app instance handlers
                 if let Some(handler) = handlers.get(target, "on_blur") {
                     let hx_with_event = HandlerContext::for_app_with_event(
                         &cx,
                         self.gx,
                         EventData::Blur {
+                            rect,
                             new_target: new_target.clone(),
                         },
                     );
@@ -1150,6 +1200,7 @@ impl<'a> EventDispatcher<'a> {
                             let system_hx = HandlerContext::for_system_with_event(
                                 self.gx,
                                 EventData::Blur {
+                                    rect,
                                     new_target: new_target.clone(),
                                 },
                             );
@@ -1209,7 +1260,7 @@ impl<'a> EventDispatcher<'a> {
                     let hx_with_event = HandlerContext::for_app_with_event(
                         &cx,
                         self.gx,
-                        EventData::Click { x: *x, y: *y },
+                        EventData::ScopeClick { x: *x, y: *y },
                     );
                     if let Some(panic_result) = call_app_and_check(
                         &handler,
