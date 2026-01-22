@@ -17,7 +17,10 @@
 /// // Using entity set name directly - no resolution needed
 /// let entity = Entity::set("accounts");
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+use serde::Deserialize;
+use serde::Serialize;
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Entity {
     /// Logical name (e.g., "account") - resolved to entity set name via metadata
     Logical(String),

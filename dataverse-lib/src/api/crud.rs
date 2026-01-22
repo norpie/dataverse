@@ -19,6 +19,8 @@
 //! client.execute(op).await?;
 //! ```
 
+use serde::Deserialize;
+use serde::Serialize;
 use uuid::Uuid;
 
 use crate::api::query::odata::ExpandBuilder;
@@ -33,7 +35,7 @@ use crate::model::Record;
 ///
 /// These options control behavior like plugin execution, duplicate detection,
 /// concurrency handling, and response format.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct OperationOptions {
     /// Content-ID for batch operations (allows referencing results).
     pub content_id: Option<String>,
@@ -88,7 +90,7 @@ impl OperationOptions {
 ///
 /// Operations are the central type for representing Dataverse actions.
 /// They can be built using the [`Op`] helper or converted from client builders.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Operation {
     /// Create a new record.
     Create {

@@ -25,6 +25,9 @@ pub use response::BatchOperationError;
 pub use response::BatchResults;
 pub use response::OperationResult as BatchOperationResult;
 
+use serde::Deserialize;
+use serde::Serialize;
+
 use crate::api::crud::Operation;
 use crate::error::Error;
 
@@ -33,7 +36,7 @@ use crate::error::Error;
 // =============================================================================
 
 /// Batch-level options applied to all operations unless overridden.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct BatchOptions {
     /// Continue processing operations after a failure.
     pub continue_on_error: bool,
@@ -95,7 +98,7 @@ impl ContentIdRef {
 ///
 /// All operations in a changeset either succeed together or fail together
 /// (rollback). Changesets cannot be nested.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Changeset {
     pub(crate) operations: Vec<Operation>,
 }
@@ -105,7 +108,7 @@ pub struct Changeset {
 // =============================================================================
 
 /// A single item in a batch.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum BatchItem {
     /// A standalone operation (not transactional).
     Operation(Operation),
@@ -120,7 +123,7 @@ pub enum BatchItem {
 /// A batch of operations to execute in a single HTTP request.
 ///
 /// Use [`DataverseClient::batch()`] to create a batch builder bound to a client.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Batch {
     pub(crate) items: Vec<BatchItem>,
     pub(crate) options: BatchOptions,

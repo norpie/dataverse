@@ -4,6 +4,8 @@
 use crate::api::query::Filter;
 use crate::api::query::ODataFilter;
 use crate::api::query::OrderBy;
+use serde::Deserialize;
+use serde::Serialize;
 
 use super::url::odata_filter_to_string;
 use super::url::order_to_odata;
@@ -20,7 +22,7 @@ use super::url::order_to_odata;
 ///     .select(&["fullname", "emailaddress1"])
 ///     .filter(Filter::eq("statecode", 0));
 /// ```
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExpandBuilder {
     /// The navigation property name to expand.
     navigation_property: String,

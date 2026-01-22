@@ -1,7 +1,10 @@
 //! Ordering types for OData and FetchXML queries.
 
+use serde::Deserialize;
+use serde::Serialize;
+
 /// Sort direction for ordering results.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Direction {
     /// Ascending order (A-Z, 0-9).
     Asc,
@@ -25,7 +28,7 @@ pub enum Direction {
 /// let order = OrderBy::desc("revenue")
 ///     .then_asc("name");
 /// ```
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct OrderBy {
     pub(crate) fields: Vec<(String, Direction)>,
 }

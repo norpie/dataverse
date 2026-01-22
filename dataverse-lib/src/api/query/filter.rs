@@ -1,5 +1,8 @@
 //! Filter types for OData and FetchXML queries.
 
+use serde::Deserialize;
+use serde::Serialize;
+
 use crate::model::Value;
 
 /// A filter condition for querying records.
@@ -31,7 +34,7 @@ use crate::model::Value;
 /// // Negation (OData only)
 /// let filter = Filter::eq("statecode", 0).not();
 /// ```
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum Filter {
     /// Equality: `field eq value`
     Eq(String, Value),
@@ -220,7 +223,7 @@ impl Filter {
 ///     .filter(Filter::eq("statecode", 0).not())  // Error: expected Filter, found ODataFilter
 ///     .execute().await?;
 /// ```
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum ODataFilter {
     /// A regular filter (no negation).
     Base(Filter),
