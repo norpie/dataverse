@@ -469,6 +469,43 @@ impl<'a> EventDispatcher<'a> {
             return Some(DispatchResult::HandledByContextMenu);
         }
 
+        // Handle Enter key - activate focused option
+        if let Event::Key {
+            key: Key::Enter,
+            target,
+            ..
+        } = event
+        {
+            if let Some(target_id) = target {
+                if target_id.contains("_option_") {
+                    // Find the handler by navigating the menu path
+                    let handler = {
+                        let menu = self.global_context_menu.as_ref().unwrap();
+                        Self::find_handler_by_id(target_id, &menu.definition, &menu.open_submenus)
+                    };
+
+                    if let Some(handler) = handler {
+                        // Invoke handler with system context (global menus are system-scoped)
+                        let rect = self.layout.get(target_id).copied().unwrap_or_default();
+                        let hx = HandlerContext::for_system_with_event(
+                            self.gx,
+                            EventData::Activate {
+                                rect,
+                                click_position: None,
+                            },
+                        );
+                        if let Some(panic_result) = call_and_check(&handler, &hx) {
+                            *self.global_context_menu = None;
+                            return Some(panic_result);
+                        }
+                        *self.global_context_menu = None;
+                        return Some(DispatchResult::HandledByContextMenu);
+                    }
+                }
+            }
+            return Some(DispatchResult::HandledByContextMenu);
+        }
+
         // Handle focus events - open submenu if hovering over option with submenu
         if let Event::Focus { target } = event {
             if target.contains("_option_") {
@@ -571,6 +608,48 @@ impl<'a> EventDispatcher<'a> {
         {
             drop(reg);
             *self.app_context_menu = None;
+            return Some(DispatchResult::HandledByContextMenu);
+        }
+
+        // Handle Enter key - activate focused option
+        if let Event::Key {
+            key: Key::Enter,
+            target,
+            ..
+        } = event
+        {
+            if let Some(target_id) = target {
+                if target_id.contains("_option_") {
+                    // Find the handler by navigating the menu path
+                    let handler = {
+                        let menu = self.app_context_menu.as_ref().unwrap();
+                        Self::find_handler_by_id(target_id, &menu.definition, &menu.open_submenus)
+                    };
+
+                    if let Some(handler) = handler {
+                        // Invoke handler with app context
+                        let rect = self.layout.get(target_id).copied().unwrap_or_default();
+                        let hx = HandlerContext::for_app_with_event(
+                            &cx,
+                            self.gx,
+                            EventData::Activate {
+                                rect,
+                                click_position: None,
+                            },
+                        );
+                        if let Some(panic_result) =
+                            call_app_and_check(&handler, &hx, instance.config().name, instance.id())
+                        {
+                            drop(reg);
+                            *self.app_context_menu = None;
+                            return Some(panic_result);
+                        }
+                        drop(reg);
+                        *self.app_context_menu = None;
+                        return Some(DispatchResult::HandledByContextMenu);
+                    }
+                }
+            }
             return Some(DispatchResult::HandledByContextMenu);
         }
 

@@ -176,7 +176,7 @@ impl ContextMenuDemo {
                         text (content: "• Toast notifications")
                         text (content: "")
                         text (content: "Try: Tab to button, Enter to show menu (appears below button)")
-                        text (content: "     vs pressing 'm' keybind (appears at mouse position)")
+                        text (content: "     Then use arrow keys to navigate, Enter to select")
                         text (content: "")
                         text (content: "m show menu  q quit")
                     }
