@@ -3,6 +3,7 @@
 pub mod api;
 mod executor;
 pub mod migrations;
+pub mod modals;
 pub mod repository;
 mod tree;
 pub mod types;
@@ -92,17 +93,30 @@ impl Queue {
             self.status_counts.set(counts);
         }
 
+        // Load settings from DB or use defaults
+        let max_concurrency = repo
+            .get_setting::<usize>("max_concurrency")
+            .await
+            .ok()
+            .flatten()
+            .unwrap_or(5);
+        let max_failures = repo
+            .get_setting::<usize>("max_failures")
+            .await
+            .ok()
+            .flatten()
+            .unwrap_or(10);
+
         // Load initial tree
         self.refresh_tree(&repo).await;
 
         self.repository.set(Some(repo));
 
-        // Set defaults
         self.is_running.set(false);
         self.running_count.set(0);
-        self.max_concurrency.set(5);
+        self.max_concurrency.set(max_concurrency);
         self.failure_count.set(0);
-        self.max_failures.set(10);
+        self.max_failures.set(max_failures);
     }
 
     fn title(&self) -> String {
@@ -128,6 +142,10 @@ impl Queue {
         bind("P", toggle_running);
         bind("s", step_one);
         bind("C", clear_completed);
+        bind("p", quick_pause_resume);
+        bind("r", quick_retry);
+        bind("d", quick_delete);
+        bind(",", open_settings);
     }
 
     #[handler]
@@ -199,6 +217,241 @@ impl Queue {
             }
             Err(e) => {
                 log::error!("Failed to clear completed items: {}", e);
+            }
+        }
+    }
+
+    // =========================================================================
+    // Item Actions
+    // =========================================================================
+
+    #[handler]
+    async fn item_activated(&self, cx: &AppContext, gx: &GlobalContext) {
+        let Some(item) = self.focused_item() else {
+            return;
+        };
+
+        let item_id = item.id;
+        let is_ready = item.status == ItemStatus::Ready;
+        let is_paused = item.status == ItemStatus::Paused;
+        let is_failed = matches!(
+            item.status,
+            ItemStatus::Failed | ItemStatus::PartiallyFailed | ItemStatus::Interrupted
+        );
+        let is_non_terminal = !item.status.is_terminal() && item.status != ItemStatus::Running;
+
+        let (x, y) = if let Some(rect) = gx.focused_element_rect() {
+            (rect.x, rect.y + rect.height)
+        } else {
+            gx.mouse_position()
+        };
+
+        let menu = self.item_menu(item_id, is_ready, is_paused, is_failed, is_non_terminal);
+        cx.context_menu(menu, x, y);
+    }
+
+    #[context_menu]
+    fn item_menu(
+        &self,
+        item_id: i64,
+        is_ready: bool,
+        is_paused: bool,
+        is_failed: bool,
+        is_non_terminal: bool,
+    ) {
+        context_menu! {
+            if is_ready {
+                option("Pause", pause_item(item_id));
+            };
+            if is_paused {
+                option("Resume", resume_item(item_id));
+            };
+            if is_failed {
+                option("Retry", retry_item(item_id));
+                option("View Errors", view_errors(item_id));
+            };
+            separator();
+            if is_non_terminal {
+                option("Edit", edit_item(item_id));
+            };
+            option("View Details", view_details(item_id));
+            option("Delete", delete_item(item_id));
+        }
+    }
+
+    #[handler]
+    async fn pause_item(&self, item_id: i64, gx: &GlobalContext) {
+        let Some(repo) = self.repository.get() else {
+            return;
+        };
+        if repo
+            .update_status(item_id, ItemStatus::Paused)
+            .await
+            .is_ok()
+        {
+            self.refresh_counts_and_tree(&repo, gx).await;
+        }
+    }
+
+    #[handler]
+    async fn resume_item(&self, item_id: i64, gx: &GlobalContext) {
+        let Some(repo) = self.repository.get() else {
+            return;
+        };
+        if repo.update_status(item_id, ItemStatus::Ready).await.is_ok() {
+            self.refresh_counts_and_tree(&repo, gx).await;
+            if self.is_running.get() {
+                self.try_start_next_items(gx).await;
+            }
+        }
+    }
+
+    #[handler]
+    async fn retry_item(&self, item_id: i64, gx: &GlobalContext) {
+        let Some(repo) = self.repository.get() else {
+            return;
+        };
+        match repo.retry_item(item_id).await {
+            Ok(_new_id) => {
+                gx.toast(Toast::info("Item re-queued"));
+                self.refresh_counts_and_tree(&repo, gx).await;
+                if self.is_running.get() {
+                    self.try_start_next_items(gx).await;
+                }
+            }
+            Err(e) => {
+                log::error!("Failed to retry item {}: {}", item_id, e);
+                gx.toast(Toast::error("Failed to retry item"));
+            }
+        }
+    }
+
+    #[handler]
+    async fn delete_item(&self, item_id: i64, gx: &GlobalContext) {
+        let confirmed = gx
+            .modal(crate::modals::ConfirmModal::new("Delete this queue item?"))
+            .await;
+        if !confirmed {
+            return;
+        }
+
+        let Some(repo) = self.repository.get() else {
+            return;
+        };
+        if repo.delete(item_id).await.is_ok() {
+            gx.toast(Toast::info("Item deleted"));
+            self.refresh_counts_and_tree(&repo, gx).await;
+        }
+    }
+
+    #[handler]
+    async fn view_errors(&self, item_id: i64, gx: &GlobalContext) {
+        let Some(repo) = self.repository.get() else {
+            return;
+        };
+        if let Ok(executions) = repo.get_executions(item_id).await {
+            if let Some(exec) = executions.first() {
+                if let Some(error) = &exec.error {
+                    gx.modal(crate::apps::queue::modals::ErrorDetailsModal::new(
+                        error.clone(),
+                    ))
+                    .await;
+                }
+            }
+        }
+    }
+
+    #[handler]
+    async fn view_details(&self, item_id: i64, gx: &GlobalContext) {
+        let Some(repo) = self.repository.get() else {
+            return;
+        };
+        if let Ok(executions) = repo.get_executions(item_id).await {
+            gx.modal(crate::apps::queue::modals::ExecutionDetailsModal::new(
+                executions,
+            ))
+            .await;
+        }
+    }
+
+    #[handler]
+    async fn edit_item(&self, item_id: i64, gx: &GlobalContext) {
+        let Some(repo) = self.repository.get() else {
+            return;
+        };
+        let Ok(item) = repo.get(item_id).await else {
+            return;
+        };
+        if let Some(update) = gx
+            .modal(crate::apps::queue::modals::EditItemModal::new(&item))
+            .await
+        {
+            if repo.update_item(item_id, update).await.is_ok() {
+                self.refresh_counts_and_tree(&repo, gx).await;
+            }
+        }
+    }
+
+    // =========================================================================
+    // Quick Keybinds
+    // =========================================================================
+
+    #[handler]
+    async fn quick_pause_resume(&self, gx: &GlobalContext) {
+        let Some(item) = self.focused_item() else {
+            return;
+        };
+        match item.status {
+            ItemStatus::Ready => {
+                self.pause_item(item.id, gx).await;
+            }
+            ItemStatus::Paused => {
+                self.resume_item(item.id, gx).await;
+            }
+            _ => {}
+        }
+    }
+
+    #[handler]
+    async fn quick_retry(&self, gx: &GlobalContext) {
+        let Some(item) = self.focused_item() else {
+            return;
+        };
+        if matches!(
+            item.status,
+            ItemStatus::Failed | ItemStatus::PartiallyFailed | ItemStatus::Interrupted
+        ) {
+            self.retry_item(item.id, gx).await;
+        }
+    }
+
+    #[handler]
+    async fn quick_delete(&self, gx: &GlobalContext) {
+        let Some(item) = self.focused_item() else {
+            return;
+        };
+        self.delete_item(item.id, gx).await;
+    }
+
+    #[handler]
+    async fn open_settings(&self, gx: &GlobalContext) {
+        let current_concurrency = self.max_concurrency.get();
+        let current_max_failures = self.max_failures.get();
+
+        if let Some((concurrency, max_failures)) = gx
+            .modal(modals::SettingsModal::new(
+                current_concurrency,
+                current_max_failures,
+            ))
+            .await
+        {
+            self.max_concurrency.set(concurrency);
+            self.max_failures.set(max_failures);
+
+            // Persist settings
+            if let Some(repo) = self.repository.get() {
+                let _ = repo.set_setting("max_concurrency", concurrency).await;
+                let _ = repo.set_setting("max_failures", max_failures).await;
             }
         }
     }
@@ -383,6 +636,14 @@ impl Queue {
     // Internal Methods
     // =========================================================================
 
+    async fn refresh_counts_and_tree(&self, repo: &QueueRepository, gx: &GlobalContext) {
+        if let Ok(counts) = repo.count_by_status().await {
+            self.status_counts.set(counts);
+        }
+        self.refresh_tree(repo).await;
+        self.publish_status_changed(gx);
+    }
+
     async fn refresh_tree(&self, repo: &QueueRepository) {
         let filter = ListFilter {
             statuses: Some(vec![
@@ -495,8 +756,12 @@ impl Queue {
                             text (content: "step") style (fg: muted)
                         }
                         row (gap: 1) {
-                            text (content: "C") style (fg: primary)
-                            text (content: "clear") style (fg: muted)
+                            text (content: "enter") style (fg: primary)
+                            text (content: "actions") style (fg: muted)
+                        }
+                        row (gap: 1) {
+                            text (content: ",") style (fg: primary)
+                            text (content: "settings") style (fg: muted)
                         }
                     }
                 }
@@ -504,6 +769,7 @@ impl Queue {
                 // Main content: 50/50 tree + preview
                 row (width: fill, height: fill, gap: 1) {
                     tree (state: self.tree_state, id: "queue-tree", width: fill, height: fill)
+                        on_activate: item_activated()
                     column (width: fill, height: fill) {
                         { preview }
                     }

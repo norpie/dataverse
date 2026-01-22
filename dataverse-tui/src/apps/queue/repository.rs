@@ -315,6 +315,106 @@ impl QueueRepository {
         Ok(affected)
     }
 
+    /// Update item fields (priority, description, source, env_id).
+    pub async fn update_item(
+        &self,
+        id: QueueItemId,
+        update: UpdateItem,
+    ) -> Result<(), RepositoryError> {
+        let affected = self
+            .client
+            .conn(move |conn| {
+                conn.execute(
+                    "UPDATE queue_items SET priority = ?1, description = ?2, source = ?3, env_id = ?4
+                     WHERE id = ?5",
+                    rusqlite::params![
+                        update.priority,
+                        update.description,
+                        update.source,
+                        update.env_id,
+                        id,
+                    ],
+                )
+            })
+            .await?;
+
+        if affected == 0 {
+            return Err(RepositoryError::NotFound(id));
+        }
+        Ok(())
+    }
+
+    /// Retry an item by cloning its payload into a new Ready item.
+    /// Returns the new item's ID.
+    pub async fn retry_item(&self, id: QueueItemId) -> Result<QueueItemId, RepositoryError> {
+        let original = self.get(id).await?;
+        let new_item = NewQueueItem {
+            priority: original.priority,
+            status: ItemStatus::Ready,
+            payload: original.payload,
+            env_id: original.env_id,
+            account_id: original.account_id,
+            source: original.source,
+            description: original.description,
+            created_at: Utc::now(),
+        };
+        self.insert(new_item).await
+    }
+
+    // =========================================================================
+    // Settings Operations
+    // =========================================================================
+
+    /// Get a setting value by key.
+    pub async fn get_setting<T: serde::de::DeserializeOwned + Send + 'static>(
+        &self,
+        key: &str,
+    ) -> Result<Option<T>, RepositoryError> {
+        let key = key.to_string();
+        self.client
+            .conn(move |conn| {
+                let mut stmt = conn.prepare("SELECT value FROM queue_settings WHERE key = ?1")?;
+                match stmt.query_row([&key], |row| {
+                    let bytes: Vec<u8> = row.get(0)?;
+                    Ok(bytes)
+                }) {
+                    Ok(bytes) => {
+                        let value: T = bincode::deserialize(&bytes).map_err(|e| {
+                            rusqlite::Error::FromSqlConversionFailure(
+                                0,
+                                rusqlite::types::Type::Blob,
+                                e,
+                            )
+                        })?;
+                        Ok(Some(value))
+                    }
+                    Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+                    Err(e) => Err(e),
+                }
+            })
+            .await
+            .map_err(RepositoryError::Database)
+    }
+
+    /// Set a setting value by key.
+    pub async fn set_setting<T: serde::Serialize + Send + 'static>(
+        &self,
+        key: &str,
+        value: T,
+    ) -> Result<(), RepositoryError> {
+        let key = key.to_string();
+        let bytes = bincode::serialize(&value)?;
+        self.client
+            .conn(move |conn| {
+                conn.execute(
+                    "INSERT OR REPLACE INTO queue_settings (key, value) VALUES (?1, ?2)",
+                    rusqlite::params![key, bytes],
+                )
+            })
+            .await?;
+        Ok(())
+    }
+
     // =========================================================================
     // Execution History Operations
     // =========================================================================
@@ -389,6 +489,14 @@ pub struct NewQueueItem {
     pub source: String,
     pub description: String,
     pub created_at: DateTime<Utc>,
+}
+
+/// Data for updating an existing queue item.
+pub struct UpdateItem {
+    pub priority: i32,
+    pub description: String,
+    pub source: String,
+    pub env_id: i64,
 }
 
 /// Data for creating a new execution record.

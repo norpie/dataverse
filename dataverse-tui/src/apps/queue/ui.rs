@@ -10,8 +10,31 @@ use tuidom::Color;
 use super::Queue;
 use super::repository::StatusCounts;
 use super::tree::QueueTreeNode;
+use super::types::QueueItem;
 
 impl Queue {
+    /// Get the currently focused queue item from the tree state.
+    pub(super) fn focused_item(&self) -> Option<QueueItem> {
+        self.tree_state.with_ref(|s| {
+            s.focused_key.as_ref().and_then(|key| {
+                let item_id: Option<i64> = key
+                    .strip_prefix("item-")
+                    .and_then(|rest| rest.split('-').next())
+                    .and_then(|id_str| id_str.parse().ok());
+                item_id.and_then(|id| {
+                    s.roots.iter().find_map(|node| {
+                        if let QueueTreeNode::Item(item) = &node.value {
+                            if item.id == id {
+                                return Some(item.clone());
+                            }
+                        }
+                        None
+                    })
+                })
+            })
+        })
+    }
+
     pub(super) fn render_preview(&self) -> Element {
         let focused_key = self.tree_state.with_ref(|s| s.focused_key.clone());
 
