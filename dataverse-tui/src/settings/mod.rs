@@ -1,6 +1,7 @@
 //! Settings system for typed key-value storage.
 
 mod backend;
+pub mod migrations;
 mod sqlite;
 
 pub use backend::SettingsBackend;
@@ -16,6 +17,8 @@ use thiserror::Error;
 pub enum SettingsError {
     #[error("database error: {0}")]
     Database(#[from] async_sqlite::Error),
+    #[error("migration error: {0}")]
+    Migration(#[from] crate::migrations::MigrationError),
     #[error("serialization error: {0}")]
     Serialization(bincode::Error),
     #[error("deserialization error: {0}")]

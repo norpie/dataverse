@@ -19,6 +19,8 @@ use super::types::QueuePayload;
 pub enum RepositoryError {
     #[error("Database error: {0}")]
     Database(#[from] async_sqlite::Error),
+    #[error("Migration error: {0}")]
+    Migration(#[from] crate::migrations::MigrationError),
     #[error("Serialization error: {0}")]
     Serialization(#[from] Box<bincode::ErrorKind>),
     #[error("Item not found: {0}")]
@@ -37,12 +39,8 @@ impl QueueRepository {
         let client = ClientBuilder::new().path(path).open().await?;
 
         // Run migrations
-        client
-            .conn(|conn| {
-                conn.execute_batch(include_str!("schema.sql"))?;
-                Ok(())
-            })
-            .await?;
+        let migrations = super::migrations::load()?;
+        crate::migrations::run(&client, &migrations).await?;
 
         Ok(Self { client })
     }

@@ -1,6 +1,7 @@
 //! Queue app for executing Dataverse operations.
 
 pub mod api;
+pub mod migrations;
 pub mod repository;
 pub mod types;
 

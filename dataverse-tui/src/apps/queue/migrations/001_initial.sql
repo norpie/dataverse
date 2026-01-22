@@ -1,3 +1,5 @@
+-- Queue database initial schema
+
 -- Queue items table
 CREATE TABLE IF NOT EXISTS queue_items (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

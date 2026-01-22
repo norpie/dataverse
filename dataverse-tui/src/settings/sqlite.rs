@@ -19,17 +19,9 @@ impl SqliteBackend {
     pub async fn new(path: impl AsRef<Path>) -> Result<Self, SettingsError> {
         let client = async_sqlite::ClientBuilder::new().path(path).open().await?;
 
-        client
-            .conn(|conn| {
-                conn.execute(
-                    "CREATE TABLE IF NOT EXISTS settings (
-                        key TEXT PRIMARY KEY,
-                        value BLOB NOT NULL
-                    )",
-                    [],
-                )
-            })
-            .await?;
+        // Run migrations
+        let migrations = super::migrations::load()?;
+        crate::migrations::run(&client, &migrations).await?;
 
         Ok(Self {
             client,

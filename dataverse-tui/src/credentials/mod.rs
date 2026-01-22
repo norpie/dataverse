@@ -1,5 +1,6 @@
 //! Credentials storage system for OAuth tokens and account management.
 
+pub mod migrations;
 mod models;
 mod sqlite;
 mod token_provider;
@@ -23,6 +24,8 @@ use thiserror::Error;
 pub enum CredentialsError {
     #[error("database error: {0}")]
     Database(#[from] async_sqlite::Error),
+    #[error("migration error: {0}")]
+    Migration(#[from] crate::migrations::MigrationError),
     #[error("{entity} with id {id} not found")]
     NotFound { entity: &'static str, id: i64 },
     #[error("re-authentication required for account {account_id} on environment {environment_id}")]
