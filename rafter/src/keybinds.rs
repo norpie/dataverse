@@ -408,11 +408,24 @@ pub fn parse_key_string(s: &str) -> Result<Vec<KeyCombo>, ParseKeyError> {
     if is_sequence {
         let combos: Vec<KeyCombo> = key_part
             .chars()
-            .map(|c| KeyCombo::new(Key::Char(c), Modifiers::default()))
+            .map(|c| {
+                let shift = c.is_ascii_uppercase();
+                KeyCombo::new(
+                    Key::Char(c),
+                    Modifiers {
+                        ctrl: false,
+                        shift,
+                        alt: false,
+                    },
+                )
+            })
             .collect();
         Ok(combos)
     } else {
         let key = parse_key(key_part)?;
+        // If the key is an uppercase letter and shift wasn't explicitly specified,
+        // automatically set shift: true (crossterm reports shifted chars with shift modifier)
+        let shift = shift || matches!(key, Key::Char(c) if c.is_ascii_uppercase());
         let modifiers = Modifiers { ctrl, shift, alt };
         Ok(vec![KeyCombo::new(key, modifiers)])
     }
