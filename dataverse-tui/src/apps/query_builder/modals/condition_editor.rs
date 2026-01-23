@@ -1,7 +1,6 @@
 //! Condition editor modal for creating/editing filter conditions.
 
 use chrono::DateTime;
-use dataverse_lib::DataverseClient;
 use dataverse_lib::model::Value;
 use dataverse_lib::model::metadata::{AttributeMetadata, AttributeType};
 use rafter::page;
@@ -23,25 +22,24 @@ pub struct ConditionData {
 #[modal(size = Md)]
 pub struct ConditionEditorModal {
     #[state(skip)]
-    client: Option<DataverseClient>,
+    options: Vec<(String, String)>,
     #[state(skip)]
-    entity: String,
-
     attributes: Vec<AttributeMetadata>,
+
     field: AutocompleteState<String>,
     operator: SelectState<CondOp>,
     value_text: String,
 
     selected_type: Option<AttributeType>,
-    loading: bool,
     error: Option<String>,
 }
 
 impl ConditionEditorModal {
-    pub fn new(client: DataverseClient, entity: impl Into<String>) -> Self {
+    /// Create with pre-fetched field options and attribute metadata.
+    pub fn new(options: Vec<(String, String)>, attributes: Vec<AttributeMetadata>) -> Self {
         Self {
-            client: Some(client),
-            entity: entity.into(),
+            options,
+            attributes,
             ..Default::default()
         }
     }
@@ -55,41 +53,8 @@ impl ConditionEditorModal {
 
     #[on_start]
     async fn on_start(&self, mx: &ModalContext<Option<ConditionData>>) {
-        self.loading.set(true);
-
-        let Some(client) = &self.client else {
-            self.error.set(Some("No client available".to_string()));
-            self.loading.set(false);
-            return;
-        };
-
-        let result = client.metadata().attributes(&self.entity).await;
-
-        match result {
-            Ok(attrs) => {
-                let options: Vec<(String, String)> = attrs
-                    .iter()
-                    .filter(|a| a.is_valid_for_read && a.attribute_of.is_none())
-                    .map(|a| {
-                        let display = a
-                            .display_name
-                            .text()
-                            .map(|d| format!("{} ({})", d, a.logical_name))
-                            .unwrap_or_else(|| a.logical_name.clone());
-                        (a.logical_name.clone(), display)
-                    })
-                    .collect();
-                self.field.set(AutocompleteState::new(options));
-                self.attributes.set(attrs);
-                self.loading.set(false);
-                mx.focus("cond-field-autocomplete");
-            }
-            Err(e) => {
-                self.error
-                    .set(Some(format!("Failed to load attributes: {}", e)));
-                self.loading.set(false);
-            }
-        }
+        self.field.set(AutocompleteState::new(self.options.clone()));
+        mx.focus("cond-field-autocomplete");
     }
 
     #[keybinds]
@@ -142,12 +107,11 @@ impl ConditionEditorModal {
             return;
         };
 
-        let attr_type = self.attributes.with_ref(|attrs| {
-            attrs
-                .iter()
-                .find(|a| a.logical_name == field_name)
-                .map(|a| a.attribute_type)
-        });
+        let attr_type = self
+            .attributes
+            .iter()
+            .find(|a| a.logical_name == field_name)
+            .map(|a| a.attribute_type);
 
         self.selected_type.set(attr_type);
         self.value_text.set(String::new());
@@ -161,7 +125,6 @@ impl ConditionEditorModal {
     }
 
     fn element(&self) -> Element {
-        let loading = self.loading.get();
         let error = self.error.get();
         let has_value_input = self
             .operator
@@ -180,18 +143,14 @@ impl ConditionEditorModal {
                     text (content: {err}) style (fg: primary)
                 }
 
-                if loading {
-                    text (content: "Loading attributes...") style (fg: muted)
-                } else {
-                    text (content: "Field") style (fg: muted)
-                    autocomplete (state: self.field, id: "cond-field-autocomplete", placeholder: "Search fields...")
-                        on_select: on_field_select()
-                    text (content: "Operator") style (fg: muted)
-                    select (state: self.operator, id: "cond-operator", placeholder: "Select operator...")
-                    if has_value_input {
-                        text (content: "Value") style (fg: muted)
-                        input (state: self.value_text, id: "cond-value", placeholder: {type_hint})
-                    }
+                text (content: "Field") style (fg: muted)
+                autocomplete (state: self.field, id: "cond-field-autocomplete", placeholder: "Search fields...")
+                    on_select: on_field_select()
+                text (content: "Operator") style (fg: muted)
+                select (state: self.operator, id: "cond-operator", placeholder: "Select operator...")
+                if has_value_input {
+                    text (content: "Value") style (fg: muted)
+                    input (state: self.value_text, id: "cond-value", placeholder: {type_hint})
                 }
 
                 row (width: fill, justify: between) {
@@ -311,16 +270,13 @@ fn parse_value(text: &str, attr_type: Option<AttributeType>) -> Result<Value, St
             "false" | "0" | "no" => Ok(Value::Bool(false)),
             _ => Err("Enter true or false".to_string()),
         },
-        Some(AttributeType::DateTime) => {
-            DateTime::parse_from_rfc3339(text)
-                .map(|dt| Value::DateTime(dt.with_timezone(&chrono::Utc)))
-                .or_else(|_| {
-                    // Try date-only format
-                    chrono::NaiveDate::parse_from_str(text, "%Y-%m-%d")
-                        .map(|d| Value::DateTime(d.and_hms_opt(0, 0, 0).unwrap().and_utc()))
-                })
-                .map_err(|_| "Invalid date (use YYYY-MM-DD or RFC3339)".to_string())
-        }
+        Some(AttributeType::DateTime) => DateTime::parse_from_rfc3339(text)
+            .map(|dt| Value::DateTime(dt.with_timezone(&chrono::Utc)))
+            .or_else(|_| {
+                chrono::NaiveDate::parse_from_str(text, "%Y-%m-%d")
+                    .map(|d| Value::DateTime(d.and_hms_opt(0, 0, 0).unwrap().and_utc()))
+            })
+            .map_err(|_| "Invalid date (use YYYY-MM-DD or RFC3339)".to_string()),
         Some(
             AttributeType::Uniqueidentifier
             | AttributeType::Lookup

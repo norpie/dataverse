@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 /// The complete query being built.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct QueryData {
+    /// Entity set name (e.g., "accounts").
     pub entity: Option<String>,
     pub select: Vec<String>,
     pub filter: FilterNode,
@@ -117,6 +118,25 @@ impl FilterNode {
                 // Recurse into children
                 for child in children {
                     if child.remove_node(target_id) {
+                        return true;
+                    }
+                }
+                false
+            }
+            _ => false,
+        }
+    }
+
+    /// Add a child node to the group with the given ID. Returns true if added.
+    pub fn add_to_group(&mut self, target_id: usize, node: FilterNode) -> bool {
+        match self {
+            Self::Group { id, children, .. } => {
+                if *id == target_id {
+                    children.push(node);
+                    return true;
+                }
+                for child in children {
+                    if child.add_to_group(target_id, node.clone()) {
                         return true;
                     }
                 }

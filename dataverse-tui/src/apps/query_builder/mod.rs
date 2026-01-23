@@ -4,11 +4,19 @@ pub mod data;
 mod modals;
 mod tree;
 
+use dataverse_lib::DataverseClient;
+use dataverse_lib::model::Entity;
 use rafter::page;
 use rafter::prelude::*;
 use rafter::widgets::{Text, Tree, TreeState};
 
-use data::QueryData;
+use crate::systems::client_management::{ClientManagement, GetActiveClient};
+use crate::widgets::loading_overlay;
+use data::{FilterNode, QueryData, SortField};
+use modals::{
+    ConditionEditorModal, EntityPickerModal, FieldPickerModal, NumberEditorModal,
+    SortFieldEditorModal,
+};
 use tree::{QueryTreeNode, build_tree};
 
 /// Query Builder app: visual tree-based OData query construction.
@@ -18,6 +26,8 @@ pub struct QueryBuilder {
     tree_state: TreeState<QueryTreeNode>,
     /// The query being constructed.
     query: QueryData,
+    /// Loading overlay message.
+    loading_message: Option<String>,
 }
 
 #[app_impl]
@@ -48,6 +58,8 @@ impl QueryBuilder {
     #[keybinds]
     fn keybinds() {
         bind("escape", close_app);
+        bind("a", add_node);
+        bind("g", add_group);
         bind("t", toggle_group);
         bind("d", delete_node);
     }
@@ -69,7 +81,6 @@ impl QueryBuilder {
             return;
         };
 
-        // Only works on filter group nodes
         let Some(group_id) = key.strip_prefix("filter-group-") else {
             return;
         };
@@ -81,7 +92,7 @@ impl QueryBuilder {
         self.rebuild_tree();
     }
 
-    /// Delete the focused node (select field, filter condition/group, sort item, top value).
+    /// Delete the focused node.
     #[handler]
     async fn delete_node(&self, gx: &GlobalContext) {
         let Some(key) = self.focused_key() else {
@@ -145,34 +156,381 @@ impl QueryBuilder {
             return;
         };
 
-        // TODO: Open appropriate modal based on focused node type
         match key.as_str() {
             "section-Entity" | "entity-value" => {
-                gx.toast(Toast::info("Entity picker not yet implemented"));
+                self.open_entity_picker(gx).await;
+            }
+            "section-Top" | "top-value" => {
+                self.open_top_editor(gx).await;
             }
             k if k == "section-Select" || k.starts_with("select-") => {
-                gx.toast(Toast::info("Field picker not yet implemented"));
-            }
-            k if k == "section-Top" || k == "top-value" => {
-                gx.toast(Toast::info("Number editor not yet implemented"));
+                self.open_field_picker(gx).await;
             }
             k if k == "section-OrderBy" || k.starts_with("sort-") => {
-                gx.toast(Toast::info("Sort editor not yet implemented"));
+                self.open_sort_editor(gx).await;
             }
-            k if k.starts_with("filter-cond-") => {
-                gx.toast(Toast::info("Condition editor not yet implemented"));
+            k if k == "section-Filter"
+                || k.starts_with("filter-group-")
+                || k.starts_with("filter-cond-") =>
+            {
+                self.open_condition_editor(gx, None).await;
             }
             _ => {}
         }
     }
 
+    /// Add a new node based on focused section.
+    #[handler]
+    async fn add_node(&self, gx: &GlobalContext) {
+        let Some(key) = self.focused_key() else {
+            return;
+        };
+
+        match key.as_str() {
+            "section-Entity" | "entity-value" => {
+                self.open_entity_picker(gx).await;
+            }
+            "section-Top" | "top-value" => {
+                self.open_top_editor(gx).await;
+            }
+            k if k == "section-Select" || k.starts_with("select-") => {
+                self.open_field_picker(gx).await;
+            }
+            k if k == "section-OrderBy" || k.starts_with("sort-") => {
+                self.open_sort_editor(gx).await;
+            }
+            k if k == "section-Filter"
+                || k.starts_with("filter-group-")
+                || k.starts_with("filter-cond-") =>
+            {
+                // Determine which group to add to
+                let group_id = self.focused_filter_group_id(&key);
+                self.open_condition_editor(gx, group_id).await;
+            }
+            _ => {}
+        }
+    }
+
+    /// Add a new AND/OR group to the focused filter group.
+    #[handler]
+    async fn add_group(&self) {
+        let Some(key) = self.focused_key() else {
+            return;
+        };
+
+        // Only valid in filter context
+        if key != "section-Filter"
+            && !key.starts_with("filter-group-")
+            && !key.starts_with("filter-cond-")
+        {
+            return;
+        }
+
+        let group_id = self.focused_filter_group_id(&key);
+        self.query.update(|q| {
+            let id = q.next_id();
+            let new_group = FilterNode::Group {
+                id,
+                is_and: true,
+                children: vec![],
+            };
+            match group_id {
+                Some(gid) => {
+                    q.filter.add_to_group(gid, new_group);
+                }
+                None => {
+                    // No root group yet, create one and add the new group inside
+                    let root_id = q.next_id();
+                    q.filter = FilterNode::Group {
+                        id: root_id,
+                        is_and: true,
+                        children: vec![new_group],
+                    };
+                }
+            }
+        });
+        self.rebuild_tree();
+    }
+
     // =========================================================================
-    // Internal
+    // Modal openers
     // =========================================================================
+
+    async fn open_entity_picker(&self, gx: &GlobalContext) {
+        let Some(client) = self.get_client(gx).await else {
+            return;
+        };
+
+        self.loading_message
+            .set(Some("Loading entities...".to_string()));
+
+        let entities = match client.metadata().all_entities().await {
+            Ok(all) => all
+                .iter()
+                .map(|e| {
+                    let display = e
+                        .display_name
+                        .text()
+                        .map(|d| format!("{} ({})", d, e.entity_set_name))
+                        .unwrap_or_else(|| e.entity_set_name.clone());
+                    (e.entity_set_name.clone(), display)
+                })
+                .collect(),
+            Err(e) => {
+                self.loading_message.set(None);
+                gx.toast(Toast::error(format!("Failed to load entities: {}", e)));
+                return;
+            }
+        };
+
+        self.loading_message.set(None);
+
+        let result = gx.modal(EntityPickerModal::new(entities)).await;
+        if let Some(entity) = result {
+            self.query.update(|q| {
+                q.entity = Some(entity);
+                // Clear fields that depend on entity
+                q.select.clear();
+                q.filter = FilterNode::Empty;
+                q.order_by.clear();
+            });
+            self.rebuild_tree();
+        }
+    }
+
+    async fn open_field_picker(&self, gx: &GlobalContext) {
+        let entity = self.query.with_ref(|q| q.entity.clone());
+        let Some(entity) = entity else {
+            gx.toast(Toast::info("Select an entity first"));
+            return;
+        };
+
+        let Some(client) = self.get_client(gx).await else {
+            return;
+        };
+
+        self.loading_message
+            .set(Some("Loading attributes...".to_string()));
+
+        let options = match self.fetch_field_options(&client, &entity).await {
+            Ok(opts) => opts,
+            Err(e) => {
+                self.loading_message.set(None);
+                gx.toast(Toast::error(e));
+                return;
+            }
+        };
+
+        self.loading_message.set(None);
+
+        let result = gx.modal(FieldPickerModal::new(options)).await;
+        if !result.is_empty() {
+            self.query.update(|q| {
+                for field in result {
+                    if !q.select.contains(&field) {
+                        q.select.push(field);
+                    }
+                }
+            });
+            self.rebuild_tree();
+        }
+    }
+
+    async fn open_condition_editor(&self, gx: &GlobalContext, group_id: Option<usize>) {
+        let entity = self.query.with_ref(|q| q.entity.clone());
+        let Some(entity) = entity else {
+            gx.toast(Toast::info("Select an entity first"));
+            return;
+        };
+
+        let Some(client) = self.get_client(gx).await else {
+            return;
+        };
+
+        self.loading_message
+            .set(Some("Loading attributes...".to_string()));
+
+        let attrs = match client.metadata().attributes(Entity::set(&entity)).await {
+            Ok(a) => a,
+            Err(e) => {
+                self.loading_message.set(None);
+                gx.toast(Toast::error(format!("Failed to load attributes: {}", e)));
+                return;
+            }
+        };
+
+        self.loading_message.set(None);
+
+        let options: Vec<(String, String)> = attrs
+            .iter()
+            .filter(|a| a.is_valid_for_read && a.attribute_of.is_none())
+            .map(|a| {
+                let display = a
+                    .display_name
+                    .text()
+                    .map(|d| format!("{} ({})", d, a.logical_name))
+                    .unwrap_or_else(|| a.logical_name.clone());
+                (a.logical_name.clone(), display)
+            })
+            .collect();
+
+        let result = gx.modal(ConditionEditorModal::new(options, attrs)).await;
+        if let Some(cond) = result {
+            self.query.update(|q| {
+                let id = q.next_id();
+                let node = FilterNode::Condition {
+                    id,
+                    field: cond.field,
+                    operator: cond.operator,
+                    value: cond.value,
+                };
+                match group_id {
+                    Some(gid) => {
+                        q.filter.add_to_group(gid, node);
+                    }
+                    None => match &q.filter {
+                        FilterNode::Empty => {
+                            let root_id = q.next_id();
+                            q.filter = FilterNode::Group {
+                                id: root_id,
+                                is_and: true,
+                                children: vec![node],
+                            };
+                        }
+                        FilterNode::Group { .. } => {
+                            // Add to root group
+                            if let FilterNode::Group { children, .. } = &mut q.filter {
+                                children.push(node);
+                            }
+                        }
+                        FilterNode::Condition { .. } => {
+                            // Shouldn't happen at root level
+                        }
+                    },
+                }
+            });
+            self.rebuild_tree();
+        }
+    }
+
+    async fn open_sort_editor(&self, gx: &GlobalContext) {
+        let entity = self.query.with_ref(|q| q.entity.clone());
+        let Some(entity) = entity else {
+            gx.toast(Toast::info("Select an entity first"));
+            return;
+        };
+
+        let Some(client) = self.get_client(gx).await else {
+            return;
+        };
+
+        self.loading_message
+            .set(Some("Loading attributes...".to_string()));
+
+        let options = match self.fetch_field_options(&client, &entity).await {
+            Ok(opts) => opts,
+            Err(e) => {
+                self.loading_message.set(None);
+                gx.toast(Toast::error(e));
+                return;
+            }
+        };
+
+        self.loading_message.set(None);
+
+        let result = gx.modal(SortFieldEditorModal::new(options)).await;
+        if let Some((field, direction)) = result {
+            self.query.update(|q| {
+                let id = q.next_id();
+                q.order_by.push(SortField {
+                    id,
+                    field,
+                    direction,
+                });
+            });
+            self.rebuild_tree();
+        }
+    }
+
+    async fn open_top_editor(&self, gx: &GlobalContext) {
+        let current = self.query.with_ref(|q| q.top);
+        let result = gx.modal(NumberEditorModal::new(current)).await;
+        if let Some(val) = result {
+            self.query.update(|q| {
+                q.top = Some(val);
+            });
+            self.rebuild_tree();
+        }
+    }
+
+    // =========================================================================
+    // Helpers
+    // =========================================================================
+
+    async fn get_client(&self, gx: &GlobalContext) -> Option<DataverseClient> {
+        match gx
+            .request_system::<ClientManagement, GetActiveClient>(GetActiveClient)
+            .await
+        {
+            Ok(Ok(info)) => Some(info.client),
+            Ok(Err(e)) => {
+                gx.toast(Toast::error(format!("Client error: {}", e)));
+                None
+            }
+            Err(e) => {
+                gx.toast(Toast::error(format!("No active connection: {:?}", e)));
+                None
+            }
+        }
+    }
+
+    async fn fetch_field_options(
+        &self,
+        client: &DataverseClient,
+        entity: &str,
+    ) -> Result<Vec<(String, String)>, String> {
+        let attrs = client
+            .metadata()
+            .attributes(Entity::set(entity))
+            .await
+            .map_err(|e| format!("Failed to load attributes: {}", e))?;
+
+        Ok(attrs
+            .iter()
+            .filter(|a| a.is_valid_for_read && a.attribute_of.is_none())
+            .map(|a| {
+                let display = a
+                    .display_name
+                    .text()
+                    .map(|d| format!("{} ({})", d, a.logical_name))
+                    .unwrap_or_else(|| a.logical_name.clone());
+                (a.logical_name.clone(), display)
+            })
+            .collect())
+    }
 
     /// Get the key of the currently focused tree node.
     fn focused_key(&self) -> Option<String> {
         self.tree_state.with_ref(|s| s.focused_key.clone())
+    }
+
+    /// Determine the filter group ID to add to, based on the focused key.
+    fn focused_filter_group_id(&self, key: &str) -> Option<usize> {
+        if let Some(id_str) = key.strip_prefix("filter-group-") {
+            id_str.parse::<usize>().ok()
+        } else if key == "section-Filter" {
+            // Return the root group ID if it exists
+            self.query.with_ref(|q| match &q.filter {
+                FilterNode::Group { id, .. } => Some(*id),
+                _ => None,
+            })
+        } else {
+            // For filter-cond-*, add to root group
+            self.query.with_ref(|q| match &q.filter {
+                FilterNode::Group { id, .. } => Some(*id),
+                _ => None,
+            })
+        }
     }
 
     /// Rebuild the tree widget state from the current QueryData.
@@ -188,6 +546,8 @@ impl QueryBuilder {
     // =========================================================================
 
     fn element(&self) -> Element {
+        let loading_message = self.loading_message.get();
+
         page! {
             column (padding: (1, 2), gap: 1, width: fill, height: fill) style (bg: background) {
                 // Header
@@ -197,6 +557,10 @@ impl QueryBuilder {
                         row (gap: 1) {
                             text (content: "a") style (fg: primary)
                             text (content: "add") style (fg: muted)
+                        }
+                        row (gap: 1) {
+                            text (content: "g") style (fg: primary)
+                            text (content: "group") style (fg: muted)
                         }
                         row (gap: 1) {
                             text (content: "d") style (fg: primary)
@@ -221,6 +585,10 @@ impl QueryBuilder {
                         text (content: "esc") style (fg: primary)
                         text (content: "close") style (fg: muted)
                     }
+                }
+
+                if let Some(msg) = loading_message {
+                    { loading_overlay("loading-overlay", &msg) }
                 }
             }
         }

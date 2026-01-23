@@ -1,6 +1,5 @@
 //! Sort field editor modal for adding/editing order by entries.
 
-use dataverse_lib::DataverseClient;
 use dataverse_lib::api::query::Direction;
 use rafter::page;
 use rafter::prelude::*;
@@ -10,21 +9,17 @@ use rafter::widgets::{Autocomplete, AutocompleteState, Button, RadioGroup, Radio
 #[modal]
 pub struct SortFieldEditorModal {
     #[state(skip)]
-    client: Option<DataverseClient>,
-    #[state(skip)]
-    entity: String,
+    options: Vec<(String, String)>,
 
     field: AutocompleteState<String>,
     direction: RadioState<String>,
-    loading: bool,
-    error: Option<String>,
 }
 
 impl SortFieldEditorModal {
-    pub fn new(client: DataverseClient, entity: impl Into<String>) -> Self {
+    /// Create with pre-fetched field options: (logical_name, display_label).
+    pub fn new(options: Vec<(String, String)>) -> Self {
         Self {
-            client: Some(client),
-            entity: entity.into(),
+            options,
             ..Default::default()
         }
     }
@@ -38,9 +33,7 @@ impl SortFieldEditorModal {
 
     #[on_start]
     async fn on_start(&self, mx: &ModalContext<Option<(String, Direction)>>) {
-        self.loading.set(true);
-
-        // Initialize direction radio
+        self.field.set(AutocompleteState::new(self.options.clone()));
         self.direction.set(
             RadioState::new([
                 ("asc".to_string(), "Ascending".to_string()),
@@ -48,39 +41,7 @@ impl SortFieldEditorModal {
             ])
             .with_value("asc".to_string()),
         );
-
-        let Some(client) = &self.client else {
-            self.error.set(Some("No client available".to_string()));
-            self.loading.set(false);
-            return;
-        };
-
-        let result = client.metadata().attributes(&self.entity).await;
-
-        match result {
-            Ok(attrs) => {
-                let options: Vec<(String, String)> = attrs
-                    .iter()
-                    .filter(|a| a.is_valid_for_read && a.attribute_of.is_none())
-                    .map(|a| {
-                        let display = a
-                            .display_name
-                            .text()
-                            .map(|d| format!("{} ({})", d, a.logical_name))
-                            .unwrap_or_else(|| a.logical_name.clone());
-                        (a.logical_name.clone(), display)
-                    })
-                    .collect();
-                self.field.set(AutocompleteState::new(options));
-                self.loading.set(false);
-                mx.focus("sort-field-autocomplete");
-            }
-            Err(e) => {
-                self.error
-                    .set(Some(format!("Failed to load attributes: {}", e)));
-                self.loading.set(false);
-            }
-        }
+        mx.focus("sort-field-autocomplete");
     }
 
     #[keybinds]
@@ -109,26 +70,13 @@ impl SortFieldEditorModal {
     }
 
     fn element(&self) -> Element {
-        let loading = self.loading.get();
-        let error = self.error.get();
-
         page! {
             column (padding: (1, 2), gap: 1, width: fill, height: fill) style (bg: surface) {
                 text (content: "Add Sort Field") style (bold, fg: interact)
-
-                if let Some(err) = error {
-                    text (content: {err}) style (fg: primary)
-                }
-
-                if loading {
-                    text (content: "Loading attributes...") style (fg: muted)
-                } else {
-                    text (content: "Field") style (fg: muted)
-                    autocomplete (state: self.field, id: "sort-field-autocomplete", placeholder: "Search fields...")
-                    text (content: "Direction") style (fg: muted)
-                    radio_group (state: self.direction, id: "sort-direction")
-                }
-
+                text (content: "Field") style (fg: muted)
+                autocomplete (state: self.field, id: "sort-field-autocomplete", placeholder: "Search fields...")
+                text (content: "Direction") style (fg: muted)
+                radio_group (state: self.direction, id: "sort-direction")
                 row (width: fill, justify: between) {
                     button (label: "Cancel", hint: "esc", id: "cancel") on_activate: cancel()
                     button (label: "Ok", id: "ok") on_activate: confirm()
