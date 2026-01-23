@@ -40,7 +40,7 @@ impl Default for FilterNode {
 }
 
 /// Comparison operator for a filter condition.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum CondOp {
     Eq,
     Ne,

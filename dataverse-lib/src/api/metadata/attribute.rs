@@ -15,6 +15,7 @@ use crate::cache::{self, CachedValue};
 use crate::error::ApiError;
 use crate::error::Error;
 use crate::error::MetadataError;
+use crate::model::Entity;
 use crate::model::metadata::AttributeMetadata;
 
 // =============================================================================
@@ -94,12 +95,12 @@ impl<'a> IntoFuture for AttributeMetadataBuilder<'a> {
 /// Builder for fetching all attributes of an entity.
 pub struct AttributesBuilder<'a> {
     client: &'a DataverseClient,
-    entity: String,
+    entity: Entity,
     bypass_cache: bool,
 }
 
 impl<'a> AttributesBuilder<'a> {
-    pub(crate) fn new(client: &'a DataverseClient, entity: String) -> Self {
+    pub(crate) fn new(client: &'a DataverseClient, entity: Entity) -> Self {
         Self {
             client,
             entity,
@@ -115,7 +116,11 @@ impl<'a> AttributesBuilder<'a> {
 
     /// Execute the request.
     pub async fn execute(self) -> Result<Vec<AttributeMetadata>, Error> {
-        let cache_key = format!("{}{}", CACHE_KEY_ATTRIBUTES, self.entity);
+        let logical_name = self
+            .client
+            .resolve_entity_logical_name(&self.entity)
+            .await?;
+        let cache_key = format!("{}{}", CACHE_KEY_ATTRIBUTES, logical_name);
 
         // Check cache first (unless bypassed)
         if !self.bypass_cache {
@@ -129,7 +134,7 @@ impl<'a> AttributesBuilder<'a> {
         }
 
         // Fetch from API
-        let attrs = fetch_attributes_from_api(self.client, &self.entity).await?;
+        let attrs = fetch_attributes_from_api(self.client, &logical_name).await?;
 
         // Cache the result
         if let Some(cache) = &self.client.inner.cache {

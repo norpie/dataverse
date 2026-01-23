@@ -1,6 +1,7 @@
 //! Query Builder app for constructing OData queries visually.
 
 pub mod data;
+mod modals;
 mod tree;
 
 use rafter::page;

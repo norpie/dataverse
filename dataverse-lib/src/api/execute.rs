@@ -492,6 +492,27 @@ impl DataverseClient {
         Ok(core.entity_set_name)
     }
 
+    /// Resolves an Entity to its logical name.
+    ///
+    /// - For `Entity::Logical`, returns the name directly.
+    /// - For `Entity::Set`, looks up the logical name via all_entities metadata.
+    pub async fn resolve_entity_logical_name(&self, entity: &Entity) -> Result<String, Error> {
+        match entity {
+            Entity::Logical(name) => Ok(name.clone()),
+            Entity::Set(set_name) => {
+                let all = self.metadata().all_entities().await?;
+                all.iter()
+                    .find(|e| e.entity_set_name == *set_name)
+                    .map(|e| e.logical_name.clone())
+                    .ok_or_else(|| {
+                        Error::Metadata(crate::error::MetadataError::EntityNotFound {
+                            name: set_name.clone(),
+                        })
+                    })
+            }
+        }
+    }
+
     /// Returns a metadata client for querying entity/attribute/relationship metadata.
     ///
     /// # Example

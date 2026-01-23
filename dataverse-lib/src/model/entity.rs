@@ -75,6 +75,20 @@ impl Entity {
     }
 }
 
+impl From<&str> for Entity {
+    /// Defaults to logical name for backward compatibility.
+    fn from(name: &str) -> Self {
+        Self::Logical(name.to_string())
+    }
+}
+
+impl From<String> for Entity {
+    /// Defaults to logical name for backward compatibility.
+    fn from(name: String) -> Self {
+        Self::Logical(name)
+    }
+}
+
 impl std::fmt::Display for Entity {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {

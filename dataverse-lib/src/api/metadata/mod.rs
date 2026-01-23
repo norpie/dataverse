@@ -40,6 +40,7 @@ use reqwest::header::HeaderValue;
 use crate::DataverseClient;
 use crate::error::ApiError;
 use crate::error::Error;
+use crate::model::Entity;
 
 /// Cache key prefix for minimal entity metadata (EntityCore).
 pub(crate) const CACHE_KEY_ENTITY_CORE: &str = "entity_core:";
@@ -135,13 +136,16 @@ impl<'a> MetadataClient<'a> {
 
     /// Fetches all attributes for an entity.
     ///
+    /// Accepts either a logical name or entity set name via the `Entity` enum.
+    ///
     /// # Example
     ///
     /// ```ignore
-    /// let attrs = client.metadata().attributes("account").await?;
+    /// let attrs = client.metadata().attributes(Entity::logical("account")).await?;
+    /// let attrs = client.metadata().attributes(Entity::set("accounts")).await?;
     /// ```
-    pub fn attributes(&self, entity: &str) -> AttributesBuilder<'a> {
-        AttributesBuilder::new(self.client, entity.to_string())
+    pub fn attributes(&self, entity: impl Into<Entity>) -> AttributesBuilder<'a> {
+        AttributesBuilder::new(self.client, entity.into())
     }
 
     // === Relationship ===
