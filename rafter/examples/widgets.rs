@@ -9,13 +9,16 @@
 //! - RadioGroup: Mutually exclusive radio buttons with on_change
 //! - Card: Container widget for grouping content
 //! - Collapsible: Expandable/collapsible content section
+//! - NumberInput: Numeric input with validation and min/max clamping
+//! - DatePicker: Dropdown calendar with optional time inputs
 
 use std::fs::File;
 
 use rafter::page;
 use rafter::prelude::*;
 use rafter::widgets::{
-    Button, Card, Checkbox, Collapsible, Input, RadioGroup, RadioState, Select, SelectState, Text,
+    Button, Card, Checkbox, Collapsible, DatePicker, DatePickerState, Input, NumberInput,
+    NumberInputState, RadioGroup, RadioState, Select, SelectState, Text,
 };
 use simplelog::{Config, LevelFilter, WriteLogger};
 
@@ -39,12 +42,21 @@ struct WidgetShowcase {
     // Collapsible state
     details_open: bool,
 
+    // NumberInput state
+    quantity: NumberInputState,
+    temperature: NumberInputState,
+
+    // DatePicker state
+    start_date: DatePickerState,
+    event_datetime: DatePickerState,
+
     // Display state
     message: String,
 }
 
 #[app_impl]
 impl WidgetShowcase {
+    #[on_start]
     async fn on_start(&self) {
         self.message.set("Welcome! Try the widgets below.".into());
 
@@ -87,6 +99,26 @@ impl WidgetShowcase {
             ("medium".to_string(), "Medium"),
             ("high".to_string(), "High"),
         ]));
+
+        // Initialize number inputs
+        self.quantity.set(
+            NumberInputState::new(50.0)
+                .with_min(1.0)
+                .with_max(1000.0)
+                .with_step(10.0)
+                .integer(),
+        );
+        self.temperature.set(
+            NumberInputState::new(20.0)
+                .with_min(-40.0)
+                .with_max(60.0)
+                .with_step(0.5)
+                .allow_negative(),
+        );
+
+        // Initialize date pickers
+        self.start_date.set(DatePickerState::new());
+        self.event_datetime.set(DatePickerState::new().with_time());
     }
 
     #[keybinds]
@@ -120,7 +152,7 @@ impl WidgetShowcase {
     #[handler]
     async fn country_changed(&self) {
         let state = self.country.get();
-        if let Some(code) = &state.value {
+        if let Some(code) = state.value() {
             let label = state
                 .options
                 .iter()
@@ -178,8 +210,39 @@ impl WidgetShowcase {
         self.password.set(String::new());
         self.agree.set(false);
         self.notifications.set(false);
-        self.country.update(|s| s.value = None);
+        self.country.update(|s| s.selection.clear());
         self.message.set("Form cleared.".into());
+    }
+
+    #[handler]
+    async fn quantity_changed(&self) {
+        let state = self.quantity.get();
+        self.message.set(format!("Quantity: {}", state.value_i32()));
+    }
+
+    #[handler]
+    async fn temperature_changed(&self) {
+        let state = self.temperature.get();
+        self.message
+            .set(format!("Temperature: {:.1}°C", state.value()));
+    }
+
+    #[handler]
+    async fn start_date_changed(&self) {
+        let state = self.start_date.get();
+        if let Some(date) = state.date() {
+            self.message
+                .set(format!("Start date: {}", date.format("%Y-%m-%d")));
+        }
+    }
+
+    #[handler]
+    async fn event_datetime_changed(&self) {
+        let state = self.event_datetime.get();
+        if let Some(dt) = state.datetime_utc() {
+            self.message
+                .set(format!("Event: {}", dt.format("%Y-%m-%d %H:%M UTC")));
+        }
     }
 
     fn element(&self) -> Element {
@@ -221,6 +284,38 @@ impl WidgetShowcase {
                             }
                             button (label: {if self.password_visible.get() { "Hide" } else { "Show" }}, id: "toggle-pw")
                                 on_activate: toggle_password_visibility()
+                        }
+                    }
+
+                    // NumberInput widgets section
+                    column (gap: 1) {
+                        text (content: "Number Input") style (bold, fg: primary)
+                        row (gap: 2) {
+                            text (content: "Quantity:") style (fg: muted)
+                            number_input (state: self.quantity, id: "quantity", placeholder: "50", width: 10)
+                                style (bg: surface)
+                                on_change: quantity_changed()
+                        }
+                        row (gap: 2) {
+                            text (content: "Temp (°C):") style (fg: muted)
+                            number_input (state: self.temperature, id: "temperature", placeholder: "20.0", width: 10)
+                                style (bg: surface)
+                                on_change: temperature_changed()
+                        }
+                    }
+
+                    // DatePicker widgets section
+                    column (gap: 1) {
+                        text (content: "Date Picker") style (bold, fg: primary)
+                        row (gap: 2) {
+                            text (content: "Start:") style (fg: muted)
+                            date_picker (state: self.start_date, id: "start-date", placeholder: "Pick a date...")
+                                on_change: start_date_changed()
+                        }
+                        row (gap: 2) {
+                            text (content: "Event:") style (fg: muted)
+                            date_picker (state: self.event_datetime, id: "event-dt", placeholder: "Pick date & time...")
+                                on_change: event_datetime_changed()
                         }
                     }
 

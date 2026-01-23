@@ -216,7 +216,10 @@ impl NumberInputState {
 
     /// Handle a text change event. Updates internal state if the text is valid.
     /// Returns true if the state was updated (text accepted).
-    fn handle_text_change(&mut self, new_text: &str) -> bool {
+    ///
+    /// Use this when embedding `NumberInputState` as a plain field inside another
+    /// widget's state and using a raw `text_input` element.
+    pub fn handle_text_change(&mut self, new_text: &str) -> bool {
         if !self.is_valid_partial(new_text) {
             return false;
         }
@@ -233,7 +236,10 @@ impl NumberInputState {
 
     /// Finalize the current text (called on submit/blur).
     /// Parses the text, clamps to bounds, and updates the display text.
-    fn finalize(&mut self) {
+    ///
+    /// Use this when embedding `NumberInputState` as a plain field inside another
+    /// widget's state and using a raw `text_input` element.
+    pub fn finalize(&mut self) {
         if let Some(value) = self.parse_and_clamp(&self.text.clone()) {
             self.value = value;
             self.text = format_value(self.value, self.integer_only);
