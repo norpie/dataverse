@@ -99,6 +99,65 @@ pub struct QueueItem {
     pub created_at: DateTime<Utc>,
 }
 
+/// Filter for which statuses to show in the tree view.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum StatusFilter {
+    /// Show all statuses.
+    All,
+    /// Show only items with this specific status.
+    Only(ItemStatus),
+}
+
+impl StatusFilter {
+    /// All possible filter values in cycle order.
+    const CYCLE: &'static [Self] = &[
+        Self::All,
+        Self::Only(ItemStatus::Blocked),
+        Self::Only(ItemStatus::Ready),
+        Self::Only(ItemStatus::Paused),
+        Self::Only(ItemStatus::Running),
+        Self::Only(ItemStatus::Interrupted),
+        Self::Only(ItemStatus::Done),
+        Self::Only(ItemStatus::Failed),
+        Self::Only(ItemStatus::PartiallyFailed),
+    ];
+
+    /// Advance to the next filter in the cycle.
+    pub fn next(self) -> Self {
+        let idx = Self::CYCLE.iter().position(|f| *f == self).unwrap_or(0);
+        Self::CYCLE[(idx + 1) % Self::CYCLE.len()]
+    }
+
+    /// Display label for this filter.
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::All => "All",
+            Self::Only(ItemStatus::Blocked) => "Blocked",
+            Self::Only(ItemStatus::Ready) => "Ready",
+            Self::Only(ItemStatus::Paused) => "Paused",
+            Self::Only(ItemStatus::Running) => "Running",
+            Self::Only(ItemStatus::Interrupted) => "Interrupted",
+            Self::Only(ItemStatus::Done) => "Done",
+            Self::Only(ItemStatus::Failed) => "Failed",
+            Self::Only(ItemStatus::PartiallyFailed) => "Partial",
+        }
+    }
+
+    /// Convert to a list of statuses for repository query.
+    pub fn to_statuses(&self) -> Option<Vec<ItemStatus>> {
+        match self {
+            Self::All => None,
+            Self::Only(status) => Some(vec![*status]),
+        }
+    }
+}
+
+impl Default for StatusFilter {
+    fn default() -> Self {
+        Self::All
+    }
+}
+
 /// Status of an execution attempt.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ExecutionStatus {

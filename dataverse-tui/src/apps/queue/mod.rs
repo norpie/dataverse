@@ -14,7 +14,7 @@ use std::collections::VecDeque;
 use chrono::Utc;
 use rafter::page;
 use rafter::prelude::*;
-use rafter::widgets::{Text, Tree, TreeState};
+use rafter::widgets::{Input, Select, SelectState, SelectionMode, Text, Tree, TreeState};
 use tuidom::Color;
 
 use crate::credentials::CredentialsProvider;
@@ -33,6 +33,7 @@ use repository::QueueRepository;
 use repository::StatusCounts;
 use tree::{QueueTreeNode, build_tree_nodes};
 use types::ItemStatus;
+use types::StatusFilter;
 
 /// Queue app for executing Dataverse operations in priority order.
 #[app(name = "Queue", singleton, on_blur = Continue, autostart)]
@@ -55,6 +56,12 @@ pub struct Queue {
     tree_state: TreeState<QueueTreeNode>,
     /// Last 7 execution durations for ETA calculation.
     recent_durations: VecDeque<i64>,
+    /// Active status filter.
+    status_filter: StatusFilter,
+    /// Source filter (multi-select).
+    source_filter: SelectState<String>,
+    /// Search text for filtering by description.
+    search_text: String,
 }
 
 #[app_impl]
@@ -107,7 +114,47 @@ impl Queue {
             .flatten()
             .unwrap_or(10);
 
-        // Load initial tree
+        // Load filter preferences
+        let status_filter = repo
+            .get_setting::<StatusFilter>("status_filter")
+            .await
+            .ok()
+            .flatten()
+            .unwrap_or_default();
+        let saved_sources: Vec<String> = repo
+            .get_setting::<Vec<String>>("source_filter")
+            .await
+            .ok()
+            .flatten()
+            .unwrap_or_default();
+        let search_text = repo
+            .get_setting::<String>("search_text")
+            .await
+            .ok()
+            .flatten()
+            .unwrap_or_default();
+
+        // Build source filter select state
+        let available_sources = repo.get_sources().await.unwrap_or_default();
+        let mut source_state = SelectState::new(
+            available_sources
+                .iter()
+                .map(|s| (s.clone(), s.clone()))
+                .collect::<Vec<_>>(),
+        )
+        .with_selection(SelectionMode::Multi);
+        // Restore previously selected sources
+        for src in &saved_sources {
+            if available_sources.contains(src) {
+                source_state.selection.selected.insert(src.clone());
+            }
+        }
+
+        self.status_filter.set(status_filter);
+        self.source_filter.set(source_state);
+        self.search_text.set(search_text);
+
+        // Load initial tree (uses filter state)
         self.refresh_tree(&repo).await;
 
         self.repository.set(Some(repo));
@@ -146,6 +193,9 @@ impl Queue {
         bind("r", quick_retry);
         bind("d", quick_delete);
         bind(",", open_settings);
+        bind("f", cycle_status_filter);
+        bind("/", focus_search);
+        bind("ctrl+f", toggle_source_filter);
     }
 
     #[handler]
@@ -457,6 +507,60 @@ impl Queue {
     }
 
     // =========================================================================
+    // Filter Handlers
+    // =========================================================================
+
+    #[handler]
+    async fn cycle_status_filter(&self) {
+        let current = self.status_filter.get();
+        let next = current.next();
+        self.status_filter.set(next);
+
+        if let Some(repo) = self.repository.get() {
+            let _ = repo.set_setting("status_filter", next).await;
+            self.refresh_tree(&repo).await;
+        }
+    }
+
+    #[handler]
+    async fn focus_search(&self, cx: &AppContext) {
+        cx.focus("queue-search");
+    }
+
+    #[handler]
+    async fn toggle_source_filter(&self, cx: &AppContext) {
+        self.source_filter.update(|s| {
+            s.open = !s.open;
+        });
+        if self.source_filter.get().open {
+            cx.focus("queue-source-filter");
+        }
+    }
+
+    #[handler]
+    async fn search_changed(&self) {
+        let text = self.search_text.get();
+        if let Some(repo) = self.repository.get() {
+            let _ = repo.set_setting("search_text", text.clone()).await;
+            self.refresh_tree(&repo).await;
+        }
+    }
+
+    #[handler]
+    async fn source_filter_changed(&self) {
+        let selected: Vec<String> = self
+            .source_filter
+            .get()
+            .selected_values()
+            .cloned()
+            .collect();
+        if let Some(repo) = self.repository.get() {
+            let _ = repo.set_setting("source_filter", selected.clone()).await;
+            self.refresh_tree(&repo).await;
+        }
+    }
+
+    // =========================================================================
     // Request Handlers
     // =========================================================================
 
@@ -502,11 +606,12 @@ impl Queue {
             }
         }
 
-        // Refresh counts and tree
+        // Refresh counts, sources, and tree
         if let Ok(counts) = repo.count_by_status().await {
             self.status_counts.set(counts.clone());
             self.publish_status_changed(gx);
         }
+        self.refresh_source_options(&repo).await;
         self.refresh_tree(&repo).await;
 
         // Try to start execution if running
@@ -640,20 +745,33 @@ impl Queue {
         if let Ok(counts) = repo.count_by_status().await {
             self.status_counts.set(counts);
         }
+        self.refresh_source_options(repo).await;
         self.refresh_tree(repo).await;
         self.publish_status_changed(gx);
     }
 
     async fn refresh_tree(&self, repo: &QueueRepository) {
+        let statuses = self.status_filter.get().to_statuses();
+
+        let sources = {
+            let state = self.source_filter.get();
+            let selected: Vec<String> = state.selected_values().cloned().collect();
+            if selected.is_empty() {
+                None
+            } else {
+                Some(selected)
+            }
+        };
+
+        let search = {
+            let text = self.search_text.get();
+            if text.is_empty() { None } else { Some(text) }
+        };
+
         let filter = ListFilter {
-            statuses: Some(vec![
-                ItemStatus::Blocked,
-                ItemStatus::Ready,
-                ItemStatus::Paused,
-                ItemStatus::Running,
-                ItemStatus::Interrupted,
-            ]),
-            ..Default::default()
+            statuses,
+            sources,
+            search,
         };
 
         match repo.list(filter).await {
@@ -667,6 +785,28 @@ impl Queue {
                 log::error!("Failed to load queue items: {}", e);
             }
         }
+    }
+
+    async fn refresh_source_options(&self, repo: &QueueRepository) {
+        let available = repo.get_sources().await.unwrap_or_default();
+        self.source_filter.update(|s| {
+            // Preserve current selections that still exist
+            let current_selected: Vec<String> = s
+                .selected_values()
+                .filter(|v| available.contains(v))
+                .cloned()
+                .collect();
+            s.set_options(
+                available
+                    .iter()
+                    .map(|src| (src.clone(), src.clone()))
+                    .collect::<Vec<_>>(),
+            );
+            // Restore valid selections
+            for src in current_selected {
+                s.selection.selected.insert(src);
+            }
+        });
     }
 
     async fn try_start_next_items(&self, gx: &GlobalContext) {
@@ -726,6 +866,14 @@ impl Queue {
         };
         let toggle_hint = if is_running { "pause" } else { "start" };
 
+        let status_filter = self.status_filter.get();
+        let filter_label = status_filter.label().to_string();
+        let filter_color = if status_filter != StatusFilter::All {
+            Color::var("primary")
+        } else {
+            Color::var("muted")
+        };
+
         let counts_text = format!(
             "{} ready  {} running  {} done  {} failed",
             counts.ready,
@@ -752,18 +900,30 @@ impl Queue {
                             text (content: {toggle_hint}) style (fg: muted)
                         }
                         row (gap: 1) {
-                            text (content: "s") style (fg: primary)
-                            text (content: "step") style (fg: muted)
+                            text (content: "f") style (fg: primary)
+                            text (content: "filter") style (fg: muted)
                         }
                         row (gap: 1) {
-                            text (content: "enter") style (fg: primary)
-                            text (content: "actions") style (fg: muted)
+                            text (content: "/") style (fg: primary)
+                            text (content: "search") style (fg: muted)
                         }
                         row (gap: 1) {
                             text (content: ",") style (fg: primary)
                             text (content: "settings") style (fg: muted)
                         }
                     }
+                }
+
+                // Filter row
+                row (width: fill, gap: 2) {
+                    row (gap: 1) {
+                        text (content: "status:") style (fg: muted)
+                        text (content: {filter_label}) style (fg: {filter_color})
+                    }
+                    select (state: self.source_filter, id: "queue-source-filter", placeholder: "sources...", width: 20)
+                        on_change: source_filter_changed()
+                    input (state: self.search_text, id: "queue-search", placeholder: "search...", width: 20)
+                        on_change: search_changed()
                 }
 
                 // Main content: 50/50 tree + preview
