@@ -76,6 +76,71 @@ impl QueryData {
     }
 }
 
+impl FilterNode {
+    /// Toggle AND/OR on the group with the given ID.
+    pub fn toggle_group(&mut self, target_id: usize) {
+        match self {
+            Self::Group {
+                id,
+                is_and,
+                children,
+            } => {
+                if *id == target_id {
+                    *is_and = !*is_and;
+                } else {
+                    for child in children {
+                        child.toggle_group(target_id);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// Remove a node (condition or group) by ID. Returns true if removed.
+    pub fn remove_node(&mut self, target_id: usize) -> bool {
+        match self {
+            Self::Group { children, .. } => {
+                let len_before = children.len();
+                children.retain(|child| match child {
+                    Self::Condition { id, .. } => *id != target_id,
+                    Self::Group { id, .. } => *id != target_id,
+                    Self::Empty => true,
+                });
+                if children.len() < len_before {
+                    // If the root group is now empty, become Empty
+                    if children.is_empty() {
+                        *self = Self::Empty;
+                    }
+                    return true;
+                }
+                // Recurse into children
+                for child in children {
+                    if child.remove_node(target_id) {
+                        return true;
+                    }
+                }
+                false
+            }
+            _ => false,
+        }
+    }
+
+    /// Check if the group with the given ID has any children.
+    pub fn group_has_children(&self, target_id: usize) -> bool {
+        match self {
+            Self::Group { id, children, .. } => {
+                if *id == target_id {
+                    !children.is_empty()
+                } else {
+                    children.iter().any(|c| c.group_has_children(target_id))
+                }
+            }
+            _ => false,
+        }
+    }
+}
+
 impl CondOp {
     /// Display label for the operator.
     pub fn label(self) -> &'static str {

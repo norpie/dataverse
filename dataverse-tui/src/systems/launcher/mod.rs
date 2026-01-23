@@ -4,7 +4,7 @@ mod modal;
 
 use rafter::prelude::*;
 
-use crate::apps::EntityExplorer;
+use crate::apps::{EntityExplorer, QueryBuilder};
 use modal::LauncherModal;
 
 #[system]
@@ -25,6 +25,9 @@ impl Launcher {
             match selected.as_str() {
                 "entity-explorer" => {
                     let _ = gx.spawn_and_focus(EntityExplorer::default());
+                }
+                "query-builder" => {
+                    let _ = gx.spawn_and_focus(QueryBuilder::default());
                 }
                 _ => {
                     gx.toast(Toast::info(format!("App not implemented: {}", selected)));

@@ -7,6 +7,7 @@ mod record_explorer;
 mod welcome;
 
 pub use entity_explorer::EntityExplorer;
+pub use query_builder::QueryBuilder;
 pub use queue::Queue;
 pub use record_explorer::RecordExplorer;
 pub use welcome::Welcome;
