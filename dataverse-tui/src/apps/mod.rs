@@ -1,6 +1,7 @@
 //! Applications for the Dataverse TUI.
 
 mod entity_explorer;
+mod query_builder;
 mod queue;
 mod record_explorer;
 mod welcome;
