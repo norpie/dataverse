@@ -27,13 +27,10 @@ pub struct FileReference {
     /// The unique identifier of the file.
     pub id: Uuid,
     /// The original file name, if available.
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub file_name: Option<String>,
     /// The file size in bytes, if available.
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub file_size: Option<i64>,
     /// The MIME type of the file, if available.
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub mime_type: Option<String>,
 }
 
@@ -89,19 +86,14 @@ pub struct ImageReference {
     /// The unique identifier of the image.
     pub id: Uuid,
     /// The original file name, if available.
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub file_name: Option<String>,
     /// The file size in bytes, if available.
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub file_size: Option<i64>,
     /// The MIME type of the image, if available.
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub mime_type: Option<String>,
     /// The image width in pixels, if available.
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub width: Option<i32>,
     /// The image height in pixels, if available.
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub height: Option<i32>,
 }
 

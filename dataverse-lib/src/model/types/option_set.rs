@@ -24,7 +24,6 @@ pub struct OptionSetValue {
     /// The numeric value of the option.
     pub value: i32,
     /// The display label, if available (from formatted values).
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub label: Option<String>,
 }
 
@@ -81,7 +80,6 @@ pub struct MultiSelectOptionSetValue {
     pub values: Vec<i32>,
     /// The display labels, if available (from formatted values).
     /// Corresponds positionally to `values`.
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub labels: Option<Vec<String>>,
 }
 

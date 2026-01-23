@@ -3,8 +3,6 @@
 use chrono::DateTime;
 use chrono::Utc;
 use rust_decimal::Decimal;
-use serde::Deserialize;
-use serde::Serialize;
 use uuid::Uuid;
 
 use super::types::EntityBinding;
@@ -49,8 +47,7 @@ use super::types::OptionSetValue;
 /// let active = Value::from(true);
 /// let empty = Value::Null;
 /// ```
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(untagged)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Value {
     /// Null/empty value.
     Null,

@@ -35,7 +35,6 @@ pub struct EntityReference {
     /// The logical name of the entity (e.g., "contact").
     pub logical_name: String,
     /// The display name of the referenced record, if available.
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
 }
 
