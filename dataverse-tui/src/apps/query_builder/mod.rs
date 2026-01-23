@@ -2,7 +2,9 @@
 
 pub mod convert;
 pub mod data;
+mod migrations;
 mod modals;
+pub mod repository;
 mod tree;
 
 use dataverse_lib::DataverseClient;
@@ -11,13 +13,15 @@ use rafter::page;
 use rafter::prelude::*;
 use rafter::widgets::{Text, Tree, TreeState};
 
+use crate::paths;
 use crate::systems::client_management::{ClientManagement, GetActiveClient};
 use crate::widgets::loading_overlay;
 use data::{FilterNode, QueryData, SortField};
 use modals::{
-    ConditionEditorModal, EntityPickerModal, FieldPickerModal, NumberEditorModal,
-    SortFieldEditorModal,
+    ConditionEditorModal, EntityPickerModal, FieldPickerModal, LoadQueryModal, NumberEditorModal,
+    SaveQueryModal, SortFieldEditorModal,
 };
+use repository::QueryRepository;
 use tree::{QueryTreeNode, build_tree};
 
 /// Query Builder app: visual tree-based OData query construction.
@@ -29,12 +33,29 @@ pub struct QueryBuilder {
     query: QueryData,
     /// Loading overlay message.
     loading_message: Option<String>,
+    /// Repository for saving/loading queries.
+    repo: Option<QueryRepository>,
+    /// ID of the currently loaded saved query (for update-in-place).
+    saved_query_id: Option<i64>,
+    /// Name of the currently loaded saved query.
+    saved_query_name: Option<String>,
 }
 
 #[app_impl]
 impl QueryBuilder {
     #[on_start]
-    async fn on_start(&self) {
+    async fn on_start(&self, gx: &GlobalContext) {
+        // Initialize repository
+        if let Some(db_path) = paths::queries_db() {
+            match QueryRepository::new(&db_path).await {
+                Ok(repo) => self.repo.set(Some(repo)),
+                Err(e) => {
+                    log::error!("Failed to open queries database: {}", e);
+                    gx.toast(Toast::error("Failed to open queries database"));
+                }
+            }
+        }
+
         self.rebuild_tree();
         self.tree_state.update(|s| {
             s.expand(&"section-Entity".to_string());
@@ -63,6 +84,8 @@ impl QueryBuilder {
         bind("g", add_group);
         bind("t", toggle_group);
         bind("d", delete_node);
+        bind("s", save_query);
+        bind("l", load_query);
     }
 
     #[handler]
@@ -251,6 +274,82 @@ impl QueryBuilder {
             }
         });
         self.rebuild_tree();
+    }
+
+    /// Save the current query.
+    #[handler]
+    async fn save_query(&self, gx: &GlobalContext) {
+        let Some(repo) = self.repo.get() else {
+            gx.toast(Toast::error("Database not available"));
+            return;
+        };
+
+        let current_name = self.saved_query_name.get();
+        let result = gx.modal(SaveQueryModal::new(current_name)).await;
+        let Some(name) = result else { return };
+
+        let data = self.query.with_ref(|q| q.clone());
+        let existing_id = self.saved_query_id.get();
+
+        match repo.save(existing_id, name.clone(), &data).await {
+            Ok(id) => {
+                self.saved_query_id.set(Some(id));
+                self.saved_query_name.set(Some(name.clone()));
+                gx.toast(Toast::info(format!("Saved: {}", name)));
+            }
+            Err(e) => {
+                gx.toast(Toast::error(format!("Failed to save: {}", e)));
+            }
+        }
+    }
+
+    /// Load a saved query.
+    #[handler]
+    async fn load_query(&self, gx: &GlobalContext) {
+        let Some(repo) = self.repo.get() else {
+            gx.toast(Toast::error("Database not available"));
+            return;
+        };
+
+        let queries = match repo.list().await {
+            Ok(list) => list,
+            Err(e) => {
+                gx.toast(Toast::error(format!("Failed to list queries: {}", e)));
+                return;
+            }
+        };
+
+        if queries.is_empty() {
+            gx.toast(Toast::info("No saved queries"));
+            return;
+        }
+
+        let options: Vec<(i64, String)> = queries
+            .into_iter()
+            .map(|q| {
+                let label = match &q.entity {
+                    Some(entity) => format!("{} ({})", q.name, entity),
+                    None => q.name.clone(),
+                };
+                (q.id, label)
+            })
+            .collect();
+
+        let result = gx.modal(LoadQueryModal::new(options)).await;
+        let Some(id) = result else { return };
+
+        match repo.load(id).await {
+            Ok(saved) => {
+                self.saved_query_id.set(Some(saved.id));
+                self.saved_query_name.set(Some(saved.name.clone()));
+                self.query.set(saved.data);
+                self.rebuild_tree();
+                gx.toast(Toast::info(format!("Loaded: {}", saved.name)));
+            }
+            Err(e) => {
+                gx.toast(Toast::error(format!("Failed to load query: {}", e)));
+            }
+        }
     }
 
     // =========================================================================
@@ -581,10 +680,20 @@ impl QueryBuilder {
                 }
 
                 // Footer
-                row (width: fill) {
+                row (width: fill, justify: between) {
                     row (gap: 1) {
                         text (content: "esc") style (fg: primary)
                         text (content: "close") style (fg: muted)
+                    }
+                    row (gap: 2) {
+                        row (gap: 1) {
+                            text (content: "s") style (fg: primary)
+                            text (content: "save") style (fg: muted)
+                        }
+                        row (gap: 1) {
+                            text (content: "l") style (fg: primary)
+                            text (content: "load") style (fg: muted)
+                        }
                     }
                 }
 

@@ -60,6 +60,11 @@ pub fn queue_db() -> Option<PathBuf> {
     data_dir().map(|dir| dir.join("queue.db"))
 }
 
+/// Get the path to the saved queries database.
+pub fn queries_db() -> Option<PathBuf> {
+    data_dir().map(|dir| dir.join("queries.db"))
+}
+
 /// Get the logs directory.
 ///
 /// - Linux: `$XDG_CACHE_HOME/dataverse/logs` or `~/.cache/dataverse/logs`
