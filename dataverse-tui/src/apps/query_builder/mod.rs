@@ -1,5 +1,6 @@
 //! Query Builder app for constructing OData queries visually.
 
+pub mod convert;
 pub mod data;
 mod modals;
 mod tree;
