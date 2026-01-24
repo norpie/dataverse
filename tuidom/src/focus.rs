@@ -385,10 +385,11 @@ impl FocusState {
                         if let Some(dir) = direction {
                             if let Some(old) = self.focused.clone() {
                                 if let Some(new) = self.focus_direction(dir, root, layout) {
-                                    // For Up/Down in a .scrollable() element, check if navigation
+                                    // For arrow keys in a .scrollable() element, check if navigation
                                     // would leave the scrollable container. If so, emit Key event
-                                    // instead to let the widget handle boundary scrolling.
-                                    if matches!(key, Key::Up | Key::Down) {
+                                    // instead to let the widget handle it (boundary scrolling,
+                                    // tree expand/collapse, etc).
+                                    if matches!(key, Key::Up | Key::Down | Key::Left | Key::Right) {
                                         if let Some((scrollable_id, is_fake)) =
                                             find_scrollable_ancestor_with_type(root, &old)
                                         {
@@ -400,11 +401,12 @@ impl FocusState {
                                                         .unwrap_or(false);
 
                                                 if !new_in_scrollable {
-                                                    // Navigation would leave the scrollable - emit Key event first
-                                                    // so widget's on_key_up/on_key_down handler can fire and override focus
+                                                    // Navigation would leave the scrollable - emit Key event
+                                                    // so widget's handler can fire (expand/collapse, boundary scroll, etc.)
                                                     // Note: use `old` not `self.focused` since focus_direction mutates it
                                                     log::debug!(
-                                                        "[focus] Up/Down would leave scrollable {}, emitting Key event for {} (focus moved to {})",
+                                                        "[focus] {:?} would leave scrollable {}, emitting Key event for {} (focus moved to {})",
+                                                        key,
                                                         scrollable_id,
                                                         old,
                                                         new
@@ -414,12 +416,21 @@ impl FocusState {
                                                         key,
                                                         modifiers,
                                                     });
-                                                    // Also emit the focus change - if handler sets focus, post-dispatch will override
-                                                    events.push(Event::Blur {
-                                                        target: old,
-                                                        new_target: Some(new.clone()),
-                                                    });
-                                                    events.push(Event::Focus { target: new });
+
+                                                    if matches!(key, Key::Up | Key::Down) {
+                                                        // For Up/Down: also emit focus change so boundary scrolling
+                                                        // can move to the next focusable. If handler sets focus, post-dispatch will override.
+                                                        events.push(Event::Blur {
+                                                            target: old,
+                                                            new_target: Some(new.clone()),
+                                                        });
+                                                        events.push(Event::Focus { target: new });
+                                                    } else {
+                                                        // For Left/Right: don't emit focus change. The handler manages
+                                                        // focus explicitly when needed (e.g., tree parent/child navigation).
+                                                        // Revert the focus_direction mutation so focus stays on current node.
+                                                        self.focused = Some(old);
+                                                    }
                                                     continue;
                                                 }
                                             }
