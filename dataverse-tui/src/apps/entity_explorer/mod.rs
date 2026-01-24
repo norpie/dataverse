@@ -3,6 +3,7 @@
 mod service;
 
 use dataverse_lib::DataverseClient;
+use dataverse_lib::model::Entity;
 use nucleo_matcher::pattern::{AtomKind, CaseMatching, Normalization, Pattern};
 use nucleo_matcher::{Config, Matcher, Utf32Str};
 use rafter::page;
@@ -283,8 +284,13 @@ impl EntityExplorer {
     async fn on_activate(&self, gx: &GlobalContext) {
         let state = self.filtered_list.get();
         if let Some(key) = &state.last_activated {
-            // Spawn Record Explorer for selected entity
-            let _ = gx.spawn_and_focus(crate::apps::RecordExplorer::new(key.clone()));
+            let Some(client) = self.client.get() else {
+                gx.toast(Toast::error("Client connection lost"));
+                return;
+            };
+            let env_name = self.environment_name.get();
+            let query = client.query(Entity::logical(key));
+            let _ = gx.spawn_and_focus(crate::apps::RecordExplorer::new(query, env_name));
         }
     }
 

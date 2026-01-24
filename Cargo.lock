@@ -476,7 +476,6 @@ dependencies = [
  "rafter",
  "rusqlite",
  "serde",
- "serde_json",
  "sha2",
  "simplelog",
  "thiserror 2.0.17",

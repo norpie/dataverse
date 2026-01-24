@@ -13,6 +13,8 @@ use rafter::page;
 use rafter::prelude::*;
 use rafter::widgets::{Text, Tree, TreeState};
 
+use crate::apps::RecordExplorer;
+
 use crate::paths;
 use crate::systems::client_management::{ClientManagement, GetActiveClient};
 use crate::widgets::loading_overlay;
@@ -86,6 +88,7 @@ impl QueryBuilder {
         bind("d", delete_node);
         bind("s", save_query);
         bind("l", load_query);
+        bind("x", send_query);
     }
 
     #[handler]
@@ -350,6 +353,45 @@ impl QueryBuilder {
                 gx.toast(Toast::error(format!("Failed to load query: {}", e)));
             }
         }
+    }
+
+    /// Send the query to Record Explorer for execution.
+    #[handler]
+    async fn send_query(&self, gx: &GlobalContext) {
+        // Validate entity is set
+        let has_entity = self.query.with_ref(|q| q.entity.is_some());
+        if !has_entity {
+            gx.toast(Toast::info("Select an entity first"));
+            return;
+        }
+
+        // Get client + environment info
+        let info = match gx
+            .request_system::<ClientManagement, GetActiveClient>(GetActiveClient)
+            .await
+        {
+            Ok(Ok(info)) => info,
+            Ok(Err(e)) => {
+                gx.toast(Toast::error(format!("Client error: {}", e)));
+                return;
+            }
+            Err(e) => {
+                gx.toast(Toast::error(format!("No active connection: {:?}", e)));
+                return;
+            }
+        };
+
+        // Build the OData query
+        let data = self.query.with_ref(|q| q.clone());
+        let query = match convert::build_query(&info.client, &data) {
+            Ok(q) => q,
+            Err(e) => {
+                gx.toast(Toast::error(format!("Query error: {}", e)));
+                return;
+            }
+        };
+
+        let _ = gx.spawn_and_focus(RecordExplorer::new(query, info.environment_name));
     }
 
     // =========================================================================
@@ -686,6 +728,10 @@ impl QueryBuilder {
                         text (content: "close") style (fg: muted)
                     }
                     row (gap: 2) {
+                        row (gap: 1) {
+                            text (content: "x") style (fg: primary)
+                            text (content: "run") style (fg: muted)
+                        }
                         row (gap: 1) {
                             text (content: "s") style (fg: primary)
                             text (content: "save") style (fg: muted)

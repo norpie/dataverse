@@ -187,13 +187,20 @@ impl QueryBuilder {
     }
 
     /// Returns a reference to the entity.
-    pub(crate) fn entity(&self) -> &Entity {
+    pub fn entity(&self) -> &Entity {
         &self.entity
     }
 
     /// Returns a reference to the client.
-    pub(crate) fn client(&self) -> &DataverseClient {
+    pub fn client(&self) -> &DataverseClient {
         &self.client
+    }
+
+    /// Returns the selected fields.
+    ///
+    /// Empty if no `.select()` was called (meaning all fields).
+    pub fn selected_fields(&self) -> &[String] {
+        &self.select
     }
 
     /// Resolves the entity to its entity set name.
