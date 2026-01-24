@@ -737,6 +737,10 @@ impl QueryBuilder {
                 box_ (id: "query-tree-container", height: fill, width: fill) style (bg: surface) {
                     tree (state: self.tree_state, id: "query-tree")
                         on_activate: on_activate()
+
+                    if let Some(msg) = loading_message {
+                        { loading_overlay("loading-overlay", &msg) }
+                    }
                 }
 
                 // Footer
@@ -767,9 +771,6 @@ impl QueryBuilder {
                     }
                 }
 
-                if let Some(msg) = loading_message {
-                    { loading_overlay("loading-overlay", &msg) }
-                }
             }
         }
     }
