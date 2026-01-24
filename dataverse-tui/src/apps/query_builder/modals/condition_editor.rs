@@ -8,6 +8,8 @@ use rafter::prelude::*;
 use rafter::widgets::{Autocomplete, AutocompleteState, Button, Input, Select, SelectState, Text};
 use uuid::Uuid;
 
+use crate::formatting::format_value;
+
 use super::super::data::CondOp;
 
 /// Result returned by the condition editor.
@@ -25,6 +27,8 @@ pub struct ConditionEditorModal {
     options: Vec<(String, String)>,
     #[state(skip)]
     attributes: Vec<AttributeMetadata>,
+    #[state(skip)]
+    initial: Option<ConditionData>,
 
     field: AutocompleteState<String>,
     operator: SelectState<CondOp>,
@@ -43,6 +47,20 @@ impl ConditionEditorModal {
             ..Default::default()
         }
     }
+
+    /// Create pre-filled with an existing condition for editing.
+    pub fn with_condition(
+        options: Vec<(String, String)>,
+        attributes: Vec<AttributeMetadata>,
+        condition: ConditionData,
+    ) -> Self {
+        Self {
+            options,
+            attributes,
+            initial: Some(condition),
+            ..Default::default()
+        }
+    }
 }
 
 #[modal_impl]
@@ -53,7 +71,35 @@ impl ConditionEditorModal {
 
     #[on_start]
     async fn on_start(&self, mx: &ModalContext<Option<ConditionData>>) {
-        self.field.set(AutocompleteState::new(self.options.clone()));
+        if let Some(initial) = &self.initial {
+            // Pre-fill field autocomplete with selection
+            self.field.set(
+                AutocompleteState::new(self.options.clone()).with_value(initial.field.clone()),
+            );
+
+            // Determine attribute type for the field
+            let attr_type = self
+                .attributes
+                .iter()
+                .find(|a| a.logical_name == initial.field)
+                .map(|a| a.attribute_type);
+            self.selected_type.set(attr_type);
+
+            // Pre-fill operator select with the correct options and selection
+            let ops = operators_for_type(attr_type);
+            let op_options: Vec<(CondOp, String)> =
+                ops.iter().map(|op| (*op, op.label().to_string())).collect();
+            self.operator
+                .set(SelectState::new(op_options).with_value(initial.operator));
+
+            // Pre-fill value text
+            if initial.operator.has_value() {
+                self.value_text.set(format_value(&initial.value).raw);
+            }
+        } else {
+            self.field.set(AutocompleteState::new(self.options.clone()));
+        }
+
         mx.focus("cond-field-autocomplete");
     }
 
@@ -134,10 +180,15 @@ impl ConditionEditorModal {
             .get()
             .map(|t| type_hint_text(t))
             .unwrap_or_default();
+        let title = if self.initial.is_some() {
+            "Edit Condition"
+        } else {
+            "Add Condition"
+        };
 
         page! {
             column (padding: (1, 2), gap: 1, width: fill, height: fill) style (bg: surface) {
-                text (content: "Edit Condition") style (bold, fg: interact)
+                text (content: {title}) style (bold, fg: interact)
 
                 if let Some(err) = error {
                     text (content: {err}) style (fg: primary)

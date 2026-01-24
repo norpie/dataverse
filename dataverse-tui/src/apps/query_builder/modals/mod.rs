@@ -6,7 +6,7 @@ mod number_editor;
 mod save_query;
 mod sort_field_editor;
 
-pub use condition_editor::ConditionEditorModal;
+pub use condition_editor::{ConditionData, ConditionEditorModal};
 pub use entity_picker::EntityPickerModal;
 pub use field_picker::FieldPickerModal;
 pub use load_query::LoadQueryModal;

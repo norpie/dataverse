@@ -10,6 +10,10 @@ use rafter::widgets::{Autocomplete, AutocompleteState, Button, RadioGroup, Radio
 pub struct SortFieldEditorModal {
     #[state(skip)]
     options: Vec<(String, String)>,
+    #[state(skip)]
+    initial_field: Option<String>,
+    #[state(skip)]
+    initial_direction: Option<Direction>,
 
     field: AutocompleteState<String>,
     direction: RadioState<String>,
@@ -23,6 +27,16 @@ impl SortFieldEditorModal {
             ..Default::default()
         }
     }
+
+    /// Create pre-filled with an existing sort field for editing.
+    pub fn with_sort(options: Vec<(String, String)>, field: String, direction: Direction) -> Self {
+        Self {
+            options,
+            initial_field: Some(field),
+            initial_direction: Some(direction),
+            ..Default::default()
+        }
+    }
 }
 
 #[modal_impl]
@@ -33,13 +47,23 @@ impl SortFieldEditorModal {
 
     #[on_start]
     async fn on_start(&self, mx: &ModalContext<Option<(String, Direction)>>) {
-        self.field.set(AutocompleteState::new(self.options.clone()));
+        let field_state = if let Some(field) = &self.initial_field {
+            AutocompleteState::new(self.options.clone()).with_value(field.clone())
+        } else {
+            AutocompleteState::new(self.options.clone())
+        };
+        self.field.set(field_state);
+
+        let dir_value = match self.initial_direction {
+            Some(Direction::Desc) => "desc",
+            _ => "asc",
+        };
         self.direction.set(
             RadioState::new([
                 ("asc".to_string(), "Ascending".to_string()),
                 ("desc".to_string(), "Descending".to_string()),
             ])
-            .with_value("asc".to_string()),
+            .with_value(dir_value.to_string()),
         );
         mx.focus("sort-field-autocomplete");
     }
@@ -70,9 +94,14 @@ impl SortFieldEditorModal {
     }
 
     fn element(&self) -> Element {
+        let title = if self.initial_field.is_some() {
+            "Edit Sort Field"
+        } else {
+            "Add Sort Field"
+        };
         page! {
             column (padding: (1, 2), gap: 1, width: fill, height: fill) style (bg: surface) {
-                text (content: "Add Sort Field") style (bold, fg: interact)
+                text (content: {title}) style (bold, fg: interact)
                 text (content: "Field") style (fg: muted)
                 autocomplete (state: self.field, id: "sort-field-autocomplete", placeholder: "Search fields...")
                 text (content: "Direction") style (fg: muted)

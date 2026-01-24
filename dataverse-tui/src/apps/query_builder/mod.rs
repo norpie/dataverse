@@ -20,8 +20,8 @@ use crate::systems::client_management::{ClientManagement, GetActiveClient};
 use crate::widgets::loading_overlay;
 use data::{FilterNode, QueryData, SortField};
 use modals::{
-    ConditionEditorModal, EntityPickerModal, FieldPickerModal, LoadQueryModal, NumberEditorModal,
-    SaveQueryModal, SortFieldEditorModal,
+    ConditionData, ConditionEditorModal, EntityPickerModal, FieldPickerModal, LoadQueryModal,
+    NumberEditorModal, SaveQueryModal, SortFieldEditorModal,
 };
 use repository::QueryRepository;
 use tree::{QueryTreeNode, build_tree};
@@ -194,14 +194,27 @@ impl QueryBuilder {
             k if k == "section-Select" || k.starts_with("select-") => {
                 self.open_field_picker(gx).await;
             }
-            k if k == "section-OrderBy" || k.starts_with("sort-") => {
+            "section-OrderBy" => {
                 self.open_sort_editor(gx).await;
             }
-            k if k == "section-Filter"
-                || k.starts_with("filter-group-")
-                || k.starts_with("filter-cond-") =>
-            {
+            k if k.starts_with("sort-") => {
+                if let Some(id) = k
+                    .strip_prefix("sort-")
+                    .and_then(|s| s.parse::<usize>().ok())
+                {
+                    self.open_sort_editor_for(gx, id).await;
+                }
+            }
+            k if k == "section-Filter" || k.starts_with("filter-group-") => {
                 self.open_condition_editor(gx, None).await;
+            }
+            k if k.starts_with("filter-cond-") => {
+                if let Some(id) = k
+                    .strip_prefix("filter-cond-")
+                    .and_then(|s| s.parse::<usize>().ok())
+                {
+                    self.open_condition_editor_for(gx, id).await;
+                }
             }
             _ => {}
         }
@@ -278,6 +291,70 @@ impl QueryBuilder {
             }
         });
         self.rebuild_tree();
+    }
+
+    /// Open the condition editor pre-filled for an existing condition.
+    async fn open_condition_editor_for(&self, gx: &GlobalContext, id: usize) {
+        let cond = self.query.with_ref(|q| q.filter.find_condition(id));
+        let Some((field, operator, value)) = cond else {
+            return;
+        };
+
+        let entity = self.query.with_ref(|q| q.entity.clone());
+        let Some(entity) = entity else {
+            return;
+        };
+
+        let Some(client) = self.get_client(gx).await else {
+            return;
+        };
+
+        self.loading_message
+            .set(Some("Loading attributes...".to_string()));
+
+        let attrs = match client.metadata().attributes(Entity::set(&entity)).await {
+            Ok(a) => a,
+            Err(e) => {
+                self.loading_message.set(None);
+                gx.toast(Toast::error(format!("Failed to load attributes: {}", e)));
+                return;
+            }
+        };
+
+        self.loading_message.set(None);
+
+        let options: Vec<(String, String)> = attrs
+            .iter()
+            .filter(|a| a.is_valid_for_read && a.attribute_of.is_none())
+            .map(|a| {
+                let display = a
+                    .display_name
+                    .text()
+                    .map(|d| format!("{} ({})", d, a.logical_name))
+                    .unwrap_or_else(|| a.logical_name.clone());
+                (a.logical_name.clone(), display)
+            })
+            .collect();
+
+        let initial = ConditionData {
+            field,
+            operator,
+            value,
+        };
+
+        let result = gx
+            .modal(ConditionEditorModal::with_condition(
+                options, attrs, initial,
+            ))
+            .await;
+
+        if let Some(cond) = result {
+            self.query.update(|q| {
+                q.filter
+                    .update_condition(id, cond.field, cond.operator, cond.value);
+            });
+            self.rebuild_tree();
+        }
     }
 
     /// Save the current query.
@@ -483,15 +560,12 @@ impl QueryBuilder {
 
         self.loading_message.set(None);
 
-        let result = gx.modal(FieldPickerModal::new(options)).await;
-        if !result.is_empty() {
-            self.query.update(|q| {
-                for field in result {
-                    if !q.select.contains(&field) {
-                        q.select.push(field);
-                    }
-                }
-            });
+        let current = self.query.with_ref(|q| q.select.clone());
+        let result = gx
+            .modal(FieldPickerModal::with_selected(options, current))
+            .await;
+        if let Some(selected) = result {
+            self.query.update(|q| q.select = selected);
             self.rebuild_tree();
         }
     }
@@ -607,6 +681,56 @@ impl QueryBuilder {
                     field,
                     direction,
                 });
+            });
+            self.rebuild_tree();
+        }
+    }
+
+    async fn open_sort_editor_for(&self, gx: &GlobalContext, id: usize) {
+        let sort = self
+            .query
+            .with_ref(|q| q.order_by.iter().find(|sf| sf.id == id).cloned());
+        let Some(sort) = sort else {
+            return;
+        };
+
+        let entity = self.query.with_ref(|q| q.entity.clone());
+        let Some(entity) = entity else {
+            return;
+        };
+
+        let Some(client) = self.get_client(gx).await else {
+            return;
+        };
+
+        self.loading_message
+            .set(Some("Loading attributes...".to_string()));
+
+        let options = match self.fetch_field_options(&client, &entity).await {
+            Ok(opts) => opts,
+            Err(e) => {
+                self.loading_message.set(None);
+                gx.toast(Toast::error(e));
+                return;
+            }
+        };
+
+        self.loading_message.set(None);
+
+        let result = gx
+            .modal(SortFieldEditorModal::with_sort(
+                options,
+                sort.field.clone(),
+                sort.direction,
+            ))
+            .await;
+
+        if let Some((field, direction)) = result {
+            self.query.update(|q| {
+                if let Some(sf) = q.order_by.iter_mut().find(|sf| sf.id == id) {
+                    sf.field = field;
+                    sf.direction = direction;
+                }
             });
             self.rebuild_tree();
         }

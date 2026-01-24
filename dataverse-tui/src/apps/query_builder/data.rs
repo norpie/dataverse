@@ -146,6 +146,59 @@ impl FilterNode {
         }
     }
 
+    /// Find a condition by ID and return its data.
+    pub fn find_condition(&self, target_id: usize) -> Option<(String, CondOp, Value)> {
+        match self {
+            Self::Condition {
+                id,
+                field,
+                operator,
+                value,
+            } => {
+                if *id == target_id {
+                    Some((field.clone(), *operator, value.clone()))
+                } else {
+                    None
+                }
+            }
+            Self::Group { children, .. } => {
+                children.iter().find_map(|c| c.find_condition(target_id))
+            }
+            Self::Empty => None,
+        }
+    }
+
+    /// Update a condition in place by ID. Returns true if updated.
+    pub fn update_condition(
+        &mut self,
+        target_id: usize,
+        new_field: String,
+        new_op: CondOp,
+        new_value: Value,
+    ) -> bool {
+        match self {
+            Self::Condition {
+                id,
+                field,
+                operator,
+                value,
+            } => {
+                if *id == target_id {
+                    *field = new_field;
+                    *operator = new_op;
+                    *value = new_value;
+                    true
+                } else {
+                    false
+                }
+            }
+            Self::Group { children, .. } => children.iter_mut().any(|c| {
+                c.update_condition(target_id, new_field.clone(), new_op, new_value.clone())
+            }),
+            Self::Empty => false,
+        }
+    }
+
     /// Check if the group with the given ID has any children.
     pub fn group_has_children(&self, target_id: usize) -> bool {
         match self {

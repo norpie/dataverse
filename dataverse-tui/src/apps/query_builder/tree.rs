@@ -5,6 +5,8 @@ use dataverse_lib::model::Value;
 use rafter::widgets::{TreeItem, TreeNode};
 use tuidom::Element;
 
+use crate::formatting::format_value;
+
 use super::data::{CondOp, FilterNode, QueryData, SortField};
 
 /// The five fixed sections of the query tree.
@@ -91,7 +93,7 @@ impl TreeItem for QueryTreeNode {
                 ..
             } => {
                 let label = if operator.has_value() {
-                    format!("{} {} {}", field, operator.label(), format_value(value))
+                    format!("{} {} {}", field, operator.label(), format_value(value).raw)
                 } else {
                     format!("{} {}", field, operator.label())
                 };
@@ -106,26 +108,6 @@ impl TreeItem for QueryTreeNode {
             }
             Self::TopValue(n) => Element::text(&n.to_string()),
         }
-    }
-}
-
-/// Format a Value for display in the tree.
-fn format_value(value: &Value) -> String {
-    match value {
-        Value::Null => String::new(),
-        Value::Bool(b) => b.to_string(),
-        Value::Int(n) => n.to_string(),
-        Value::Long(n) => n.to_string(),
-        Value::Float(n) => n.to_string(),
-        Value::String(s) => format!("\"{}\"", s),
-        Value::Guid(u) => u.to_string(),
-        Value::DateTime(dt) => dt.format("%Y-%m-%d %H:%M").to_string(),
-        Value::OptionSet(os) => os.value.to_string(),
-        Value::MultiOptionSet(ms) => {
-            let vals: Vec<String> = ms.values.iter().map(|v| v.to_string()).collect();
-            format!("[{}]", vals.join(", "))
-        }
-        _ => "...".to_string(),
     }
 }
 
