@@ -89,6 +89,7 @@ impl QueryBuilder {
         bind("s", save_query);
         bind("l", load_query);
         bind("x", send_query);
+        bind("ctrl+r", reset_query);
     }
 
     #[handler]
@@ -352,6 +353,23 @@ impl QueryBuilder {
             Err(e) => {
                 gx.toast(Toast::error(format!("Failed to load query: {}", e)));
             }
+        }
+    }
+
+    /// Reset the query to a blank state.
+    #[handler]
+    async fn reset_query(&self, gx: &GlobalContext) {
+        let confirmed = gx
+            .modal(crate::modals::ConfirmModal::new(
+                "Reset the query? All unsaved changes will be lost.",
+            ))
+            .await;
+        if confirmed {
+            self.query.set(QueryData::default());
+            self.saved_query_id.set(None);
+            self.saved_query_name.set(None);
+            self.rebuild_tree();
+            gx.toast(Toast::info("Query reset"));
         }
     }
 
@@ -723,9 +741,15 @@ impl QueryBuilder {
 
                 // Footer
                 row (width: fill, justify: between) {
-                    row (gap: 1) {
-                        text (content: "esc") style (fg: primary)
-                        text (content: "close") style (fg: muted)
+                    row (gap: 2) {
+                        row (gap: 1) {
+                            text (content: "esc") style (fg: primary)
+                            text (content: "close") style (fg: muted)
+                        }
+                        row (gap: 1) {
+                            text (content: "ctrl+r") style (fg: primary)
+                            text (content: "reset") style (fg: muted)
+                        }
                     }
                     row (gap: 2) {
                         row (gap: 1) {
