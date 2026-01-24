@@ -93,6 +93,8 @@ pub struct ListState<T: ListItem> {
     pub scroll: ScrollState,
     /// The key of the last activated item. Set before handlers are called.
     pub last_activated: Option<T::Key>,
+    /// The key of the currently focused item.
+    pub focused_key: Option<T::Key>,
 
     /// Virtual scroller for O(1) position lookups.
     pub(crate) scroller: VirtualScroller,
@@ -113,6 +115,7 @@ impl<T: ListItem> Default for ListState<T> {
             selection: Selection::none(),
             scroll: ScrollState::new(),
             last_activated: None,
+            focused_key: None,
             scroller: VirtualScroller::new(),
             scrollbar_rect: None,
             drag_grab_offset: None,
@@ -761,6 +764,21 @@ impl<'a, T: ListItem> List<HasListState<'a, T>> {
                         log::debug!("[List::on_key_down] Focusing item: {}", item_id);
                         hx.cx().focus(&item_id);
                     }
+                }),
+            );
+        }
+
+        // Register focus handler to track focused_key
+        {
+            let state_clone = state.clone();
+            let key_clone = key.clone();
+            registry.register(
+                &row_id,
+                "on_focus",
+                Arc::new(move |_hx| {
+                    state_clone.update(|s| {
+                        s.focused_key = Some(key_clone.clone());
+                    });
                 }),
             );
         }
