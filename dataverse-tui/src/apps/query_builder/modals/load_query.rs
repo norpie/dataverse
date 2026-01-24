@@ -2,23 +2,54 @@
 
 use rafter::page;
 use rafter::prelude::*;
-use rafter::widgets::{Autocomplete, AutocompleteState, Button, Text};
+use rafter::widgets::{Button, Input, List, ListItem, ListState, Text};
+use tuidom::Element;
 
-/// Modal for selecting a saved query to load.
-/// Returns the selected query ID, or None if cancelled.
+/// Action chosen in the load query modal.
+#[derive(Debug, Clone)]
+pub enum LoadQueryAction {
+    Load(i64),
+    Delete(i64),
+}
+
+/// A saved query item for the list.
+#[derive(Debug, Clone)]
+pub struct QueryItem {
+    pub id: i64,
+    pub label: String,
+}
+
+impl ListItem for QueryItem {
+    type Key = i64;
+
+    fn key(&self) -> i64 {
+        self.id
+    }
+
+    fn render(&self) -> Element {
+        Element::text(&self.label)
+    }
+}
+
+/// Modal for selecting a saved query to load or delete.
 #[modal(size = Md)]
 pub struct LoadQueryModal {
     #[state(skip)]
-    options: Vec<(i64, String)>,
+    items: Vec<QueryItem>,
 
-    queries: AutocompleteState<i64>,
+    input: String,
+    list: ListState<QueryItem>,
 }
 
 impl LoadQueryModal {
     /// Create with pre-fetched query list: (id, display_label).
     pub fn new(options: Vec<(i64, String)>) -> Self {
+        let items: Vec<QueryItem> = options
+            .into_iter()
+            .map(|(id, label)| QueryItem { id, label })
+            .collect();
         Self {
-            options,
+            items,
             ..Default::default()
         }
     }
@@ -26,32 +57,69 @@ impl LoadQueryModal {
 
 #[modal_impl]
 impl LoadQueryModal {
-    fn default_result(&self) -> Option<i64> {
+    fn default_result(&self) -> Option<LoadQueryAction> {
         None
     }
 
     #[on_start]
-    async fn on_start(&self, mx: &ModalContext<Option<i64>>) {
-        self.queries
-            .set(AutocompleteState::new(self.options.clone()));
-        mx.focus("query-autocomplete");
+    async fn on_start(&self, mx: &ModalContext<Option<LoadQueryAction>>) {
+        self.list.set(ListState::new(self.items.clone()));
+        mx.focus("load-query-input");
     }
 
     #[keybinds]
     fn keys() {
         bind("escape", cancel);
+        bind("d", delete);
     }
 
     #[handler]
-    async fn cancel(&self, mx: &ModalContext<Option<i64>>) {
+    async fn cancel(&self, mx: &ModalContext<Option<LoadQueryAction>>) {
         mx.close(None);
     }
 
     #[handler]
-    async fn on_select(&self, mx: &ModalContext<Option<i64>>) {
-        let selected = self.queries.with_ref(|s| s.value().cloned());
-        if selected.is_some() {
-            mx.close(selected);
+    async fn delete(&self, gx: &GlobalContext, mx: &ModalContext<Option<LoadQueryAction>>) {
+        let focused = self.list.with_ref(|s| s.focused_key);
+        if let Some(id) = focused {
+            let confirmed = gx
+                .modal(crate::modals::ConfirmModal::new("Delete this saved query?"))
+                .await;
+            if confirmed {
+                mx.close(Some(LoadQueryAction::Delete(id)));
+            }
+        }
+    }
+
+    #[handler]
+    async fn on_activate(&self, mx: &ModalContext<Option<LoadQueryAction>>) {
+        let activated = self.list.with_ref(|s| s.last_activated);
+        if let Some(id) = activated {
+            mx.close(Some(LoadQueryAction::Load(id)));
+        }
+    }
+
+    #[handler]
+    async fn on_input_change(&self) {
+        let query = self.input.get();
+        let filtered: Vec<QueryItem> = if query.is_empty() {
+            self.items.clone()
+        } else {
+            let lower = query.to_lowercase();
+            self.items
+                .iter()
+                .filter(|item| item.label.to_lowercase().contains(&lower))
+                .cloned()
+                .collect()
+        };
+        self.list.update(|s| s.set_items(filtered));
+    }
+
+    #[handler]
+    async fn on_input_submit(&self, mx: &ModalContext<Option<LoadQueryAction>>) {
+        let first_key = self.list.with_ref(|s| s.items.first().map(|i| i.key()));
+        if let Some(key) = first_key {
+            mx.focus(&format!("load-query-list-item-{}", key));
         }
     }
 
@@ -59,11 +127,28 @@ impl LoadQueryModal {
         page! {
             column (padding: (1, 2), gap: 1, width: fill, height: fill) style (bg: surface) {
                 text (content: "Load Query") style (bold, fg: interact)
-                autocomplete (state: self.queries, id: "query-autocomplete", placeholder: "Search saved queries...")
-                    on_select: on_select()
+
+                input (state: self.input, id: "load-query-input", placeholder: "Search saved queries...")
+                    on_change: on_input_change()
+                    on_submit: on_input_submit()
+
+                box_ (id: "load-query-list-container", height: fill, width: fill) {
+                    list (state: self.list, id: "load-query-list")
+                        on_activate: on_activate()
+                }
+
                 row (width: fill, justify: between) {
                     button (label: "Cancel", hint: "esc", id: "cancel") on_activate: cancel()
-                    button (label: "Load", id: "load") on_activate: on_select()
+                    row (gap: 2) {
+                        row (gap: 1) {
+                            text (content: "d") style (fg: primary)
+                            text (content: "delete") style (fg: muted)
+                        }
+                        row (gap: 1) {
+                            text (content: "enter") style (fg: primary)
+                            text (content: "load") style (fg: muted)
+                        }
+                    }
                 }
             }
         }

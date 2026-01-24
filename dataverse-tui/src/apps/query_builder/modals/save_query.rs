@@ -6,7 +6,7 @@ use rafter::widgets::{Button, Input, Text};
 
 /// Modal for entering a name to save the query as.
 /// Returns the chosen name, or None if cancelled.
-#[modal]
+#[modal(size = Md)]
 pub struct SaveQueryModal {
     #[state(skip)]
     initial_name: String,
@@ -60,11 +60,12 @@ impl SaveQueryModal {
         page! {
             column (padding: (1, 2), gap: 1, width: fill, height: fill) style (bg: surface) {
                 text (content: "Save Query") style (bold, fg: interact)
-                input (state: self.name, id: "query-name", label: "Name", placeholder: "My query...")
+                input (state: self.name, id: "query-name", label: "Name", placeholder: "My query...", width: fill)
                     on_submit: confirm()
+                box_ (height: fill) {}
                 row (width: fill, justify: between) {
                     button (label: "Cancel", hint: "esc", id: "cancel") on_activate: cancel()
-                    button (label: "Save", id: "save") on_activate: confirm()
+                    button (label: "Save", hint: "enter", id: "save") on_activate: confirm()
                 }
             }
         }

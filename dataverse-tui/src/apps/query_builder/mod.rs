@@ -366,13 +366,17 @@ impl QueryBuilder {
         };
 
         let current_name = self.saved_query_name.get();
-        let result = gx.modal(SaveQueryModal::new(current_name)).await;
+        let result = gx.modal(SaveQueryModal::new(current_name.clone())).await;
         let Some(name) = result else { return };
 
         let data = self.query.with_ref(|q| q.clone());
-        let existing_id = self.saved_query_id.get();
+        let id = if current_name.as_deref() == Some(name.as_str()) {
+            self.saved_query_id.get()
+        } else {
+            None
+        };
 
-        match repo.save(existing_id, name.clone(), &data).await {
+        match repo.save(id, name.clone(), &data).await {
             Ok(id) => {
                 self.saved_query_id.set(Some(id));
                 self.saved_query_name.set(Some(name.clone()));
@@ -392,43 +396,61 @@ impl QueryBuilder {
             return;
         };
 
-        let queries = match repo.list().await {
-            Ok(list) => list,
-            Err(e) => {
-                gx.toast(Toast::error(format!("Failed to list queries: {}", e)));
+        loop {
+            let queries = match repo.list().await {
+                Ok(list) => list,
+                Err(e) => {
+                    gx.toast(Toast::error(format!("Failed to list queries: {}", e)));
+                    return;
+                }
+            };
+
+            if queries.is_empty() {
+                gx.toast(Toast::info("No saved queries"));
                 return;
             }
-        };
 
-        if queries.is_empty() {
-            gx.toast(Toast::info("No saved queries"));
-            return;
-        }
+            let options: Vec<(i64, String)> = queries
+                .into_iter()
+                .map(|q| {
+                    let label = match &q.entity {
+                        Some(entity) => format!("{} ({})", q.name, entity),
+                        None => q.name.clone(),
+                    };
+                    (q.id, label)
+                })
+                .collect();
 
-        let options: Vec<(i64, String)> = queries
-            .into_iter()
-            .map(|q| {
-                let label = match &q.entity {
-                    Some(entity) => format!("{} ({})", q.name, entity),
-                    None => q.name.clone(),
-                };
-                (q.id, label)
-            })
-            .collect();
+            let result = gx.modal(LoadQueryModal::new(options)).await;
 
-        let result = gx.modal(LoadQueryModal::new(options)).await;
-        let Some(id) = result else { return };
-
-        match repo.load(id).await {
-            Ok(saved) => {
-                self.saved_query_id.set(Some(saved.id));
-                self.saved_query_name.set(Some(saved.name.clone()));
-                self.query.set(saved.data);
-                self.rebuild_tree();
-                gx.toast(Toast::info(format!("Loaded: {}", saved.name)));
-            }
-            Err(e) => {
-                gx.toast(Toast::error(format!("Failed to load query: {}", e)));
+            match result {
+                Some(modals::LoadQueryAction::Load(id)) => {
+                    match repo.load(id).await {
+                        Ok(saved) => {
+                            self.saved_query_id.set(Some(saved.id));
+                            self.saved_query_name.set(Some(saved.name.clone()));
+                            self.query.set(saved.data);
+                            self.rebuild_tree();
+                            gx.toast(Toast::info(format!("Loaded: {}", saved.name)));
+                        }
+                        Err(e) => {
+                            gx.toast(Toast::error(format!("Failed to load: {}", e)));
+                        }
+                    }
+                    return;
+                }
+                Some(modals::LoadQueryAction::Delete(id)) => {
+                    match repo.delete(id).await {
+                        Ok(()) => {
+                            gx.toast(Toast::info("Query deleted"));
+                        }
+                        Err(e) => {
+                            gx.toast(Toast::error(format!("Failed to delete: {}", e)));
+                        }
+                    }
+                    // Loop to re-open the modal with updated list
+                }
+                None => return,
             }
         }
     }
