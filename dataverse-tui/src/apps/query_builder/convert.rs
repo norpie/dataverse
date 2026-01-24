@@ -1,9 +1,9 @@
 //! Converts `QueryData` into dataverse-lib query types.
 
-use dataverse_lib::DataverseClient;
 use dataverse_lib::api::query::odata::QueryBuilder as ODataQueryBuilder;
 use dataverse_lib::api::query::{Direction, Filter, OrderBy};
 use dataverse_lib::model::{Entity, Value};
+use dataverse_lib::DataverseClient;
 
 use super::data::{CondOp, FilterNode, QueryData, SortField};
 
@@ -59,7 +59,15 @@ fn convert_filter_node(node: &FilterNode) -> Result<Option<Filter>, ConvertError
             operator,
             value,
             ..
-        } => Ok(Some(convert_condition(field, *operator, value)?)),
+        } => {
+            if field.is_empty() {
+                return Ok(None);
+            }
+            if operator.has_value() && matches!(value, Value::Null) {
+                return Ok(None);
+            }
+            Ok(Some(convert_condition(field, *operator, value)?))
+        }
         FilterNode::Group {
             is_and, children, ..
         } => {
