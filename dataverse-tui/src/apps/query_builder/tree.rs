@@ -3,7 +3,7 @@
 use dataverse_lib::api::query::Direction;
 use dataverse_lib::model::Value;
 use rafter::widgets::{TreeItem, TreeNode};
-use tuidom::Element;
+use tuidom::{Color, Element, Style};
 
 use crate::formatting::format_value;
 
@@ -73,18 +73,40 @@ impl TreeItem for QueryTreeNode {
     fn render(&self) -> Element {
         match self {
             Self::Section { section, count } => {
-                let label = if *count > 0 {
-                    format!("{} ({})", section.label(), count)
+                if *count > 0 {
+                    Element::row()
+                        .gap(1)
+                        .child(
+                            Element::text(section.label())
+                                .style(Style::new().foreground(Color::var("interact")).bold())
+                                .style_focused(
+                                    Style::new().foreground(Color::var("text.inverted")).bold(),
+                                ),
+                        )
+                        .child(
+                            Element::text(&format!("({})", count))
+                                .style(Style::new().foreground(Color::var("muted")))
+                                .style_focused(
+                                    Style::new().foreground(Color::var("text.inverted")),
+                                ),
+                        )
                 } else {
-                    section.label().to_string()
-                };
-                Element::text(&label)
+                    Element::text(section.label())
+                        .style(Style::new().foreground(Color::var("interact")).bold())
+                        .style_focused(Style::new().foreground(Color::var("text.inverted")).bold())
+                }
             }
-            Self::EntityValue(name) => Element::text(name),
-            Self::SelectField { name, .. } => Element::text(name),
+            Self::EntityValue(name) => Element::text(name)
+                .style(Style::new().foreground(Color::var("primary")))
+                .style_focused(Style::new().foreground(Color::var("text.inverted"))),
+            Self::SelectField { name, .. } => Element::text(name)
+                .style(Style::new().foreground(Color::var("secondary")))
+                .style_focused(Style::new().foreground(Color::var("text.inverted"))),
             Self::FilterGroup { is_and, .. } => {
                 let label = if *is_and { "AND" } else { "OR" };
                 Element::text(label)
+                    .style(Style::new().foreground(Color::var("accent")).bold())
+                    .style_focused(Style::new().foreground(Color::var("text.inverted")).bold())
             }
             Self::FilterCondition {
                 field,
@@ -92,21 +114,70 @@ impl TreeItem for QueryTreeNode {
                 value,
                 ..
             } => {
-                let label = if operator.has_value() {
-                    format!("{} {} {}", field, operator.label(), format_value(value).raw)
+                if operator.has_value() {
+                    Element::row()
+                        .gap(1)
+                        .child(
+                            Element::text(field)
+                                .style(Style::new().foreground(Color::var("secondary")))
+                                .style_focused(
+                                    Style::new().foreground(Color::var("text.inverted")),
+                                ),
+                        )
+                        .child(
+                            Element::text(operator.label())
+                                .style(Style::new().foreground(Color::var("muted")))
+                                .style_focused(
+                                    Style::new().foreground(Color::var("text.inverted")),
+                                ),
+                        )
+                        .child(
+                            Element::text(&format_value(value).raw)
+                                .style(Style::new().foreground(Color::var("primary")))
+                                .style_focused(
+                                    Style::new().foreground(Color::var("text.inverted")),
+                                ),
+                        )
                 } else {
-                    format!("{} {}", field, operator.label())
-                };
-                Element::text(&label)
+                    Element::row()
+                        .gap(1)
+                        .child(
+                            Element::text(field)
+                                .style(Style::new().foreground(Color::var("secondary")))
+                                .style_focused(
+                                    Style::new().foreground(Color::var("text.inverted")),
+                                ),
+                        )
+                        .child(
+                            Element::text(operator.label())
+                                .style(Style::new().foreground(Color::var("muted")))
+                                .style_focused(
+                                    Style::new().foreground(Color::var("text.inverted")),
+                                ),
+                        )
+                }
             }
             Self::SortItem(sf) => {
                 let dir = match sf.direction {
-                    Direction::Asc => "ASC",
-                    Direction::Desc => "DESC",
+                    Direction::Asc => "asc",
+                    Direction::Desc => "desc",
                 };
-                Element::text(&format!("{} {}", sf.field, dir))
+                Element::row()
+                    .gap(1)
+                    .child(
+                        Element::text(&sf.field)
+                            .style(Style::new().foreground(Color::var("secondary")))
+                            .style_focused(Style::new().foreground(Color::var("text.inverted"))),
+                    )
+                    .child(
+                        Element::text(dir)
+                            .style(Style::new().foreground(Color::var("muted")))
+                            .style_focused(Style::new().foreground(Color::var("text.inverted"))),
+                    )
             }
-            Self::TopValue(n) => Element::text(&n.to_string()),
+            Self::TopValue(n) => Element::text(&n.to_string())
+                .style(Style::new().foreground(Color::var("primary")))
+                .style_focused(Style::new().foreground(Color::var("text.inverted"))),
         }
     }
 }
