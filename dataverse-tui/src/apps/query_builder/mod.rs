@@ -179,7 +179,7 @@ impl QueryBuilder {
 
     /// Tree node activated (Enter/Space).
     #[handler]
-    async fn on_activate(&self, gx: &GlobalContext) {
+    async fn on_activate(&self, cx: &AppContext, gx: &GlobalContext) {
         let Some(key) = self.focused_key() else {
             return;
         };
@@ -191,8 +191,16 @@ impl QueryBuilder {
             "section-Top" | "top-value" => {
                 self.open_top_editor(gx).await;
             }
-            k if k == "section-Select" || k.starts_with("select-") => {
+            "section-Select" => {
                 self.open_field_picker(gx).await;
+            }
+            k if k.starts_with("select-") => {
+                if let Some(idx) = k
+                    .strip_prefix("select-")
+                    .and_then(|s| s.parse::<usize>().ok())
+                {
+                    self.show_select_menu(idx, cx, gx).await;
+                }
             }
             "section-OrderBy" => {
                 self.open_sort_editor(gx).await;
@@ -202,7 +210,7 @@ impl QueryBuilder {
                     .strip_prefix("sort-")
                     .and_then(|s| s.parse::<usize>().ok())
                 {
-                    self.open_sort_editor_for(gx, id).await;
+                    self.show_sort_menu(id, cx, gx).await;
                 }
             }
             k if k == "section-Filter" || k.starts_with("filter-group-") => {
@@ -289,6 +297,88 @@ impl QueryBuilder {
                     };
                 }
             }
+        });
+        self.rebuild_tree();
+    }
+
+    // =========================================================================
+    // Context Menus
+    // =========================================================================
+
+    /// Show context menu for a select field node.
+    #[handler]
+    async fn show_select_menu(&self, idx: usize, cx: &AppContext, gx: &GlobalContext) {
+        let (x, y) = if let Some(rect) = gx.focused_element_rect() {
+            (rect.x, rect.y + rect.height)
+        } else {
+            gx.mouse_position()
+        };
+        let menu = self.select_field_menu(idx);
+        cx.context_menu(menu, x, y);
+    }
+
+    #[context_menu]
+    fn select_field_menu(&self, idx: usize) {
+        context_menu! {
+            option("Edit", edit_select_fields());
+            option("Remove", remove_select_field(idx));
+        }
+    }
+
+    #[handler]
+    async fn edit_select_fields(&self, gx: &GlobalContext) {
+        self.open_field_picker(gx).await;
+    }
+
+    #[handler]
+    async fn remove_select_field(&self, idx: usize) {
+        let len = self.query.with_ref(|q| q.select.len());
+        if idx < len {
+            self.query.update(|q| {
+                q.select.remove(idx);
+            });
+            self.rebuild_tree();
+        }
+    }
+
+    /// Show context menu for a sort field node.
+    #[handler]
+    async fn show_sort_menu(&self, id: usize, cx: &AppContext, gx: &GlobalContext) {
+        let (x, y) = if let Some(rect) = gx.focused_element_rect() {
+            (rect.x, rect.y + rect.height)
+        } else {
+            gx.mouse_position()
+        };
+        let menu = self.sort_field_menu(id);
+        cx.context_menu(menu, x, y);
+    }
+
+    #[context_menu]
+    fn sort_field_menu(&self, id: usize) {
+        context_menu! {
+            option("Toggle Direction", toggle_sort_direction(id));
+            option("Remove", remove_sort_field(id));
+        }
+    }
+
+    #[handler]
+    async fn toggle_sort_direction(&self, id: usize) {
+        use dataverse_lib::api::query::Direction;
+        self.query.update(|q| {
+            if let Some(sf) = q.order_by.iter_mut().find(|sf| sf.id == id) {
+                sf.direction = match sf.direction {
+                    Direction::Asc => Direction::Desc,
+                    Direction::Desc => Direction::Asc,
+                };
+            }
+        });
+        self.rebuild_tree();
+    }
+
+    #[handler]
+    async fn remove_sort_field(&self, id: usize) {
+        self.query.update(|q| {
+            q.order_by.retain(|sf| sf.id != id);
         });
         self.rebuild_tree();
     }
