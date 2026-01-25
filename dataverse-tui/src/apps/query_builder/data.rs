@@ -212,6 +212,22 @@ impl FilterNode {
             _ => false,
         }
     }
+
+    /// Collect all group IDs in the filter tree.
+    pub fn collect_group_ids(&self) -> Vec<usize> {
+        let mut ids = Vec::new();
+        self.collect_group_ids_into(&mut ids);
+        ids
+    }
+
+    fn collect_group_ids_into(&self, ids: &mut Vec<usize>) {
+        if let Self::Group { id, children, .. } = self {
+            ids.push(*id);
+            for child in children {
+                child.collect_group_ids_into(ids);
+            }
+        }
+    }
 }
 
 impl CondOp {
