@@ -213,7 +213,7 @@ impl QueryBuilder {
                     self.show_sort_menu(id, cx, gx).await;
                 }
             }
-            k if k == "section-Filter" || k.starts_with("filter-group-") => {
+            "section-Filter" => {
                 self.open_condition_editor(gx, None).await;
             }
             k if k.starts_with("filter-cond-") => {
