@@ -828,7 +828,12 @@ pub fn is_element_method(method: &ImplItemFn) -> bool {
 /// Extract the type name from a Type
 pub fn get_type_name(ty: &Type) -> Option<Ident> {
     if let Type::Path(path) = ty {
-        path.path.get_ident().cloned()
+        // Try simple case first (no generics)
+        if let Some(ident) = path.path.get_ident() {
+            return Some(ident.clone());
+        }
+        // Handle generic types like LoadingModal<T> - get the last segment's ident
+        path.path.segments.last().map(|seg| seg.ident.clone())
     } else {
         None
     }

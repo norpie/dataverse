@@ -259,6 +259,9 @@ fn transform_field(field: &Field) -> TokenStream {
 /// Generate Default impl.
 fn generate_default_impl(
     name: &Ident,
+    impl_generics: &syn::ImplGenerics,
+    ty_generics: &syn::TypeGenerics,
+    where_clause: &Option<&syn::WhereClause>,
     fields: Option<&FieldsNamed>,
     attrs: &ModalAttrs,
 ) -> TokenStream {
@@ -270,7 +273,7 @@ fn generate_default_impl(
 
     let Some(fields) = fields else {
         return quote! {
-            impl Default for #name {
+            impl #impl_generics Default for #name #ty_generics #where_clause {
                 fn default() -> Self {
                     Self {
                         #page_field
@@ -304,7 +307,7 @@ fn generate_default_impl(
         .collect();
 
     quote! {
-        impl Default for #name {
+        impl #impl_generics Default for #name #ty_generics #where_clause {
             fn default() -> Self {
                 Self {
                     #(#field_defaults),*,
@@ -320,6 +323,9 @@ fn generate_default_impl(
 /// Generate Clone impl.
 fn generate_clone_impl(
     name: &Ident,
+    impl_generics: &syn::ImplGenerics,
+    ty_generics: &syn::TypeGenerics,
+    where_clause: &Option<&syn::WhereClause>,
     fields: Option<&FieldsNamed>,
     attrs: &ModalAttrs,
 ) -> TokenStream {
@@ -331,7 +337,7 @@ fn generate_clone_impl(
 
     let Some(fields) = fields else {
         return quote! {
-            impl Clone for #name {
+            impl #impl_generics Clone for #name #ty_generics #where_clause {
                 fn clone(&self) -> Self {
                     Self {
                         #page_field
@@ -353,7 +359,7 @@ fn generate_clone_impl(
         .collect();
 
     quote! {
-        impl Clone for #name {
+        impl #impl_generics Clone for #name #ty_generics #where_clause {
             fn clone(&self) -> Self {
                 Self {
                     #(#field_clones),*,
@@ -369,6 +375,9 @@ fn generate_clone_impl(
 /// Generate metadata module for #[modal_impl].
 fn generate_metadata(
     name: &Ident,
+    impl_generics: &syn::ImplGenerics,
+    ty_generics: &syn::TypeGenerics,
+    where_clause: &Option<&syn::WhereClause>,
     fields: Option<&FieldsNamed>,
     attrs: &ModalAttrs,
 ) -> TokenStream {
@@ -471,11 +480,11 @@ fn generate_metadata(
             #position_fn
             #aspect_ratio_fn
 
-            pub fn is_dirty(modal: &#name) -> bool {
+            pub fn is_dirty #impl_generics (modal: &#name #ty_generics) -> bool #where_clause {
                 false #(|| modal.#dirty_fields.is_dirty())* #page_dirty
             }
 
-            pub fn clear_dirty(modal: &#name) {
+            pub fn clear_dirty #impl_generics (modal: &#name #ty_generics) #where_clause {
                 #(modal.#dirty_fields.clear_dirty();)*
                 #page_clear_dirty
             }
@@ -496,6 +505,8 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
 
     let name = &input.ident;
     let vis = &input.vis;
+    let generics = &input.generics;
+    let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
 
     let other_attrs: Vec<_> = input
         .attrs
@@ -518,9 +529,30 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
         }
     };
 
-    let default_impl = generate_default_impl(name, fields, &attrs);
-    let clone_impl = generate_clone_impl(name, fields, &attrs);
-    let metadata = generate_metadata(name, fields, &attrs);
+    let default_impl = generate_default_impl(
+        name,
+        &impl_generics,
+        &ty_generics,
+        &where_clause,
+        fields,
+        &attrs,
+    );
+    let clone_impl = generate_clone_impl(
+        name,
+        &impl_generics,
+        &ty_generics,
+        &where_clause,
+        fields,
+        &attrs,
+    );
+    let metadata = generate_metadata(
+        name,
+        &impl_generics,
+        &ty_generics,
+        &where_clause,
+        fields,
+        &attrs,
+    );
 
     // Generate the __page field if pages is enabled
     let page_field = if attrs.pages {
@@ -537,7 +569,7 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
 
         quote! {
             #(#other_attrs)*
-            #vis struct #name {
+            #vis struct #name #generics {
                 #(#transformed_fields),*,
                 #page_field
                 #[doc(hidden)]
@@ -554,7 +586,7 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
         // Unit struct becomes struct with just __handler_registry, __derived_cache (and __page if pages enabled)
         quote! {
             #(#other_attrs)*
-            #vis struct #name {
+            #vis struct #name #generics {
                 #page_field
                 #[doc(hidden)]
                 __handler_registry: rafter::HandlerRegistry,
