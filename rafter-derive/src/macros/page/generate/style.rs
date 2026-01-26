@@ -30,6 +30,27 @@ pub fn generate_merged_style(attrs: &[&Attr]) -> Option<TokenStream> {
     })
 }
 
+/// Generate a single merged style_focused call from style attributes.
+/// Returns None if no style attributes are present.
+pub fn generate_merged_style_focused(attrs: &[&Attr]) -> Option<TokenStream> {
+    if attrs.is_empty() {
+        return None;
+    }
+
+    let style_methods: Vec<_> = attrs
+        .iter()
+        .filter_map(|attr| generate_style_method(attr))
+        .collect();
+
+    if style_methods.is_empty() {
+        return None;
+    }
+
+    Some(quote! {
+        .style_focused(tuidom::Style::new()#(#style_methods)*)
+    })
+}
+
 /// Generate a style method call for a single attribute
 fn generate_style_method(attr: &Attr) -> Option<TokenStream> {
     let name_str = attr.name.to_string();

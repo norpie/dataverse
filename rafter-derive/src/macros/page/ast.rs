@@ -32,6 +32,8 @@ pub struct ElementNode {
     pub layout_attrs: Vec<Attr>,
     /// Style attributes after `style` keyword (bg: primary, bold: true)
     pub style_attrs: Vec<Attr>,
+    /// Focused style attributes after `style_focused` keyword
+    pub style_focused_attrs: Vec<Attr>,
     /// Transition attributes after `transition` keyword (bg: 200ms ease_out)
     pub transition_attrs: Vec<TransitionAttr>,
     /// Inline handlers (on_click: handler(args))

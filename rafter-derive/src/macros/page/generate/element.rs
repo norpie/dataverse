@@ -29,8 +29,10 @@ pub fn generate(elem: &ElementNode) -> TokenStream {
 fn generate_container(elem: &ElementNode, constructor: TokenStream) -> TokenStream {
     let layout_refs: Vec<_> = elem.layout_attrs.iter().collect();
     let style_refs: Vec<_> = elem.style_attrs.iter().collect();
+    let style_focused_refs: Vec<_> = elem.style_focused_attrs.iter().collect();
     let layout_calls = generate_layout_calls(&layout_refs);
     let style_call = style::generate_merged_style(&style_refs);
+    let style_focused_call = style::generate_merged_style_focused(&style_focused_refs);
     let transition_call = transition::generate_transitions(&elem.transition_attrs);
     let children: Vec<_> = elem.children.iter().map(generate_view_node).collect();
 
@@ -43,6 +45,7 @@ fn generate_container(elem: &ElementNode, constructor: TokenStream) -> TokenStre
             #constructor
                 #(#layout_calls)*
                 #style_call
+                #style_focused_call
                 #transition_call
         }
     } else {
@@ -51,6 +54,7 @@ fn generate_container(elem: &ElementNode, constructor: TokenStream) -> TokenStre
             #constructor
                 #(#layout_calls)*
                 #style_call
+                #style_focused_call
                 #transition_call
                 .children({
                     use rafter::IntoPageChildren;
@@ -161,13 +165,18 @@ fn generate_text(elem: &ElementNode) -> TokenStream {
     let style_refs: Vec<_> = elem.style_attrs.iter().collect();
     let style_call = style::generate_merged_style(&style_refs).unwrap_or_else(|| quote! {});
 
+    // Generate focused style if present
+    let style_focused_refs: Vec<_> = elem.style_focused_attrs.iter().collect();
+    let style_focused_call =
+        style::generate_merged_style_focused(&style_focused_refs).unwrap_or_else(|| quote! {});
+
     // Generate transitions if present
     let transition_call = transition::generate_transitions(&elem.transition_attrs);
 
     // Layout calls applied after build()
     let layout_calls = generate_layout_calls(&layout_attrs);
 
-    // Text widget: Text::new().content(...).style(...).build(registry, handlers)
+    // Text widget: Text::new().content(...).style(...).style_focused(...).build(registry, handlers)
     // Then apply layout calls to the resulting Element
     quote! {
         {
@@ -175,6 +184,7 @@ fn generate_text(elem: &ElementNode) -> TokenStream {
             Text::new()
                 #(#widget_attr_calls)*
                 #style_call
+                #style_focused_call
                 #transition_call
                 .build(&self.__handler_registry, &__handlers)
                 #(#layout_calls)*
@@ -209,6 +219,11 @@ fn generate_widget(elem: &ElementNode) -> TokenStream {
     let style_refs: Vec<_> = elem.style_attrs.iter().collect();
     let style_call = style::generate_merged_style(&style_refs).unwrap_or_else(|| quote! {});
 
+    // Generate focused style if present
+    let style_focused_refs: Vec<_> = elem.style_focused_attrs.iter().collect();
+    let style_focused_call =
+        style::generate_merged_style_focused(&style_focused_refs).unwrap_or_else(|| quote! {});
+
     // Generate transitions if present
     let transition_call = transition::generate_transitions(&elem.transition_attrs);
 
@@ -226,7 +241,7 @@ fn generate_widget(elem: &ElementNode) -> TokenStream {
         quote! { .children(vec![#(#children),*]) }
     };
 
-    // Build the widget: Widget::new().props().children().style().build(registry, handlers)
+    // Build the widget: Widget::new().props().children().style().style_focused().build(registry, handlers)
     quote! {
         {
             let mut __handlers = rafter::WidgetHandlers::new();
@@ -235,6 +250,7 @@ fn generate_widget(elem: &ElementNode) -> TokenStream {
                 #(#widget_attr_calls)*
                 #children_call
                 #style_call
+                #style_focused_call
                 #transition_call
                 .build(&self.__handler_registry, &__handlers)
                 #(#layout_calls)*

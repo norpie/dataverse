@@ -2,7 +2,7 @@
 
 use syn::parse::{Parse, ParseStream};
 use syn::token::{Brace, Paren};
-use syn::{Expr, Ident, Pat, Token, braced, parenthesized};
+use syn::{braced, parenthesized, Expr, Ident, Pat, Token};
 
 use super::ast::{
     Attr, AttrValue, AttrValueElse, AttrValueIf, ElementNode, ElseBranch, ForNode, HandlerArg,
@@ -57,6 +57,9 @@ fn parse_element(input: ParseStream) -> syn::Result<ElementNode> {
     // Parse style attributes: `style (bg: primary, bold: true)`
     let style_attrs = parse_keyword_attrs(input, "style")?;
 
+    // Parse focused style attributes: `style_focused (bg: accent, bold: true)`
+    let style_focused_attrs = parse_keyword_attrs(input, "style_focused")?;
+
     // Parse transition attributes: `transition (bg: 200ms ease_out)`
     let transition_attrs = parse_transition_attrs(input)?;
 
@@ -76,6 +79,7 @@ fn parse_element(input: ParseStream) -> syn::Result<ElementNode> {
         name,
         layout_attrs,
         style_attrs,
+        style_focused_attrs,
         transition_attrs,
         handlers,
         children,
