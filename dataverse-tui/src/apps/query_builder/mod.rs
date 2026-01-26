@@ -890,79 +890,6 @@ impl QueryBuilder {
         }
     }
 
-    async fn open_sort_editor_for(&self, gx: &GlobalContext, id: usize) {
-        let sort = self
-            .query
-            .with_ref(|q| q.order_by.iter().find(|sf| sf.id == id).cloned());
-        let Some(sort) = sort else {
-            return;
-        };
-
-        let entity = self.query.with_ref(|q| q.entity.clone());
-        let Some(entity) = entity else {
-            return;
-        };
-
-        let Some(client) = self.get_client(gx).await else {
-            return;
-        };
-
-        let entity_clone = entity.clone();
-        let options = match gx
-            .modal(LoadingModal::new(
-                "Loading attributes...",
-                async move {
-                    let attrs = client
-                        .metadata()
-                        .attributes(Entity::set(&entity_clone))
-                        .await
-                        .map_err(|e| format!("Failed to load attributes: {}", e))?;
-
-                    Ok::<_, String>(
-                        attrs
-                            .iter()
-                            .filter(|a| a.is_valid_for_read && a.attribute_of.is_none())
-                            .map(|a| {
-                                let display = a
-                                    .display_name
-                                    .text()
-                                    .map(|d| format!("{} ({})", d, a.logical_name))
-                                    .unwrap_or_else(|| a.logical_name.clone());
-                                (a.logical_name.clone(), display)
-                            })
-                            .collect(),
-                    )
-                },
-            ))
-            .await
-        {
-            Some(Ok(opts)) => opts,
-            Some(Err(e)) => {
-                gx.toast(Toast::error(e));
-                return;
-            }
-            None => return,
-        };
-
-
-        let result = gx
-            .modal(SortFieldEditorModal::with_sort(
-                options,
-                sort.field.clone(),
-                sort.direction,
-            ))
-            .await;
-
-        if let Some((field, direction)) = result {
-            self.query.update(|q| {
-                if let Some(sf) = q.order_by.iter_mut().find(|sf| sf.id == id) {
-                    sf.field = field;
-                    sf.direction = direction;
-                }
-            });
-        }
-    }
-
     async fn open_top_editor(&self, gx: &GlobalContext) {
         let current = self.query.with_ref(|q| q.top);
         let result = gx.modal(NumberEditorModal::new(current)).await;
@@ -992,31 +919,6 @@ impl QueryBuilder {
                 None
             }
         }
-    }
-
-    async fn fetch_field_options(
-        &self,
-        client: &DataverseClient,
-        entity: &str,
-    ) -> Result<Vec<(String, String)>, String> {
-        let attrs = client
-            .metadata()
-            .attributes(Entity::set(entity))
-            .await
-            .map_err(|e| format!("Failed to load attributes: {}", e))?;
-
-        Ok(attrs
-            .iter()
-            .filter(|a| a.is_valid_for_read && a.attribute_of.is_none())
-            .map(|a| {
-                let display = a
-                    .display_name
-                    .text()
-                    .map(|d| format!("{} ({})", d, a.logical_name))
-                    .unwrap_or_else(|| a.logical_name.clone());
-                (a.logical_name.clone(), display)
-            })
-            .collect())
     }
 
     /// Get the key of the currently focused tree node.
