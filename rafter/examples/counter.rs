@@ -27,6 +27,10 @@ struct ReallySureModal;
 
 #[modal_impl]
 impl ReallySureModal {
+    fn default_result(&self) -> bool {
+        false
+    }
+
     #[keybinds]
     fn keys() {
         bind("y", "enter", confirm);
@@ -69,6 +73,10 @@ struct ConfirmModal {
 
 #[modal_impl]
 impl ConfirmModal {
+    fn default_result(&self) -> bool {
+        false
+    }
+
     #[keybinds]
     fn keys() {
         bind("y", "enter", confirm);
@@ -119,6 +127,7 @@ struct Counter {
 
 #[app_impl]
 impl Counter {
+    #[on_start]
     async fn on_start(&self) {
         self.step.set(1);
     }
