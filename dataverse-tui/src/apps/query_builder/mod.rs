@@ -625,6 +625,25 @@ impl QueryBuilder {
     // =========================================================================
 
     async fn open_entity_picker(&self, gx: &GlobalContext) {
+        // Check if there's existing data that will be cleared
+        let has_data = self.query.with_ref(|q| {
+            !q.select.is_empty() 
+                || !matches!(q.filter, FilterNode::Empty)
+                || !q.order_by.is_empty()
+        });
+
+        // Confirm if changing entity will clear existing data
+        if has_data {
+            let confirmed = gx
+                .modal(crate::modals::ConfirmModal::new(
+                    "Changing entity will clear all fields, filters, and sorting. Continue?",
+                ))
+                .await;
+            if !confirmed {
+                return;
+            }
+        }
+
         let Some(client) = self.get_client(gx).await else {
             return;
         };
@@ -1009,7 +1028,11 @@ impl QueryBuilder {
     fn focused_filter_group_id(&self, key: &tree::QueryTreeKey) -> Option<usize> {
         match key {
             tree::QueryTreeKey::FilterGroup(id) => Some(*id),
-            tree::QueryTreeKey::Section(tree::Section::Filter) | tree::QueryTreeKey::FilterCondition(_) => {
+            tree::QueryTreeKey::FilterCondition(cond_id) => {
+                // Find the parent group of this condition
+                self.query.with_ref(|q| q.filter.find_parent_group_id(*cond_id))
+            }
+            tree::QueryTreeKey::Section(tree::Section::Filter) => {
                 // Return the root group ID if it exists
                 self.query.with_ref(|q| match &q.filter {
                     FilterNode::Group { id, .. } => Some(*id),

@@ -228,6 +228,34 @@ impl FilterNode {
             }
         }
     }
+
+    /// Find the parent group ID of a condition or group by its ID.
+    /// Returns None if the node is at the root level or not found.
+    pub fn find_parent_group_id(&self, target_id: usize) -> Option<usize> {
+        match self {
+            Self::Group { id, children, .. } => {
+                // Check if any direct child matches
+                for child in children {
+                    match child {
+                        Self::Condition { id: child_id, .. } | Self::Group { id: child_id, .. } => {
+                            if *child_id == target_id {
+                                return Some(*id);
+                            }
+                        }
+                        Self::Empty => {}
+                    }
+                }
+                // Recurse into child groups
+                for child in children {
+                    if let Some(parent_id) = child.find_parent_group_id(target_id) {
+                        return Some(parent_id);
+                    }
+                }
+                None
+            }
+            _ => None,
+        }
+    }
 }
 
 impl CondOp {
