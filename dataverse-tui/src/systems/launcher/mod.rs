@@ -6,7 +6,10 @@ use crate::apps::{EntityExplorer, QueryBuilder};
 use crate::modals::{ListEntry, SearchableListModal};
 
 #[system]
-pub struct Launcher;
+pub struct Launcher {
+    /// Lock to prevent multiple launcher modals from being opened simultaneously.
+    modal_open: bool,
+}
 
 #[system_impl]
 impl Launcher {
@@ -17,12 +20,23 @@ impl Launcher {
 
     #[handler]
     async fn open_launcher(&self, gx: &GlobalContext) {
+        // Check if modal is already open
+        if self.modal_open.get() {
+            return;
+        }
+
+        // Set lock
+        self.modal_open.set(true);
+
         let items = vec![
             ListEntry::with_category("entity-explorer", "Entity Explorer", "Data"),
             ListEntry::with_category("query-builder", "Query Builder", "Tools"),
         ];
 
         let result = gx.modal(SearchableListModal::new("Launcher", items)).await;
+
+        // Clear lock
+        self.modal_open.set(false);
 
         if let Some(selected) = result {
             match selected.as_str() {
