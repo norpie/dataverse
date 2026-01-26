@@ -256,6 +256,57 @@ impl<T: TreeItem> TreeState<T> {
         self.expanded.contains(key)
     }
 
+    /// Clear all expansion state (collapse all nodes).
+    pub fn clear_expansion(&mut self) {
+        if !self.expanded.is_empty() {
+            self.expanded.clear();
+            self.rebuild_flattened();
+        }
+    }
+
+    /// Expand all nodes in the tree.
+    pub fn expand_all(&mut self) {
+        fn collect_keys<T: TreeItem>(nodes: &[TreeNode<T>], keys: &mut HashSet<T::Key>) {
+            for node in nodes {
+                keys.insert(node.value.key());
+                collect_keys(&node.children, keys);
+            }
+        }
+
+        let old_count = self.expanded.len();
+        collect_keys(&self.roots, &mut self.expanded);
+
+        // Only rebuild if expansion state changed
+        if self.expanded.len() != old_count {
+            self.rebuild_flattened();
+        }
+    }
+
+    /// Expand nodes matching a predicate.
+    pub fn expand_matching(&mut self, predicate: impl Fn(&T::Key) -> bool) {
+        fn collect_matching<T: TreeItem>(
+            nodes: &[TreeNode<T>],
+            keys: &mut HashSet<T::Key>,
+            predicate: &impl Fn(&T::Key) -> bool,
+        ) {
+            for node in nodes {
+                let key = node.value.key();
+                if predicate(&key) {
+                    keys.insert(key);
+                }
+                collect_matching(&node.children, keys, predicate);
+            }
+        }
+
+        let old_count = self.expanded.len();
+        collect_matching(&self.roots, &mut self.expanded, &predicate);
+
+        // Only rebuild if expansion state changed
+        if self.expanded.len() != old_count {
+            self.rebuild_flattened();
+        }
+    }
+
     /// Rebuild the flattened view and scroller.
     fn rebuild_flattened(&mut self) {
         self.flattened.clear();
