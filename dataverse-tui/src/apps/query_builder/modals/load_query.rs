@@ -5,13 +5,6 @@ use rafter::prelude::*;
 use rafter::widgets::{Button, Input, List, ListItem, ListState, Text};
 use tuidom::Element;
 
-/// Action chosen in the load query modal.
-#[derive(Debug, Clone)]
-pub enum LoadQueryAction {
-    Load(i64),
-    Delete(i64),
-}
-
 /// A saved query item for the list.
 #[derive(Debug, Clone)]
 pub struct QueryItem {
@@ -32,6 +25,7 @@ impl ListItem for QueryItem {
 }
 
 /// Modal for selecting a saved query to load or delete.
+/// Returns (query_to_load, queries_to_delete).
 #[modal(size = Md)]
 pub struct LoadQueryModal {
     #[state(skip)]
@@ -39,6 +33,7 @@ pub struct LoadQueryModal {
 
     input: String,
     list: ListState<QueryItem>,
+    staged_deletes: Vec<i64>,
 }
 
 impl LoadQueryModal {
@@ -57,12 +52,12 @@ impl LoadQueryModal {
 
 #[modal_impl]
 impl LoadQueryModal {
-    fn default_result(&self) -> Option<LoadQueryAction> {
+    fn default_result(&self) -> Option<(Option<i64>, Vec<i64>)> {
         None
     }
 
     #[on_start]
-    async fn on_start(&self, mx: &ModalContext<Option<LoadQueryAction>>) {
+    async fn on_start(&self, mx: &ModalContext<Option<(Option<i64>, Vec<i64>)>>) {
         self.list.set(ListState::new(self.items.clone()));
         mx.focus("load-query-input");
     }
@@ -74,28 +69,42 @@ impl LoadQueryModal {
     }
 
     #[handler]
-    async fn cancel(&self, mx: &ModalContext<Option<LoadQueryAction>>) {
-        mx.close(None);
+    async fn cancel(&self, mx: &ModalContext<Option<(Option<i64>, Vec<i64>)>>) {
+        let deletes = self.staged_deletes.get();
+        mx.close(Some((None, deletes)));
     }
 
     #[handler]
-    async fn delete(&self, gx: &GlobalContext, mx: &ModalContext<Option<LoadQueryAction>>) {
+    async fn delete(&self) {
         let focused = self.list.with_ref(|s| s.focused_key);
         if let Some(id) = focused {
-            let confirmed = gx
-                .modal(crate::modals::ConfirmModal::new("Delete this saved query?"))
-                .await;
-            if confirmed {
-                mx.close(Some(LoadQueryAction::Delete(id)));
-            }
+            // Stage deletion: add to list and remove from visible items
+            self.staged_deletes.update(|deletes| deletes.push(id));
+            
+            // Remove item from visible list and update focus
+            let new_items: Vec<QueryItem> = self
+                .list
+                .with_ref(|s| s.items.iter().filter(|item| item.id != id).cloned().collect());
+            
+            let new_focus = if new_items.is_empty() {
+                None
+            } else {
+                Some(new_items[0].id)
+            };
+            
+            self.list.update(|s| {
+                s.set_items(new_items);
+                s.focused_key = new_focus;
+            });
         }
     }
 
     #[handler]
-    async fn on_activate(&self, mx: &ModalContext<Option<LoadQueryAction>>) {
+    async fn on_activate(&self, mx: &ModalContext<Option<(Option<i64>, Vec<i64>)>>) {
         let activated = self.list.with_ref(|s| s.last_activated);
         if let Some(id) = activated {
-            mx.close(Some(LoadQueryAction::Load(id)));
+            let deletes = self.staged_deletes.get();
+            mx.close(Some((Some(id), deletes)));
         }
     }
 
@@ -116,7 +125,7 @@ impl LoadQueryModal {
     }
 
     #[handler]
-    async fn on_input_submit(&self, mx: &ModalContext<Option<LoadQueryAction>>) {
+    async fn on_input_submit(&self, mx: &ModalContext<Option<(Option<i64>, Vec<i64>)>>) {
         let first_key = self.list.with_ref(|s| s.items.first().map(|i| i.key()));
         if let Some(key) = first_key {
             mx.focus(&format!("load-query-list-item-{}", key));
@@ -138,11 +147,11 @@ impl LoadQueryModal {
                 }
 
                 row (width: fill, justify: between) {
-                    button (label: "Cancel", hint: "esc", id: "cancel") on_activate: cancel()
+                    button (label: "Done", hint: "esc", id: "cancel") on_activate: cancel()
                     row (gap: 2) {
                         row (gap: 1) {
                             text (content: "d") style (fg: primary)
-                            text (content: "delete") style (fg: muted)
+                            text (content: "stage delete") style (fg: muted)
                         }
                         row (gap: 1) {
                             text (content: "enter") style (fg: primary)

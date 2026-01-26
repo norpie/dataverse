@@ -9,7 +9,7 @@ mod sort_field_editor;
 pub use condition_editor::{ConditionData, ConditionEditorModal};
 pub use entity_picker::EntityPickerModal;
 pub use field_picker::FieldPickerModal;
-pub use load_query::{LoadQueryAction, LoadQueryModal};
+pub use load_query::LoadQueryModal;
 pub use number_editor::NumberEditorModal;
 pub use save_query::SaveQueryModal;
 pub use sort_field_editor::SortFieldEditorModal;

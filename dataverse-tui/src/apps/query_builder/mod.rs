@@ -462,65 +462,74 @@ impl QueryBuilder {
             return;
         };
 
-        loop {
-            let queries = match repo.list().await {
-                Ok(list) => list,
-                Err(e) => {
-                    gx.toast(Toast::error(format!("Failed to list queries: {}", e)));
-                    return;
-                }
-            };
-
-            if queries.is_empty() {
-                gx.toast(Toast::info("No saved queries"));
+        let queries = match repo.list().await {
+            Ok(list) => list,
+            Err(e) => {
+                gx.toast(Toast::error(format!("Failed to list queries: {}", e)));
                 return;
             }
+        };
 
-            let options: Vec<(i64, String)> = queries
-                .into_iter()
-                .map(|q| {
-                    let label = match &q.entity {
-                        Some(entity) => format!("{} ({})", q.name, entity),
-                        None => q.name.clone(),
-                    };
-                    (q.id, label)
-                })
-                .collect();
+        if queries.is_empty() {
+            gx.toast(Toast::info("No saved queries"));
+            return;
+        }
 
-            let result = gx.modal(LoadQueryModal::new(options)).await;
+        let options: Vec<(i64, String)> = queries
+            .into_iter()
+            .map(|q| {
+                let label = match &q.entity {
+                    Some(entity) => format!("{} ({})", q.name, entity),
+                    None => q.name.clone(),
+                };
+                (q.id, label)
+            })
+            .collect();
 
-            match result {
-                Some(modals::LoadQueryAction::Load(id)) => {
-                    match repo.load(id).await {
-                        Ok(saved) => {
-                            self.saved_query_id.set(Some(saved.id));
-                            self.saved_query_name.set(Some(saved.name.clone()));
-                            self.query.set(saved.data);
-                            self.rebuild_tree();
-                            self.tree_state.update(|s| {
-                                s.clear_expansion();
-                                s.expand_all();
-                            });
-                            gx.toast(Toast::info(format!("Loaded: {}", saved.name)));
-                        }
-                        Err(e) => {
-                            gx.toast(Toast::error(format!("Failed to load: {}", e)));
-                        }
-                    }
-                    return;
+        let result = gx.modal(LoadQueryModal::new(options)).await;
+
+        let Some((to_load, to_delete)) = result else {
+            return;
+        };
+
+        // Commit staged deletions
+        let mut delete_count = 0;
+        for id in to_delete {
+            match repo.delete(id).await {
+                Ok(()) => {
+                    delete_count += 1;
                 }
-                Some(modals::LoadQueryAction::Delete(id)) => {
-                    match repo.delete(id).await {
-                        Ok(()) => {
-                            gx.toast(Toast::info("Query deleted"));
-                        }
-                        Err(e) => {
-                            gx.toast(Toast::error(format!("Failed to delete: {}", e)));
-                        }
-                    }
-                    // Loop to re-open the modal with updated list
+                Err(e) => {
+                    gx.toast(Toast::error(format!("Failed to delete query: {}", e)));
                 }
-                None => return,
+            }
+        }
+
+        if delete_count > 0 {
+            gx.toast(Toast::info(format!(
+                "Deleted {} {}",
+                delete_count,
+                if delete_count == 1 { "query" } else { "queries" }
+            )));
+        }
+
+        // Load selected query if any
+        if let Some(id) = to_load {
+            match repo.load(id).await {
+                Ok(saved) => {
+                    self.saved_query_id.set(Some(saved.id));
+                    self.saved_query_name.set(Some(saved.name.clone()));
+                    self.query.set(saved.data);
+                    self.rebuild_tree();
+                    self.tree_state.update(|s| {
+                        s.clear_expansion();
+                        s.expand_all();
+                    });
+                    gx.toast(Toast::info(format!("Loaded: {}", saved.name)));
+                }
+                Err(e) => {
+                    gx.toast(Toast::error(format!("Failed to load: {}", e)));
+                }
             }
         }
     }
