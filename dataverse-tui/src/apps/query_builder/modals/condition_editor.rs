@@ -5,7 +5,10 @@ use dataverse_lib::model::Value;
 use dataverse_lib::model::metadata::{AttributeMetadata, AttributeType};
 use rafter::page;
 use rafter::prelude::*;
-use rafter::widgets::{Autocomplete, AutocompleteState, Button, Input, Select, SelectState, Text};
+use rafter::widgets::{
+    Autocomplete, AutocompleteState, Button, DatePicker, DatePickerState, Input, NumberInput,
+    NumberInputState, Select, SelectState, Text,
+};
 use uuid::Uuid;
 
 use crate::formatting::format_value;
@@ -33,6 +36,8 @@ pub struct ConditionEditorModal {
     field: AutocompleteState<String>,
     operator: SelectState<CondOp>,
     value_text: String,
+    date_picker: DatePickerState,
+    number_input: NumberInputState,
 
     selected_type: Option<AttributeType>,
     error: Option<String>,
@@ -92,9 +97,46 @@ impl ConditionEditorModal {
             self.operator
                 .set(SelectState::new(op_options).with_value(initial.operator));
 
-            // Pre-fill value text
+            // Pre-fill value in appropriate widget
             if initial.operator.has_value() {
-                self.value_text.set(format_value(&initial.value).raw);
+                match attr_type {
+                    Some(AttributeType::DateTime) => {
+                        if let Value::DateTime(dt) = &initial.value {
+                            self.date_picker.set(
+                                DatePickerState::new()
+                                    .with_datetime(dt.date_naive(), dt.time())
+                                    .with_time(),
+                            );
+                        }
+                    }
+                    Some(AttributeType::Integer) => {
+                        if let Value::Int(n) = &initial.value {
+                            self.number_input
+                                .set(NumberInputState::new(*n as f64).integer());
+                        }
+                    }
+                    Some(AttributeType::BigInt) => {
+                        if let Value::Long(n) = &initial.value {
+                            self.number_input
+                                .set(NumberInputState::new(*n as f64).integer());
+                        }
+                    }
+                    Some(AttributeType::Double | AttributeType::Decimal | AttributeType::Money) => {
+                        if let Value::Float(n) = &initial.value {
+                            self.number_input.set(NumberInputState::new(*n));
+                        }
+                    }
+                    Some(AttributeType::Picklist | AttributeType::State | AttributeType::Status) => {
+                        if let Value::OptionSet(os) = &initial.value {
+                            self.number_input
+                                .set(NumberInputState::new(os.value as f64).integer());
+                        }
+                    }
+                    _ => {
+                        // Text input - set formatted value
+                        self.value_text.set(format_value(&initial.value).raw);
+                    }
+                }
             }
         } else {
             self.field.set(AutocompleteState::new(self.options.clone()));
@@ -126,13 +168,39 @@ impl ConditionEditorModal {
         };
 
         let value = if operator.has_value() {
-            let text = self.value_text.get();
             let attr_type = self.selected_type.get();
-            match parse_value(&text, attr_type) {
-                Ok(v) => v,
-                Err(msg) => {
-                    self.error.set(Some(msg));
-                    return;
+            match attr_type {
+                Some(AttributeType::DateTime) => {
+                    match self.date_picker.with_ref(|s| s.datetime_utc()) {
+                        Some(dt) => Value::DateTime(dt),
+                        None => {
+                            self.error.set(Some("Please select a date".to_string()));
+                            return;
+                        }
+                    }
+                }
+                Some(AttributeType::Integer) => {
+                    Value::Int(self.number_input.with_ref(|s| s.value_i32()))
+                }
+                Some(AttributeType::BigInt) => {
+                    Value::Long(self.number_input.with_ref(|s| s.value_i64()))
+                }
+                Some(AttributeType::Double | AttributeType::Decimal | AttributeType::Money) => {
+                    Value::Float(self.number_input.with_ref(|s| s.value()))
+                }
+                Some(AttributeType::Picklist | AttributeType::State | AttributeType::Status) => {
+                    Value::OptionSet(self.number_input.with_ref(|s| s.value_i32().into()))
+                }
+                _ => {
+                    // Fall back to text parsing for other types (String, GUID, etc.)
+                    let text = self.value_text.get();
+                    match parse_value(&text, attr_type) {
+                        Ok(v) => v,
+                        Err(msg) => {
+                            self.error.set(Some(msg));
+                            return;
+                        }
+                    }
                 }
             }
         } else {
@@ -172,6 +240,28 @@ impl ConditionEditorModal {
         self.value_text.set(String::new());
         self.error.set(None);
 
+        // Initialize appropriate widget based on type
+        match attr_type {
+            Some(AttributeType::DateTime) => {
+                self.date_picker
+                    .set(DatePickerState::new().with_time());
+            }
+            Some(AttributeType::Integer | AttributeType::BigInt) => {
+                self.number_input
+                    .set(NumberInputState::new(0.0).integer());
+            }
+            Some(AttributeType::Double | AttributeType::Decimal | AttributeType::Money) => {
+                self.number_input.set(NumberInputState::new(0.0));
+            }
+            Some(AttributeType::Picklist | AttributeType::State | AttributeType::Status) => {
+                self.number_input
+                    .set(NumberInputState::new(0.0).integer());
+            }
+            _ => {
+                // Text input - already cleared above
+            }
+        }
+
         // Operator options update automatically via derived state
         let options = self.operator_options();
         self.operator.set(SelectState::new(options));
@@ -208,7 +298,27 @@ impl ConditionEditorModal {
                 select (state: self.operator, id: "cond-operator", placeholder: "Select operator...")
                 if has_value_input {
                     text (content: "Value") style (fg: muted)
-                    input (state: self.value_text, id: "cond-value", placeholder: {type_hint})
+                    
+                    match self.selected_type.get() {
+                        Some(AttributeType::DateTime) => {
+                            date_picker (state: self.date_picker, id: "cond-value")
+                        }
+                        Some(
+                            AttributeType::Integer
+                            | AttributeType::BigInt
+                            | AttributeType::Double
+                            | AttributeType::Decimal
+                            | AttributeType::Money
+                            | AttributeType::Picklist
+                            | AttributeType::State
+                            | AttributeType::Status
+                        ) => {
+                            number_input (state: self.number_input, id: "cond-value")
+                        }
+                        _ => {
+                            input (state: self.value_text, id: "cond-value", placeholder: {type_hint})
+                        }
+                    }
                 }
 
                 row (width: fill, justify: between) {
