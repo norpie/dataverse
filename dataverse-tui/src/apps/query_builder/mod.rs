@@ -11,7 +11,7 @@ use dataverse_lib::DataverseClient;
 use dataverse_lib::model::Entity;
 use rafter::page;
 use rafter::prelude::*;
-use rafter::widgets::{Text, Tree, TreeState};
+use rafter::widgets::{Text, Tree, TreeNode, TreeState};
 
 use crate::apps::RecordExplorer;
 
@@ -58,8 +58,12 @@ impl QueryBuilder {
             }
         }
 
-        self.rebuild_tree();
-        self.tree_state.update(|s| s.expand_all());
+        // Sync tree nodes and expand all
+        let nodes = self.tree_nodes();
+        self.tree_state.update(|s| {
+            s.set_roots(nodes);
+            s.expand_all();
+        });
     }
 
     fn title(&self) -> String {
@@ -67,6 +71,12 @@ impl QueryBuilder {
             Some(entity) => format!("Query Builder ({})", entity),
             None => "Query Builder".to_string(),
         })
+    }
+
+    /// Automatically compute tree nodes from query state.
+    #[derived]
+    fn tree_nodes(&self) -> Vec<TreeNode<QueryTreeNode>> {
+        self.query.with_ref(|q| build_tree(q))
     }
 
     // =========================================================================
@@ -108,7 +118,6 @@ impl QueryBuilder {
         };
 
         self.query.update(|q| q.filter.toggle_group(id));
-        self.rebuild_tree();
     }
 
     /// Delete the focused node.
@@ -125,14 +134,12 @@ impl QueryBuilder {
                     self.query.update(|q| {
                         q.select.remove(idx);
                     });
-                    self.rebuild_tree();
                 }
             }
             tree::QueryTreeKey::FilterCondition(id) => {
                 self.query.update(|q| {
                     q.filter.remove_node(id);
                 });
-                self.rebuild_tree();
             }
             tree::QueryTreeKey::FilterGroup(id) => {
                 let has_children = self.query.with_ref(|q| q.filter.group_has_children(id));
@@ -149,19 +156,16 @@ impl QueryBuilder {
                 self.query.update(|q| {
                     q.filter.remove_node(id);
                 });
-                self.rebuild_tree();
             }
             tree::QueryTreeKey::SortItem(id) => {
                 self.query.update(|q| {
                     q.order_by.retain(|sf| sf.id != id);
                 });
-                self.rebuild_tree();
             }
             tree::QueryTreeKey::TopValue => {
                 self.query.update(|q| {
                     q.top = None;
                 });
-                self.rebuild_tree();
             }
             _ => {}
         }
@@ -274,7 +278,6 @@ impl QueryBuilder {
                 }
             }
         });
-        self.rebuild_tree();
     }
 
     // =========================================================================
@@ -313,7 +316,6 @@ impl QueryBuilder {
             self.query.update(|q| {
                 q.select.remove(idx);
             });
-            self.rebuild_tree();
         }
     }
 
@@ -348,7 +350,6 @@ impl QueryBuilder {
                 };
             }
         });
-        self.rebuild_tree();
     }
 
     #[handler]
@@ -356,7 +357,6 @@ impl QueryBuilder {
         self.query.update(|q| {
             q.order_by.retain(|sf| sf.id != id);
         });
-        self.rebuild_tree();
     }
 
     /// Open the condition editor pre-filled for an existing condition.
@@ -419,7 +419,6 @@ impl QueryBuilder {
                 q.filter
                     .update_condition(id, cond.field, cond.operator, cond.value);
             });
-            self.rebuild_tree();
         }
     }
 
@@ -520,11 +519,15 @@ impl QueryBuilder {
                     self.saved_query_id.set(Some(saved.id));
                     self.saved_query_name.set(Some(saved.name.clone()));
                     self.query.set(saved.data);
-                    self.rebuild_tree();
+                    
+                    // Sync tree nodes and expand all
+                    let nodes = self.tree_nodes();
                     self.tree_state.update(|s| {
+                        s.set_roots(nodes);
                         s.clear_expansion();
                         s.expand_all();
                     });
+                    
                     gx.toast(Toast::info(format!("Loaded: {}", saved.name)));
                 }
                 Err(e) => {
@@ -546,7 +549,6 @@ impl QueryBuilder {
             self.query.set(QueryData::default());
             self.saved_query_id.set(None);
             self.saved_query_name.set(None);
-            self.rebuild_tree();
             gx.toast(Toast::info("Query reset"));
         }
     }
@@ -632,7 +634,6 @@ impl QueryBuilder {
                 q.filter = FilterNode::Empty;
                 q.order_by.clear();
             });
-            self.rebuild_tree();
         }
     }
 
@@ -667,7 +668,6 @@ impl QueryBuilder {
             .await;
         if let Some(selected) = result {
             self.query.update(|q| q.select = selected);
-            self.rebuild_tree();
         }
     }
 
@@ -744,7 +744,6 @@ impl QueryBuilder {
                     },
                 }
             });
-            self.rebuild_tree();
         }
     }
 
@@ -783,7 +782,6 @@ impl QueryBuilder {
                     direction,
                 });
             });
-            self.rebuild_tree();
         }
     }
 
@@ -833,7 +831,6 @@ impl QueryBuilder {
                     sf.direction = direction;
                 }
             });
-            self.rebuild_tree();
         }
     }
 
@@ -844,7 +841,6 @@ impl QueryBuilder {
             self.query.update(|q| {
                 q.top = Some(val);
             });
-            self.rebuild_tree();
         }
     }
 
@@ -914,19 +910,15 @@ impl QueryBuilder {
         }
     }
 
-    /// Rebuild the tree widget state from the current QueryData.
-    fn rebuild_tree(&self) {
-        let nodes = self.query.with_ref(|q| build_tree(q));
-        self.tree_state.update(|s| {
-            s.set_roots(nodes);
-        });
-    }
-
     // =========================================================================
     // UI
     // =========================================================================
 
     fn element(&self) -> Element {
+        // Sync tree nodes to tree state (automatically recomputed when query changes)
+        let nodes = self.tree_nodes();
+        self.tree_state.update(|s| s.set_roots(nodes));
+
         let loading_message = self.loading_message.get();
 
         page! {
