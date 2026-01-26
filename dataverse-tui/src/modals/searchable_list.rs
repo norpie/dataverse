@@ -1,4 +1,7 @@
-//! Launcher modal for app selection with fuzzy search.
+//! Generic searchable list modal with fuzzy search.
+//!
+//! Displays a list of items with an input field for fuzzy filtering.
+//! Returns the ID of the selected item.
 
 use nucleo_matcher::pattern::{AtomKind, CaseMatching, Normalization, Pattern};
 use nucleo_matcher::{Config, Matcher, Utf32Str};
@@ -7,46 +10,60 @@ use rafter::prelude::*;
 use rafter::widgets::{Input, List, ListItem, ListState, SelectionMode, Text};
 use tuidom::{Element, Size, Style};
 
-/// A launcher entry (app with category).
+/// An entry in the searchable list.
 #[derive(Clone, Debug)]
-pub struct LauncherEntry {
+pub struct ListEntry {
     pub id: String,
-    pub name: String,
-    pub category: String,
+    pub label: String,
+    pub category: Option<String>,
 }
 
-impl LauncherEntry {
-    fn new(id: &str, name: &str, category: &str) -> Self {
+impl ListEntry {
+    /// Create a new list entry without a category.
+    pub fn new(id: impl Into<String>, label: impl Into<String>) -> Self {
         Self {
             id: id.into(),
-            name: name.into(),
-            category: category.into(),
+            label: label.into(),
+            category: None,
+        }
+    }
+
+    /// Create a new list entry with a category.
+    pub fn with_category(
+        id: impl Into<String>,
+        label: impl Into<String>,
+        category: impl Into<String>,
+    ) -> Self {
+        Self {
+            id: id.into(),
+            label: label.into(),
+            category: Some(category.into()),
         }
     }
 }
 
-/// A launcher item for display in the list, with match highlighting info.
+/// A list item for display, with match highlighting info.
 #[derive(Clone, Debug)]
-pub struct LauncherItem {
-    pub id: String,
-    pub name: String,
-    pub category: String,
-    /// Indices of matched characters in the name for highlighting.
-    pub match_indices: Vec<usize>,
+struct DisplayItem {
+    id: String,
+    label: String,
+    category: Option<String>,
+    /// Indices of matched characters in the label for highlighting.
+    match_indices: Vec<usize>,
 }
 
-impl LauncherItem {
-    fn from_entry(entry: &LauncherEntry, match_indices: Vec<usize>) -> Self {
+impl DisplayItem {
+    fn from_entry(entry: &ListEntry, match_indices: Vec<usize>) -> Self {
         Self {
             id: entry.id.clone(),
-            name: entry.name.clone(),
+            label: entry.label.clone(),
             category: entry.category.clone(),
             match_indices,
         }
     }
 }
 
-impl ListItem for LauncherItem {
+impl ListItem for DisplayItem {
     type Key = String;
 
     fn key(&self) -> String {
@@ -54,13 +71,13 @@ impl ListItem for LauncherItem {
     }
 
     fn render(&self) -> Element {
-        // Build name with highlighted match characters
-        let name_element = if self.match_indices.is_empty() {
-            Element::text(&self.name)
+        // Build label with highlighted match characters
+        let label_element = if self.match_indices.is_empty() {
+            Element::text(&self.label)
         } else {
             // Create spans with highlighted characters
             let mut spans = Vec::new();
-            let chars: Vec<char> = self.name.chars().collect();
+            let chars: Vec<char> = self.label.chars().collect();
             let mut current_span = String::new();
             let mut current_is_match = false;
 
@@ -102,15 +119,19 @@ impl ListItem for LauncherItem {
             Element::row().children(spans)
         };
 
-        // Category on the right, dimmed
-        let category_element = Element::text(&self.category)
-            .style(Style::new().foreground(tuidom::Color::var("muted")));
+        // Category on the right, dimmed (if present)
+        if let Some(category) = &self.category {
+            let category_element =
+                Element::text(category).style(Style::new().foreground(tuidom::Color::var("muted")));
 
-        Element::row()
-            .width(Size::Fill)
-            .justify(tuidom::Justify::SpaceBetween)
-            .child(name_element)
-            .child(category_element)
+            Element::row()
+                .width(Size::Fill)
+                .justify(tuidom::Justify::SpaceBetween)
+                .child(label_element)
+                .child(category_element)
+        } else {
+            label_element
+        }
     }
 }
 
@@ -120,12 +141,12 @@ struct FuzzyMatch {
     index: usize,
     /// Match score (higher is better).
     score: u32,
-    /// Matched character indices in the name.
+    /// Matched character indices in the label.
     indices: Vec<usize>,
 }
 
 /// Perform fuzzy filtering with match indices.
-fn fuzzy_filter(query: &str, entries: &[LauncherEntry]) -> Vec<FuzzyMatch> {
+fn fuzzy_filter(query: &str, entries: &[ListEntry]) -> Vec<FuzzyMatch> {
     if query.is_empty() {
         // Return all entries with no highlighting
         return entries
@@ -152,7 +173,7 @@ fn fuzzy_filter(query: &str, entries: &[LauncherEntry]) -> Vec<FuzzyMatch> {
         .enumerate()
         .filter_map(|(index, entry)| {
             let mut buf = Vec::new();
-            let haystack = Utf32Str::new(&entry.name, &mut buf);
+            let haystack = Utf32Str::new(&entry.label, &mut buf);
 
             // Get score first
             let score = pattern.score(haystack, &mut matcher)?;
@@ -160,7 +181,7 @@ fn fuzzy_filter(query: &str, entries: &[LauncherEntry]) -> Vec<FuzzyMatch> {
             // Get match indices
             let mut indices_buf = Vec::new();
             let mut buf2 = Vec::new();
-            let haystack2 = Utf32Str::new(&entry.name, &mut buf2);
+            let haystack2 = Utf32Str::new(&entry.label, &mut buf2);
             pattern.indices(haystack2, &mut matcher, &mut indices_buf);
 
             let indices: Vec<usize> = indices_buf.iter().map(|&i| i as usize).collect();
@@ -179,41 +200,63 @@ fn fuzzy_filter(query: &str, entries: &[LauncherEntry]) -> Vec<FuzzyMatch> {
     matches
 }
 
-fn create_launcher_entries() -> Vec<LauncherEntry> {
-    vec![
-        LauncherEntry::new("entity-explorer", "Entity Explorer", "Data"),
-        LauncherEntry::new("query-builder", "Query Builder", "Tools"),
-    ]
+/// A generic searchable list modal with fuzzy search.
+///
+/// # Example
+///
+/// ```ignore
+/// let items = vec![
+///     ListEntry::with_category("entity-explorer", "Entity Explorer", "Data"),
+///     ListEntry::with_category("query-builder", "Query Builder", "Tools"),
+/// ];
+///
+/// let result = gx.modal(SearchableListModal::new("Select App", items)).await;
+/// if let Some(id) = result {
+///     // User selected item with this ID
+/// }
+/// ```
+#[modal(size = Md, aspect_ratio = 0.6)]
+pub struct SearchableListModal {
+    #[state(skip)]
+    title: String,
+
+    #[state(skip)]
+    entries: Vec<ListEntry>,
+
+    input: String,
+    filtered: ListState<DisplayItem>,
 }
 
-#[modal(size = Md, aspect_ratio = 0.6)]
-pub struct LauncherModal {
-    input: String,
-    entries: Vec<LauncherEntry>,
-    filtered: ListState<LauncherItem>,
+impl SearchableListModal {
+    /// Create a new searchable list modal.
+    pub fn new(title: impl Into<String>, entries: Vec<ListEntry>) -> Self {
+        Self {
+            title: title.into(),
+            entries,
+            ..Default::default()
+        }
+    }
 }
 
 #[modal_impl]
-impl LauncherModal {
+impl SearchableListModal {
     fn default_result(&self) -> Option<String> {
         None
     }
 
     #[on_start]
     async fn on_start(&self, mx: &ModalContext<Option<String>>) {
-        let entries = create_launcher_entries();
-
         // Initialize with all entries shown
-        let items: Vec<LauncherItem> = entries
+        let items: Vec<DisplayItem> = self
+            .entries
             .iter()
-            .map(|e| LauncherItem::from_entry(e, Vec::new()))
+            .map(|e| DisplayItem::from_entry(e, Vec::new()))
             .collect();
 
-        self.entries.set(entries);
         self.filtered
             .set(ListState::new(items).with_selection(SelectionMode::Single));
 
-        mx.focus("launcher-input");
+        mx.focus("searchable-list-input");
     }
 
     #[keybinds]
@@ -229,13 +272,11 @@ impl LauncherModal {
     #[handler]
     async fn on_input_change(&self) {
         let query = self.input.get();
-        let entries = self.entries.get();
+        let matches = fuzzy_filter(&query, &self.entries);
 
-        let matches = fuzzy_filter(&query, &entries);
-
-        let items: Vec<LauncherItem> = matches
+        let items: Vec<DisplayItem> = matches
             .into_iter()
-            .map(|m| LauncherItem::from_entry(&entries[m.index], m.indices))
+            .map(|m| DisplayItem::from_entry(&self.entries[m.index], m.indices))
             .collect();
 
         self.filtered
@@ -246,7 +287,7 @@ impl LauncherModal {
     async fn on_input_submit(&self, mx: &ModalContext<Option<String>>) {
         let state = self.filtered.get();
         if let Some(first_item) = state.items.first() {
-            let item_id = format!("launcher-list-item-{}", first_item.key());
+            let item_id = format!("searchable-list-item-{}", first_item.key());
             mx.focus(&item_id);
         }
     }
@@ -262,14 +303,14 @@ impl LauncherModal {
     fn element(&self) -> Element {
         page! {
             column (padding: (1, 2), gap: 1, width: fill, height: fill) style (bg: background) {
-                text (content: "Launcher") style (bold, fg: interact)
+                text (content: self.title.clone()) style (bold, fg: interact)
 
-                input (state: self.input, id: "launcher-input", placeholder: "Search apps...")
+                input (state: self.input, id: "searchable-list-input", placeholder: "Search...")
                     on_change: on_input_change()
                     on_submit: on_input_submit()
 
                 box_ (id: "list-container", height: fill, width: fill) style (bg: surface) {
-                    list (state: self.filtered, id: "launcher-list")
+                    list (state: self.filtered, id: "searchable-list")
                         on_activate: on_activate()
                 }
 

@@ -1,11 +1,9 @@
 //! Launcher system for opening apps.
 
-mod modal;
-
 use rafter::prelude::*;
 
 use crate::apps::{EntityExplorer, QueryBuilder};
-use modal::LauncherModal;
+use crate::modals::{ListEntry, SearchableListModal};
 
 #[system]
 pub struct Launcher;
@@ -19,7 +17,12 @@ impl Launcher {
 
     #[handler]
     async fn open_launcher(&self, gx: &GlobalContext) {
-        let result = gx.modal(LauncherModal::default()).await;
+        let items = vec![
+            ListEntry::with_category("entity-explorer", "Entity Explorer", "Data"),
+            ListEntry::with_category("query-builder", "Query Builder", "Tools"),
+        ];
+
+        let result = gx.modal(SearchableListModal::new("Launcher", items)).await;
 
         if let Some(selected) = result {
             match selected.as_str() {

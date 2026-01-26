@@ -14,7 +14,7 @@ use rafter::prelude::*;
 use rafter::widgets::{Text, Tree, TreeNode, TreeState};
 
 use crate::apps::RecordExplorer;
-use crate::modals::LoadingModal;
+use crate::modals::{ListEntry, LoadingModal, SearchableListModal};
 use crate::paths;
 use crate::systems::client_management::{ClientManagement, GetActiveClient};
 use data::{FilterNode, QueryData, SortField};
@@ -567,6 +567,22 @@ impl QueryBuilder {
             return;
         }
 
+        // Show app selection modal
+        let apps = vec![
+            ListEntry::with_category("record-explorer", "Record Explorer", "Data"),
+            // Future apps will go here:
+            // ListEntry::with_category("export", "Export to CSV", "Export"),
+            // ListEntry::with_category("chart", "Chart Builder", "Visualization"),
+        ];
+
+        let selected = gx
+            .modal(SearchableListModal::new("Execute Query In...", apps))
+            .await;
+
+        let Some(app_id) = selected else {
+            return;
+        };
+
         // Get client + environment info
         let info = match gx
             .request_system::<ClientManagement, GetActiveClient>(GetActiveClient)
@@ -593,7 +609,15 @@ impl QueryBuilder {
             }
         };
 
-        let _ = gx.spawn_and_focus(RecordExplorer::new(query, info.environment_name));
+        // Launch the selected app
+        match app_id.as_str() {
+            "record-explorer" => {
+                let _ = gx.spawn_and_focus(RecordExplorer::new(query, info.environment_name));
+            }
+            _ => {
+                gx.toast(Toast::info(format!("App not implemented: {}", app_id)));
+            }
+        }
     }
 
     // =========================================================================
