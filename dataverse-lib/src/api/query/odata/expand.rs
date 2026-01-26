@@ -115,12 +115,14 @@ impl ExpandBuilder {
 
         // $filter
         if let Some(ref filter) = self.filter {
-            parts.push(format!("$filter={}", odata_filter_to_string(filter)));
+            let filter_str = odata_filter_to_string(filter);
+            parts.push(format!("$filter={}", urlencoding::encode(&filter_str)));
         }
 
         // $orderby
         if let Some(ref order) = self.order_by {
-            parts.push(format!("$orderby={}", order_to_odata(order)));
+            let orderby_str = order_to_odata(order);
+            parts.push(format!("$orderby={}", urlencoding::encode(&orderby_str)));
         }
 
         // $top

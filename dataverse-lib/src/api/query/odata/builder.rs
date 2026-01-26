@@ -152,12 +152,14 @@ impl QueryBuilder {
 
         // $filter
         if let Some(ref filter) = self.filter {
-            params.push(format!("$filter={}", odata_filter_to_string(filter)));
+            let filter_str = odata_filter_to_string(filter);
+            params.push(format!("$filter={}", urlencoding::encode(&filter_str)));
         }
 
         // $orderby
         if let Some(ref order) = self.order_by {
-            params.push(format!("$orderby={}", order_to_odata(order)));
+            let orderby_str = order_to_odata(order);
+            params.push(format!("$orderby={}", urlencoding::encode(&orderby_str)));
         }
 
         // $top
@@ -252,7 +254,8 @@ impl QueryBuilder {
 
         // Add filter if present
         if let Some(ref filter) = self.filter {
-            url.push_str(&format!("&$filter={}", odata_filter_to_string(filter)));
+            let filter_str = odata_filter_to_string(filter);
+            url.push_str(&format!("&$filter={}", urlencoding::encode(&filter_str)));
         }
 
         log::debug!("[QueryBuilder] Count URL: {}", url);
