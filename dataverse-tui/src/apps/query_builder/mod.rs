@@ -231,7 +231,6 @@ impl QueryBuilder {
                 let group_id = self.focused_filter_group_id(&key);
                 self.open_condition_editor(gx, group_id).await;
             }
-            _ => {}
         }
     }
 
