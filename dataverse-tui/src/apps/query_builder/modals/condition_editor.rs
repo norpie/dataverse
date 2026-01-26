@@ -146,6 +146,15 @@ impl ConditionEditorModal {
         }));
     }
 
+    #[derived]
+    fn operator_options(&self) -> Vec<(CondOp, String)> {
+        let attr_type = self.selected_type.get();
+        let ops = operators_for_type(attr_type);
+        ops.iter()
+            .map(|op| (*op, op.label().to_string()))
+            .collect::<Vec<_>>()
+    }
+
     #[handler]
     async fn on_field_select(&self) {
         let field = self.field.with_ref(|s| s.value().cloned());
@@ -163,10 +172,8 @@ impl ConditionEditorModal {
         self.value_text.set(String::new());
         self.error.set(None);
 
-        // Update operator options based on field type
-        let ops = operators_for_type(attr_type);
-        let options: Vec<(CondOp, String)> =
-            ops.iter().map(|op| (*op, op.label().to_string())).collect();
+        // Operator options update automatically via derived state
+        let options = self.operator_options();
         self.operator.set(SelectState::new(options));
     }
 

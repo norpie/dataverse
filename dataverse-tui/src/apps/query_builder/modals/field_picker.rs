@@ -69,8 +69,13 @@ impl FieldPickerModal {
         mx.close(Some(selected));
     }
 
+    #[derived]
+    fn selected_count(&self) -> usize {
+        self.fields.with_ref(|s| s.selection.selected.len())
+    }
+
     fn element(&self) -> Element {
-        let count = self.fields.with_ref(|s| s.selection.selected.len());
+        let count = self.selected_count();
 
         page! {
             column (padding: (1, 2), gap: 1, width: fill, height: fill) style (bg: surface) {
