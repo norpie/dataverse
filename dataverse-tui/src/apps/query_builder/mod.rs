@@ -59,7 +59,7 @@ impl QueryBuilder {
         }
 
         self.rebuild_tree();
-        self.expand_all_nodes();
+        self.tree_state.update(|s| s.expand_all());
     }
 
     fn title(&self) -> String {
@@ -515,7 +515,10 @@ impl QueryBuilder {
                             self.saved_query_name.set(Some(saved.name.clone()));
                             self.query.set(saved.data);
                             self.rebuild_tree();
-                            self.expand_all_nodes();
+                            self.tree_state.update(|s| {
+                                s.clear_expansion();
+                                s.expand_all();
+                            });
                             gx.toast(Toast::info(format!("Loaded: {}", saved.name)));
                         }
                         Err(e) => {
@@ -929,23 +932,6 @@ impl QueryBuilder {
         let nodes = self.query.with_ref(|q| build_tree(q));
         self.tree_state.update(|s| {
             s.set_roots(nodes);
-        });
-    }
-
-    /// Expand all tree nodes (sections and filter groups).
-    fn expand_all_nodes(&self) {
-        let group_ids = self.query.with_ref(|q| q.filter.collect_group_ids());
-        self.tree_state.update(|s| {
-            // Expand sections
-            s.expand(&"section-Entity".to_string());
-            s.expand(&"section-Select".to_string());
-            s.expand(&"section-Filter".to_string());
-            s.expand(&"section-OrderBy".to_string());
-            s.expand(&"section-Top".to_string());
-            // Expand filter groups
-            for id in group_ids {
-                s.expand(&format!("filter-group-{}", id));
-            }
         });
     }
 
