@@ -14,10 +14,9 @@ use rafter::prelude::*;
 use rafter::widgets::{Text, Tree, TreeNode, TreeState};
 
 use crate::apps::RecordExplorer;
-
+use crate::modals::LoadingModal;
 use crate::paths;
 use crate::systems::client_management::{ClientManagement, GetActiveClient};
-use crate::widgets::loading_overlay;
 use data::{FilterNode, QueryData, SortField};
 use modals::{
     ConditionData, ConditionEditorModal, EntityPickerModal, FieldPickerModal, LoadQueryModal,
@@ -33,8 +32,6 @@ pub struct QueryBuilder {
     tree_state: TreeState<QueryTreeNode>,
     /// The query being constructed.
     query: QueryData,
-    /// Loading overlay message.
-    loading_message: Option<String>,
     /// Repository for saving/loading queries.
     repo: Option<QueryRepository>,
     /// ID of the currently loaded saved query (for update-in-place).
@@ -375,19 +372,27 @@ impl QueryBuilder {
             return;
         };
 
-        self.loading_message
-            .set(Some("Loading attributes...".to_string()));
-
-        let attrs = match client.metadata().attributes(Entity::set(&entity)).await {
-            Ok(a) => a,
-            Err(e) => {
-                self.loading_message.set(None);
+        let entity_clone = entity.clone();
+        let attrs = match gx
+            .modal(LoadingModal::new(
+                "Loading attributes",
+                async move {
+                    client
+                        .metadata()
+                        .attributes(Entity::set(&entity_clone))
+                        .await
+                },
+            ))
+            .await
+        {
+            Some(Ok(a)) => a,
+            Some(Err(e)) => {
                 gx.toast(Toast::error(format!("Failed to load attributes: {}", e)));
                 return;
             }
+            None => return,
         };
 
-        self.loading_message.set(None);
 
         let options: Vec<(String, String)> = attrs
             .iter()
@@ -601,11 +606,14 @@ impl QueryBuilder {
             return;
         };
 
-        self.loading_message
-            .set(Some("Loading entities...".to_string()));
-
-        let entities = match client.metadata().all_entities().await {
-            Ok(all) => all
+        let entities = match gx
+            .modal(LoadingModal::new(
+                "Loading entities",
+                async move { client.metadata().all_entities().await },
+            ))
+            .await
+        {
+            Some(Ok(all)) => all
                 .iter()
                 .map(|e| {
                     let display = e
@@ -616,14 +624,13 @@ impl QueryBuilder {
                     (e.entity_set_name.clone(), display)
                 })
                 .collect(),
-            Err(e) => {
-                self.loading_message.set(None);
+            Some(Err(e)) => {
                 gx.toast(Toast::error(format!("Failed to load entities: {}", e)));
                 return;
             }
+            None => return,
         };
 
-        self.loading_message.set(None);
 
         let result = gx.modal(EntityPickerModal::new(entities)).await;
         if let Some(entity) = result {
@@ -648,19 +655,43 @@ impl QueryBuilder {
             return;
         };
 
-        self.loading_message
-            .set(Some("Loading attributes...".to_string()));
+        let entity_clone = entity.clone();
+        let options = match gx
+            .modal(LoadingModal::new(
+                "Loading attributes",
+                async move {
+                    let attrs = client
+                        .metadata()
+                        .attributes(Entity::set(&entity_clone))
+                        .await
+                        .map_err(|e| format!("Failed to load attributes: {}", e))?;
 
-        let options = match self.fetch_field_options(&client, &entity).await {
-            Ok(opts) => opts,
-            Err(e) => {
-                self.loading_message.set(None);
+                    Ok::<_, String>(
+                        attrs
+                            .iter()
+                            .filter(|a| a.is_valid_for_read && a.attribute_of.is_none())
+                            .map(|a| {
+                                let display = a
+                                    .display_name
+                                    .text()
+                                    .map(|d| format!("{} ({})", d, a.logical_name))
+                                    .unwrap_or_else(|| a.logical_name.clone());
+                                (a.logical_name.clone(), display)
+                            })
+                            .collect(),
+                    )
+                },
+            ))
+            .await
+        {
+            Some(Ok(opts)) => opts,
+            Some(Err(e)) => {
                 gx.toast(Toast::error(e));
                 return;
             }
+            None => return,
         };
 
-        self.loading_message.set(None);
 
         let current = self.query.with_ref(|q| q.select.clone());
         let result = gx
@@ -682,19 +713,27 @@ impl QueryBuilder {
             return;
         };
 
-        self.loading_message
-            .set(Some("Loading attributes...".to_string()));
-
-        let attrs = match client.metadata().attributes(Entity::set(&entity)).await {
-            Ok(a) => a,
-            Err(e) => {
-                self.loading_message.set(None);
+        let entity_clone = entity.clone();
+        let attrs = match gx
+            .modal(LoadingModal::new(
+                "Loading attributes",
+                async move {
+                    client
+                        .metadata()
+                        .attributes(Entity::set(&entity_clone))
+                        .await
+                },
+            ))
+            .await
+        {
+            Some(Ok(a)) => a,
+            Some(Err(e)) => {
                 gx.toast(Toast::error(format!("Failed to load attributes: {}", e)));
                 return;
             }
+            None => return,
         };
 
-        self.loading_message.set(None);
 
         let options: Vec<(String, String)> = attrs
             .iter()
@@ -758,19 +797,43 @@ impl QueryBuilder {
             return;
         };
 
-        self.loading_message
-            .set(Some("Loading attributes...".to_string()));
+        let entity_clone = entity.clone();
+        let options = match gx
+            .modal(LoadingModal::new(
+                "Loading attributes",
+                async move {
+                    let attrs = client
+                        .metadata()
+                        .attributes(Entity::set(&entity_clone))
+                        .await
+                        .map_err(|e| format!("Failed to load attributes: {}", e))?;
 
-        let options = match self.fetch_field_options(&client, &entity).await {
-            Ok(opts) => opts,
-            Err(e) => {
-                self.loading_message.set(None);
+                    Ok::<_, String>(
+                        attrs
+                            .iter()
+                            .filter(|a| a.is_valid_for_read && a.attribute_of.is_none())
+                            .map(|a| {
+                                let display = a
+                                    .display_name
+                                    .text()
+                                    .map(|d| format!("{} ({})", d, a.logical_name))
+                                    .unwrap_or_else(|| a.logical_name.clone());
+                                (a.logical_name.clone(), display)
+                            })
+                            .collect(),
+                    )
+                },
+            ))
+            .await
+        {
+            Some(Ok(opts)) => opts,
+            Some(Err(e)) => {
                 gx.toast(Toast::error(e));
                 return;
             }
+            None => return,
         };
 
-        self.loading_message.set(None);
 
         let result = gx.modal(SortFieldEditorModal::new(options)).await;
         if let Some((field, direction)) = result {
@@ -802,19 +865,43 @@ impl QueryBuilder {
             return;
         };
 
-        self.loading_message
-            .set(Some("Loading attributes...".to_string()));
+        let entity_clone = entity.clone();
+        let options = match gx
+            .modal(LoadingModal::new(
+                "Loading attributes...",
+                async move {
+                    let attrs = client
+                        .metadata()
+                        .attributes(Entity::set(&entity_clone))
+                        .await
+                        .map_err(|e| format!("Failed to load attributes: {}", e))?;
 
-        let options = match self.fetch_field_options(&client, &entity).await {
-            Ok(opts) => opts,
-            Err(e) => {
-                self.loading_message.set(None);
+                    Ok::<_, String>(
+                        attrs
+                            .iter()
+                            .filter(|a| a.is_valid_for_read && a.attribute_of.is_none())
+                            .map(|a| {
+                                let display = a
+                                    .display_name
+                                    .text()
+                                    .map(|d| format!("{} ({})", d, a.logical_name))
+                                    .unwrap_or_else(|| a.logical_name.clone());
+                                (a.logical_name.clone(), display)
+                            })
+                            .collect(),
+                    )
+                },
+            ))
+            .await
+        {
+            Some(Ok(opts)) => opts,
+            Some(Err(e)) => {
                 gx.toast(Toast::error(e));
                 return;
             }
+            None => return,
         };
 
-        self.loading_message.set(None);
 
         let result = gx
             .modal(SortFieldEditorModal::with_sort(
@@ -919,8 +1006,6 @@ impl QueryBuilder {
         let nodes = self.tree_nodes();
         self.tree_state.update(|s| s.set_roots(nodes));
 
-        let loading_message = self.loading_message.get();
-
         page! {
             column (padding: (1, 2), gap: 1, width: fill, height: fill) style (bg: background) {
                 // Header
@@ -950,10 +1035,6 @@ impl QueryBuilder {
                 box_ (id: "query-tree-container", height: fill, width: fill) style (bg: surface) {
                     tree (state: self.tree_state, id: "query-tree")
                         on_activate: on_activate()
-
-                    if let Some(msg) = loading_message {
-                        { loading_overlay("loading-overlay", &msg) }
-                    }
                 }
 
                 // Footer
