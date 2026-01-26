@@ -18,7 +18,7 @@
 
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
-use syn::{DeriveInput, Field, Fields, FieldsNamed, Ident, Token, parse2};
+use syn::{parse2, DeriveInput, Field, Fields, FieldsNamed, Ident, Token};
 
 use super::fields::{has_state_skip, has_widget_attribute, is_resource_type};
 
@@ -188,6 +188,7 @@ fn generate_default_impl(name: &Ident, fields: Option<&FieldsNamed>) -> TokenStr
                 fn default() -> Self {
                     Self {
                         __handler_registry: rafter::HandlerRegistry::new(),
+                        __derived_cache: std::sync::Arc::new(std::sync::RwLock::new(std::collections::HashMap::new())),
                     }
                 }
             }
@@ -221,6 +222,7 @@ fn generate_default_impl(name: &Ident, fields: Option<&FieldsNamed>) -> TokenStr
                 Self {
                     #(#field_defaults),*,
                     __handler_registry: rafter::HandlerRegistry::new(),
+                    __derived_cache: std::sync::Arc::new(std::sync::RwLock::new(std::collections::HashMap::new())),
                 }
             }
         }
@@ -235,6 +237,7 @@ fn generate_clone_impl(name: &Ident, fields: Option<&FieldsNamed>) -> TokenStrea
                 fn clone(&self) -> Self {
                     Self {
                         __handler_registry: self.__handler_registry.clone(),
+                        __derived_cache: self.__derived_cache.clone(),
                     }
                 }
             }
@@ -256,6 +259,7 @@ fn generate_clone_impl(name: &Ident, fields: Option<&FieldsNamed>) -> TokenStrea
                 Self {
                     #(#field_clones),*,
                     __handler_registry: self.__handler_registry.clone(),
+                    __derived_cache: self.__derived_cache.clone(),
                 }
             }
         }
@@ -422,7 +426,10 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
             #(#other_attrs)*
             #vis struct #name {
                 #(#transformed_fields),*,
+                #[doc(hidden)]
                 __handler_registry: rafter::HandlerRegistry,
+                #[doc(hidden)]
+                __derived_cache: std::sync::Arc<std::sync::RwLock<std::collections::HashMap<&'static str, Box<dyn std::any::Any + Send + Sync>>>>,
             }
 
             #default_impl
@@ -431,11 +438,14 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
             #metadata
         }
     } else {
-        // Unit struct becomes struct with just __handler_registry
+        // Unit struct becomes struct with just __handler_registry and __derived_cache
         quote! {
             #(#other_attrs)*
             #vis struct #name {
+                #[doc(hidden)]
                 __handler_registry: rafter::HandlerRegistry,
+                #[doc(hidden)]
+                __derived_cache: std::sync::Arc<std::sync::RwLock<std::collections::HashMap<&'static str, Box<dyn std::any::Any + Send + Sync>>>>,
             }
 
             #default_impl

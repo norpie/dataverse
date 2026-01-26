@@ -78,3 +78,8 @@ pub fn context_menu(input: TokenStream) -> TokenStream {
     // It exists to provide nice DSL syntax within #[context_menu] methods
     input
 }
+
+#[proc_macro_attribute]
+pub fn derived(attr: TokenStream, item: TokenStream) -> TokenStream {
+    macros::derived::expand(attr.into(), item.into()).into()
+}

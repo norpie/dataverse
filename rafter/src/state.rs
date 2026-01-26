@@ -1,4 +1,4 @@
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, RwLock};
 
 use crate::wakeup::{WakeupHandle, WakeupSender};
@@ -26,6 +26,7 @@ use crate::wakeup::{WakeupHandle, WakeupSender};
 pub struct State<T> {
     inner: Arc<RwLock<T>>,
     dirty: Arc<AtomicBool>,
+    generation: Arc<AtomicU64>,
     wakeup: WakeupHandle,
 }
 
@@ -35,6 +36,7 @@ impl<T> State<T> {
         Self {
             inner: Arc::new(RwLock::new(value)),
             dirty: Arc::new(AtomicBool::new(false)),
+            generation: Arc::new(AtomicU64::new(0)),
             wakeup: WakeupHandle::new(),
         }
     }
@@ -45,6 +47,14 @@ impl<T> State<T> {
     /// All clones of this State share the same wakeup sender.
     pub fn install_wakeup(&self, sender: WakeupSender) {
         self.wakeup.install(sender);
+    }
+
+    /// Get the current generation number.
+    ///
+    /// The generation number increments every time the state is modified.
+    /// Used by derived state to detect when dependencies have changed.
+    pub fn generation(&self) -> u64 {
+        self.generation.load(Ordering::SeqCst)
     }
 
     /// Get a clone of the current value.
@@ -75,6 +85,7 @@ impl<T> State<T> {
         if let Ok(mut guard) = self.inner.write() {
             *guard = value;
             self.dirty.store(true, Ordering::SeqCst);
+            self.generation.fetch_add(1, Ordering::SeqCst);
             self.wakeup.send();
         }
     }
@@ -87,6 +98,7 @@ impl<T> State<T> {
         if let Ok(mut guard) = self.inner.write() {
             f(&mut guard);
             self.dirty.store(true, Ordering::SeqCst);
+            self.generation.fetch_add(1, Ordering::SeqCst);
             self.wakeup.send();
         }
     }
@@ -107,6 +119,7 @@ impl<T> Clone for State<T> {
         Self {
             inner: Arc::clone(&self.inner),
             dirty: Arc::clone(&self.dirty),
+            generation: Arc::clone(&self.generation),
             wakeup: self.wakeup.clone(),
         }
     }

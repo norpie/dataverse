@@ -3,6 +3,7 @@
 //! A polished demo showcasing rafter's capabilities:
 //! - Declarative pages with the `page!` macro
 //! - State management with automatic reactivity
+//! - Derived state with automatic dependency tracking
 //! - Keyboard navigation and vim-style keybinds
 //! - Focus system with Tab navigation
 //! - Async operations with progress feedback
@@ -122,6 +123,12 @@ impl Counter {
         self.step.set(1);
     }
 
+    /// Derived state: automatically recomputes when `value` changes.
+    #[derived]
+    fn doubled(&self) -> i32 {
+        self.value.get() * 2
+    }
+
     #[keybinds]
     fn keys() {
         bind("k", "up", increment);
@@ -227,19 +234,24 @@ impl Counter {
     fn element(&self) -> Element {
         let value_str = self.value.get().to_string();
         let step_str = self.step.get().to_string();
+        let doubled_str = self.doubled().to_string();
         let data_state = self.data.get();
 
         page! {
             column (padding: 1, gap: 1) style (bg: background) {
                 column {
                     text (content: "Counter") style (bold, fg: primary)
-                    text (content: "A rafter demo with smooth animations") style (fg: muted)
+                    text (content: "Demonstrating derived state - Doubled updates automatically") style (fg: muted)
                 }
 
                 column (id: "value-display", padding: 1) style (bg: surface) {
                     row (gap: 2) {
                         text (content: "Value:") style (fg: muted)
                         text (content: {value_str}) style (bold, fg: primary)
+                    }
+                    row (gap: 2) {
+                        text (content: "Doubled:") style (fg: muted)
+                        text (content: {doubled_str}) style (fg: interact)
                     }
                     row (gap: 2) {
                         text (content: "Step:") style (fg: muted)

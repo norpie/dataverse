@@ -11,7 +11,7 @@
 
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
-use syn::{DeriveInput, Field, Fields, FieldsNamed, Ident, Token, parse2};
+use syn::{parse2, DeriveInput, Field, Fields, FieldsNamed, Ident, Token};
 
 use super::fields::{has_state_skip, has_widget_attribute, is_resource_type};
 
@@ -145,13 +145,15 @@ fn generate_default_impl(name: &Ident, fields: &FieldsNamed, attrs: &AppAttrs) -
     let fields_init = if field_defaults.is_empty() {
         quote! {
             #page_field
-            __handler_registry: rafter::HandlerRegistry::new()
+            __handler_registry: rafter::HandlerRegistry::new(),
+            __derived_cache: std::sync::Arc::new(std::sync::RwLock::new(std::collections::HashMap::new()))
         }
     } else {
         quote! {
             #(#field_defaults),*,
             #page_field
-            __handler_registry: rafter::HandlerRegistry::new()
+            __handler_registry: rafter::HandlerRegistry::new(),
+            __derived_cache: std::sync::Arc::new(std::sync::RwLock::new(std::collections::HashMap::new()))
         }
     };
 
@@ -186,13 +188,15 @@ fn generate_clone_impl(name: &Ident, fields: &FieldsNamed, attrs: &AppAttrs) -> 
     let fields_clone = if field_clones.is_empty() {
         quote! {
             #page_field
-            __handler_registry: self.__handler_registry.clone()
+            __handler_registry: self.__handler_registry.clone(),
+            __derived_cache: self.__derived_cache.clone()
         }
     } else {
         quote! {
             #(#field_clones),*,
             #page_field
-            __handler_registry: self.__handler_registry.clone()
+            __handler_registry: self.__handler_registry.clone(),
+            __derived_cache: self.__derived_cache.clone()
         }
     };
 
@@ -424,6 +428,8 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
             #page_field
             #[doc(hidden)]
             __handler_registry: rafter::HandlerRegistry,
+            #[doc(hidden)]
+            __derived_cache: std::sync::Arc<std::sync::RwLock<std::collections::HashMap<&'static str, Box<dyn std::any::Any + Send + Sync>>>>,
         }
     } else {
         quote! {
@@ -431,6 +437,8 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
             #page_field
             #[doc(hidden)]
             __handler_registry: rafter::HandlerRegistry,
+            #[doc(hidden)]
+            __derived_cache: std::sync::Arc<std::sync::RwLock<std::collections::HashMap<&'static str, Box<dyn std::any::Any + Send + Sync>>>>,
         }
     };
 
