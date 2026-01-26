@@ -103,10 +103,7 @@ impl QueryBuilder {
             return;
         };
 
-        let Some(group_id) = key.strip_prefix("filter-group-") else {
-            return;
-        };
-        let Ok(id) = group_id.parse::<usize>() else {
+        let tree::QueryTreeKey::FilterGroup(id) = key else {
             return;
         };
 
@@ -121,8 +118,8 @@ impl QueryBuilder {
             return;
         };
 
-        if let Some(idx_str) = key.strip_prefix("select-") {
-            if let Ok(idx) = idx_str.parse::<usize>() {
+        match key {
+            tree::QueryTreeKey::SelectField(idx) => {
                 let len = self.query.with_ref(|q| q.select.len());
                 if idx < len {
                     self.query.update(|q| {
@@ -131,15 +128,13 @@ impl QueryBuilder {
                     self.rebuild_tree();
                 }
             }
-        } else if let Some(id_str) = key.strip_prefix("filter-cond-") {
-            if let Ok(id) = id_str.parse::<usize>() {
+            tree::QueryTreeKey::FilterCondition(id) => {
                 self.query.update(|q| {
                     q.filter.remove_node(id);
                 });
                 self.rebuild_tree();
             }
-        } else if let Some(id_str) = key.strip_prefix("filter-group-") {
-            if let Ok(id) = id_str.parse::<usize>() {
+            tree::QueryTreeKey::FilterGroup(id) => {
                 let has_children = self.query.with_ref(|q| q.filter.group_has_children(id));
                 if has_children {
                     let confirmed = gx
@@ -156,18 +151,19 @@ impl QueryBuilder {
                 });
                 self.rebuild_tree();
             }
-        } else if let Some(id_str) = key.strip_prefix("sort-") {
-            if let Ok(id) = id_str.parse::<usize>() {
+            tree::QueryTreeKey::SortItem(id) => {
                 self.query.update(|q| {
                     q.order_by.retain(|sf| sf.id != id);
                 });
                 self.rebuild_tree();
             }
-        } else if key == "top-value" {
-            self.query.update(|q| {
-                q.top = None;
-            });
-            self.rebuild_tree();
+            tree::QueryTreeKey::TopValue => {
+                self.query.update(|q| {
+                    q.top = None;
+                });
+                self.rebuild_tree();
+            }
+            _ => {}
         }
     }
 
@@ -178,45 +174,30 @@ impl QueryBuilder {
             return;
         };
 
-        match key.as_str() {
-            "section-Entity" | "entity-value" => {
+        match key {
+            tree::QueryTreeKey::Section(tree::Section::Entity) | tree::QueryTreeKey::EntityValue => {
                 self.open_entity_picker(gx).await;
             }
-            "section-Top" | "top-value" => {
+            tree::QueryTreeKey::Section(tree::Section::Top) | tree::QueryTreeKey::TopValue => {
                 self.open_top_editor(gx).await;
             }
-            "section-Select" => {
+            tree::QueryTreeKey::Section(tree::Section::Select) => {
                 self.open_field_picker(gx).await;
             }
-            k if k.starts_with("select-") => {
-                if let Some(idx) = k
-                    .strip_prefix("select-")
-                    .and_then(|s| s.parse::<usize>().ok())
-                {
-                    self.show_select_menu(idx, cx, gx).await;
-                }
+            tree::QueryTreeKey::SelectField(idx) => {
+                self.show_select_menu(idx, cx, gx).await;
             }
-            "section-OrderBy" => {
+            tree::QueryTreeKey::Section(tree::Section::OrderBy) => {
                 self.open_sort_editor(gx).await;
             }
-            k if k.starts_with("sort-") => {
-                if let Some(id) = k
-                    .strip_prefix("sort-")
-                    .and_then(|s| s.parse::<usize>().ok())
-                {
-                    self.show_sort_menu(id, cx, gx).await;
-                }
+            tree::QueryTreeKey::SortItem(id) => {
+                self.show_sort_menu(id, cx, gx).await;
             }
-            "section-Filter" => {
+            tree::QueryTreeKey::Section(tree::Section::Filter) => {
                 self.open_condition_editor(gx, None).await;
             }
-            k if k.starts_with("filter-cond-") => {
-                if let Some(id) = k
-                    .strip_prefix("filter-cond-")
-                    .and_then(|s| s.parse::<usize>().ok())
-                {
-                    self.open_condition_editor_for(gx, id).await;
-                }
+            tree::QueryTreeKey::FilterCondition(id) => {
+                self.open_condition_editor_for(gx, id).await;
             }
             _ => {}
         }
@@ -229,23 +210,22 @@ impl QueryBuilder {
             return;
         };
 
-        match key.as_str() {
-            "section-Entity" | "entity-value" => {
+        match &key {
+            tree::QueryTreeKey::Section(tree::Section::Entity) | tree::QueryTreeKey::EntityValue => {
                 self.open_entity_picker(gx).await;
             }
-            "section-Top" | "top-value" => {
+            tree::QueryTreeKey::Section(tree::Section::Top) | tree::QueryTreeKey::TopValue => {
                 self.open_top_editor(gx).await;
             }
-            k if k == "section-Select" || k.starts_with("select-") => {
+            tree::QueryTreeKey::Section(tree::Section::Select) | tree::QueryTreeKey::SelectField(_) => {
                 self.open_field_picker(gx).await;
             }
-            k if k == "section-OrderBy" || k.starts_with("sort-") => {
+            tree::QueryTreeKey::Section(tree::Section::OrderBy) | tree::QueryTreeKey::SortItem(_) => {
                 self.open_sort_editor(gx).await;
             }
-            k if k == "section-Filter"
-                || k.starts_with("filter-group-")
-                || k.starts_with("filter-cond-") =>
-            {
+            tree::QueryTreeKey::Section(tree::Section::Filter)
+            | tree::QueryTreeKey::FilterGroup(_)
+            | tree::QueryTreeKey::FilterCondition(_) => {
                 // Determine which group to add to
                 let group_id = self.focused_filter_group_id(&key);
                 self.open_condition_editor(gx, group_id).await;
@@ -262,10 +242,12 @@ impl QueryBuilder {
         };
 
         // Only valid in filter context
-        if key != "section-Filter"
-            && !key.starts_with("filter-group-")
-            && !key.starts_with("filter-cond-")
-        {
+        if !matches!(
+            key,
+            tree::QueryTreeKey::Section(tree::Section::Filter)
+                | tree::QueryTreeKey::FilterGroup(_)
+                | tree::QueryTreeKey::FilterCondition(_)
+        ) {
             return;
         }
 
@@ -904,26 +886,22 @@ impl QueryBuilder {
     }
 
     /// Get the key of the currently focused tree node.
-    fn focused_key(&self) -> Option<String> {
+    fn focused_key(&self) -> Option<tree::QueryTreeKey> {
         self.tree_state.with_ref(|s| s.focused_key.clone())
     }
 
     /// Determine the filter group ID to add to, based on the focused key.
-    fn focused_filter_group_id(&self, key: &str) -> Option<usize> {
-        if let Some(id_str) = key.strip_prefix("filter-group-") {
-            id_str.parse::<usize>().ok()
-        } else if key == "section-Filter" {
-            // Return the root group ID if it exists
-            self.query.with_ref(|q| match &q.filter {
-                FilterNode::Group { id, .. } => Some(*id),
-                _ => None,
-            })
-        } else {
-            // For filter-cond-*, add to root group
-            self.query.with_ref(|q| match &q.filter {
-                FilterNode::Group { id, .. } => Some(*id),
-                _ => None,
-            })
+    fn focused_filter_group_id(&self, key: &tree::QueryTreeKey) -> Option<usize> {
+        match key {
+            tree::QueryTreeKey::FilterGroup(id) => Some(*id),
+            tree::QueryTreeKey::Section(tree::Section::Filter) | tree::QueryTreeKey::FilterCondition(_) => {
+                // Return the root group ID if it exists
+                self.query.with_ref(|q| match &q.filter {
+                    FilterNode::Group { id, .. } => Some(*id),
+                    _ => None,
+                })
+            }
+            _ => None,
         }
     }
 

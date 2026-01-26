@@ -31,6 +31,39 @@ impl Section {
     }
 }
 
+/// Type-safe key for query tree nodes.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub enum QueryTreeKey {
+    /// A section root node.
+    Section(Section),
+    /// The selected entity value.
+    EntityValue,
+    /// A selected field (indexed by position).
+    SelectField(usize),
+    /// A filter group (identified by ID).
+    FilterGroup(usize),
+    /// A filter condition (identified by ID).
+    FilterCondition(usize),
+    /// A sort field (identified by ID).
+    SortItem(usize),
+    /// The Top value.
+    TopValue,
+}
+
+impl ToString for QueryTreeKey {
+    fn to_string(&self) -> String {
+        match self {
+            Self::Section(section) => format!("section-{:?}", section),
+            Self::EntityValue => "entity-value".to_string(),
+            Self::SelectField(index) => format!("select-{}", index),
+            Self::FilterGroup(id) => format!("filter-group-{}", id),
+            Self::FilterCondition(id) => format!("filter-cond-{}", id),
+            Self::SortItem(id) => format!("sort-{}", id),
+            Self::TopValue => "top-value".to_string(),
+        }
+    }
+}
+
 /// A node in the query builder tree.
 #[derive(Clone, Debug)]
 pub enum QueryTreeNode {
@@ -56,17 +89,17 @@ pub enum QueryTreeNode {
 }
 
 impl TreeItem for QueryTreeNode {
-    type Key = String;
+    type Key = QueryTreeKey;
 
-    fn key(&self) -> String {
+    fn key(&self) -> QueryTreeKey {
         match self {
-            Self::Section { section, .. } => format!("section-{:?}", section),
-            Self::EntityValue(_) => "entity-value".to_string(),
-            Self::SelectField { index, .. } => format!("select-{}", index),
-            Self::FilterGroup { id, .. } => format!("filter-group-{}", id),
-            Self::FilterCondition { id, .. } => format!("filter-cond-{}", id),
-            Self::SortItem(sf) => format!("sort-{}", sf.id),
-            Self::TopValue(_) => "top-value".to_string(),
+            Self::Section { section, .. } => QueryTreeKey::Section(*section),
+            Self::EntityValue(_) => QueryTreeKey::EntityValue,
+            Self::SelectField { index, .. } => QueryTreeKey::SelectField(*index),
+            Self::FilterGroup { id, .. } => QueryTreeKey::FilterGroup(*id),
+            Self::FilterCondition { id, .. } => QueryTreeKey::FilterCondition(*id),
+            Self::SortItem(sf) => QueryTreeKey::SortItem(sf.id),
+            Self::TopValue(_) => QueryTreeKey::TopValue,
         }
     }
 
