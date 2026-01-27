@@ -1,6 +1,9 @@
 //! OData query builder.
 
+use std::collections::HashSet;
+
 use crate::DataverseClient;
+use crate::api::query::Filter;
 use crate::api::query::ODataFilter;
 use crate::api::query::OrderBy;
 use crate::error::Error;
@@ -131,6 +134,48 @@ impl QueryBuilder {
     pub fn include_count(mut self) -> Self {
         self.include_count = true;
         self
+    }
+
+    /// Transforms lookup field names to OData format (`_fieldname_value`).
+    ///
+    /// This fetches entity metadata to identify lookup fields and transforms
+    /// field names in select, filter, and order_by clauses.
+    pub(crate) async fn transform_lookup_fields(
+        &mut self,
+        client: &DataverseClient,
+        entity_logical_name: &str,
+    ) -> Result<(), Error> {
+        // Fetch attribute metadata for the entity
+        let attributes = client
+            .metadata()
+            .attributes(Entity::logical(entity_logical_name))
+            .await?;
+
+        // Build a set of lookup field names for quick lookup
+        let lookup_fields: HashSet<String> = attributes
+            .iter()
+            .filter(|attr| attr.is_lookup())
+            .map(|attr| attr.logical_name.clone())
+            .collect();
+
+        // Transform select fields
+        self.select = self
+            .select
+            .iter()
+            .map(|field| transform_field_name(field, &lookup_fields))
+            .collect();
+
+        // Transform filter fields
+        if let Some(ref filter) = self.filter {
+            self.filter = Some(transform_odata_filter(filter, &lookup_fields));
+        }
+
+        // Transform order_by fields
+        if let Some(ref order) = self.order_by {
+            self.order_by = Some(transform_order_by(order, &lookup_fields));
+        }
+
+        Ok(())
     }
 
     /// Builds the OData query URL.
@@ -295,5 +340,77 @@ impl QueryBuilder {
     /// Converts this query builder into an async iterator over pages.
     pub fn into_async_iter(self, client: &DataverseClient) -> ODataPages {
         ODataPages::new(self, client)
+    }
+}
+
+/// Transforms a field name to OData lookup format if it's a lookup field.
+fn transform_field_name(field: &str, lookup_fields: &HashSet<String>) -> String {
+    if lookup_fields.contains(field) {
+        format!("_{}_value", field)
+    } else {
+        field.to_string()
+    }
+}
+
+/// Transforms field names in an ODataFilter.
+fn transform_odata_filter(filter: &ODataFilter, lookup_fields: &HashSet<String>) -> ODataFilter {
+    match filter {
+        ODataFilter::Base(f) => ODataFilter::Base(transform_filter(f, lookup_fields)),
+        ODataFilter::Not(inner) => {
+            ODataFilter::Not(Box::new(transform_odata_filter(inner, lookup_fields)))
+        }
+    }
+}
+
+/// Transforms field names in a Filter.
+fn transform_filter(filter: &Filter, lookup_fields: &HashSet<String>) -> Filter {
+    match filter {
+        Filter::Eq(field, value) => {
+            Filter::Eq(transform_field_name(field, lookup_fields), value.clone())
+        }
+        Filter::Ne(field, value) => {
+            Filter::Ne(transform_field_name(field, lookup_fields), value.clone())
+        }
+        Filter::Gt(field, value) => {
+            Filter::Gt(transform_field_name(field, lookup_fields), value.clone())
+        }
+        Filter::Ge(field, value) => {
+            Filter::Ge(transform_field_name(field, lookup_fields), value.clone())
+        }
+        Filter::Lt(field, value) => {
+            Filter::Lt(transform_field_name(field, lookup_fields), value.clone())
+        }
+        Filter::Le(field, value) => {
+            Filter::Le(transform_field_name(field, lookup_fields), value.clone())
+        }
+        Filter::Contains(field, value) => {
+            Filter::Contains(transform_field_name(field, lookup_fields), value.clone())
+        }
+        Filter::StartsWith(field, value) => {
+            Filter::StartsWith(transform_field_name(field, lookup_fields), value.clone())
+        }
+        Filter::EndsWith(field, value) => {
+            Filter::EndsWith(transform_field_name(field, lookup_fields), value.clone())
+        }
+        Filter::IsNull(field) => Filter::IsNull(transform_field_name(field, lookup_fields)),
+        Filter::IsNotNull(field) => Filter::IsNotNull(transform_field_name(field, lookup_fields)),
+        Filter::And(filters) => {
+            Filter::And(filters.iter().map(|f| transform_filter(f, lookup_fields)).collect())
+        }
+        Filter::Or(filters) => {
+            Filter::Or(filters.iter().map(|f| transform_filter(f, lookup_fields)).collect())
+        }
+        Filter::Raw(s) => Filter::Raw(s.clone()),
+    }
+}
+
+/// Transforms field names in an OrderBy.
+fn transform_order_by(order: &OrderBy, lookup_fields: &HashSet<String>) -> OrderBy {
+    OrderBy {
+        fields: order
+            .fields
+            .iter()
+            .map(|(field, dir)| (transform_field_name(field, lookup_fields), *dir))
+            .collect(),
     }
 }

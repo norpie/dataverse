@@ -68,13 +68,25 @@ impl ODataPages {
         }
 
         // Determine which URL to fetch
-        let url = if let Some(builder) = self.needs_resolution.take() {
+        let url = if let Some(mut builder) = self.needs_resolution.take() {
             // First call: resolve entity and build URL
-            let entity_set_name = match builder.entity() {
-                crate::model::Entity::Set(name) => name.clone(),
+            let (entity_set_name, entity_logical_name) = match builder.entity().clone() {
+                crate::model::Entity::Set(name) => {
+                    // For entity set names, we need to resolve to logical name for metadata
+                    match client
+                        .resolve_entity_logical_name(&crate::model::Entity::Set(name.clone()))
+                        .await
+                    {
+                        Ok(logical_name) => (name, logical_name),
+                        Err(e) => {
+                            self.done = true;
+                            return Some(Err(e));
+                        }
+                    }
+                }
                 crate::model::Entity::Logical(logical_name) => {
-                    match client.resolve_entity_set_name(logical_name).await {
-                        Ok(name) => name,
+                    match client.resolve_entity_set_name(&logical_name).await {
+                        Ok(name) => (name, logical_name),
                         Err(e) => {
                             self.done = true;
                             return Some(Err(e));
@@ -82,6 +94,16 @@ impl ODataPages {
                     }
                 }
             };
+
+            // Transform lookup field names to OData format
+            if let Err(e) = builder
+                .transform_lookup_fields(client, &entity_logical_name)
+                .await
+            {
+                self.done = true;
+                return Some(Err(e));
+            }
+
             let url = builder.build_url(client, &entity_set_name);
             self.initial_url = Some(url.clone());
             url
