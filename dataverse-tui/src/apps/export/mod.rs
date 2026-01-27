@@ -4,11 +4,12 @@ use dataverse_lib::api::query::odata::ODataPages;
 use dataverse_lib::model::{Entity, Record};
 use rafter::page;
 use rafter::prelude::*;
-use rafter::widgets::{Button, Column, Input, SelectionMode, Table, TableState, Text};
+use rafter::widgets::{Button, Column, SelectionMode, Table, TableState, Text};
 use rafter::InstanceId;
 
 use crate::apps::record_explorer::{RecordRow, convert_records_to_rows};
-use crate::modals::LoadingModal;
+use crate::modals::{FileBrowserModal, LoadingModal};
+use crate::paths;
 use crate::systems::client_management::ActiveClientInfo;
 use crate::widgets::Spinner;
 
@@ -46,12 +47,6 @@ pub struct Export {
 
     /// Total record count.
     total_count: Option<usize>,
-
-    /// Output file path.
-    output_path: String,
-
-    /// Export format: "CSV" or "Excel".
-    format: String,
 }
 
 impl Export {
@@ -73,8 +68,6 @@ impl Export {
             columns: State::default(),
             preview_table: State::default(),
             total_count: State::default(),
-            output_path: State::new(String::new()),
-            format: State::new("CSV".to_string()),
             __handler_registry: Default::default(),
             __derived_cache: Default::default(),
         }
@@ -116,10 +109,10 @@ impl Export {
         // Fetch all records page by page with progress updates
         let client = self.client_info.client.clone();
         let query = self.query.clone();
-        let mut pages = query.page_size(100).into_async_iter(&client);
+        let mut pages = query.page_size(5000).into_async_iter(&client);
         let mut all_records = Vec::new();
         let mut page_num = 0;
-        let estimated_pages = (count + 99) / 100; // round up
+        let estimated_pages = (count + 4999) / 5000; // round up
 
         loop {
             page_num += 1;
@@ -186,13 +179,6 @@ impl Export {
         self.columns.set(columns);
         self.preview_table.set(table_state);
 
-        // Generate default output path
-        let entity_name = self.entity.name();
-        let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S");
-        let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
-        let default_path = format!("{}/Downloads/{}_{}.csv", home, entity_name, timestamp);
-        self.output_path.set(default_path);
-
         gx.toast(Toast::info(format!("Loaded {} records", record_count)));
     }
 
@@ -203,9 +189,9 @@ impl Export {
 
     #[keybinds]
     fn keybinds() {
-        bind("enter", export_to_file);
         bind("escape", go_back);
         bind("r", refresh);
+        bind("e", export);
     }
 
     #[handler]
@@ -217,37 +203,53 @@ impl Export {
     }
 
     #[handler]
-    async fn export_to_file(&self, gx: &GlobalContext) {
-        // TODO: Validate and write file
-        gx.toast(Toast::info("Export not yet implemented"));
-    }
-
-    #[handler]
     async fn refresh(&self, gx: &GlobalContext) {
         // TODO: Re-execute query
         gx.toast(Toast::info("Refresh not yet implemented"));
     }
 
+    #[handler]
+    async fn export(&self, gx: &GlobalContext) {
+        // Generate default filename (without extension)
+        let entity_name = self.entity.name();
+        let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S");
+        let default_filename = format!("{}_{}", entity_name, timestamp);
+        
+        let start_dir = paths::downloads_dir().unwrap_or_else(|| std::path::PathBuf::from("."));
+        let file_types = vec!["csv".to_string(), "xlsx".to_string()];
+
+        let modal = FileBrowserModal::new(&start_dir, file_types)
+            .with_filename(default_filename);
+
+        if let Some(result) = gx.modal(modal).await {
+            // TODO: Write file based on file_type
+            gx.toast(Toast::info(format!(
+                "Export to {} as {} not yet implemented",
+                result.path.display(),
+                result.file_type
+            )));
+        }
+    }
+
     fn element(&self) -> Element {
         let has_records = self.records.with_ref(|r| !r.is_empty());
-        let total_count = self.total_count.get();
-        let loaded_count = self.records.with_ref(|r| r.len());
+        let record_count = self.records.with_ref(|r| r.len());
+        let column_count = self.columns.with_ref(|c| c.len());
         let has_origin = self.origin.is_some();
 
         page! {
             column (padding: (1, 2), gap: 1, height: fill, width: fill) style (bg: background) {
-                // Back button if we have an origin
+                // Back button
                 if has_origin {
-                    button (label: "Back", hint: "esc", id: "back-button") on_activate: go_back()
+                    button (label: "Back", hint: "esc", id: "back") on_activate: go_back()
                 }
 
-                // Table area - takes all available space
+                // Table area
                 if has_records {
                     box_ (id: "table-container", height: fill, width: fill) style (bg: surface) {
                         table (state: self.preview_table, id: "preview-table")
                     }
                 } else {
-                    // Empty state (if query returned no records)
                     box_ (height: fill, width: fill) style (bg: surface) {
                         column (height: fill, width: fill, align: center, justify: center) {
                             text (content: "No records found") style (fg: muted)
@@ -255,35 +257,16 @@ impl Export {
                     }
                 }
 
-                // Export configuration
-                if has_records {
-                    column (gap: 1) {
-                        text (content: "Output path:") style (fg: primary)
-                        input (state: self.output_path, id: "output-path")
-
-                        text (content: "Format:") style (fg: primary)
-                        input (state: self.format, id: "format")
-                    }
-                }
-
                 // Footer
                 row (width: fill, justify: between) {
                     row (gap: 2) {
-                        if has_origin {
-                            row (gap: 1) {
-                                text (content: "esc") style (fg: primary)
-                                text (content: "back") style (fg: muted)
-                            }
-                        }
-                        row (gap: 1) {
-                            text (content: "r") style (fg: primary)
-                            text (content: "refresh") style (fg: muted)
-                        }
+                        text (content: {format!("{} records", record_count)}) style (fg: muted)
+                        text (content: {format!("{} columns", column_count)}) style (fg: muted)
                     }
-                    if has_records {
-                        row (gap: 1) {
-                            text (content: "enter") style (fg: primary)
-                            text (content: "export") style (fg: muted)
+                    row (gap: 2) {
+                        button (label: "Refresh", hint: "r", id: "refresh") on_activate: refresh()
+                        if has_records {
+                            button (label: "Export", hint: "e", id: "export") on_activate: export()
                         }
                     }
                 }
