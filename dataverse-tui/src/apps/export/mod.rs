@@ -209,8 +209,98 @@ impl Export {
 
     #[handler]
     async fn refresh(&self, gx: &GlobalContext) {
-        // TODO: Re-execute query
-        gx.toast(Toast::info("Refresh not yet implemented"));
+        // Get the true record count using $apply=aggregate
+        let client = self.client_info.client.clone();
+        let query = self.query.clone();
+        let count_result = gx
+            .modal(LoadingModal::new(
+                "Counting records...",
+                async move { query.count(&client).await },
+            ))
+            .await;
+
+        let count = match count_result {
+            Some(Ok(count)) => {
+                self.total_count.set(Some(count));
+                count
+            }
+            Some(Err(e)) => {
+                gx.toast(Toast::error(format!("Failed to count records: {}", e)));
+                return;
+            }
+            None => return,
+        };
+
+        // Fetch all records page by page with progress updates
+        let client = self.client_info.client.clone();
+        let query = self.query.clone();
+        let mut pages = query.page_size(5000).into_async_iter(&client);
+        let mut all_records = Vec::new();
+        let mut page_num = 0;
+        let estimated_pages = (count + 4999) / 5000;
+
+        loop {
+            page_num += 1;
+
+            let client_clone = client.clone();
+            let fetch_result = gx
+                .modal(LoadingModal::new(
+                    format!("Fetching page {}/{}...", page_num, estimated_pages),
+                    async move {
+                        let result = pages.next(&client_clone).await;
+                        (result, pages)
+                    },
+                ))
+                .await;
+
+            let Some((page_result, updated_pages)) = fetch_result else {
+                return;
+            };
+
+            pages = updated_pages;
+
+            match page_result {
+                Some(Ok(page)) => {
+                    all_records.extend(page.records().to_vec());
+                }
+                Some(Err(e)) => {
+                    gx.toast(Toast::error(format!("Failed to fetch records: {}", e)));
+                    return;
+                }
+                None => break,
+            }
+        }
+
+        let records = all_records;
+
+        // Determine columns
+        let columns: Vec<String> = if !self.selected_fields.is_empty() {
+            self.selected_fields.clone()
+        } else if let Some(first) = records.first() {
+            first.fields().keys().cloned().collect()
+        } else {
+            Vec::new()
+        };
+
+        // Build preview table
+        let rows = convert_records_to_rows(
+            &records,
+            std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        );
+        let table_columns: Vec<Column> = columns
+            .iter()
+            .map(|name| Column::new(name, name).fixed(20))
+            .collect();
+
+        let table_state = TableState::new(rows, table_columns).with_selection(SelectionMode::None);
+
+        // Update state
+        let record_count = records.len();
+        self.records.set(records);
+        self.columns.set(columns);
+        self.preview_table.set(table_state);
+
+        gx.toast(Toast::info(format!("Refreshed {} records", record_count)));
     }
 
     #[handler]
