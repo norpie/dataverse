@@ -1,5 +1,9 @@
 //! Export app for exporting Dataverse query results to CSV or Excel.
 
+mod io;
+
+use std::collections::HashMap;
+
 use dataverse_lib::model::{Entity, Record};
 use rafter::page;
 use rafter::prelude::*;
@@ -11,6 +15,8 @@ use crate::file_io::{write_csv, write_excel, FileIoError};
 use crate::modals::{FileBrowserModal, LoadingModal};
 use crate::paths;
 use crate::systems::client_management::ActiveClientInfo;
+
+use io::{records_to_rows, transform_headers, LookupColumns};
 
 /// Export app: execute query and export results to file.
 #[app(name = "Export")]
@@ -224,19 +230,85 @@ impl Export {
             return;
         };
 
-        // Clone data for the blocking task
         let records = self.records.with_ref(|r| r.clone());
         let columns = self.columns.with_ref(|c| c.clone());
+
+        // Fetch entity metadata to identify lookup columns
+        let client = self.client_info.client.clone();
+        let entity = self.entity.clone();
+        let cols = columns.clone();
+
+        let metadata_result = gx
+            .modal(LoadingModal::new("Fetching metadata...", async move {
+                client.metadata().attributes(entity).await
+            }))
+            .await;
+
+        let attributes = match metadata_result {
+            Some(Ok(attrs)) => attrs,
+            Some(Err(e)) => {
+                gx.toast(Toast::error(format!("Failed to fetch metadata: {}", e)));
+                return;
+            }
+            None => return,
+        };
+
+        // Build lookup columns map: column_name -> target entity set name
+        // Only include columns that are in our export and are lookups
+        let mut lookup_columns: LookupColumns = HashMap::new();
+        let mut targets_to_resolve: Vec<(String, String)> = Vec::new(); // (column, target_logical_name)
+
+        for attr in &attributes {
+            if attr.is_lookup() && cols.contains(&attr.logical_name) {
+                // Use first target for polymorphic lookups (Customer, Owner)
+                if let Some(target) = attr.targets.first() {
+                    targets_to_resolve.push((attr.logical_name.clone(), target.clone()));
+                }
+            }
+        }
+
+        // Resolve target entity set names
+        let total = targets_to_resolve.len();
+        for (i, (column, target_logical_name)) in targets_to_resolve.into_iter().enumerate() {
+            let client = self.client_info.client.clone();
+            let target = target_logical_name.clone();
+
+            let resolve_result = gx
+                .modal(LoadingModal::new(
+                    format!("Resolving lookup {}/{}...", i + 1, total),
+                    async move { client.resolve_entity_set_name(&target).await },
+                ))
+                .await;
+
+            match resolve_result {
+                Some(Ok(entity_set)) => {
+                    lookup_columns.insert(column, entity_set);
+                }
+                Some(Err(e)) => {
+                    gx.toast(Toast::error(format!(
+                        "Failed to resolve entity set for {}: {}",
+                        target_logical_name, e
+                    )));
+                    return;
+                }
+                None => return,
+            }
+        }
+
+        // Transform records to string rows
+        let rows = records_to_rows(&records, &columns, &lookup_columns);
+        let headers = transform_headers(&columns, &lookup_columns);
         let path = result.path.clone();
         let file_type = result.file_type.clone();
         let sheet_name = entity_name.clone();
+        let record_count = records.len();
 
         // Write file in blocking task with loading modal
         let write_result = gx
             .modal(LoadingModal::new("Exporting...", async move {
                 tokio::task::spawn_blocking(move || match file_type.as_str() {
-                    "csv" => write_csv(&path, &records, &columns),
-                    "xlsx" => write_excel(&path, &records, &columns, &sheet_name),
+                    "csv" => write_csv(&path, &headers, &rows),
+                    "xlsx" => write_excel(&path, &headers, &rows, &sheet_name),
                     _ => Err(FileIoError::Io(std::io::Error::new(
                         std::io::ErrorKind::InvalidInput,
                         format!("Unsupported file type: {}", file_type),
@@ -256,7 +328,7 @@ impl Export {
             Some(Ok(())) => {
                 gx.toast(Toast::success(format!(
                     "Exported {} records to {}",
-                    self.records.with_ref(|r| r.len()),
+                    record_count,
                     result.path.display()
                 )));
             }
@@ -264,7 +336,7 @@ impl Export {
                 gx.toast(Toast::error(format!("Export failed: {}", e)));
             }
             None => {
-                // User cancelled (unlikely during write, but handle it)
+                // User cancelled
             }
         }
     }

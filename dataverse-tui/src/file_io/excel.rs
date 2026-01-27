@@ -3,12 +3,7 @@
 use std::path::Path;
 
 use calamine::{open_workbook, Data, Reader, Xlsx};
-use rust_decimal::prelude::ToPrimitive;
 use rust_xlsxwriter::{Format, Workbook};
-
-use dataverse_lib::model::{Record, Value};
-
-use crate::formatting::format_value;
 
 use super::{FileIoError, FileRow, ParsedFile};
 
@@ -50,18 +45,18 @@ fn validate_sheet_name(name: &str) -> Result<(), FileIoError> {
     Ok(())
 }
 
-/// Write records to Excel file.
+/// Write rows to Excel file.
 ///
-/// - Sheet name: provided entity name (must be <= 31 chars, no `\ / * ? : [ ]`)
+/// - Sheet name: must be <= 31 chars, no `\ / * ? : [ ]`
 /// - Row 0: Header row (bold)
-/// - Row 1+: Data rows with native types where possible
+/// - Row 1+: Data rows as strings
 /// - Column widths: fixed at 20
 ///
 /// This is a blocking operation - caller should use spawn_blocking.
 pub fn write_excel(
     path: &Path,
-    records: &[Record],
-    columns: &[String],
+    headers: &[String],
+    rows: &[Vec<String>],
     sheet_name: &str,
 ) -> Result<(), FileIoError> {
     validate_sheet_name(sheet_name)?;
@@ -69,89 +64,30 @@ pub fn write_excel(
     let mut workbook = Workbook::new();
     let worksheet = workbook.add_worksheet().set_name(sheet_name)?;
 
-    // Formats
     let header_format = Format::new().set_bold();
-    let date_format = Format::new().set_num_format("yyyy-mm-dd hh:mm");
 
-    // Column widths (default 20)
-    for col_idx in 0..columns.len() {
+    // Column widths
+    for col_idx in 0..headers.len() {
         worksheet.set_column_width(col_idx as u16, 20)?;
     }
 
     // Header row
-    for (col_idx, col_name) in columns.iter().enumerate() {
-        worksheet.write_string_with_format(0, col_idx as u16, col_name, &header_format)?;
+    for (col_idx, header) in headers.iter().enumerate() {
+        worksheet.write_string_with_format(0, col_idx as u16, header, &header_format)?;
     }
 
     // Data rows
-    for (row_idx, record) in records.iter().enumerate() {
-        let excel_row = (row_idx + 1) as u32; // +1 for header
+    for (row_idx, row) in rows.iter().enumerate() {
+        let excel_row = (row_idx + 1) as u32;
 
-        for (col_idx, col_name) in columns.iter().enumerate() {
-            let excel_col = col_idx as u16;
-
-            let Some(value) = record.get(col_name) else {
-                continue; // Leave cell empty
-            };
-
-            write_cell(worksheet, excel_row, excel_col, value, &date_format)?;
+        for (col_idx, value) in row.iter().enumerate() {
+            if !value.is_empty() {
+                worksheet.write_string(excel_row, col_idx as u16, value)?;
+            }
         }
     }
 
     workbook.save(path)?;
-    Ok(())
-}
-
-/// Write a single cell value with appropriate Excel type.
-fn write_cell(
-    worksheet: &mut rust_xlsxwriter::Worksheet,
-    row: u32,
-    col: u16,
-    value: &Value,
-    date_format: &Format,
-) -> Result<(), FileIoError> {
-    match value {
-        Value::Null => {
-            // Leave empty
-        }
-        Value::Bool(b) => {
-            worksheet.write_boolean(row, col, *b)?;
-        }
-        Value::Int(n) => {
-            worksheet.write_number(row, col, *n as f64)?;
-        }
-        Value::Long(n) => {
-            worksheet.write_number(row, col, *n as f64)?;
-        }
-        Value::Float(n) => {
-            worksheet.write_number(row, col, *n)?;
-        }
-        Value::Decimal(d) => {
-            if let Some(n) = d.to_f64() {
-                worksheet.write_number(row, col, n)?;
-            } else {
-                worksheet.write_string(row, col, &d.to_string())?;
-            }
-        }
-        Value::Money(m) => {
-            if let Some(n) = m.value().to_f64() {
-                worksheet.write_number(row, col, n)?;
-            } else {
-                worksheet.write_string(row, col, &m.value().to_string())?;
-            }
-        }
-        Value::DateTime(dt) => {
-            let excel_dt = rust_xlsxwriter::ExcelDateTime::from_timestamp(dt.timestamp())?;
-            worksheet.write_datetime_with_format(row, col, &excel_dt, date_format)?;
-        }
-        // All other types: use raw string representation
-        _ => {
-            let formatted = format_value(value).raw;
-            if !formatted.is_empty() {
-                worksheet.write_string(row, col, &formatted)?;
-            }
-        }
-    }
     Ok(())
 }
 
@@ -217,7 +153,7 @@ pub fn read_excel(path: &Path, sheet_name: Option<&str>) -> Result<ParsedFile, F
             })
             .collect();
 
-        // Pad or truncate to match column count
+        // Pad to match column count
         let mut values = values;
         values.resize(columns.len(), None);
 

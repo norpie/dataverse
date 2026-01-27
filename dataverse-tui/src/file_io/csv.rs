@@ -2,37 +2,21 @@
 
 use std::path::Path;
 
-use dataverse_lib::model::Record;
-
-use crate::formatting::format_value;
-
 use super::{FileIoError, FileRow, ParsedFile};
 
-/// Write records to CSV file.
+/// Write rows to CSV file.
 ///
-/// - Header row: column names
-/// - Data rows: `.raw` representation for all values
-/// - Null values written as empty strings
+/// - First row: headers
+/// - Remaining rows: data
 ///
 /// This is a blocking operation - caller should use spawn_blocking.
-pub fn write_csv(path: &Path, records: &[Record], columns: &[String]) -> Result<(), FileIoError> {
+pub fn write_csv(path: &Path, headers: &[String], rows: &[Vec<String>]) -> Result<(), FileIoError> {
     let mut writer = csv::Writer::from_path(path)?;
 
-    // Header row
-    writer.write_record(columns)?;
+    writer.write_record(headers)?;
 
-    // Data rows
-    for record in records {
-        let row: Vec<String> = columns
-            .iter()
-            .map(|col| {
-                record
-                    .get(col)
-                    .map(|v| format_value(v).raw)
-                    .unwrap_or_default()
-            })
-            .collect();
-        writer.write_record(&row)?;
+    for row in rows {
+        writer.write_record(row)?;
     }
 
     writer.flush()?;
