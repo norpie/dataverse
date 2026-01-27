@@ -1,13 +1,14 @@
 //! Record Explorer app for viewing Dataverse entity records.
 
-mod row;
+pub mod row;
 mod service;
+
+pub use row::RecordRow;
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use dataverse_lib::api::query::odata::ODataPages;
-use dataverse_lib::api::query::odata::QueryBuilder as ODataQueryBuilder;
+use dataverse_lib::api::query::odata::{ODataPages, QueryBuilder as ODataQueryBuilder};
 use rafter::page;
 use rafter::prelude::*;
 use rafter::widgets::{Button, Column, SelectionMode, Table, TableState, Text};
@@ -19,14 +20,14 @@ use crate::modals::LoadingModal;
 use crate::systems::client_management::ActiveClientInfo;
 use crate::widgets::Spinner;
 
-use row::{EntityData, RecordRow};
+use row::EntityData;
 use service::{convert_records_to_rows, default_columns, fetch_entity_data};
 
 #[app(name = "Record Explorer")]
 pub struct RecordExplorer {
-    /// Fresh iterator template for refresh.
+    /// Query builder template for refresh.
     #[state(skip)]
-    pages_template: ODataPages,
+    query_template: ODataQueryBuilder,
 
     /// Current working iterator.
     pages: ODataPages,
@@ -69,14 +70,14 @@ impl RecordExplorer {
         let entity = query.entity().clone();
         let selected_fields = query.selected_fields().to_vec();
 
-        let pages_template = query
-            .include_count()
-            .page_size(50)
-            .into_async_iter(&client_info.client);
+        let query_template = query.page_size(50);
+
+        // Create initial pages iterator (will be replaced in on_start)
+        let pages = query_template.clone().into_async_iter(&client_info.client);
 
         Self {
-            pages_template: pages_template.clone(),
-            pages: State::new(pages_template),
+            query_template,
+            pages: State::new(pages),
             client_info,
             origin,
             entity,
@@ -140,6 +141,31 @@ impl RecordExplorer {
             self.selected_fields.clone()
         };
 
+        // Get the true record count using $apply=aggregate
+        let client = self.client_info.client.clone();
+        let query = self.query_template.clone();
+        let count_result = gx
+            .modal(LoadingModal::new(
+                "Counting records...",
+                async move { query.count(&client).await },
+            ))
+            .await;
+
+        match count_result {
+            Some(Ok(count)) => {
+                log::debug!("[RecordExplorer] Total count: {}", count);
+                self.total_count.set(Some(count));
+            }
+            Some(Err(e)) => {
+                log::warn!("[RecordExplorer] Failed to get count: {}", e);
+                // Continue without count
+            }
+            None => {
+                // User cancelled
+                return;
+            }
+        }
+
         // Execute the query
         self.do_load_records(&entity_data, &columns, gx).await;
     }
@@ -184,8 +210,30 @@ impl RecordExplorer {
             self.selected_fields.clone()
         };
 
-        // Clone the fresh template for refresh
-        self.pages.set(self.pages_template.clone());
+        // Re-run count query
+        let client = self.client_info.client.clone();
+        let query = self.query_template.clone();
+        let count_result = gx
+            .modal(LoadingModal::new(
+                "Counting records...",
+                async move { query.count(&client).await },
+            ))
+            .await;
+
+        match count_result {
+            Some(Ok(count)) => {
+                log::debug!("[RecordExplorer] Total count: {}", count);
+                self.total_count.set(Some(count));
+            }
+            Some(Err(e)) => {
+                log::warn!("[RecordExplorer] Failed to get count: {}", e);
+                self.total_count.set(None);
+            }
+            None => {
+                // User cancelled
+                return;
+            }
+        }
 
         self.do_load_records(&entity_data, &columns, gx).await;
 
@@ -233,7 +281,13 @@ impl RecordExplorer {
         }
 
         self.records_loading.set_loading();
-        self.total_count.set(None);
+
+        // Create fresh pages iterator from query template
+        let pages = self
+            .query_template
+            .clone()
+            .into_async_iter(&self.client_info.client);
+        self.pages.set(pages);
 
         // Build table columns
         let is_advanced = self.advanced_mode.load(Ordering::Relaxed);
@@ -277,11 +331,6 @@ impl RecordExplorer {
                 return;
             }
         };
-
-        if let Some(count) = page.total_count() {
-            log::debug!("[RecordExplorer] Total count: {}", count);
-            self.total_count.set(Some(count));
-        }
 
         let rows = convert_records_to_rows(page.records(), self.advanced_mode.clone());
         self.pages.set(pages);
