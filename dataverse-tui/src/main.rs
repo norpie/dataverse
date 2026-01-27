@@ -1,6 +1,7 @@
 mod apps;
 mod client_manager;
 mod credentials;
+mod file_io;
 mod formatting;
 mod migrations;
 mod modals;
