@@ -35,36 +35,40 @@ pub struct Toast {
 impl Toast {
     /// Create an info toast with neutral styling.
     pub fn info(message: impl Into<String>) -> Self {
+        let message = message.into();
+        log::info!("[Toast] {}", message);
         Self {
-            content: Element::text(message.into())
-                .style(Style::new().foreground(Color::var("primary"))),
+            content: Element::text(message).style(Style::new().foreground(Color::var("primary"))),
             duration: DEFAULT_TOAST_DURATION,
         }
     }
 
     /// Create a success toast with green accent.
     pub fn success(message: impl Into<String>) -> Self {
+        let message = message.into();
+        log::info!("[Toast] {}", message);
         Self {
-            content: Element::text(message.into())
-                .style(Style::new().foreground(Color::var("success"))),
+            content: Element::text(message).style(Style::new().foreground(Color::var("success"))),
             duration: DEFAULT_TOAST_DURATION,
         }
     }
 
     /// Create a warning toast with yellow accent.
     pub fn warning(message: impl Into<String>) -> Self {
+        let message = message.into();
+        log::warn!("[Toast] {}", message);
         Self {
-            content: Element::text(message.into())
-                .style(Style::new().foreground(Color::var("warning"))),
+            content: Element::text(message).style(Style::new().foreground(Color::var("warning"))),
             duration: DEFAULT_TOAST_DURATION,
         }
     }
 
     /// Create an error toast with red accent.
     pub fn error(message: impl Into<String>) -> Self {
+        let message = message.into();
+        log::error!("[Toast] {}", message);
         Self {
-            content: Element::text(message.into())
-                .style(Style::new().foreground(Color::var("error"))),
+            content: Element::text(message).style(Style::new().foreground(Color::var("error"))),
             duration: DEFAULT_TOAST_DURATION,
         }
     }
