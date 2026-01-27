@@ -1002,7 +1002,7 @@ impl DataverseClient {
     /// }
     /// ```
     pub fn query(&self, entity: Entity) -> QueryBuilder {
-        QueryBuilder::new(self.clone(), entity)
+        QueryBuilder::new(entity)
     }
 
     /// Creates a FetchXML query for the specified entity.

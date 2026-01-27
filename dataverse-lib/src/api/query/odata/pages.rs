@@ -33,8 +33,6 @@ use super::builder::QueryBuilder;
 /// ```
 #[derive(Clone)]
 pub struct ODataPages {
-    /// Owned client for making requests.
-    client: DataverseClient,
     /// The initial URL (built from query builder).
     initial_url: Option<String>,
     /// Page size preference.
@@ -49,13 +47,10 @@ pub struct ODataPages {
 
 impl ODataPages {
     /// Creates a new async iterator from a query builder.
-    pub(crate) fn new(builder: QueryBuilder) -> Self {
-        // Clone the client (cheap - it's an Arc wrapper)
-        let client = builder.client().clone();
+    pub(crate) fn new(builder: QueryBuilder, _client: &DataverseClient) -> Self {
         let page_size = builder.page_size_value();
 
         Self {
-            client,
             initial_url: None,
             page_size,
             next_url: None,
@@ -67,7 +62,7 @@ impl ODataPages {
     /// Fetches the next page of results.
     ///
     /// Returns `None` when all pages have been consumed.
-    pub async fn next(&mut self) -> Option<Result<Page, Error>> {
+    pub async fn next(&mut self, client: &DataverseClient) -> Option<Result<Page, Error>> {
         if self.done {
             return None;
         }
@@ -78,7 +73,7 @@ impl ODataPages {
             let entity_set_name = match builder.entity() {
                 crate::model::Entity::Set(name) => name.clone(),
                 crate::model::Entity::Logical(logical_name) => {
-                    match self.client.resolve_entity_set_name(logical_name).await {
+                    match client.resolve_entity_set_name(logical_name).await {
                         Ok(name) => name,
                         Err(e) => {
                             self.done = true;
@@ -87,7 +82,7 @@ impl ODataPages {
                     }
                 }
             };
-            let url = builder.build_url(&entity_set_name);
+            let url = builder.build_url(client, &entity_set_name);
             self.initial_url = Some(url.clone());
             url
         } else if let Some(url) = self.next_url.take() {
@@ -132,7 +127,7 @@ impl ODataPages {
 
         // Make request
         let response: reqwest::Response =
-            match self.client.request(Method::GET, &url, headers, None).await {
+            match client.request(Method::GET, &url, headers, None).await {
                 Ok(resp) => resp,
                 Err(e) => {
                     self.done = true;

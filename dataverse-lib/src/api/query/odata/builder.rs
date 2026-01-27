@@ -35,7 +35,6 @@ use super::url::order_to_odata;
 /// ```
 #[derive(Clone)]
 pub struct QueryBuilder {
-    client: DataverseClient,
     entity: Entity,
     select: Vec<String>,
     filter: Option<ODataFilter>,
@@ -48,9 +47,8 @@ pub struct QueryBuilder {
 
 impl QueryBuilder {
     /// Creates a new query builder for the given entity.
-    pub(crate) fn new(client: DataverseClient, entity: Entity) -> Self {
+    pub fn new(entity: Entity) -> Self {
         Self {
-            client,
             entity,
             select: Vec::new(),
             filter: None,
@@ -136,9 +134,9 @@ impl QueryBuilder {
     }
 
     /// Builds the OData query URL.
-    pub(crate) fn build_url(&self, entity_set_name: &str) -> String {
-        let base_url = self.client.base_url().trim_end_matches('/');
-        let api_version = self.client.api_version();
+    pub(crate) fn build_url(&self, client: &DataverseClient, entity_set_name: &str) -> String {
+        let base_url = client.base_url().trim_end_matches('/');
+        let api_version = client.api_version();
 
         let mut url = format!("{}/api/data/{}/{}", base_url, api_version, entity_set_name);
 
@@ -193,11 +191,6 @@ impl QueryBuilder {
         &self.entity
     }
 
-    /// Returns a reference to the client.
-    pub fn client(&self) -> &DataverseClient {
-        &self.client
-    }
-
     /// Returns the selected fields.
     ///
     /// Empty if no `.select()` was called (meaning all fields).
@@ -206,11 +199,11 @@ impl QueryBuilder {
     }
 
     /// Resolves the entity to its entity set name.
-    async fn resolve_entity_set(&self) -> Result<String, Error> {
+    async fn resolve_entity_set(&self, client: &DataverseClient) -> Result<String, Error> {
         match &self.entity {
             Entity::Set(name) => Ok(name.clone()),
             Entity::Logical(logical_name) => {
-                self.client.resolve_entity_set_name(logical_name).await
+                client.resolve_entity_set_name(logical_name).await
             }
         }
     }
@@ -218,9 +211,9 @@ impl QueryBuilder {
     /// Executes the query and returns the first page of results.
     ///
     /// Use `into_async_iter()` to iterate over all pages.
-    pub async fn execute(self) -> Result<Vec<Record>, Error> {
-        let mut pages = self.into_async_iter();
-        match pages.next().await {
+    pub async fn execute(self, client: &DataverseClient) -> Result<Vec<Record>, Error> {
+        let mut pages = self.into_async_iter(client);
+        match pages.next(client).await {
             Some(Ok(page)) => Ok(page.into_records()),
             Some(Err(e)) => Err(e),
             None => Ok(Vec::new()),
@@ -228,13 +221,13 @@ impl QueryBuilder {
     }
 
     /// Executes the query and returns the first matching record.
-    pub async fn first(self) -> Result<Option<Record>, Error> {
+    pub async fn first(self, client: &DataverseClient) -> Result<Option<Record>, Error> {
         // Optimize by limiting to 1 record
         let builder = Self {
             top: Some(1),
             ..self
         };
-        let records = builder.execute().await?;
+        let records = builder.execute(client).await?;
         Ok(records.into_iter().next())
     }
 
@@ -242,10 +235,10 @@ impl QueryBuilder {
     ///
     /// Uses `$apply=aggregate($count as count)` which returns accurate counts
     /// (the `/$count` endpoint is limited to 5000 on some Dataverse instances).
-    pub async fn count(self) -> Result<usize, Error> {
-        let entity_set_name = self.resolve_entity_set().await?;
-        let base_url = self.client.base_url().trim_end_matches('/');
-        let api_version = self.client.api_version();
+    pub async fn count(self, client: &DataverseClient) -> Result<usize, Error> {
+        let entity_set_name = self.resolve_entity_set(client).await?;
+        let base_url = client.base_url().trim_end_matches('/');
+        let api_version = client.api_version();
 
         let mut url = format!(
             "{}/api/data/{}/{}?$apply=aggregate($count as count)",
@@ -275,8 +268,7 @@ impl QueryBuilder {
             reqwest::header::HeaderValue::from_static("application/json"),
         );
 
-        let response: reqwest::Response = self
-            .client
+        let response: reqwest::Response = client
             .request(reqwest::Method::GET, &url, Some(headers), None)
             .await?;
 
@@ -303,7 +295,7 @@ impl QueryBuilder {
     }
 
     /// Converts this query builder into an async iterator over pages.
-    pub fn into_async_iter(self) -> ODataPages {
-        ODataPages::new(self)
+    pub fn into_async_iter(self, client: &DataverseClient) -> ODataPages {
+        ODataPages::new(self, client)
     }
 }
