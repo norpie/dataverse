@@ -77,6 +77,15 @@ pub fn log_file() -> Option<PathBuf> {
     logs_dir().map(|dir| dir.join("latest.log"))
 }
 
+/// Get the user's Downloads directory.
+///
+/// - Linux: `$XDG_DOWNLOAD_DIR` or `~/Downloads`
+/// - macOS: `~/Downloads`
+/// - Windows: `C:\Users\<User>\Downloads`
+pub fn downloads_dir() -> Option<PathBuf> {
+    directories::UserDirs::new().and_then(|dirs| dirs.download_dir().map(|p| p.to_path_buf()))
+}
+
 /// Get the path to the environment-specific cache database.
 ///
 /// Cache files are named `{host_prefix}_{hash}.db` where:
