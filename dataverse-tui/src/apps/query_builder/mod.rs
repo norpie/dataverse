@@ -13,7 +13,7 @@ use rafter::page;
 use rafter::prelude::*;
 use rafter::widgets::{Text, Tree, TreeNode, TreeState};
 
-use crate::apps::RecordExplorer;
+use crate::apps::{Export, RecordExplorer};
 use crate::modals::{ListEntry, LoadingModal, SearchableListModal};
 use crate::paths;
 use crate::systems::client_management::{ActiveClientInfo, ClientManagement, GetActiveClient};
@@ -593,8 +593,8 @@ impl QueryBuilder {
         // Show app selection modal
         let apps = vec![
             ListEntry::with_category("record-explorer", "Record Explorer", "Data"),
+            ListEntry::with_category("export", "Export", "Data"),
             // Future apps will go here:
-            // ListEntry::with_category("export", "Export to CSV", "Export"),
             // ListEntry::with_category("chart", "Chart Builder", "Visualization"),
         ];
 
@@ -637,6 +637,9 @@ impl QueryBuilder {
             "record-explorer" => {
                 let _ =
                     gx.spawn_and_focus(RecordExplorer::new(query, info, Some(cx.instance_id())));
+            }
+            "export" => {
+                let _ = gx.spawn_and_focus(Export::new(query, info, Some(cx.instance_id())));
             }
             _ => {
                 gx.toast(Toast::info(format!("App not implemented: {}", app_id)));

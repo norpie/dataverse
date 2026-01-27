@@ -1,9 +1,10 @@
 //! Record Explorer app for viewing Dataverse entity records.
 
 pub mod row;
-mod service;
+pub mod service;
 
 pub use row::RecordRow;
+pub use service::{convert_records_to_rows, default_columns};
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -21,7 +22,7 @@ use crate::systems::client_management::ActiveClientInfo;
 use crate::widgets::Spinner;
 
 use row::EntityData;
-use service::{convert_records_to_rows, default_columns, fetch_entity_data};
+use service::fetch_entity_data;
 
 #[app(name = "Record Explorer")]
 pub struct RecordExplorer {
