@@ -4,6 +4,7 @@ use rafter::prelude::*;
 
 use crate::apps::{EntityExplorer, QueryBuilder};
 use crate::modals::{ListEntry, SearchableListModal};
+use crate::systems::client_management::{ClientManagement, GetActiveClient};
 
 #[system]
 pub struct Launcher {
@@ -39,12 +40,30 @@ impl Launcher {
         self.modal_open.set(false);
 
         if let Some(selected) = result {
+                    // Get active client
+                    let client_info = match gx
+                        .request_system::<ClientManagement, GetActiveClient>(GetActiveClient)
+                        .await
+                    {
+                        Ok(Ok(info)) => info,
+                        Ok(Err(e)) => {
+                            gx.toast(Toast::error(format!("Client error: {}", e)));
+                            return;
+                        }
+                        Err(e) => {
+                            gx.toast(Toast::error(format!(
+                                "No active client. Please configure a connection first. ({:?})",
+                                e
+                            )));
+                            return;
+                        }
+                    };
             match selected.as_str() {
                 "entity-explorer" => {
-                    let _ = gx.spawn_and_focus(EntityExplorer::default());
+                    let _ = gx.spawn_and_focus(EntityExplorer::new(client_info));
                 }
                 "query-builder" => {
-                    let _ = gx.spawn_and_focus(QueryBuilder::default());
+                    let _ = gx.spawn_and_focus(QueryBuilder::new(client_info));
                 }
                 _ => {
                     gx.toast(Toast::info(format!("App not implemented: {}", selected)));

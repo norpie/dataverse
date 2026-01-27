@@ -17,12 +17,9 @@ pub enum ConvertError {
 }
 
 /// Build an OData `QueryBuilder` from the user's `QueryData`.
-pub fn build_query(
-    client: &DataverseClient,
-    data: &QueryData,
-) -> Result<ODataQueryBuilder, ConvertError> {
+pub fn build_query(data: &QueryData) -> Result<ODataQueryBuilder, ConvertError> {
     let entity = data.entity.as_ref().ok_or(ConvertError::NoEntity)?;
-    let mut qb = client.query(Entity::set(entity));
+    let mut qb = ODataQueryBuilder::new(Entity::set(entity));
 
     // Select
     if !data.select.is_empty() {

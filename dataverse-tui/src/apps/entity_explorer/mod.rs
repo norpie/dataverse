@@ -11,7 +11,7 @@ use rafter::prelude::*;
 use rafter::widgets::{Input, List, ListItem, ListState, SelectionMode, Text};
 use tuidom::{Element, Size, Style};
 
-use crate::systems::client_management::{ClientManagement, GetActiveClient};
+use crate::systems::client_management::{ActiveClientInfo, ClientManagement, GetActiveClient};
 use crate::widgets::loading_overlay;
 
 use service::fetch_all_entities;
@@ -152,19 +152,33 @@ fn fuzzy_filter(query: &str, entities: &[(String, String)]) -> Vec<FuzzyMatch> {
 
 #[app(name = "Entity Explorer")]
 pub struct EntityExplorer {
-    // Connection
-    client: Option<DataverseClient>,
-    environment_name: String,
+    /// Full connection context.
+    #[state(skip)]
+    client_info: ActiveClientInfo,
 
-    // Loading overlay
+    /// Loading overlay
     loading_message: Option<String>,
 
-    // Entity data
+    /// Entity data
     all_entities: Vec<(String, String)>, // (logical, display)
 
-    // Search & display
+    /// Search & display
     search_input: String,
     filtered_list: ListState<EntityItem>,
+}
+
+impl EntityExplorer {
+    pub fn new(client_info: ActiveClientInfo) -> Self {
+        Self {
+            client_info,
+            loading_message: State::default(),
+            all_entities: State::default(),
+            search_input: State::default(),
+            filtered_list: State::default(),
+            __handler_registry: Default::default(),
+            __derived_cache: Default::default(),
+        }
+    }
 }
 
 #[app_impl]
@@ -172,37 +186,10 @@ impl EntityExplorer {
     #[on_start]
     async fn on_start(&self, gx: &GlobalContext, cx: &AppContext) {
         self.loading_message
-            .set(Some("Connecting to Dataverse...".to_string()));
-
-        // Get client
-        let info = match gx
-            .request_system::<ClientManagement, GetActiveClient>(GetActiveClient)
-            .await
-        {
-            Ok(Ok(info)) => info,
-            Ok(Err(e)) => {
-                gx.toast(Toast::error(format!("Client error: {}", e)));
-                self.loading_message.set(None);
-                return;
-            }
-            Err(e) => {
-                gx.toast(Toast::error(format!(
-                    "No active client. Please configure a connection first. ({:?})",
-                    e
-                )));
-                self.loading_message.set(None);
-                return;
-            }
-        };
-
-        self.client.set(Some(info.client.clone()));
-        self.environment_name.set(info.environment_name);
-
-        self.loading_message
             .set(Some("Loading entities...".to_string()));
 
         // Fetch all entities
-        let result = match fetch_all_entities(&info.client).await {
+        let result = match fetch_all_entities(&self.client_info.client).await {
             Ok(r) => r,
             Err(e) => {
                 gx.toast(Toast::error(format!("Failed to load entities: {}", e)));
@@ -232,8 +219,7 @@ impl EntityExplorer {
     }
 
     fn title(&self) -> String {
-        let env_name = self.environment_name.get();
-        format!("Entity Explorer ({})", env_name)
+        format!("Entity Explorer ({})", self.client_info.environment_name)
     }
 
     #[keybinds]
@@ -284,13 +270,8 @@ impl EntityExplorer {
     async fn on_activate(&self, gx: &GlobalContext) {
         let state = self.filtered_list.get();
         if let Some(key) = &state.last_activated {
-            let Some(client) = self.client.get() else {
-                gx.toast(Toast::error("Client connection lost"));
-                return;
-            };
-            let env_name = self.environment_name.get();
-            let query = client.query(Entity::logical(key));
-            let _ = gx.spawn_and_focus(crate::apps::RecordExplorer::new(query, env_name));
+            let query = self.client_info.client.query(Entity::logical(key));
+            let _ = gx.spawn_and_focus(crate::apps::RecordExplorer::new(query, self.client_info.clone()));
         }
     }
 

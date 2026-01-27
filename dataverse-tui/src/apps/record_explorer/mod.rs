@@ -15,20 +15,32 @@ use rafter::widgets::{Column, SelectionMode, Table, TableState, Text};
 use tuidom::Element;
 
 use crate::formatting::default_column_width;
+use crate::systems::client_management::ActiveClientInfo;
 use crate::widgets::{Spinner, loading_overlay};
 
 use row::{EntityData, RecordRow};
-use service::{default_columns, fetch_entity_data, fetch_next_page, fetch_records};
+use service::{convert_records_to_rows, default_columns, fetch_entity_data};
 
 #[app(name = "Record Explorer")]
 pub struct RecordExplorer {
-    /// The query to execute (set at construction).
+    /// Fresh iterator template for refresh.
     #[state(skip)]
-    query: Option<ODataQueryBuilder>,
+    pages_template: ODataPages,
 
-    /// Environment display name.
+    /// Current working iterator.
+    pages: ODataPages,
+
+    /// Full connection context.
     #[state(skip)]
-    environment_name: String,
+    client_info: ActiveClientInfo,
+
+    /// Entity being queried.
+    #[state(skip)]
+    entity: dataverse_lib::model::Entity,
+
+    /// Selected fields (empty = all fields).
+    #[state(skip)]
+    selected_fields: Vec<String>,
 
     /// Loading overlay message (None = no overlay).
     loading_message: Option<String>,
@@ -39,7 +51,6 @@ pub struct RecordExplorer {
     /// Records table.
     records: TableState<RecordRow>,
     records_loading: Resource<()>,
-    pages: Option<ODataPages>,
     total_count: Option<usize>,
 
     /// Advanced mode - shared with rows for efficient rendering.
@@ -48,11 +59,29 @@ pub struct RecordExplorer {
 }
 
 impl RecordExplorer {
-    pub fn new(query: ODataQueryBuilder, environment_name: impl Into<String>) -> Self {
+    pub fn new(query: ODataQueryBuilder, client_info: ActiveClientInfo) -> Self {
+        let entity = query.entity().clone();
+        let selected_fields = query.selected_fields().to_vec();
+        
+        let pages_template = query
+            .include_count()
+            .page_size(50)
+            .into_async_iter(&client_info.client);
+        
         Self {
-            query: Some(query),
-            environment_name: environment_name.into(),
-            ..Default::default()
+            pages_template: pages_template.clone(),
+            pages: State::new(pages_template),
+            client_info,
+            entity,
+            selected_fields,
+            advanced_mode: Arc::new(AtomicBool::new(false)),
+            loading_message: State::default(),
+            entity_data: State::default(),
+            records: State::default(),
+            records_loading: Resource::default(),
+            total_count: State::default(),
+            __handler_registry: Default::default(),
+            __derived_cache: Default::default(),
         }
     }
 }
@@ -61,19 +90,11 @@ impl RecordExplorer {
 impl RecordExplorer {
     #[on_start]
     async fn on_start(&self, gx: &GlobalContext) {
-        let Some(query) = &self.query else {
-            gx.toast(Toast::error("No query provided"));
-            return;
-        };
-
         self.loading_message
             .set(Some("Loading entity...".to_string()));
 
-        let client = query.client().clone();
-        let entity = query.entity().clone();
-
         // Resolve entity to logical name for metadata fetch
-        let logical_name = match client.resolve_entity_logical_name(&entity).await {
+        let logical_name = match self.client_info.client.resolve_entity_logical_name(&self.entity).await {
             Ok(name) => name,
             Err(e) => {
                 gx.toast(Toast::error(format!("Failed to resolve entity: {}", e)));
@@ -86,7 +107,7 @@ impl RecordExplorer {
             .set(Some(format!("Loading {}...", logical_name)));
 
         // Fetch entity metadata
-        let entity_data = match fetch_entity_data(&client, &logical_name).await {
+        let entity_data = match fetch_entity_data(&self.client_info.client, &logical_name).await {
             Ok(data) => data,
             Err(e) => {
                 gx.toast(Toast::error(format!("Failed to load entity: {}", e)));
@@ -97,11 +118,11 @@ impl RecordExplorer {
 
         self.entity_data.set(Some(entity_data.clone()));
 
-        // Determine display columns from the query's select list or defaults
-        let columns: Vec<String> = if query.selected_fields().is_empty() {
+        // Determine display columns from the selected fields or defaults
+        let columns: Vec<String> = if self.selected_fields.is_empty() {
             default_columns(&entity_data.metadata)
         } else {
-            query.selected_fields().to_vec()
+            self.selected_fields.clone()
         };
 
         // Execute the query
@@ -111,11 +132,7 @@ impl RecordExplorer {
     }
 
     fn title(&self) -> String {
-        let fallback = self
-            .query
-            .as_ref()
-            .map(|q| q.entity().name().to_string())
-            .unwrap_or_default();
+        let fallback = self.entity.name().to_string();
         let entity_name = self.entity_data.with_ref(|data| {
             data.as_ref()
                 .and_then(|d| d.metadata.display_name.text())
@@ -123,7 +140,7 @@ impl RecordExplorer {
                 .unwrap_or_else(|| fallback.clone())
         });
 
-        format!("{} ({})", entity_name, self.environment_name)
+        format!("{} ({})", entity_name, self.client_info.environment_name)
     }
 
     #[keybinds]
@@ -134,13 +151,11 @@ impl RecordExplorer {
 
     #[handler]
     async fn refresh(&self, gx: &GlobalContext) {
-        let Some(query) = &self.query else { return };
-
         let display_name = self.entity_data.with_ref(|data| {
             data.as_ref()
                 .and_then(|d| d.metadata.display_name.text())
                 .map(|s| s.to_string())
-                .unwrap_or_else(|| query.entity().name().to_string())
+                .unwrap_or_else(|| self.entity.name().to_string())
         });
 
         self.loading_message
@@ -154,11 +169,14 @@ impl RecordExplorer {
             }
         };
 
-        let columns: Vec<String> = if query.selected_fields().is_empty() {
+        let columns: Vec<String> = if self.selected_fields.is_empty() {
             default_columns(&entity_data.metadata)
         } else {
-            query.selected_fields().to_vec()
+            self.selected_fields.clone()
         };
+
+        // Clone the fresh template for refresh
+        self.pages.set(self.pages_template.clone());
 
         self.do_load_records(&entity_data, &columns, gx).await;
 
@@ -235,30 +253,35 @@ impl RecordExplorer {
             })
             .collect();
 
-        // Execute the query
-        let Some(query) = &self.query else { return };
-        let result = match fetch_records(query, 50, self.advanced_mode.clone()).await {
-            Ok(r) => r,
-            Err(e) => {
+        // Fetch the first page
+        let mut pages = self.pages.get();
+        let page = match pages.next(&self.client_info.client).await {
+            Some(Ok(p)) => p,
+            Some(Err(e)) => {
                 log::error!("[RecordExplorer] Failed to fetch records: {}", e);
                 self.records_loading
                     .set_error(format!("Failed to load records: {}", e));
-                self.pages.set(None);
+                return;
+            }
+            None => {
+                log::warn!("[RecordExplorer] No records returned");
+                self.records_loading.set_ready(());
                 return;
             }
         };
 
-        if let Some(count) = result.total_count {
+        if let Some(count) = page.total_count() {
             log::debug!("[RecordExplorer] Total count: {}", count);
             self.total_count.set(Some(count));
         }
 
-        self.pages.set(result.pages);
+        let rows = convert_records_to_rows(page.records(), self.advanced_mode.clone());
+        self.pages.set(pages);
 
         // Update table
         let frozen_col = table_columns.first().map(|c| c.id.clone());
         let mut state =
-            TableState::new(result.rows, table_columns).with_selection(SelectionMode::None);
+            TableState::new(rows, table_columns).with_selection(SelectionMode::None);
         if let Some(col) = &frozen_col {
             state = state.with_frozen(&[col.as_str()]);
         }
@@ -279,53 +302,34 @@ impl RecordExplorer {
             return;
         }
 
-        let mut pages: ODataPages = match self.pages.get() {
-            Some(p) => p,
-            None => return,
-        };
-
-        let entity_data = match self.entity_data.get() {
-            Some(data) => data,
-            None => return,
-        };
-
         self.records_loading.set_progress(ProgressState {
             current: 0,
             total: None,
             message: Some("Loading more records...".to_string()),
         });
 
-        let (new_rows, has_more) = match fetch_next_page(
-            &mut pages,
-            &entity_data.metadata.primary_id_attribute,
-            self.advanced_mode.clone(),
-        )
-        .await
-        {
-            Ok(Some((rows, has_more))) => (rows, has_more),
-            Ok(None) => {
-                self.pages.set(None);
+        let mut pages = self.pages.get();
+        let page = match pages.next(&self.client_info.client).await {
+            Some(Ok(p)) => p,
+            Some(Err(e)) => {
+                log::error!("[RecordExplorer] Failed to fetch more records: {}", e);
+                gx.toast(Toast::error("Failed to load more records"));
                 self.records_loading.set_ready(());
                 return;
             }
-            Err(e) => {
-                log::error!("[RecordExplorer] Failed to fetch more records: {}", e);
-                gx.toast(Toast::error("Failed to load more records"));
-                self.pages.set(None);
+            None => {
+                // No more pages
                 self.records_loading.set_ready(());
                 return;
             }
         };
 
+        let new_rows = convert_records_to_rows(page.records(), self.advanced_mode.clone());
+        self.pages.set(pages);
+
         self.records.update(|state| {
             state.extend_rows(new_rows);
         });
-
-        if has_more {
-            self.pages.set(Some(pages));
-        } else {
-            self.pages.set(None);
-        }
 
         self.records_loading.set_ready(());
     }

@@ -16,7 +16,7 @@ use rafter::widgets::{Text, Tree, TreeNode, TreeState};
 use crate::apps::RecordExplorer;
 use crate::modals::{ListEntry, LoadingModal, SearchableListModal};
 use crate::paths;
-use crate::systems::client_management::{ClientManagement, GetActiveClient};
+use crate::systems::client_management::{ActiveClientInfo, ClientManagement, GetActiveClient};
 use data::{FilterNode, QueryData, SortField};
 use modals::{
     ConditionData, ConditionEditorModal, EntityPickerModal, FieldPickerModal, LoadQueryModal,
@@ -28,6 +28,10 @@ use tree::{QueryTreeNode, build_tree};
 /// Query Builder app: visual tree-based OData query construction.
 #[app(name = "Query Builder")]
 pub struct QueryBuilder {
+    /// Full connection context.
+    #[state(skip)]
+    client_info: ActiveClientInfo,
+
     /// Tree widget state.
     tree_state: TreeState<QueryTreeNode>,
     /// The query being constructed.
@@ -38,6 +42,21 @@ pub struct QueryBuilder {
     saved_query_id: Option<i64>,
     /// Name of the currently loaded saved query.
     saved_query_name: Option<String>,
+}
+
+impl QueryBuilder {
+    pub fn new(client_info: ActiveClientInfo) -> Self {
+        Self {
+            client_info,
+            tree_state: State::default(),
+            query: State::default(),
+            repo: State::default(),
+            saved_query_id: State::default(),
+            saved_query_name: State::default(),
+            __handler_registry: Default::default(),
+            __derived_cache: Default::default(),
+        }
+    }
 }
 
 #[app_impl]
@@ -176,7 +195,8 @@ impl QueryBuilder {
         };
 
         match key {
-            tree::QueryTreeKey::Section(tree::Section::Entity) | tree::QueryTreeKey::EntityValue => {
+            tree::QueryTreeKey::Section(tree::Section::Entity)
+            | tree::QueryTreeKey::EntityValue => {
                 self.open_entity_picker(gx).await;
             }
             tree::QueryTreeKey::Section(tree::Section::Top) | tree::QueryTreeKey::TopValue => {
@@ -212,16 +232,19 @@ impl QueryBuilder {
         };
 
         match &key {
-            tree::QueryTreeKey::Section(tree::Section::Entity) | tree::QueryTreeKey::EntityValue => {
+            tree::QueryTreeKey::Section(tree::Section::Entity)
+            | tree::QueryTreeKey::EntityValue => {
                 self.open_entity_picker(gx).await;
             }
             tree::QueryTreeKey::Section(tree::Section::Top) | tree::QueryTreeKey::TopValue => {
                 self.open_top_editor(gx).await;
             }
-            tree::QueryTreeKey::Section(tree::Section::Select) | tree::QueryTreeKey::SelectField(_) => {
+            tree::QueryTreeKey::Section(tree::Section::Select)
+            | tree::QueryTreeKey::SelectField(_) => {
                 self.open_field_picker(gx).await;
             }
-            tree::QueryTreeKey::Section(tree::Section::OrderBy) | tree::QueryTreeKey::SortItem(_) => {
+            tree::QueryTreeKey::Section(tree::Section::OrderBy)
+            | tree::QueryTreeKey::SortItem(_) => {
                 self.open_sort_editor(gx).await;
             }
             tree::QueryTreeKey::Section(tree::Section::Filter)
@@ -373,15 +396,12 @@ impl QueryBuilder {
 
         let entity_clone = entity.clone();
         let attrs = match gx
-            .modal(LoadingModal::new(
-                "Loading attributes",
-                async move {
-                    client
-                        .metadata()
-                        .attributes(Entity::set(&entity_clone))
-                        .await
-                },
-            ))
+            .modal(LoadingModal::new("Loading attributes", async move {
+                client
+                    .metadata()
+                    .attributes(Entity::set(&entity_clone))
+                    .await
+            }))
             .await
         {
             Some(Ok(a)) => a,
@@ -391,7 +411,6 @@ impl QueryBuilder {
             }
             None => return,
         };
-
 
         let options: Vec<(String, String)> = attrs
             .iter()
@@ -512,7 +531,11 @@ impl QueryBuilder {
             gx.toast(Toast::info(format!(
                 "Deleted {} {}",
                 delete_count,
-                if delete_count == 1 { "query" } else { "queries" }
+                if delete_count == 1 {
+                    "query"
+                } else {
+                    "queries"
+                }
             )));
         }
 
@@ -523,7 +546,7 @@ impl QueryBuilder {
                     self.saved_query_id.set(Some(saved.id));
                     self.saved_query_name.set(Some(saved.name.clone()));
                     self.query.set(saved.data);
-                    
+
                     // Sync tree nodes and expand all
                     let nodes = self.tree_nodes();
                     self.tree_state.update(|s| {
@@ -531,7 +554,7 @@ impl QueryBuilder {
                         s.clear_expansion();
                         s.expand_all();
                     });
-                    
+
                     gx.toast(Toast::info(format!("Loaded: {}", saved.name)));
                 }
                 Err(e) => {
@@ -601,7 +624,7 @@ impl QueryBuilder {
 
         // Build the OData query
         let data = self.query.with_ref(|q| q.clone());
-        let query = match convert::build_query(&info.client, &data) {
+        let query = match convert::build_query(&data) {
             Ok(q) => q,
             Err(e) => {
                 gx.toast(Toast::error(format!("Query error: {}", e)));
@@ -612,7 +635,7 @@ impl QueryBuilder {
         // Launch the selected app
         match app_id.as_str() {
             "record-explorer" => {
-                let _ = gx.spawn_and_focus(RecordExplorer::new(query, info.environment_name));
+                let _ = gx.spawn_and_focus(RecordExplorer::new(query, info));
             }
             _ => {
                 gx.toast(Toast::info(format!("App not implemented: {}", app_id)));
@@ -627,9 +650,7 @@ impl QueryBuilder {
     async fn open_entity_picker(&self, gx: &GlobalContext) {
         // Check if there's existing data that will be cleared
         let has_data = self.query.with_ref(|q| {
-            !q.select.is_empty() 
-                || !matches!(q.filter, FilterNode::Empty)
-                || !q.order_by.is_empty()
+            !q.select.is_empty() || !matches!(q.filter, FilterNode::Empty) || !q.order_by.is_empty()
         });
 
         // Confirm if changing entity will clear existing data
@@ -649,10 +670,9 @@ impl QueryBuilder {
         };
 
         let entities = match gx
-            .modal(LoadingModal::new(
-                "Loading entities",
-                async move { client.metadata().all_entities().await },
-            ))
+            .modal(LoadingModal::new("Loading entities", async move {
+                client.metadata().all_entities().await
+            }))
             .await
         {
             Some(Ok(all)) => all
@@ -672,7 +692,6 @@ impl QueryBuilder {
             }
             None => return,
         };
-
 
         let result = gx.modal(EntityPickerModal::new(entities)).await;
         if let Some(entity) = result {
@@ -699,31 +718,28 @@ impl QueryBuilder {
 
         let entity_clone = entity.clone();
         let options = match gx
-            .modal(LoadingModal::new(
-                "Loading attributes",
-                async move {
-                    let attrs = client
-                        .metadata()
-                        .attributes(Entity::set(&entity_clone))
-                        .await
-                        .map_err(|e| format!("Failed to load attributes: {}", e))?;
+            .modal(LoadingModal::new("Loading attributes", async move {
+                let attrs = client
+                    .metadata()
+                    .attributes(Entity::set(&entity_clone))
+                    .await
+                    .map_err(|e| format!("Failed to load attributes: {}", e))?;
 
-                    Ok::<_, String>(
-                        attrs
-                            .iter()
-                            .filter(|a| a.is_valid_for_read && a.attribute_of.is_none())
-                            .map(|a| {
-                                let display = a
-                                    .display_name
-                                    .text()
-                                    .map(|d| format!("{} ({})", d, a.logical_name))
-                                    .unwrap_or_else(|| a.logical_name.clone());
-                                (a.logical_name.clone(), display)
-                            })
-                            .collect(),
-                    )
-                },
-            ))
+                Ok::<_, String>(
+                    attrs
+                        .iter()
+                        .filter(|a| a.is_valid_for_read && a.attribute_of.is_none())
+                        .map(|a| {
+                            let display = a
+                                .display_name
+                                .text()
+                                .map(|d| format!("{} ({})", d, a.logical_name))
+                                .unwrap_or_else(|| a.logical_name.clone());
+                            (a.logical_name.clone(), display)
+                        })
+                        .collect(),
+                )
+            }))
             .await
         {
             Some(Ok(opts)) => opts,
@@ -733,7 +749,6 @@ impl QueryBuilder {
             }
             None => return,
         };
-
 
         let current = self.query.with_ref(|q| q.select.clone());
         let result = gx
@@ -757,15 +772,12 @@ impl QueryBuilder {
 
         let entity_clone = entity.clone();
         let attrs = match gx
-            .modal(LoadingModal::new(
-                "Loading attributes",
-                async move {
-                    client
-                        .metadata()
-                        .attributes(Entity::set(&entity_clone))
-                        .await
-                },
-            ))
+            .modal(LoadingModal::new("Loading attributes", async move {
+                client
+                    .metadata()
+                    .attributes(Entity::set(&entity_clone))
+                    .await
+            }))
             .await
         {
             Some(Ok(a)) => a,
@@ -775,7 +787,6 @@ impl QueryBuilder {
             }
             None => return,
         };
-
 
         let options: Vec<(String, String)> = attrs
             .iter()
@@ -841,31 +852,28 @@ impl QueryBuilder {
 
         let entity_clone = entity.clone();
         let options = match gx
-            .modal(LoadingModal::new(
-                "Loading attributes",
-                async move {
-                    let attrs = client
-                        .metadata()
-                        .attributes(Entity::set(&entity_clone))
-                        .await
-                        .map_err(|e| format!("Failed to load attributes: {}", e))?;
+            .modal(LoadingModal::new("Loading attributes", async move {
+                let attrs = client
+                    .metadata()
+                    .attributes(Entity::set(&entity_clone))
+                    .await
+                    .map_err(|e| format!("Failed to load attributes: {}", e))?;
 
-                    Ok::<_, String>(
-                        attrs
-                            .iter()
-                            .filter(|a| a.is_valid_for_read && a.attribute_of.is_none())
-                            .map(|a| {
-                                let display = a
-                                    .display_name
-                                    .text()
-                                    .map(|d| format!("{} ({})", d, a.logical_name))
-                                    .unwrap_or_else(|| a.logical_name.clone());
-                                (a.logical_name.clone(), display)
-                            })
-                            .collect(),
-                    )
-                },
-            ))
+                Ok::<_, String>(
+                    attrs
+                        .iter()
+                        .filter(|a| a.is_valid_for_read && a.attribute_of.is_none())
+                        .map(|a| {
+                            let display = a
+                                .display_name
+                                .text()
+                                .map(|d| format!("{} ({})", d, a.logical_name))
+                                .unwrap_or_else(|| a.logical_name.clone());
+                            (a.logical_name.clone(), display)
+                        })
+                        .collect(),
+                )
+            }))
             .await
         {
             Some(Ok(opts)) => opts,
@@ -875,7 +883,6 @@ impl QueryBuilder {
             }
             None => return,
         };
-
 
         let result = gx.modal(SortFieldEditorModal::new(options)).await;
         if let Some((field, direction)) = result {
@@ -932,7 +939,8 @@ impl QueryBuilder {
             tree::QueryTreeKey::FilterGroup(id) => Some(*id),
             tree::QueryTreeKey::FilterCondition(cond_id) => {
                 // Find the parent group of this condition
-                self.query.with_ref(|q| q.filter.find_parent_group_id(*cond_id))
+                self.query
+                    .with_ref(|q| q.filter.find_parent_group_id(*cond_id))
             }
             tree::QueryTreeKey::Section(tree::Section::Filter) => {
                 // Return the root group ID if it exists
