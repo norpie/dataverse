@@ -15,8 +15,9 @@ use rafter::widgets::{Column, SelectionMode, Table, TableState, Text};
 use tuidom::Element;
 
 use crate::formatting::default_column_width;
+use crate::modals::LoadingModal;
 use crate::systems::client_management::ActiveClientInfo;
-use crate::widgets::{Spinner, loading_overlay};
+use crate::widgets::Spinner;
 
 use row::{EntityData, RecordRow};
 use service::{convert_records_to_rows, default_columns, fetch_entity_data};
@@ -41,9 +42,6 @@ pub struct RecordExplorer {
     /// Selected fields (empty = all fields).
     #[state(skip)]
     selected_fields: Vec<String>,
-
-    /// Loading overlay message (None = no overlay).
-    loading_message: Option<String>,
 
     /// Entity data (Some after initial load).
     entity_data: Option<EntityData>,
@@ -75,7 +73,6 @@ impl RecordExplorer {
             entity,
             selected_fields,
             advanced_mode: Arc::new(AtomicBool::new(false)),
-            loading_message: State::default(),
             entity_data: State::default(),
             records: State::default(),
             records_loading: Resource::default(),
@@ -90,35 +87,39 @@ impl RecordExplorer {
 impl RecordExplorer {
     #[on_start]
     async fn on_start(&self, gx: &GlobalContext) {
-        self.loading_message
-            .set(Some("Loading entity...".to_string()));
-
         // Resolve entity to logical name for metadata fetch
-        let logical_name = match self
-            .client_info
-            .client
-            .resolve_entity_logical_name(&self.entity)
+        let client = self.client_info.client.clone();
+        let entity = self.entity.clone();
+        let logical_name = match gx
+            .modal(LoadingModal::new("Resolving entity", async move {
+                client.resolve_entity_logical_name(&entity).await
+            }))
             .await
         {
-            Ok(name) => name,
-            Err(e) => {
+            Some(Ok(name)) => name,
+            Some(Err(e)) => {
                 gx.toast(Toast::error(format!("Failed to resolve entity: {}", e)));
-                self.loading_message.set(None);
                 return;
             }
+            None => return,
         };
 
-        self.loading_message
-            .set(Some(format!("Loading {}...", logical_name)));
-
         // Fetch entity metadata
-        let entity_data = match fetch_entity_data(&self.client_info.client, &logical_name).await {
-            Ok(data) => data,
-            Err(e) => {
+        let client = self.client_info.client.clone();
+        let logical_name_clone = logical_name.clone();
+        let entity_data = match gx
+            .modal(LoadingModal::new(
+                format!("Loading {}...", logical_name),
+                async move { fetch_entity_data(&client, &logical_name_clone).await },
+            ))
+            .await
+        {
+            Some(Ok(data)) => data,
+            Some(Err(e)) => {
                 gx.toast(Toast::error(format!("Failed to load entity: {}", e)));
-                self.loading_message.set(None);
                 return;
             }
+            None => return,
         };
 
         self.entity_data.set(Some(entity_data.clone()));
@@ -132,8 +133,6 @@ impl RecordExplorer {
 
         // Execute the query
         self.do_load_records(&entity_data, &columns, gx).await;
-
-        self.loading_message.set(None);
     }
 
     fn title(&self) -> String {
@@ -156,22 +155,9 @@ impl RecordExplorer {
 
     #[handler]
     async fn refresh(&self, gx: &GlobalContext) {
-        let display_name = self.entity_data.with_ref(|data| {
-            data.as_ref()
-                .and_then(|d| d.metadata.display_name.text())
-                .map(|s| s.to_string())
-                .unwrap_or_else(|| self.entity.name().to_string())
-        });
-
-        self.loading_message
-            .set(Some(format!("Refreshing {}...", display_name)));
-
         let entity_data = match self.entity_data.get() {
             Some(data) => data,
-            None => {
-                self.loading_message.set(None);
-                return;
-            }
+            None => return,
         };
 
         let columns: Vec<String> = if self.selected_fields.is_empty() {
@@ -185,7 +171,6 @@ impl RecordExplorer {
 
         self.do_load_records(&entity_data, &columns, gx).await;
 
-        self.loading_message.set(None);
         gx.toast(Toast::info("Refreshed"));
     }
 
@@ -339,7 +324,6 @@ impl RecordExplorer {
     }
 
     fn element(&self) -> Element {
-        let loading_message = self.loading_message.get();
         let (has_records, loaded_count, column_count) = self
             .records
             .with_ref(|t| (!t.rows.is_empty(), t.rows.len(), t.columns.len()));
@@ -347,53 +331,47 @@ impl RecordExplorer {
         let total_count = self.total_count.get();
 
         page! {
-            box_ (width: fill, height: fill) {
-                column (padding: (1, 2), gap: 1, height: fill, width: fill) style (bg: background) {
-                    // Table area
-                    if has_records {
-                        box_ (id: "table-container", height: fill, width: fill) style (bg: surface) {
-                            table (state: self.records, id: "records-table")
-                                on_scroll: on_table_scroll()
-                        }
-                    } else {
-                        match records_state {
-                            ResourceState::Loading => {
-                                column (height: fill, width: fill, align: center, justify: center) style (bg: surface) {
-                                    spinner (id: "table-spinner")
-                                }
-                            }
-                            ResourceState::Error(ref e) => {
-                                column (height: fill, width: fill, align: center, justify: center) style (bg: surface) {
-                                    text (content: {e.to_string()}) style (fg: error)
-                                }
-                            }
-                            _ => {
-                                box_ (height: fill, width: fill) style (bg: surface) {}
-                            }
-                        }
+            column (padding: (1, 2), gap: 1, height: fill, width: fill) style (bg: background) {
+                // Table area
+                if has_records {
+                    box_ (id: "table-container", height: fill, width: fill) style (bg: surface) {
+                        table (state: self.records, id: "records-table")
+                            on_scroll: on_table_scroll()
                     }
-
-                    // Footer
-                    row (width: fill, justify: between) {
-                        if let Some(total) = total_count {
-                            text (content: {format!("{}/{}", loaded_count, total)}) style (fg: muted)
-                        } else {
-                            text (content: {format!("{} records", loaded_count)}) style (fg: muted)
-                        }
-
-                        match records_state {
-                            ResourceState::Progress(_) => {
-                                spinner (id: "pagination-spinner")
+                } else {
+                    match records_state {
+                        ResourceState::Loading => {
+                            column (height: fill, width: fill, align: center, justify: center) style (bg: surface) {
+                                spinner (id: "table-spinner")
                             }
-                            _ => {}
                         }
-
-                        text (content: {format!("{} columns", column_count)}) style (fg: muted)
+                        ResourceState::Error(ref e) => {
+                            column (height: fill, width: fill, align: center, justify: center) style (bg: surface) {
+                                text (content: {e.to_string()}) style (fg: error)
+                            }
+                        }
+                        _ => {
+                            box_ (height: fill, width: fill) style (bg: surface) {}
+                        }
                     }
                 }
 
-                if let Some(msg) = loading_message {
-                    { loading_overlay("loading-overlay", &msg) }
+                // Footer
+                row (width: fill, justify: between) {
+                    if let Some(total) = total_count {
+                        text (content: {format!("{}/{}", loaded_count, total)}) style (fg: muted)
+                    } else {
+                        text (content: {format!("{} records", loaded_count)}) style (fg: muted)
+                    }
+
+                    match records_state {
+                        ResourceState::Progress(_) => {
+                            spinner (id: "pagination-spinner")
+                        }
+                        _ => {}
+                    }
+
+                    text (content: {format!("{} columns", column_count)}) style (fg: muted)
                 }
             }
         }
