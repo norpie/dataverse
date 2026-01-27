@@ -1,17 +1,16 @@
 //! Export app for exporting Dataverse query results to CSV or Excel.
 
-use dataverse_lib::api::query::odata::ODataPages;
 use dataverse_lib::model::{Entity, Record};
 use rafter::page;
 use rafter::prelude::*;
 use rafter::widgets::{Button, Column, SelectionMode, Table, TableState, Text};
 use rafter::InstanceId;
 
-use crate::apps::record_explorer::{RecordRow, convert_records_to_rows};
+use crate::apps::record_explorer::{convert_records_to_rows, RecordRow};
+use crate::file_io::{write_csv, write_excel, FileIoError};
 use crate::modals::{FileBrowserModal, LoadingModal};
 use crate::paths;
 use crate::systems::client_management::ActiveClientInfo;
-use crate::widgets::Spinner;
 
 /// Export app: execute query and export results to file.
 #[app(name = "Export")]
@@ -211,23 +210,62 @@ impl Export {
     #[handler]
     async fn export(&self, gx: &GlobalContext) {
         // Generate default filename (without extension)
-        let entity_name = self.entity.name();
+        let entity_name = self.entity.name().to_string();
         let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S");
         let default_filename = format!("{}_{}", entity_name, timestamp);
-        
+
         let start_dir = paths::downloads_dir().unwrap_or_else(|| std::path::PathBuf::from("."));
         let file_types = vec!["csv".to_string(), "xlsx".to_string()];
 
-        let modal = FileBrowserModal::new(&start_dir, file_types)
-            .with_filename(default_filename);
+        let modal =
+            FileBrowserModal::new(&start_dir, file_types).with_filename(default_filename);
 
-        if let Some(result) = gx.modal(modal).await {
-            // TODO: Write file based on file_type
-            gx.toast(Toast::info(format!(
-                "Export to {} as {} not yet implemented",
-                result.path.display(),
-                result.file_type
-            )));
+        let Some(result) = gx.modal(modal).await else {
+            return;
+        };
+
+        // Clone data for the blocking task
+        let records = self.records.with_ref(|r| r.clone());
+        let columns = self.columns.with_ref(|c| c.clone());
+        let path = result.path.clone();
+        let file_type = result.file_type.clone();
+        let sheet_name = entity_name.clone();
+
+        // Write file in blocking task with loading modal
+        let write_result = gx
+            .modal(LoadingModal::new("Exporting...", async move {
+                tokio::task::spawn_blocking(move || match file_type.as_str() {
+                    "csv" => write_csv(&path, &records, &columns),
+                    "xlsx" => write_excel(&path, &records, &columns, &sheet_name),
+                    _ => Err(FileIoError::Io(std::io::Error::new(
+                        std::io::ErrorKind::InvalidInput,
+                        format!("Unsupported file type: {}", file_type),
+                    ))),
+                })
+                .await
+                .map_err(|e| {
+                    FileIoError::Io(std::io::Error::new(
+                        std::io::ErrorKind::Other,
+                        format!("Task join error: {}", e),
+                    ))
+                })?
+            }))
+            .await;
+
+        match write_result {
+            Some(Ok(())) => {
+                gx.toast(Toast::success(format!(
+                    "Exported {} records to {}",
+                    self.records.with_ref(|r| r.len()),
+                    result.path.display()
+                )));
+            }
+            Some(Err(e)) => {
+                gx.toast(Toast::error(format!("Export failed: {}", e)));
+            }
+            None => {
+                // User cancelled (unlikely during write, but handle it)
+            }
         }
     }
 
