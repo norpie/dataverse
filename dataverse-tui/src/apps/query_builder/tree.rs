@@ -253,7 +253,7 @@ pub fn build_tree(query: &QueryData) -> Vec<TreeNode<QueryTreeNode>> {
     ));
 
     // Filter section
-    let filter_children = build_filter_nodes(&query.filter);
+    let filter_children = build_filter_node(&query.filter).into_iter().collect();
     let filter_count = count_conditions(&query.filter);
     roots.push(TreeNode::branch(
         QueryTreeNode::Section {
@@ -293,10 +293,10 @@ pub fn build_tree(query: &QueryData) -> Vec<TreeNode<QueryTreeNode>> {
     roots
 }
 
-/// Recursively build tree nodes from a FilterNode.
-fn build_filter_nodes(node: &FilterNode) -> Vec<TreeNode<QueryTreeNode>> {
+/// Recursively build a tree node from a FilterNode.
+fn build_filter_node(node: &FilterNode) -> Option<TreeNode<QueryTreeNode>> {
     match node {
-        FilterNode::Empty => vec![],
+        FilterNode::Empty => None,
         FilterNode::Group {
             id,
             is_and,
@@ -304,41 +304,27 @@ fn build_filter_nodes(node: &FilterNode) -> Vec<TreeNode<QueryTreeNode>> {
         } => {
             let child_nodes: Vec<TreeNode<QueryTreeNode>> = children
                 .iter()
-                .flat_map(|c| match c {
-                    FilterNode::Group { .. } => build_filter_nodes(c),
-                    FilterNode::Condition {
-                        id,
-                        field,
-                        operator,
-                        value,
-                    } => vec![TreeNode::leaf(QueryTreeNode::FilterCondition {
-                        id: *id,
-                        field: field.clone(),
-                        operator: *operator,
-                        value: value.clone(),
-                    })],
-                    FilterNode::Empty => vec![],
-                })
+                .filter_map(|c| build_filter_node(c))
                 .collect();
-            vec![TreeNode::branch(
+            Some(TreeNode::branch(
                 QueryTreeNode::FilterGroup {
                     id: *id,
                     is_and: *is_and,
                 },
                 child_nodes,
-            )]
+            ))
         }
         FilterNode::Condition {
             id,
             field,
             operator,
             value,
-        } => vec![TreeNode::leaf(QueryTreeNode::FilterCondition {
+        } => Some(TreeNode::leaf(QueryTreeNode::FilterCondition {
             id: *id,
             field: field.clone(),
             operator: *operator,
             value: value.clone(),
-        })],
+        })),
     }
 }
 
