@@ -8,10 +8,10 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use dataverse_lib::api::query::odata::ODataPages;
 use dataverse_lib::api::query::odata::QueryBuilder as ODataQueryBuilder;
-use rafter::EventData;
 use rafter::page;
 use rafter::prelude::*;
-use rafter::widgets::{Column, SelectionMode, Table, TableState, Text};
+use rafter::widgets::{Button, Column, SelectionMode, Table, TableState, Text};
+use rafter::{EventData, InstanceId};
 use tuidom::Element;
 
 use crate::formatting::default_column_width;
@@ -35,6 +35,10 @@ pub struct RecordExplorer {
     #[state(skip)]
     client_info: ActiveClientInfo,
 
+    /// Optional origin instance (for back navigation).
+    #[state(skip)]
+    origin: Option<InstanceId>,
+
     /// Entity being queried.
     #[state(skip)]
     entity: dataverse_lib::model::Entity,
@@ -57,7 +61,11 @@ pub struct RecordExplorer {
 }
 
 impl RecordExplorer {
-    pub fn new(query: ODataQueryBuilder, client_info: ActiveClientInfo) -> Self {
+    pub fn new(
+        query: ODataQueryBuilder,
+        client_info: ActiveClientInfo,
+        origin: Option<InstanceId>,
+    ) -> Self {
         let entity = query.entity().clone();
         let selected_fields = query.selected_fields().to_vec();
 
@@ -70,6 +78,7 @@ impl RecordExplorer {
             pages_template: pages_template.clone(),
             pages: State::new(pages_template),
             client_info,
+            origin,
             entity,
             selected_fields,
             advanced_mode: Arc::new(AtomicBool::new(false)),
@@ -151,6 +160,15 @@ impl RecordExplorer {
     fn keybinds() {
         bind("r", refresh);
         bind("f2", toggle_advanced);
+        bind("escape", go_back);
+    }
+
+    #[handler]
+    async fn go_back(&self, gx: &GlobalContext, cx: &AppContext) {
+        if let Some(origin_id) = self.origin {
+            gx.focus_instance(origin_id);
+            cx.close();
+        }
     }
 
     #[handler]
@@ -329,9 +347,15 @@ impl RecordExplorer {
             .with_ref(|t| (!t.rows.is_empty(), t.rows.len(), t.columns.len()));
         let records_state = self.records_loading.get();
         let total_count = self.total_count.get();
+        let has_origin = self.origin.is_some();
 
         page! {
             column (padding: (1, 2), gap: 1, height: fill, width: fill) style (bg: background) {
+                // Back button
+                if has_origin {
+                    button (label: "Back", hint: "esc", id: "back-button") on_activate: go_back()
+                }
+
                 // Table area
                 if has_records {
                     box_ (id: "table-container", height: fill, width: fill) style (bg: surface) {

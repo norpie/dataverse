@@ -274,6 +274,7 @@ impl EntityExplorer {
             let _ = gx.spawn_and_focus(crate::apps::RecordExplorer::new(
                 query,
                 self.client_info.clone(),
+                None,
             ));
         }
     }

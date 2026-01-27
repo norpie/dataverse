@@ -50,6 +50,7 @@ impl<T: Send + Sync + 'static> LoadingModal<T> {
 }
 
 #[modal_impl(Result = Option<T>)]
+#[rustfmt::skip]
 impl<T: Send + Sync + 'static> LoadingModal::<T> {
     fn default_result(&self) -> Option<T> {
         None

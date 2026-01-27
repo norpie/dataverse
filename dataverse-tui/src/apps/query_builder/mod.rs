@@ -582,7 +582,7 @@ impl QueryBuilder {
 
     /// Send the query to Record Explorer for execution.
     #[handler]
-    async fn send_query(&self, gx: &GlobalContext) {
+    async fn send_query(&self, gx: &GlobalContext, cx: &AppContext) {
         // Validate entity is set
         let has_entity = self.query.with_ref(|q| q.entity.is_some());
         if !has_entity {
@@ -635,7 +635,8 @@ impl QueryBuilder {
         // Launch the selected app
         match app_id.as_str() {
             "record-explorer" => {
-                let _ = gx.spawn_and_focus(RecordExplorer::new(query, info));
+                let _ =
+                    gx.spawn_and_focus(RecordExplorer::new(query, info, Some(cx.instance_id())));
             }
             _ => {
                 gx.toast(Toast::info(format!("App not implemented: {}", app_id)));
