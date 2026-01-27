@@ -117,7 +117,7 @@ impl ConfirmModal {
 // Counter App
 // ============================================================================
 
-#[app]
+#[app(default)]
 struct Counter {
     value: i32,
     step: i32,

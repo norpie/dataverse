@@ -30,7 +30,7 @@ use sizes::{AutoModal, FixedModal, LgModal, MdModal, ProportionalModal, SmModal}
 // Modal Showcase App
 // ============================================================================
 
-#[app]
+#[app(default)]
 struct ModalShowcase {
     last_result: String,
 }

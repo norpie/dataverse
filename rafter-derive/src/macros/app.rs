@@ -2,12 +2,22 @@
 //!
 //! Transforms a struct into an app by:
 //! - Wrapping fields in `State<T>` (unless Resource, widget, or skipped)
-//! - Generating `Clone` and `Default` impls
-//! - Registering with inventory for auto-discovery
+//! - Generating `Clone` impl
+//! - Optionally generating `Default` impl (with `default` flag)
+//! - Optionally registering with inventory (only for `autostart` apps)
 //! - Creating metadata for use by `#[app_impl]`
 //!
-//! Supports the `pages` flag for page routing:
+//! ## Attributes
+//!
+//! - `#[app]` - basic app (no Default, no registration)
+//! - `#[app(default)]` - generates Default impl
+//! - `#[app(factory = MyApp::new)]` - uses custom factory function
+//! - `#[app(singleton, default)]` - singleton with Default-based factory
+//! - `#[app(autostart, default)]` - auto-starts on runtime init
 //! - `#[app(pages)]` - enables page routing (expects `Page` enum in scope)
+//!
+//! Note: `singleton`, `autostart`, and `on_panic = Restart` require either
+//! `default` or `factory = ...` to be specified.
 
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
@@ -25,6 +35,10 @@ struct AppAttrs {
     pages: bool,
     /// Whether this app should auto-start in the background on runtime init.
     autostart: bool,
+    /// Whether to generate a Default impl (required for singleton/autostart unless factory is provided)
+    default: bool,
+    /// Custom factory function path (e.g., `MyApp::new`), must return `Self`
+    factory: Option<syn::Path>,
 }
 
 impl AppAttrs {
@@ -36,6 +50,8 @@ impl AppAttrs {
             on_blur: None,
             pages: false,
             autostart: false,
+            default: false,
+            factory: None,
         };
 
         if !attr.is_empty() {
@@ -71,6 +87,12 @@ impl AppAttrs {
                         ));
                     }
                     attrs.on_blur = Some(ident);
+                } else if meta.path.is_ident("default") {
+                    attrs.default = true;
+                } else if meta.path.is_ident("factory") {
+                    meta.input.parse::<Token![=]>()?;
+                    let path: syn::Path = meta.input.parse()?;
+                    attrs.factory = Some(path);
                 } else {
                     return Err(meta.error("unknown app attribute"));
                 }
@@ -80,6 +102,48 @@ impl AppAttrs {
         }
 
         Ok(attrs)
+    }
+
+    /// Check if this app has a factory available (either `default` or `factory = ...`).
+    fn has_factory(&self) -> bool {
+        self.default || self.factory.is_some()
+    }
+
+    /// Validate attributes, returning an error if invalid.
+    fn validate(&self, span: proc_macro2::Span) -> syn::Result<()> {
+        let needs_factory = self.autostart
+            || self.singleton
+            || self.on_panic.as_ref().is_some_and(|p| p == "Restart");
+
+        if needs_factory && !self.has_factory() {
+            let mut reasons = Vec::new();
+            if self.autostart {
+                reasons.push("autostart");
+            }
+            if self.singleton {
+                reasons.push("singleton");
+            }
+            if self.on_panic.as_ref().is_some_and(|p| p == "Restart") {
+                reasons.push("on_panic = Restart");
+            }
+            return Err(syn::Error::new(
+                span,
+                format!(
+                    "{} requires `default` or `factory = ...` attribute",
+                    reasons.join(", ")
+                ),
+            ));
+        }
+
+        // Cannot have both default and factory
+        if self.default && self.factory.is_some() {
+            return Err(syn::Error::new(
+                span,
+                "cannot specify both `default` and `factory = ...`",
+            ));
+        }
+
+        Ok(())
     }
 }
 
@@ -113,8 +177,12 @@ fn transform_field(field: &Field) -> TokenStream {
     }
 }
 
-/// Generate Default impl.
+/// Generate Default impl (only if `default` attribute is set).
 fn generate_default_impl(name: &Ident, fields: &FieldsNamed, attrs: &AppAttrs) -> TokenStream {
+    if !attrs.default {
+        return quote! {};
+    }
+
     let field_defaults: Vec<_> = fields
         .named
         .iter()
@@ -211,17 +279,28 @@ fn generate_clone_impl(name: &Ident, fields: &FieldsNamed, attrs: &AppAttrs) -> 
     }
 }
 
-/// Generate inventory registration.
+/// Generate inventory registration (only if `autostart` is set).
 fn generate_registration(name: &Ident, attrs: &AppAttrs) -> TokenStream {
+    if !attrs.autostart {
+        return quote! {};
+    }
+
     let name_str = name.to_string();
-    let autostart = attrs.autostart;
+
+    // Validation ensures we have either default or factory when autostart is set
+    let factory_expr = if let Some(factory) = &attrs.factory {
+        quote! { || Box::new(#factory()) as Box<dyn rafter::CloneableApp> }
+    } else {
+        // attrs.default must be true here due to validation
+        quote! { || Box::new(#name::default()) as Box<dyn rafter::CloneableApp> }
+    };
 
     quote! {
         inventory::submit! {
             rafter::AppRegistration::new(
                 #name_str,
-                || Box::new(#name::default()) as Box<dyn rafter::CloneableApp>,
-                #autostart,
+                #factory_expr,
+                true,
             )
         }
     }
@@ -346,6 +425,14 @@ fn generate_singleton_methods(name: &Ident, attrs: &AppAttrs) -> TokenStream {
         return quote! {};
     }
 
+    // Validation ensures we have either default or factory when singleton is set
+    let spawn_expr = if let Some(factory) = &attrs.factory {
+        quote! { gx.spawn(#factory()) }
+    } else {
+        // attrs.default must be true here due to validation
+        quote! { gx.spawn(Self::default()) }
+    };
+
     quote! {
         impl #name {
             /// Get the existing singleton instance, or spawn a new one.
@@ -355,7 +442,7 @@ fn generate_singleton_methods(name: &Ident, attrs: &AppAttrs) -> TokenStream {
                 if let Some(id) = gx.instance_of::<Self>() {
                     Ok(id)
                 } else {
-                    gx.spawn(Self::default())
+                    #spawn_expr
                 }
             }
 
@@ -384,6 +471,11 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
 
     let name = &input.ident;
     let vis = &input.vis;
+
+    // Validate attributes
+    if let Err(e) = attrs.validate(name.span()) {
+        return e.to_compile_error();
+    }
 
     let other_attrs: Vec<_> = input
         .attrs

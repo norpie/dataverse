@@ -249,7 +249,7 @@ fn create_sample_tree() -> Vec<TreeNode<FsNode>> {
     ]
 }
 
-#[app]
+#[app(default)]
 struct TreeExample {
     files: TreeState<FsNode>,
     message: String,

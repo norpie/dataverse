@@ -4,7 +4,7 @@ use rafter::widgets::Text;
 
 use crate::widgets::Spinner;
 
-#[app(name = "Welcome", singleton, on_blur = Close)]
+#[app(name = "Welcome", singleton, on_blur = Close, default)]
 pub struct Welcome {}
 
 #[app_impl]

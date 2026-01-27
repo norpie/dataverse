@@ -76,7 +76,7 @@ async fn fetch_records(cursor: Option<u64>, limit: usize) -> ApiResponse {
     }
 }
 
-#[app]
+#[app(default)]
 struct PaginationExample {
     records: ListState<Record>,
     next_cursor: Option<u64>,

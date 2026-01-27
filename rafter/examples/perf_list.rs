@@ -45,7 +45,7 @@ fn generate_items(count: usize) -> Vec<PerfItem> {
         .collect()
 }
 
-#[app]
+#[app(default)]
 struct PerfListExample {
     items: ListState<PerfItem>,
     item_count: usize,

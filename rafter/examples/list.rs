@@ -36,7 +36,7 @@ impl ListItem for FileItem {
     }
 }
 
-#[app]
+#[app(default)]
 struct ListExample {
     files: ListState<FileItem>,
     files2: ListState<FileItem>,

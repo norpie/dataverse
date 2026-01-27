@@ -130,7 +130,7 @@ fn create_columns() -> Vec<Column> {
     ]
 }
 
-#[app]
+#[app(default)]
 struct TableExample {
     users: TableState<User>,
     message: String,

@@ -22,7 +22,7 @@ use rafter::widgets::{
 };
 use simplelog::{Config, LevelFilter, WriteLogger};
 
-#[app]
+#[app(default)]
 struct WidgetShowcase {
     // Checkbox state
     agree: bool,

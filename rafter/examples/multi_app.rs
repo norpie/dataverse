@@ -246,7 +246,7 @@ impl GlobalKeys {
 // App A - BlurPolicy::Continue
 // ============================================================================
 
-#[app(name = "App A", on_blur = Continue)]
+#[app(name = "App A", on_blur = Continue, default)]
 struct AppA {
     instances: Vec<InstanceInfo>,
     last_activated: String,
@@ -413,7 +413,7 @@ impl AppA {
 // App B - BlurPolicy::Sleep + Singleton
 // ============================================================================
 
-#[app(name = "App B", on_blur = Sleep, singleton)]
+#[app(name = "App B", on_blur = Sleep, singleton, default)]
 struct AppB {}
 
 #[app_impl]
@@ -468,7 +468,7 @@ impl AppB {
 // App C - BlurPolicy::Close
 // ============================================================================
 
-#[app(name = "App C", on_blur = Close)]
+#[app(name = "App C", on_blur = Close, default)]
 struct AppC {}
 
 #[app_impl]
@@ -512,7 +512,7 @@ impl AppC {
 // App D - BlurPolicy::Continue + Request Handler
 // ============================================================================
 
-#[app(name = "App D", on_blur = Continue)]
+#[app(name = "App D", on_blur = Continue, default)]
 struct AppD {
     counter: i32,
 }

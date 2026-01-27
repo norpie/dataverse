@@ -13,7 +13,7 @@ use rafter::prelude::*;
 use rafter::widgets::{Autocomplete, AutocompleteState, Text};
 use simplelog::{Config, LevelFilter, WriteLogger};
 
-#[app]
+#[app(default)]
 struct AutocompleteDemo {
     country: AutocompleteState<String>,
     message: String,

@@ -8,7 +8,7 @@ use rafter::page;
 use rafter::prelude::*;
 use rafter::widgets::{Button, Text};
 
-#[app]
+#[app(default)]
 struct ContextMenuDemo {
     counter: i32,
     last_action: String,

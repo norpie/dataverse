@@ -36,7 +36,7 @@ use types::ItemStatus;
 use types::StatusFilter;
 
 /// Queue app for executing Dataverse operations in priority order.
-#[app(name = "Queue", singleton, on_blur = Continue, autostart)]
+#[app(name = "Queue", singleton, on_blur = Continue, autostart, default)]
 pub struct Queue {
     /// Database repository.
     repository: Option<QueueRepository>,
