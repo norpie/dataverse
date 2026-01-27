@@ -365,7 +365,7 @@ impl ParallelLoadingModal {
 
     fn render_loading(&self) -> Element {
         let task_count = self.task_states.len();
-        
+
         page! {
             column (padding: (1, 2), gap: 1, width: fill, height: fill) style (bg: surface) {
                 text (content: "Loading") style (bold, fg: interact)
@@ -415,7 +415,9 @@ impl ParallelLoadingModal {
 
     fn render_task_row_by_index(&self, idx: usize) -> Element {
         let state = self.task_states[idx].get();
-        let label = self.task_labels.get(idx)
+        let label = self
+            .task_labels
+            .get(idx)
             .cloned()
             .unwrap_or_else(|| format!("Task {}", idx + 1));
 

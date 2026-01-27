@@ -72,8 +72,8 @@ pub use runtime::{Runtime, RuntimeError};
 
 // Re-export derive macros
 pub use rafter_derive::{
-    Event, Request, app, app_impl, context_menu, derived, event_handler, handler, keybinds,
-    modal, modal_impl, page, request_handler, system, system_impl, theme,
+    Event, Request, app, app_impl, context_menu, derived, event_handler, handler, keybinds, modal,
+    modal_impl, page, request_handler, system, system_impl, theme,
 };
 
 // =============================================================================

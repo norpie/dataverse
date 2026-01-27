@@ -2,7 +2,7 @@
 
 use syn::parse::{Parse, ParseStream};
 use syn::token::{Brace, Paren};
-use syn::{braced, parenthesized, Expr, Ident, Pat, Token};
+use syn::{Expr, Ident, Pat, Token, braced, parenthesized};
 
 use super::ast::{
     Attr, AttrValue, AttrValueElse, AttrValueIf, ElementNode, ElseBranch, ForNode, HandlerArg,

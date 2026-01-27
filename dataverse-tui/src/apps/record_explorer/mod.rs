@@ -62,12 +62,12 @@ impl RecordExplorer {
     pub fn new(query: ODataQueryBuilder, client_info: ActiveClientInfo) -> Self {
         let entity = query.entity().clone();
         let selected_fields = query.selected_fields().to_vec();
-        
+
         let pages_template = query
             .include_count()
             .page_size(50)
             .into_async_iter(&client_info.client);
-        
+
         Self {
             pages_template: pages_template.clone(),
             pages: State::new(pages_template),
@@ -94,7 +94,12 @@ impl RecordExplorer {
             .set(Some("Loading entity...".to_string()));
 
         // Resolve entity to logical name for metadata fetch
-        let logical_name = match self.client_info.client.resolve_entity_logical_name(&self.entity).await {
+        let logical_name = match self
+            .client_info
+            .client
+            .resolve_entity_logical_name(&self.entity)
+            .await
+        {
             Ok(name) => name,
             Err(e) => {
                 gx.toast(Toast::error(format!("Failed to resolve entity: {}", e)));
@@ -280,8 +285,7 @@ impl RecordExplorer {
 
         // Update table
         let frozen_col = table_columns.first().map(|c| c.id.clone());
-        let mut state =
-            TableState::new(rows, table_columns).with_selection(SelectionMode::None);
+        let mut state = TableState::new(rows, table_columns).with_selection(SelectionMode::None);
         if let Some(col) = &frozen_col {
             state = state.with_frozen(&[col.as_str()]);
         }

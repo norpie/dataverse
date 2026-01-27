@@ -80,18 +80,22 @@ impl LoadQueryModal {
         if let Some(id) = focused {
             // Stage deletion: add to list and remove from visible items
             self.staged_deletes.update(|deletes| deletes.push(id));
-            
+
             // Remove item from visible list and update focus
-            let new_items: Vec<QueryItem> = self
-                .list
-                .with_ref(|s| s.items.iter().filter(|item| item.id != id).cloned().collect());
-            
+            let new_items: Vec<QueryItem> = self.list.with_ref(|s| {
+                s.items
+                    .iter()
+                    .filter(|item| item.id != id)
+                    .cloned()
+                    .collect()
+            });
+
             let new_focus = if new_items.is_empty() {
                 None
             } else {
                 Some(new_items[0].id)
             };
-            
+
             self.list.update(|s| {
                 s.set_items(new_items);
                 s.focused_key = new_focus;

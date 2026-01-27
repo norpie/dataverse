@@ -8,7 +8,7 @@
 
 use proc_macro2::TokenStream;
 use quote::quote;
-use syn::{parse2, Expr, ExprField, ExprMethodCall, ImplItemFn};
+use syn::{Expr, ExprField, ExprMethodCall, ImplItemFn, parse2};
 
 /// Extract dependencies from function body by finding State access patterns.
 fn find_dependencies(func: &ImplItemFn) -> Vec<String> {

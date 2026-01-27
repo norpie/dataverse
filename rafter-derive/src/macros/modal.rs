@@ -14,7 +14,7 @@
 
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
-use syn::{parse2, DeriveInput, Field, Fields, FieldsNamed, Ident};
+use syn::{DeriveInput, Field, Fields, FieldsNamed, Ident, parse2};
 
 use super::fields::{has_state_skip, has_widget_attribute, is_resource_type};
 

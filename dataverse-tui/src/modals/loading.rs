@@ -30,7 +30,7 @@ type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 pub struct LoadingModal<T> {
     #[state(skip)]
     message: String,
-    
+
     #[state(skip)]
     operation: Arc<Mutex<Option<BoxFuture<'static, T>>>>,
 }
@@ -58,12 +58,12 @@ impl<T: Send + Sync + 'static> LoadingModal::<T> {
     #[on_start]
     async fn on_start(&self, mx: &ModalContext<Option<T>>) {
         let operation = self.operation.lock().unwrap().take();
-        
+
         let Some(op) = operation else {
             mx.close(None);
             return;
         };
-        
+
         let result = op.await;
         mx.close(Some(result));
     }

@@ -113,7 +113,7 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
     let self_ty = partial_impl.self_ty.clone();
     let generics = partial_impl.generics.clone();
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
-    
+
     let type_name = match get_type_name(&self_ty) {
         Some(n) => n,
         None => {

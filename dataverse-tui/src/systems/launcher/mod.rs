@@ -40,24 +40,24 @@ impl Launcher {
         self.modal_open.set(false);
 
         if let Some(selected) = result {
-                    // Get active client
-                    let client_info = match gx
-                        .request_system::<ClientManagement, GetActiveClient>(GetActiveClient)
-                        .await
-                    {
-                        Ok(Ok(info)) => info,
-                        Ok(Err(e)) => {
-                            gx.toast(Toast::error(format!("Client error: {}", e)));
-                            return;
-                        }
-                        Err(e) => {
-                            gx.toast(Toast::error(format!(
-                                "No active client. Please configure a connection first. ({:?})",
-                                e
-                            )));
-                            return;
-                        }
-                    };
+            // Get active client
+            let client_info = match gx
+                .request_system::<ClientManagement, GetActiveClient>(GetActiveClient)
+                .await
+            {
+                Ok(Ok(info)) => info,
+                Ok(Err(e)) => {
+                    gx.toast(Toast::error(format!("Client error: {}", e)));
+                    return;
+                }
+                Err(e) => {
+                    gx.toast(Toast::error(format!(
+                        "No active client. Please configure a connection first. ({:?})",
+                        e
+                    )));
+                    return;
+                }
+            };
             match selected.as_str() {
                 "entity-explorer" => {
                     let _ = gx.spawn_and_focus(EntityExplorer::new(client_info));

@@ -126,7 +126,9 @@ impl ConditionEditorModal {
                             self.number_input.set(NumberInputState::new(*n));
                         }
                     }
-                    Some(AttributeType::Picklist | AttributeType::State | AttributeType::Status) => {
+                    Some(
+                        AttributeType::Picklist | AttributeType::State | AttributeType::Status,
+                    ) => {
                         if let Value::OptionSet(os) = &initial.value {
                             self.number_input
                                 .set(NumberInputState::new(os.value as f64).integer());
@@ -243,19 +245,16 @@ impl ConditionEditorModal {
         // Initialize appropriate widget based on type
         match attr_type {
             Some(AttributeType::DateTime) => {
-                self.date_picker
-                    .set(DatePickerState::new().with_time());
+                self.date_picker.set(DatePickerState::new().with_time());
             }
             Some(AttributeType::Integer | AttributeType::BigInt) => {
-                self.number_input
-                    .set(NumberInputState::new(0.0).integer());
+                self.number_input.set(NumberInputState::new(0.0).integer());
             }
             Some(AttributeType::Double | AttributeType::Decimal | AttributeType::Money) => {
                 self.number_input.set(NumberInputState::new(0.0));
             }
             Some(AttributeType::Picklist | AttributeType::State | AttributeType::Status) => {
-                self.number_input
-                    .set(NumberInputState::new(0.0).integer());
+                self.number_input.set(NumberInputState::new(0.0).integer());
             }
             _ => {
                 // Text input - already cleared above
@@ -298,7 +297,7 @@ impl ConditionEditorModal {
                 select (state: self.operator, id: "cond-operator", placeholder: "Select operator...")
                 if has_value_input {
                     text (content: "Value") style (fg: muted)
-                    
+
                     match self.selected_type.get() {
                         Some(AttributeType::DateTime) => {
                             date_picker (state: self.date_picker, id: "cond-value")

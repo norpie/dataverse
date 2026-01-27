@@ -202,9 +202,7 @@ impl QueryBuilder {
     async fn resolve_entity_set(&self, client: &DataverseClient) -> Result<String, Error> {
         match &self.entity {
             Entity::Set(name) => Ok(name.clone()),
-            Entity::Logical(logical_name) => {
-                client.resolve_entity_set_name(logical_name).await
-            }
+            Entity::Logical(logical_name) => client.resolve_entity_set_name(logical_name).await,
         }
     }
 
