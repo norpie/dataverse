@@ -64,6 +64,17 @@ impl CachedValue {
     }
 }
 
+/// A cache entry with key and expiry time.
+///
+/// Used by the indexer to determine what needs re-syncing.
+#[derive(Debug, Clone)]
+pub struct CacheEntry {
+    /// The cache key.
+    pub key: String,
+    /// When this entry expires.
+    pub expires_at: DateTime<Utc>,
+}
+
 /// Trait for cache providers.
 ///
 /// Implementations store and retrieve cached values by string keys.
@@ -110,6 +121,12 @@ pub trait CacheProvider: Send + Sync {
     ///
     /// Returns the number of entries removed.
     async fn gc(&self) -> usize;
+
+    /// Returns all cache entries with their keys and expiry times.
+    ///
+    /// Used by the indexer to determine what needs re-syncing.
+    /// Expired entries may be included in the result.
+    async fn get_all(&self) -> Vec<CacheEntry>;
 }
 
 // Bincode v2 serialization helpers with serde compatibility

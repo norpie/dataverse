@@ -88,4 +88,14 @@ impl CacheProvider for InMemoryCache {
         });
         removed
     }
+
+    async fn get_all(&self) -> Vec<super::CacheEntry> {
+        self.store
+            .iter()
+            .map(|entry| super::CacheEntry {
+                key: entry.key().clone(),
+                expires_at: entry.value().expires_at,
+            })
+            .collect()
+    }
 }

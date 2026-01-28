@@ -195,4 +195,28 @@ impl CacheProvider for SqliteCache {
             .await
             .unwrap_or(0)
     }
+
+    async fn get_all(&self) -> Vec<super::CacheEntry> {
+        self.client
+            .conn(|conn| {
+                let mut stmt = conn.prepare("SELECT key, expires_at FROM cache")?;
+                let rows = stmt.query_map([], |row| {
+                    let key: String = row.get(0)?;
+                    let expires_at: i64 = row.get(1)?;
+                    Ok((key, expires_at))
+                })?;
+
+                let mut entries = Vec::new();
+                for row in rows {
+                    if let Ok((key, expires_at)) = row {
+                        if let Some(dt) = Utc.timestamp_opt(expires_at, 0).single() {
+                            entries.push(super::CacheEntry { key, expires_at: dt });
+                        }
+                    }
+                }
+                Ok(entries)
+            })
+            .await
+            .unwrap_or_default()
+    }
 }

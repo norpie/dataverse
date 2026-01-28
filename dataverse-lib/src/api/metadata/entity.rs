@@ -66,7 +66,7 @@ impl<'a> EntityMetadataBuilder<'a> {
 
         // Cache the result
         if let Some(cache) = &self.client.inner.cache {
-            let ttl = self.client.inner.cache_config.metadata_ttl;
+            let ttl = self.client.inner.cache_config.entity_metadata_ttl;
 
             // Cache full metadata
             if let Ok(data) = cache::serialize(&metadata) {
@@ -160,7 +160,7 @@ impl<'a> AllEntitiesBuilder<'a> {
 
         // Cache the result
         if let Some(cache) = &self.client.inner.cache {
-            let ttl = self.client.inner.cache_config.metadata_ttl;
+            let ttl = self.client.inner.cache_config.entity_list_ttl;
             match cache::serialize(&entities) {
                 Ok(data) => {
                     log::debug!(
@@ -223,13 +223,14 @@ pub(crate) async fn fetch_entity_core(
     let core = fetch_entity_core_from_api(client, logical_name).await?;
 
     // Cache the result
-    if let Some(cache) = &client.inner.cache
-        && let Ok(data) = cache::serialize(&core) {
-            let ttl = client.inner.cache_config.metadata_ttl;
+    if let Some(cache) = &client.inner.cache {
+        let ttl = client.inner.cache_config.entity_metadata_ttl;
+        if let Ok(data) = cache::serialize(&core) {
             cache
                 .set(&cache_key, CachedValue::with_ttl(data, ttl))
                 .await;
         }
+    }
 
     Ok(core)
 }

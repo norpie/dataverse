@@ -13,15 +13,35 @@ use std::time::Duration;
 /// use dataverse_lib::cache::CacheConfig;
 ///
 /// let config = CacheConfig::default()
-///     .with_metadata_ttl(Duration::from_secs(7200))
+///     .with_entity_list_ttl(Duration::from_secs(7200))
 ///     .with_query_ttl(Duration::from_secs(60));
 /// ```
 #[derive(Debug, Clone)]
 pub struct CacheConfig {
-    /// TTL for entity metadata (logical name → set name, etc.).
+    /// TTL for entity list (all_entities bulk fetch).
     ///
-    /// Default: 1 hour
-    pub metadata_ttl: Duration,
+    /// Default: 24 hours
+    pub entity_list_ttl: Duration,
+
+    /// TTL for single entity metadata.
+    ///
+    /// Default: 6 hours
+    pub entity_metadata_ttl: Duration,
+
+    /// TTL for single attribute metadata.
+    ///
+    /// Default: 6 hours
+    pub attribute_metadata_ttl: Duration,
+
+    /// TTL for global option sets.
+    ///
+    /// Default: 12 hours
+    pub global_optionset_ttl: Duration,
+
+    /// TTL for relationships.
+    ///
+    /// Default: 12 hours
+    pub relationship_ttl: Duration,
 
     /// TTL for query results (OData, FetchXML).
     ///
@@ -37,9 +57,13 @@ pub struct CacheConfig {
 impl Default for CacheConfig {
     fn default() -> Self {
         Self {
-            metadata_ttl: Duration::from_secs(3600), // 1 hour
-            query_ttl: Duration::from_secs(300),     // 5 minutes
-            record_ttl: Duration::from_secs(300),    // 5 minutes
+            entity_list_ttl: Duration::from_secs(86400), // 24 hours
+            entity_metadata_ttl: Duration::from_secs(21600), // 6 hours
+            attribute_metadata_ttl: Duration::from_secs(21600), // 6 hours
+            global_optionset_ttl: Duration::from_secs(43200), // 12 hours
+            relationship_ttl: Duration::from_secs(43200), // 12 hours
+            query_ttl: Duration::from_secs(300),         // 5 minutes
+            record_ttl: Duration::from_secs(300),        // 5 minutes
         }
     }
 }
@@ -50,9 +74,33 @@ impl CacheConfig {
         Self::default()
     }
 
-    /// Sets the metadata TTL.
-    pub fn with_metadata_ttl(mut self, ttl: Duration) -> Self {
-        self.metadata_ttl = ttl;
+    /// Sets the entity list TTL.
+    pub fn with_entity_list_ttl(mut self, ttl: Duration) -> Self {
+        self.entity_list_ttl = ttl;
+        self
+    }
+
+    /// Sets the entity metadata TTL.
+    pub fn with_entity_metadata_ttl(mut self, ttl: Duration) -> Self {
+        self.entity_metadata_ttl = ttl;
+        self
+    }
+
+    /// Sets the attribute metadata TTL.
+    pub fn with_attribute_metadata_ttl(mut self, ttl: Duration) -> Self {
+        self.attribute_metadata_ttl = ttl;
+        self
+    }
+
+    /// Sets the global option set TTL.
+    pub fn with_global_optionset_ttl(mut self, ttl: Duration) -> Self {
+        self.global_optionset_ttl = ttl;
+        self
+    }
+
+    /// Sets the relationship TTL.
+    pub fn with_relationship_ttl(mut self, ttl: Duration) -> Self {
+        self.relationship_ttl = ttl;
         self
     }
 
@@ -71,7 +119,11 @@ impl CacheConfig {
     /// Creates a config with no caching (zero TTLs).
     pub fn no_cache() -> Self {
         Self {
-            metadata_ttl: Duration::ZERO,
+            entity_list_ttl: Duration::ZERO,
+            entity_metadata_ttl: Duration::ZERO,
+            attribute_metadata_ttl: Duration::ZERO,
+            global_optionset_ttl: Duration::ZERO,
+            relationship_ttl: Duration::ZERO,
             query_ttl: Duration::ZERO,
             record_ttl: Duration::ZERO,
         }

@@ -61,7 +61,7 @@ impl<'a> RelationshipMetadataBuilder<'a> {
 
         // Cache the result
         if let Some(cache) = &self.client.inner.cache {
-            let ttl = self.client.inner.cache_config.metadata_ttl;
+            let ttl = self.client.inner.cache_config.relationship_ttl;
             if let Ok(data) = cache::serialize(&rel) {
                 cache
                     .set(&cache_key, CachedValue::with_ttl(data, ttl))

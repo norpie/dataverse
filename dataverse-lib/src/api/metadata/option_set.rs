@@ -60,7 +60,7 @@ impl<'a> GlobalOptionSetBuilder<'a> {
 
         // Cache the result
         if let Some(cache) = &self.client.inner.cache {
-            let ttl = self.client.inner.cache_config.metadata_ttl;
+            let ttl = self.client.inner.cache_config.global_optionset_ttl;
             if let Ok(data) = cache::serialize(&os) {
                 cache
                     .set(&cache_key, CachedValue::with_ttl(data, ttl))
@@ -118,12 +118,12 @@ impl<'a> AllGlobalOptionSetsBuilder<'a> {
                     }
 
         // Fetch from API
-        let option_sets = fetch_all_global_option_sets_from_api(self.client).await?;
+        let all = fetch_all_global_option_sets_from_api(self.client).await?;
 
         // Cache the result
         if let Some(cache) = &self.client.inner.cache {
-            let ttl = self.client.inner.cache_config.metadata_ttl;
-            if let Ok(data) = cache::serialize(&option_sets) {
+            let ttl = self.client.inner.cache_config.global_optionset_ttl;
+            if let Ok(data) = cache::serialize(&all) {
                 cache
                     .set(
                         CACHE_KEY_ALL_GLOBAL_OPTIONSETS,
@@ -133,7 +133,7 @@ impl<'a> AllGlobalOptionSetsBuilder<'a> {
             }
         }
 
-        Ok(option_sets)
+        Ok(all)
     }
 }
 

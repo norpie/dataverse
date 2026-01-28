@@ -64,7 +64,7 @@ impl<'a> AttributeMetadataBuilder<'a> {
 
         // Cache the result
         if let Some(cache) = &self.client.inner.cache {
-            let ttl = self.client.inner.cache_config.metadata_ttl;
+            let ttl = self.client.inner.cache_config.attribute_metadata_ttl;
             if let Ok(data) = cache::serialize(&attr) {
                 cache
                     .set(&cache_key, CachedValue::with_ttl(data, ttl))
@@ -132,7 +132,7 @@ impl<'a> AttributesBuilder<'a> {
 
         // Cache the result
         if let Some(cache) = &self.client.inner.cache {
-            let ttl = self.client.inner.cache_config.metadata_ttl;
+            let ttl = self.client.inner.cache_config.attribute_metadata_ttl;
             if let Ok(data) = cache::serialize(&attrs) {
                 cache
                     .set(&cache_key, CachedValue::with_ttl(data, ttl))
