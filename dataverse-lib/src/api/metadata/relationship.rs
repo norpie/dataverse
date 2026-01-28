@@ -114,7 +114,10 @@ impl<'a> RelationshipsBuilder<'a> {
     /// Execute the request.
     pub async fn execute(self) -> Result<Vec<RelationshipMetadata>, Error> {
         // Fetch entity metadata which includes all relationships
-        let mut builder = super::entity::EntityMetadataBuilder::new(self.client, self.entity);
+        let mut builder = super::entity::EntityMetadataBuilder::new(
+            self.client,
+            crate::model::Entity::logical(self.entity),
+        );
         if self.bypass_cache {
             builder = builder.bypass_cache();
         }

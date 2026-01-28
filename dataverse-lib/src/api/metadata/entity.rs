@@ -26,15 +26,15 @@ use crate::model::metadata::EntityMetadata;
 /// Builder for fetching entity metadata.
 pub struct EntityMetadataBuilder<'a> {
     client: &'a DataverseClient,
-    logical_name: String,
+    entity: crate::model::Entity,
     bypass_cache: bool,
 }
 
 impl<'a> EntityMetadataBuilder<'a> {
-    pub(crate) fn new(client: &'a DataverseClient, logical_name: String) -> Self {
+    pub(crate) fn new(client: &'a DataverseClient, entity: crate::model::Entity) -> Self {
         Self {
             client,
-            logical_name,
+            entity,
             bypass_cache: false,
         }
     }
@@ -47,7 +47,11 @@ impl<'a> EntityMetadataBuilder<'a> {
 
     /// Execute the request.
     pub async fn execute(self) -> Result<EntityMetadata, Error> {
-        let cache_key_full = format!("{}{}", CACHE_KEY_ENTITY_FULL, self.logical_name);
+        let logical_name = self
+            .client
+            .resolve_entity_logical_name(&self.entity)
+            .await?;
+        let cache_key_full = format!("{}{}", CACHE_KEY_ENTITY_FULL, logical_name);
 
         // Check cache first (unless bypassed)
         if !self.bypass_cache {
@@ -61,7 +65,7 @@ impl<'a> EntityMetadataBuilder<'a> {
         }
 
         // Fetch from API
-        let metadata = fetch_entity_metadata_from_api(self.client, &self.logical_name).await?;
+        let metadata = fetch_entity_metadata_from_api(self.client, &logical_name).await?;
 
         // Cache the result
         if let Some(cache) = &self.client.inner.cache {
@@ -75,7 +79,7 @@ impl<'a> EntityMetadataBuilder<'a> {
             }
 
             // Also cache core metadata (so CRUD resolution benefits from full fetch)
-            let cache_key_core = format!("{}{}", CACHE_KEY_ENTITY_CORE, self.logical_name);
+            let cache_key_core = format!("{}{}", CACHE_KEY_ENTITY_CORE, logical_name);
             if let Ok(data) = cache::serialize(&metadata.core()) {
                 cache
                     .set(&cache_key_core, CachedValue::with_ttl(data, ttl))

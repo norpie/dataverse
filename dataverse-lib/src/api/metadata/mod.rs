@@ -101,11 +101,12 @@ impl<'a> MetadataClient<'a> {
     /// # Example
     ///
     /// ```ignore
-    /// let entity = client.metadata().entity("account").await?;
-    /// let entity = client.metadata().entity("account").bypass_cache().await?;
+    /// let entity = client.metadata().entity(Entity::logical("account")).await?;
+    /// let entity = client.metadata().entity(Entity::set("accounts")).await?;
+    /// let entity = client.metadata().entity("account").await?; // defaults to logical
     /// ```
-    pub fn entity(&self, logical_name: &str) -> EntityMetadataBuilder<'a> {
-        EntityMetadataBuilder::new(self.client, logical_name.to_string())
+    pub fn entity(&self, entity: impl Into<Entity>) -> EntityMetadataBuilder<'a> {
+        EntityMetadataBuilder::new(self.client, entity.into())
     }
 
     /// Fetches metadata for all entities.
