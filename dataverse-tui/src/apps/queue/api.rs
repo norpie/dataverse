@@ -51,6 +51,15 @@ pub struct GetQueueStatus;
 // Events
 // =============================================================================
 
+/// Event published when queue system is initialized and ready.
+#[derive(Clone, Event)]
+pub struct QueueReady {
+    /// Whether the queue is currently executing.
+    pub is_running: bool,
+    /// Current status counts.
+    pub counts: StatusCounts,
+}
+
 /// Event published when queue status changes.
 #[derive(Clone, Event)]
 pub struct QueueStatusChanged {

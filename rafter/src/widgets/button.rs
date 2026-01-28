@@ -138,15 +138,16 @@ impl Button {
             .id(&id)
             .focusable(!self.disabled)
             .clickable(!self.disabled)
-            .disabled(self.disabled)
-            .padding(Edges::symmetric(0, 1));
+            .disabled(self.disabled);
 
         if self.ghost {
-            // Ghost buttons: no background, no style changes on hover/focus
+            // Ghost buttons: no padding, no background, no style changes on hover/focus
             if let Some(style) = self.style {
                 elem = elem.style(style);
             }
         } else {
+            // Normal buttons: padding + themed background with hover/focus styles
+            elem = elem.padding(Edges::symmetric(0, 1));
             // Normal buttons: themed background with hover/focus styles
             let style = Style::new()
                 .background(Color::var("button.normal"))

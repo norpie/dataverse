@@ -4,7 +4,7 @@ mod entity_explorer;
 mod export;
 mod import;
 mod query_builder;
-mod queue;
+pub mod queue;
 mod record_explorer;
 mod welcome;
 
@@ -14,3 +14,6 @@ pub use import::Import;
 pub use query_builder::QueryBuilder;
 pub use record_explorer::RecordExplorer;
 pub use welcome::Welcome;
+
+// Queue is auto-registered but export for visibility
+pub use queue::Queue;

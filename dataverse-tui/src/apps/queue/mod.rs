@@ -26,6 +26,7 @@ use api::AddItems;
 use api::AddItemsResponse;
 use api::GetQueueStatus;
 use api::QueueItemCompleted;
+use api::QueueReady;
 use api::QueueStatusChanged;
 use repository::ListFilter;
 use repository::NewQueueItem;
@@ -180,6 +181,13 @@ impl Queue {
         self.max_concurrency.set(max_concurrency);
         self.failure_count.set(0);
         self.max_failures.set(max_failures);
+
+        // Publish ready event for other systems (e.g., taskbar)
+        let counts = self.status_counts.get();
+        gx.publish(QueueReady {
+            is_running: false,
+            counts,
+        });
     }
 
     fn title(&self) -> String {

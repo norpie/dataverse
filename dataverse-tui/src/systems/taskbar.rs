@@ -26,11 +26,19 @@ pub enum StatusIndicator {
 }
 
 /// Queue status information.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct QueueStatus {
-    pub current: u64,
-    pub total: u64,
-    pub status: StatusIndicator,
+    pub is_running: bool,
+    pub counts: crate::apps::queue::repository::StatusCounts,
+}
+
+impl Default for QueueStatus {
+    fn default() -> Self {
+        Self {
+            is_running: false,
+            counts: Default::default(),
+        }
+    }
 }
 
 /// Client connection information.
@@ -151,12 +159,9 @@ impl Taskbar {
 
     #[on_start]
     async fn on_start(&self) {
-        // Initialize with placeholder values
-        self.queue.set(QueueStatus {
-            current: 107,
-            total: 5067,
-            status: StatusIndicator::Running,
-        });
+        // Queue status will be set when QueueReady event is received
+        // (Queue app starts after systems)
+        
         self.client.set(ClientStatus {
             host: "localhost:8080".to_string(),
             auth_method: "API Key".to_string(),
@@ -164,6 +169,22 @@ impl Taskbar {
         });
         self.indexer.set(IndexerStatus {
             status: StatusIndicator::Idle,
+        });
+    }
+
+    #[event_handler]
+    async fn on_queue_ready(&self, event: crate::apps::queue::api::QueueReady) {
+        self.queue.set(QueueStatus {
+            is_running: event.is_running,
+            counts: event.counts,
+        });
+    }
+
+    #[event_handler]
+    async fn on_queue_status_changed(&self, event: crate::apps::queue::api::QueueStatusChanged) {
+        self.queue.set(QueueStatus {
+            is_running: event.is_running,
+            counts: event.counts,
         });
     }
 
@@ -211,6 +232,11 @@ impl Taskbar {
     #[handler]
     async fn close_group(&self) {
         self.expanded_group.set(None);
+    }
+
+    #[handler]
+    async fn focus_queue(&self, gx: &GlobalContext) {
+        let _ = crate::apps::Queue::get_or_spawn_and_focus(gx);
     }
 
     fn render_collapsed(&self) -> Element {
@@ -340,31 +366,98 @@ impl Taskbar {
 
         // Queue subsection
         let queue = self.queue.get();
-        let (queue_indicator, queue_status_text) = self.render_status_indicator(&queue.status);
-        let queue_percent = if queue.total > 0 {
-            (queue.current as f64 / queue.total as f64) * 100.0
+        let counts = &queue.counts;
+        
+        // Determine status indicator and text based on queue state
+        let (queue_indicator, queue_status_text) = if !queue.is_running {
+            (
+                Element::text("●").style(Style::new().foreground(Color::var("warning"))),
+                "Paused"
+            )
+        } else if counts.failed > 0 || counts.partially_failed > 0 {
+            (
+                Element::text("●").style(Style::new().foreground(Color::var("error"))),
+                "Errors"
+            )
+        } else if counts.running > 0 {
+            (
+                Element::text("●").style(Style::new().foreground(Color::var("success"))),
+                "Running"
+            )
+        } else if counts.ready > 0 || counts.blocked > 0 {
+            (
+                Element::text("●").style(Style::new().foreground(Color::var("warning"))),
+                "Pending"
+            )
+        } else if counts.done > 0 {
+            (
+                Element::text("●").style(Style::new().foreground(Color::var("primary"))),
+                "Done"
+            )
         } else {
-            0.0
+            (
+                Element::text("●").style(Style::new().foreground(Color::var("text.muted"))),
+                "Idle"
+            )
         };
-        let queue_progress = format!("{}/{} ({:.2}%)", queue.current, queue.total, queue_percent);
+        
+        // Calculate progress percentage
+        let total = counts.total();
+        let completed = counts.done + counts.failed + counts.partially_failed;
+        let progress_pct = if total > 0 {
+            format!("{:.1}%", (completed as f64 / total as f64) * 100.0)
+        } else {
+            "N/A%".to_string()
+        };
+        
+        // Build condensed display with colored numbers: ready/running/done/failed (progress%)
+        let numbers_row = Element::row()
+            .child(Element::text(&counts.ready.to_string())
+                .style(Style::new().foreground(Color::var("primary"))))
+            .child(Element::text("/")
+                .style(Style::new().foreground(Color::var("text.muted"))))
+            .child(Element::text(&counts.running.to_string())
+                .style(Style::new().foreground(Color::var("warning"))))
+            .child(Element::text("/")
+                .style(Style::new().foreground(Color::var("text.muted"))))
+            .child(Element::text(&counts.done.to_string())
+                .style(Style::new().foreground(Color::var("success"))))
+            .child(Element::text("/")
+                .style(Style::new().foreground(Color::var("text.muted"))))
+            .child(Element::text(&(counts.failed + counts.partially_failed).to_string())
+                .style(Style::new().foreground(Color::var("error"))))
+            .child(Element::text(&format!(" ({})", progress_pct))
+                .style(Style::new().foreground(Color::var("text.muted"))));
 
-        let queue_row1 = Element::row()
+        let queue_content = Element::col()
             .width(Size::Fill)
-            .justify(tuidom::Justify::SpaceBetween)
-            .child(Element::text("Queue"))
+            .gap(0)
             .child(
                 Element::row()
-                    .gap(1)
-                    .child(queue_indicator)
-                    .child(Element::text(queue_status_text)),
-            );
-        let queue_row2 = Element::row()
-            .width(Size::Fill)
-            .justify(tuidom::Justify::End)
+                    .width(Size::Fill)
+                    .justify(tuidom::Justify::SpaceBetween)
+                    .child(Element::text("Queue"))
+                    .child(
+                        Element::row()
+                            .gap(1)
+                            .child(queue_indicator)
+                            .child(Element::text(queue_status_text)),
+                    )
+            )
             .child(
-                Element::text(&queue_progress)
-                    .style(Style::new().foreground(Color::var("text.muted"))),
+                Element::row()
+                    .width(Size::Fill)
+                    .justify(tuidom::Justify::End)
+                    .child(numbers_row)
             );
+        
+        let queue_button = page! {
+            button (id: "queue-status", width: fill, ghost)
+                on_activate: focus_queue()
+            {
+                { queue_content }
+            }
+        };
 
         // Client subsection
         let client = self.client.get();
@@ -414,8 +507,7 @@ impl Taskbar {
             .gap(0)
             .child(status_title)
             .child(Element::col().height(Size::Fixed(1))) // Spacer after title
-            .child(queue_row1)
-            .child(queue_row2)
+            .child(queue_button)
             .child(client_row1)
             .child(client_row2)
             .child(client_row3)
