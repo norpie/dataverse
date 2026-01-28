@@ -42,6 +42,8 @@ pub struct FileBrowserModal {
     list: ListState<FsEntry>,
     #[state(skip)]
     file_types: Vec<String>,
+    #[state(skip)]
+    require_existing: bool,
     filename: String,
     file_type: SelectState<String>,
 }
@@ -74,10 +76,17 @@ impl FileBrowserModal {
             current_dir: State::new(current_dir),
             list: State::new(ListState::new(entries)),
             file_types,
+            require_existing: false,
             filename: State::new(String::new()),
             file_type: State::new(file_type_state),
             ..Default::default()
         }
+    }
+
+    /// Require that the selected file must exist (for opening existing files).
+    pub fn require_existing(mut self) -> Self {
+        self.require_existing = true;
+        self
     }
 
     /// Set an initial filename (without extension - extension added from default file type).
@@ -218,6 +227,12 @@ impl FileBrowserModal {
         }
 
         let path = current_dir.join(&filename);
+
+        // If require_existing is true, validate that the file exists
+        if self.require_existing && !path.exists() {
+            return; // Don't close if file doesn't exist
+        }
+
         mx.close(Some(SaveFileResult { path, file_type }));
     }
 
@@ -271,19 +286,21 @@ impl FileBrowserModal {
     fn element(&self) -> Element {
         let current_dir = self.current_dir.get();
         let dir_display = current_dir.to_string_lossy().to_string();
+        let title = if self.require_existing { "Open File" } else { "Save File" };
+        let confirm_label = if self.require_existing { "Open" } else { "Save" };
 
         page! {
             column (padding: (1, 2), gap: 1, width: fill, height: fill) style (bg: surface) {
                 // Header
                 column {
-                    text (content: "Save File") style (bold, fg: interact)
+                    text (content: title) style (bold, fg: interact)
                     text (content: dir_display) style (fg: muted)
                 }
 
                 // Content
                 column (height: fill, gap: 1) {
                     box_ (height: fill, width: fill) style (bg: background) {
-                        list (state: self.list, id: "file-list", height: fill)
+                        list (state: self.list, id: "file-list", height: fill, width: fill)
                             on_activate: on_list_activate()
                     }
                     row (gap: 1, width: fill) {
@@ -296,7 +313,7 @@ impl FileBrowserModal {
                 // Footer
                 row (width: fill, justify: between) {
                     button (label: "Cancel", hint: "esc", id: "cancel") on_activate: cancel_modal()
-                    button (label: "Save", id: "save") on_activate: confirm_path()
+                    button (label: confirm_label, id: "confirm") on_activate: confirm_path()
                 }
             }
         }
