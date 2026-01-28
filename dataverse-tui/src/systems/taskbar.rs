@@ -259,9 +259,15 @@ impl Taskbar {
         let expanded_group = self.expanded_group.get();
         let focused_style = Style::new().background(Color::var("list.item_focused"));
 
+        // Filter out Queue instance (has permanent nav in status section)
+        let filtered_instances: Vec<&InstanceInfo> = instances
+            .iter()
+            .filter(|info| info.name != "Queue")
+            .collect();
+
         // Group instances by app name
         let mut groups: HashMap<String, Vec<&InstanceInfo>> = HashMap::new();
-        for info in &instances {
+        for info in &filtered_instances {
             groups.entry(info.name.to_string()).or_default().push(info);
         }
 
