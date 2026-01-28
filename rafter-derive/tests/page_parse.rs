@@ -251,3 +251,35 @@ fn test_transition_one_second() {
         column transition (bg: 1000) {}
     };
 }
+
+// Spread operator tests
+#[test]
+fn test_spread_basic() {
+    let items: Vec<tuidom::Element> = vec![];
+    let _: tuidom::Element = page! {
+        column {
+            ...items
+        }
+    };
+}
+
+#[test]
+fn test_spread_with_other_children() {
+    let items: Vec<tuidom::Element> = vec![];
+    let _: tuidom::Element = page! {
+        column {
+            row {}
+            ...items
+            row {}
+        }
+    };
+}
+
+#[test]
+fn test_spread_expression() {
+    let _: tuidom::Element = page! {
+        column {
+            ...vec![]
+        }
+    };
+}

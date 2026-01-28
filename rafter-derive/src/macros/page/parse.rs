@@ -2,7 +2,7 @@
 
 use syn::parse::{Parse, ParseStream};
 use syn::token::{Brace, Paren};
-use syn::{Expr, Ident, Pat, Token, braced, parenthesized};
+use syn::{braced, parenthesized, Expr, Ident, Pat, Token};
 
 use super::ast::{
     Attr, AttrValue, AttrValueElse, AttrValueIf, ElementNode, ElseBranch, ForNode, HandlerArg,
@@ -18,6 +18,15 @@ impl Parse for Page {
 
 /// Parse a single view node
 fn parse_view_node(input: ParseStream) -> syn::Result<ViewNode> {
+    // Check for spread operator: ...expr (three dots)
+    if input.peek(Token![.]) && input.peek2(Token![.]) && input.peek3(Token![.]) {
+        input.parse::<Token![.]>()?;
+        input.parse::<Token![.]>()?;
+        input.parse::<Token![.]>()?;
+        let expr: Expr = input.parse()?;
+        return Ok(ViewNode::Spread(expr));
+    }
+
     // Check for control flow keywords
     if input.peek(Token![for]) {
         return Ok(ViewNode::For(parse_for(input)?));

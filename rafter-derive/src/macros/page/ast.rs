@@ -21,6 +21,8 @@ pub enum ViewNode {
     Match(MatchNode),
     /// A raw Rust expression (e.g., `{ some_element }`)
     Expr(Expr),
+    /// A spread expression (e.g., `...vec_expr`)
+    Spread(Expr),
 }
 
 /// An element node (e.g., `column (padding: 1) style (bg: primary) { ... }`)

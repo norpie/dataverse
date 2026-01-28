@@ -100,6 +100,7 @@ pub fn generate_view_node(node: &ViewNode) -> TokenStream {
         ViewNode::If(if_node) => generate_if(if_node),
         ViewNode::Match(match_node) => generate_match(match_node),
         ViewNode::Expr(expr) => quote! { #expr },
+        ViewNode::Spread(expr) => quote! { #expr },
     }
 }
 
