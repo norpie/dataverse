@@ -1,7 +1,6 @@
 //! Token provider backed by credentials storage.
 
 use async_trait::async_trait;
-use chrono::Duration;
 use dataverse_lib::auth::AccessToken;
 use dataverse_lib::auth::BrowserFlow;
 use dataverse_lib::auth::DeviceCodeFlow;
@@ -10,7 +9,6 @@ use dataverse_lib::auth::PublicClientPasswordFlow;
 use dataverse_lib::auth::TokenProvider;
 use dataverse_lib::error::AuthError;
 
-use super::CredentialsError;
 use super::CredentialsProvider;
 use super::models::Account;
 use super::models::AuthType;

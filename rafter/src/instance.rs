@@ -535,13 +535,11 @@ impl InstanceRegistry {
         }
 
         // Update old focused instance
-        if let Some(old_id) = self.focused {
-            if old_id != id {
-                if let Some(old) = self.instances.get(&old_id) {
+        if let Some(old_id) = self.focused
+            && old_id != id
+                && let Some(old) = self.instances.get(&old_id) {
                     old.set_focused(false);
                 }
-            }
-        }
 
         // Update new focused instance
         if let Some(instance) = self.instances.get(&id) {

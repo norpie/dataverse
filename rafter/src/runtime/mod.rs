@@ -391,13 +391,12 @@ impl Runtime {
             // Clean up closed modals
             {
                 let reg = registry.read().unwrap();
-                if let Some(instance) = reg.focused_instance() {
-                    if let Ok(mut modals) = instance.modals().write() {
+                if let Some(instance) = reg.focused_instance()
+                    && let Ok(mut modals) = instance.modals().write() {
                         while modals.last().map(|m| m.is_closed()).unwrap_or(false) {
                             modals.pop();
                         }
                     }
-                }
             }
 
             // 3b. Process global modal requests and clean up closed global modals
@@ -414,12 +413,11 @@ impl Runtime {
             // 3c. Process app context menu requests
             {
                 let reg = registry.read().unwrap();
-                if let Some(instance) = reg.focused_instance() {
-                    if let Some(request) = instance.app_context().take_context_menu_request() {
+                if let Some(instance) = reg.focused_instance()
+                    && let Some(request) = instance.app_context().take_context_menu_request() {
                         // Convert request to state
                         *app_context_menu = Some(crate::ContextMenuState::from_request(request));
                     }
-                }
             }
 
             // 3d. Process global context menu requests
@@ -537,8 +535,8 @@ impl Runtime {
 
                     // Also dispatch on_layout to app modals
                     let modals = instance.modals().read().unwrap();
-                    if let Some(modal) = modals.last() {
-                        if !modal.is_closed() {
+                    if let Some(modal) = modals.last()
+                        && !modal.is_closed() {
                             let modal_handlers = modal.handlers();
                             let mx = modal.modal_context();
                             for (id, rect) in layout.iter_rects() {
@@ -563,12 +561,11 @@ impl Runtime {
                                 }
                             }
                         }
-                    }
                 }
 
                 // Also dispatch on_layout to global modals
-                if let Some(modal) = global_modals.last() {
-                    if !modal.is_closed() {
+                if let Some(modal) = global_modals.last()
+                    && !modal.is_closed() {
                         let modal_handlers = modal.handlers();
                         let cx = crate::AppContext::default();
                         let mx = modal.modal_context();
@@ -589,7 +586,6 @@ impl Runtime {
                             }
                         }
                     }
-                }
             }
             let t_on_layout = Instant::now();
 
@@ -716,8 +712,8 @@ impl Runtime {
 
                     // Process focus requests from app modals
                     let modals = instance.modals().read().unwrap();
-                    if let Some(modal) = modals.last() {
-                        if let Some(target_id) = modal.take_focus_request() {
+                    if let Some(modal) = modals.last()
+                        && let Some(target_id) = modal.take_focus_request() {
                             log::debug!("[runtime] Processing modal focus request: {}", target_id);
                             if focus.focus(&target_id) {
                                 log::debug!("[runtime] Modal focus changed to: {}", target_id);
@@ -728,13 +724,12 @@ impl Runtime {
                                 }
                             }
                         }
-                    }
                 }
             }
 
             // 14b. Process focus requests from global modals
-            if let Some(modal) = global_modals.last() {
-                if let Some(target_id) = modal.take_focus_request() {
+            if let Some(modal) = global_modals.last()
+                && let Some(target_id) = modal.take_focus_request() {
                     log::debug!(
                         "[runtime] Processing global modal focus request: {}",
                         target_id
@@ -746,7 +741,6 @@ impl Runtime {
                         }
                     }
                 }
-            }
 
             // 15. Sync text input values to TextInputState
             sync_text_inputs(&root, text_inputs);
@@ -765,11 +759,10 @@ impl Runtime {
 
             // 17b. Scroll focused element into view
             for event in &events {
-                if let tuidom::Event::Focus { target } = event {
-                    if let Some(change) = scroll_to_element(&root, layout, scroll, target) {
+                if let tuidom::Event::Focus { target } = event
+                    && let Some(change) = scroll_to_element(&root, layout, scroll, target) {
                         focus_scroll_changes.push(change);
                     }
-                }
             }
 
             // 17c. Update focused element rect in GlobalContext
@@ -1183,7 +1176,7 @@ impl Runtime {
 
     /// Build a context menu wrapper element.
     fn build_context_menu(id: &str, menu: &crate::ContextMenuState) -> Element {
-        use tuidom::{Color, Edges, Position, Size, Style};
+        use tuidom::{Position, Size};
 
         let (menu_x, menu_y) = menu.position;
 
@@ -1228,7 +1221,7 @@ impl Runtime {
         definition: &crate::ContextMenuDefinition,
         open_submenus: &[crate::OpenSubmenu],
     ) -> Element {
-        use tuidom::{Color, Edges, Position, Size, Style};
+        use tuidom::{Color, Position, Size, Style};
 
         // Container for this panel and any open submenus
         let mut container = Element::box_().position(Position::Relative);
@@ -1415,8 +1408,8 @@ impl Runtime {
                     if focus {
                         let mut to_close = None;
 
-                        if let Some(old_id) = old_focused {
-                            if old_id != id {
+                        if let Some(old_id) = old_focused
+                            && old_id != id {
                                 // Get blur policy
                                 let blur_policy = {
                                     let reg = registry.read().unwrap();
@@ -1447,7 +1440,6 @@ impl Runtime {
                                     _ => {}
                                 }
                             }
-                        }
 
                         // Call on_foreground for new instance
                         {
@@ -1523,8 +1515,8 @@ impl Runtime {
 
                     // Apply blur policy to old instance
                     let mut to_close = None;
-                    if let Some(old_id) = old_focused {
-                        if old_id != id {
+                    if let Some(old_id) = old_focused
+                        && old_id != id {
                             // Get blur policy
                             let blur_policy = {
                                 let reg = registry.read().unwrap();
@@ -1555,7 +1547,6 @@ impl Runtime {
                                 _ => {}
                             }
                         }
-                    }
 
                     // Wake new instance if it was sleeping and call on_foreground
                     {

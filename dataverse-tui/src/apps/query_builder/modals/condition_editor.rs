@@ -274,7 +274,7 @@ impl ConditionEditorModal {
         let type_hint = self
             .selected_type
             .get()
-            .map(|t| type_hint_text(t))
+            .map(type_hint_text)
             .unwrap_or_default();
         let title = if self.initial.is_some() {
             "Edit Condition"

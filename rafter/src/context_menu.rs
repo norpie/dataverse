@@ -30,7 +30,6 @@
 //! ```
 
 use crate::handler_context::Handler;
-use std::sync::Arc;
 
 // =============================================================================
 // Menu Option Types

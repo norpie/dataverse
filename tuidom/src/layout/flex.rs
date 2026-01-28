@@ -1063,7 +1063,7 @@ fn compute_visible_range(
         // Child i has top at i * stride
         // We want i * stride >= viewport_bottom
         let viewport_bottom = scroll_y.saturating_add(viewport_height) as u32;
-        let last_visible = ((viewport_bottom + item_stride - 1) / item_stride) as usize;
+        let last_visible = viewport_bottom.div_ceil(item_stride) as usize;
 
         // Apply buffer
         let start = first_visible.saturating_sub(VIRTUALIZATION_BUFFER);

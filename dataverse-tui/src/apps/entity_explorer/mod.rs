@@ -2,7 +2,6 @@
 
 mod service;
 
-use dataverse_lib::DataverseClient;
 use dataverse_lib::model::Entity;
 use nucleo_matcher::pattern::{AtomKind, CaseMatching, Normalization, Pattern};
 use nucleo_matcher::{Config, Matcher, Utf32Str};
@@ -11,7 +10,7 @@ use rafter::prelude::*;
 use rafter::widgets::{Input, List, ListItem, ListState, SelectionMode, Text};
 use tuidom::{Element, Size, Style};
 
-use crate::systems::client_management::{ActiveClientInfo, ClientManagement, GetActiveClient};
+use crate::systems::client_management::ActiveClientInfo;
 use crate::widgets::loading_overlay;
 
 use service::fetch_all_entities;

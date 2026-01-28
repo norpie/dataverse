@@ -501,8 +501,7 @@ impl<'a, S: ScrollableWidgetState> Scrollbar<HasScrollState<'a, S>> {
                             max_offset,
                             current_offset,
                         )) = scroll_data
-                        {
-                            if track_height > 0 {
+                            && track_height > 0 {
                                 // Calculate thumb size and position
                                 let thumb_size = if content_size == 0 {
                                     track_height
@@ -576,7 +575,6 @@ impl<'a, S: ScrollableWidgetState> Scrollbar<HasScrollState<'a, S>> {
                                     }
                                 }
                             }
-                        }
                     }
                 }),
             );
@@ -614,8 +612,7 @@ impl<'a, S: ScrollableWidgetState> Scrollbar<HasScrollState<'a, S>> {
                             max_offset,
                             grab_offset,
                         )) = scroll_data
-                        {
-                            if track_height > 0 {
+                            && track_height > 0 {
                                 let thumb_size = if content_size == 0 {
                                     track_height
                                 } else {
@@ -659,7 +656,6 @@ impl<'a, S: ScrollableWidgetState> Scrollbar<HasScrollState<'a, S>> {
                                     handler(&scroll_hx);
                                 }
                             }
-                        }
                     }
                 }),
             );
@@ -696,7 +692,7 @@ impl<'a, S: ScrollableWidgetState> Scrollbar<HasScrollState<'a, S>> {
             } else {
                 (style.track_char, style.track_style.clone())
             };
-            children.push(Element::text(&ch.to_string()).style(s));
+            children.push(Element::text(ch.to_string()).style(s));
         }
 
         Element::col()

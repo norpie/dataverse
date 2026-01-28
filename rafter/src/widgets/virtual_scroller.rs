@@ -269,8 +269,8 @@ pub fn register_scroll_handlers<S, F>(
                 }
 
                 // Call user's on_scroll handler with scroll metrics
-                if scrolled {
-                    if let Some(ref handler) = user_on_scroll {
+                if scrolled
+                    && let Some(ref handler) = user_on_scroll {
                         let current = state_clone.get();
                         let scroll = current.scroll();
                         let scroll_event = crate::handler_context::EventData::Scroll {
@@ -284,7 +284,6 @@ pub fn register_scroll_handlers<S, F>(
                         let scroll_hx = hx.with_event(scroll_event);
                         handler(&scroll_hx);
                     }
-                }
             }),
         );
     }

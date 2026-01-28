@@ -31,7 +31,7 @@ impl ListItem for FsEntry {
 
     fn render(&self) -> Element {
         let prefix = if self.is_dir { "> " } else { "  " };
-        Element::text(&format!("{}{}", prefix, self.name))
+        Element::text(format!("{}{}", prefix, self.name))
     }
 }
 
@@ -171,14 +171,12 @@ impl FileBrowserModal {
         }
 
         // Sort: ".." first, then directories, then files (all alphabetically)
-        entries.sort_by(|a, b| {
-            match (&a.name, &b.name, a.is_dir, b.is_dir) {
-                (name_a, _, _, _) if name_a == ".." => std::cmp::Ordering::Less,
-                (_, name_b, _, _) if name_b == ".." => std::cmp::Ordering::Greater,
-                (_, _, true, false) => std::cmp::Ordering::Less,
-                (_, _, false, true) => std::cmp::Ordering::Greater,
-                _ => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
-            }
+        entries.sort_by(|a, b| match (&a.name, &b.name, a.is_dir, b.is_dir) {
+            (name_a, _, _, _) if name_a == ".." => std::cmp::Ordering::Less,
+            (_, name_b, _, _) if name_b == ".." => std::cmp::Ordering::Greater,
+            (_, _, true, false) => std::cmp::Ordering::Less,
+            (_, _, false, true) => std::cmp::Ordering::Greater,
+            _ => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
         });
 
         entries
@@ -219,7 +217,9 @@ impl FileBrowserModal {
     async fn confirm_path(&self, mx: &ModalContext<Option<SaveFileResult>>) {
         let filename = self.filename.get();
         let current_dir = self.current_dir.get();
-        let file_type = self.file_type.with_ref(|s| s.value().cloned())
+        let file_type = self
+            .file_type
+            .with_ref(|s| s.value().cloned())
             .unwrap_or_else(|| self.file_types.first().cloned().unwrap_or_default());
 
         if filename.is_empty() {
@@ -257,9 +257,9 @@ impl FileBrowserModal {
         let focused_key = self.list.with_ref(|s| s.focused_key.clone());
 
         if let Some(key) = focused_key {
-            let entry = self.list.with_ref(|s| {
-                s.items.iter().find(|e| e.key() == key).cloned()
-            });
+            let entry = self
+                .list
+                .with_ref(|s| s.items.iter().find(|e| e.key() == key).cloned());
 
             if let Some(entry) = entry {
                 if entry.is_dir {
@@ -271,7 +271,11 @@ impl FileBrowserModal {
                     // Update file type dropdown if extension matches an available type
                     if let Some(ext) = entry.path.extension().and_then(|e| e.to_str()) {
                         let ext_lower = ext.to_lowercase();
-                        if self.file_types.iter().any(|ft| ft.to_lowercase() == ext_lower) {
+                        if self
+                            .file_types
+                            .iter()
+                            .any(|ft| ft.to_lowercase() == ext_lower)
+                        {
                             self.file_type.update(|s| {
                                 s.selection.selected.clear();
                                 s.selection.selected.insert(ext_lower);
@@ -286,8 +290,16 @@ impl FileBrowserModal {
     fn element(&self) -> Element {
         let current_dir = self.current_dir.get();
         let dir_display = current_dir.to_string_lossy().to_string();
-        let title = if self.require_existing { "Open File" } else { "Save File" };
-        let confirm_label = if self.require_existing { "Open" } else { "Save" };
+        let title = if self.require_existing {
+            "Open File"
+        } else {
+            "Save File"
+        };
+        let confirm_label = if self.require_existing {
+            "Open"
+        } else {
+            "Save"
+        };
 
         page! {
             column (padding: (1, 2), gap: 1, width: fill, height: fill) style (bg: surface) {

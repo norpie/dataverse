@@ -54,15 +54,12 @@ impl<'a> EntityMetadataBuilder<'a> {
         let cache_key_full = format!("{}{}", CACHE_KEY_ENTITY_FULL, logical_name);
 
         // Check cache first (unless bypassed)
-        if !self.bypass_cache {
-            if let Some(cache) = &self.client.inner.cache {
-                if let Some(cached) = cache.get(&cache_key_full).await {
-                    if let Ok(metadata) = cache::deserialize::<EntityMetadata>(&cached.data) {
+        if !self.bypass_cache
+            && let Some(cache) = &self.client.inner.cache
+                && let Some(cached) = cache.get(&cache_key_full).await
+                    && let Ok(metadata) = cache::deserialize::<EntityMetadata>(&cached.data) {
                         return Ok(metadata);
                     }
-                }
-            }
-        }
 
         // Fetch from API
         let metadata = fetch_entity_metadata_from_api(self.client, &logical_name).await?;
@@ -215,28 +212,24 @@ pub(crate) async fn fetch_entity_core(
     let cache_key = format!("{}{}", CACHE_KEY_ENTITY_CORE, logical_name);
 
     // Check cache first (unless bypassed)
-    if !bypass_cache {
-        if let Some(cache) = &client.inner.cache {
-            if let Some(cached) = cache.get(&cache_key).await {
-                if let Ok(core) = cache::deserialize::<EntityCore>(&cached.data) {
+    if !bypass_cache
+        && let Some(cache) = &client.inner.cache
+            && let Some(cached) = cache.get(&cache_key).await
+                && let Ok(core) = cache::deserialize::<EntityCore>(&cached.data) {
                     return Ok(core);
                 }
-            }
-        }
-    }
 
     // Fetch from API
     let core = fetch_entity_core_from_api(client, logical_name).await?;
 
     // Cache the result
-    if let Some(cache) = &client.inner.cache {
-        if let Ok(data) = cache::serialize(&core) {
+    if let Some(cache) = &client.inner.cache
+        && let Ok(data) = cache::serialize(&core) {
             let ttl = client.inner.cache_config.metadata_ttl;
             cache
                 .set(&cache_key, CachedValue::with_ttl(data, ttl))
                 .await;
         }
-    }
 
     Ok(core)
 }

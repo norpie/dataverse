@@ -16,6 +16,7 @@ pub struct QueryData {
 
 /// A node in the filter tree.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Default)]
 pub enum FilterNode {
     /// A logical group (AND/OR) containing child nodes.
     Group {
@@ -31,14 +32,10 @@ pub enum FilterNode {
         value: Value,
     },
     /// Empty root (no filter defined yet).
+    #[default]
     Empty,
 }
 
-impl Default for FilterNode {
-    fn default() -> Self {
-        Self::Empty
-    }
-}
 
 /// Comparison operator for a filter condition.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -80,21 +77,18 @@ impl QueryData {
 impl FilterNode {
     /// Toggle AND/OR on the group with the given ID.
     pub fn toggle_group(&mut self, target_id: usize) {
-        match self {
-            Self::Group {
+        if let Self::Group {
                 id,
                 is_and,
                 children,
-            } => {
-                if *id == target_id {
-                    *is_and = !*is_and;
-                } else {
-                    for child in children {
-                        child.toggle_group(target_id);
-                    }
+            } = self {
+            if *id == target_id {
+                *is_and = !*is_and;
+            } else {
+                for child in children {
+                    child.toggle_group(target_id);
                 }
             }
-            _ => {}
         }
     }
 

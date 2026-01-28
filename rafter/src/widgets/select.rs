@@ -79,7 +79,7 @@ impl<T: Clone + Eq + Hash> SelectState<T> {
         // Each option is 1 row high
         let total = self
             .scroller
-            .rebuild(std::iter::repeat(1).take(self.options.len()));
+            .rebuild(std::iter::repeat_n(1, self.options.len()));
         self.scroll.set_content_height(total);
     }
 

@@ -8,7 +8,7 @@ use syn::parse2;
 
 use super::impl_common::{
     DispatchContextType, EventHandlerMethod, HandlerContexts, HandlerInfo, KeybindScope,
-    KeybindsMethod, LifecycleContext, LifecycleHookInfo, LifecycleHooksDefined, PageMethod,
+    KeybindsMethod, LifecycleContext, LifecycleHooksDefined, PageMethod,
     PartialImplBlock, RequestHandlerMethod, extract_handler_info, extract_lifecycle_hook_info,
     generate_event_dispatch, generate_handler_wrappers, generate_keybinds_closures_impl,
     generate_lifecycle_hooks_impl, generate_request_dispatch, get_type_name,
@@ -95,16 +95,14 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
         // For event/request handlers, we need to convert to ImplItemFn temporarily
         let reconstructed = reconstruct_method(method);
         if let Ok(impl_item) = syn::parse2::<syn::ImplItemFn>(reconstructed.clone()) {
-            if method.has_attr("event_handler") {
-                if let Some(event_handler) = parse_event_handler_metadata(&impl_item) {
+            if method.has_attr("event_handler")
+                && let Some(event_handler) = parse_event_handler_metadata(&impl_item) {
                     event_handlers.push(event_handler);
                 }
-            }
-            if method.has_attr("request_handler") {
-                if let Some(request_handler) = parse_request_handler_metadata(&impl_item) {
+            if method.has_attr("request_handler")
+                && let Some(request_handler) = parse_request_handler_metadata(&impl_item) {
                     request_handlers.push(request_handler);
                 }
-            }
         }
 
         // Check for page method - systems don't support #[page]

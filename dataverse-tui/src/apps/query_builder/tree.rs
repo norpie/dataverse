@@ -117,7 +117,7 @@ impl TreeItem for QueryTreeNode {
                                 ),
                         )
                         .child(
-                            Element::text(&format!("({})", count))
+                            Element::text(format!("({})", count))
                                 .style(Style::new().foreground(Color::var("muted")))
                                 .style_focused(
                                     Style::new().foreground(Color::var("text.inverted")),
@@ -208,7 +208,7 @@ impl TreeItem for QueryTreeNode {
                             .style_focused(Style::new().foreground(Color::var("text.inverted"))),
                     )
             }
-            Self::TopValue(n) => Element::text(&n.to_string())
+            Self::TopValue(n) => Element::text(n.to_string())
                 .style(Style::new().foreground(Color::var("primary")))
                 .style_focused(Style::new().foreground(Color::var("text.inverted"))),
         }
@@ -304,7 +304,7 @@ fn build_filter_node(node: &FilterNode) -> Option<TreeNode<QueryTreeNode>> {
         } => {
             let child_nodes: Vec<TreeNode<QueryTreeNode>> = children
                 .iter()
-                .filter_map(|c| build_filter_node(c))
+                .filter_map(build_filter_node)
                 .collect();
             Some(TreeNode::branch(
                 QueryTreeNode::FilterGroup {

@@ -92,7 +92,7 @@ impl QueryBuilder {
     /// Automatically compute tree nodes from query state.
     #[derived]
     fn tree_nodes(&self) -> Vec<TreeNode<QueryTreeNode>> {
-        self.query.with_ref(|q| build_tree(q))
+        self.query.with_ref(build_tree)
     }
 
     // =========================================================================

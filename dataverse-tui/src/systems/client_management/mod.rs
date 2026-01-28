@@ -7,7 +7,6 @@ pub use requests::*;
 
 use std::sync::Arc;
 
-use dataverse_lib::DataverseClient;
 use dataverse_lib::cache::SqliteCache;
 use modal::ClientManagementModal;
 use rafter::prelude::*;

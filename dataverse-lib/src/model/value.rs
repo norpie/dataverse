@@ -48,8 +48,10 @@ use super::types::OptionSetValue;
 /// let empty = Value::Null;
 /// ```
 #[derive(Debug, Clone, PartialEq)]
+#[derive(Default)]
 pub enum Value {
     /// Null/empty value.
+    #[default]
     Null,
     /// Boolean value.
     Bool(bool),
@@ -236,8 +238,3 @@ impl<T: Into<Value>> From<Option<T>> for Value {
     }
 }
 
-impl Default for Value {
-    fn default() -> Self {
-        Value::Null
-    }
-}

@@ -705,7 +705,7 @@ fn collect_focusable_recursive(
     result: &mut Vec<String>,
 ) {
     // Check if we've entered the active scope
-    let now_in_scope = in_scope || active_scope.map_or(false, |s| element.id == s);
+    let now_in_scope = in_scope || active_scope.is_some_and(|s| element.id == s);
 
     if element.focusable && now_in_scope {
         result.push(element.id.clone());
@@ -735,7 +735,7 @@ fn collect_focusable_with_z_recursive(
     result: &mut Vec<(String, i16)>,
 ) {
     // Check if we've entered the active scope
-    let now_in_scope = in_scope || active_scope.map_or(false, |s| element.id == s);
+    let now_in_scope = in_scope || active_scope.is_some_and(|s| element.id == s);
 
     // Effective z-index: use element's z_index if set, otherwise inherit
     let effective_z = if element.z_index != 0 {

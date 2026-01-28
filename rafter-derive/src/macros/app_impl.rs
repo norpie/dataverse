@@ -12,7 +12,7 @@ use syn::{Attribute, Type, parse2};
 
 use super::impl_common::{
     ContextMenuMethod, DispatchContextType, EventHandlerMethod, HandlerArg, HandlerContexts,
-    HandlerInfo, KeybindScope, KeybindsMethod, LifecycleContext, LifecycleHookInfo,
+    HandlerInfo, KeybindScope, KeybindsMethod, LifecycleContext,
     LifecycleHooksDefined, PageMethod, PartialImplBlock, RequestHandlerMethod, app_metadata_mod,
     extract_handler_info, extract_lifecycle_hook_info, generate_config_impl,
     generate_context_menu_method, generate_element_impl, generate_event_dispatch,
@@ -84,8 +84,8 @@ fn extract_method_params(sig: &syn::Signature) -> Vec<HandlerArg> {
             syn::FnArg::Typed(pat_type) => {
                 let pat = &pat_type.pat;
                 let ty = &pat_type.ty;
-                let pattern = quote::quote! { #pat }.into();
-                let ty_tokens = quote::quote! { #ty }.into();
+                let pattern = quote::quote! { #pat };
+                let ty_tokens = quote::quote! { #ty };
                 Some(HandlerArg {
                     pattern,
                     ty: ty_tokens,
@@ -97,7 +97,7 @@ fn extract_method_params(sig: &syn::Signature) -> Vec<HandlerArg> {
 
 /// Extract the contents of a `context_menu!` macro invocation from a method body.
 fn extract_context_menu_macro(body: &TokenStream) -> syn::Result<TokenStream> {
-    use quote::quote;
+    
 
     // Parse the body as a macro invocation
     // Expected: context_menu! { ... }
@@ -316,15 +316,14 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
     // Validate page methods for apps
     let mut seen_pages = std::collections::HashSet::new();
     for page in &page_methods {
-        if let Some(ref name) = page.page_name {
-            if !seen_pages.insert(name.clone()) {
+        if let Some(ref name) = page.page_name
+            && !seen_pages.insert(name.clone()) {
                 return syn::Error::new_spanned(
                     &partial_impl.self_ty,
                     format!("Duplicate page name: {}", name),
                 )
                 .to_compile_error();
             }
-        }
     }
 
     // Collect page methods with named variants for page routing

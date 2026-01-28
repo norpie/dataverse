@@ -1,17 +1,18 @@
 //! Import settings modal for configuring batch size and entity.
 
-use std::sync::Arc;
 
 use dataverse_lib::DataverseClient;
 use dataverse_lib::model::Entity;
 use rafter::page;
 use rafter::prelude::*;
-use rafter::widgets::{Autocomplete, AutocompleteState, Button, NumberInput, NumberInputState, Text};
+use rafter::widgets::{
+    Autocomplete, AutocompleteState, Button, NumberInput, NumberInputState, Text,
+};
 
 use crate::file_io::FileRow;
 use crate::modals::LoadingModal;
 
-use super::super::io::{count_operation_types, parse_headers, ColumnInfo};
+use super::super::io::{ColumnInfo, count_operation_types, parse_headers};
 
 /// Result of the import settings modal.
 pub struct ImportSettings {
@@ -124,9 +125,9 @@ impl ImportSettingsModal {
     async fn on_entity_change(&self, gx: &GlobalContext) {
         log::debug!("on_entity_change called");
         let entity_set = self.entity.with_ref(|s| s.value().cloned());
-        
+
         log::debug!("Selected entity: {:?}", entity_set);
-        
+
         if let Some(entity_set) = entity_set {
             self.fetch_primary_key(gx, &entity_set).await;
         } else {
@@ -140,7 +141,7 @@ impl ImportSettingsModal {
         log::debug!("Fetching primary key for entity: {}", entity_set);
         let client = self.client.clone();
         let entity = Entity::set(entity_set.to_string());
-        
+
         // Fetch entity metadata to get primary_id_attribute
         let entity_result = gx
             .modal(LoadingModal::new("Fetching metadata...", async move {
@@ -148,7 +149,12 @@ impl ImportSettingsModal {
             }))
             .await;
 
-        log::debug!("Metadata fetch result: {:?}", entity_result.as_ref().map(|r| r.as_ref().map(|e| &e.primary_id_attribute)));
+        log::debug!(
+            "Metadata fetch result: {:?}",
+            entity_result
+                .as_ref()
+                .map(|r| r.as_ref().map(|e| &e.primary_id_attribute))
+        );
 
         match entity_result {
             Some(Ok(entity_metadata)) => {
@@ -184,10 +190,18 @@ impl ImportSettingsModal {
     #[derived]
     fn operation_counts(&self) -> (usize, usize) {
         let primary_key = self.primary_key_field.get().unwrap_or_default();
-        log::debug!("operation_counts: primary_key={:?}, rows={}, columns={}", 
-            primary_key, self.rows.len(), self.columns.len());
+        log::debug!(
+            "operation_counts: primary_key={:?}, rows={}, columns={}",
+            primary_key,
+            self.rows.len(),
+            self.columns.len()
+        );
         let counts = count_operation_types(&self.rows, &self.columns, &primary_key);
-        log::debug!("operation_counts result: creates={}, upserts={}", counts.0, counts.1);
+        log::debug!(
+            "operation_counts result: creates={}, upserts={}",
+            counts.0,
+            counts.1
+        );
         counts
     }
 
@@ -196,7 +210,7 @@ impl ImportSettingsModal {
         let (create_count, upsert_count) = self.operation_counts();
         let total_ops = create_count + upsert_count;
         let batch_size = self.batch_size.with_ref(|s| s.value() as usize).max(1);
-        (total_ops + batch_size - 1) / batch_size
+        total_ops.div_ceil(batch_size)
     }
 
     fn element(&self) -> Element {

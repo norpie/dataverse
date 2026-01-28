@@ -525,134 +525,131 @@ impl ScrollState {
         let mut changes = Vec::new();
 
         for event in events {
-            match event {
-                CrosstermEvent::Mouse(mouse) => {
-                    let x = mouse.column;
-                    let y = mouse.row;
+            if let CrosstermEvent::Mouse(mouse) = event {
+                let x = mouse.column;
+                let y = mouse.row;
 
-                    match mouse.kind {
-                        MouseEventKind::Down(MouseButton::Left) => {
-                            // Check if click is on any scrollbar
-                            if let Some((element_id, hit)) =
-                                self.check_any_scrollbar_hit(root, layout, x, y)
-                            {
-                                log::debug!(
-                                    "[scroll-drag] MouseDown at ({}, {}), hit={:?}",
-                                    x,
-                                    y,
-                                    hit
-                                );
+                match mouse.kind {
+                    MouseEventKind::Down(MouseButton::Left) => {
+                        // Check if click is on any scrollbar
+                        if let Some((element_id, hit)) =
+                            self.check_any_scrollbar_hit(root, layout, x, y)
+                        {
+                            log::debug!(
+                                "[scroll-drag] MouseDown at ({}, {}), hit={:?}",
+                                x,
+                                y,
+                                hit
+                            );
 
-                                // Calculate grab offset
-                                let click_pos = if hit.is_vertical { y } else { x };
-                                let grab_offset = hit.thumb_offset.unwrap_or_else(|| {
-                                    // Clicked on track - calculate proportional offset
-                                    hit.geom.track_click_offset(click_pos)
-                                });
+                            // Calculate grab offset
+                            let click_pos = if hit.is_vertical { y } else { x };
+                            let grab_offset = hit.thumb_offset.unwrap_or_else(|| {
+                                // Clicked on track - calculate proportional offset
+                                hit.geom.track_click_offset(click_pos)
+                            });
 
-                                self.drag = Some(ScrollbarDrag {
-                                    element_id: element_id.clone(),
-                                    is_vertical: hit.is_vertical,
-                                    grab_offset,
-                                    geom: hit.geom,
-                                });
+                            self.drag = Some(ScrollbarDrag {
+                                element_id: element_id.clone(),
+                                is_vertical: hit.is_vertical,
+                                grab_offset,
+                                geom: hit.geom,
+                            });
 
-                                // If clicked on track (not thumb), immediately scroll to that position
-                                if hit.thumb_offset.is_none() {
-                                    let scroll_pos =
-                                        hit.geom.scroll_from_drag(click_pos, grab_offset);
-                                    let current = self.get(&element_id);
-                                    let (new_x, new_y) = if hit.is_vertical {
-                                        (current.x, scroll_pos)
-                                    } else {
-                                        (scroll_pos, current.y)
-                                    };
-                                    self.set(&element_id, new_x, new_y);
-
-                                    // Generate scroll change for handlers
-                                    if let (Some((cw, ch)), Some((vw, vh))) = (
-                                        layout.content_size(&element_id),
-                                        layout.viewport_size(&element_id),
-                                    ) {
-                                        changes.push(ScrollChange {
-                                            element_id: element_id.clone(),
-                                            offset_x: new_x,
-                                            offset_y: new_y,
-                                            content_width: cw,
-                                            content_height: ch,
-                                            viewport_width: vw,
-                                            viewport_height: vh,
-                                        });
-                                    }
-                                }
-                                // Consume this event - don't let it become a click
-                                continue;
-                            }
-                        }
-
-                        MouseEventKind::Up(MouseButton::Left) => {
-                            if self.drag.is_some() {
-                                self.drag = None;
-                                // Consume this event
-                                continue;
-                            }
-                        }
-
-                        MouseEventKind::Drag(MouseButton::Left) => {
-                            if let Some(drag) = self.drag.clone() {
-                                let mouse_pos = if drag.is_vertical { y } else { x };
+                            // If clicked on track (not thumb), immediately scroll to that position
+                            if hit.thumb_offset.is_none() {
                                 let scroll_pos =
-                                    drag.geom.scroll_from_drag(mouse_pos, drag.grab_offset);
-                                let current = self.get(&drag.element_id);
-                                log::debug!(
-                                    "[scroll-drag] Drag: is_vertical={} mouse_pos={} scroll_pos={} current=({},{})",
-                                    drag.is_vertical,
-                                    mouse_pos,
-                                    scroll_pos,
-                                    current.x,
-                                    current.y
-                                );
-
-                                let (new_x, new_y) = if drag.is_vertical {
+                                    hit.geom.scroll_from_drag(click_pos, grab_offset);
+                                let current = self.get(&element_id);
+                                let (new_x, new_y) = if hit.is_vertical {
                                     (current.x, scroll_pos)
                                 } else {
-                                    log::debug!(
-                                        "[scroll-drag] Setting horizontal scroll to {} for {}",
-                                        scroll_pos,
-                                        drag.element_id
-                                    );
                                     (scroll_pos, current.y)
                                 };
+                                self.set(&element_id, new_x, new_y);
 
-                                // Only update and generate change if position actually changed
-                                if new_x != current.x || new_y != current.y {
-                                    self.set(&drag.element_id, new_x, new_y);
-
-                                    // Generate scroll change for handlers
-                                    if let (Some((cw, ch)), Some((vw, vh))) = (
-                                        layout.content_size(&drag.element_id),
-                                        layout.viewport_size(&drag.element_id),
-                                    ) {
-                                        changes.push(ScrollChange {
-                                            element_id: drag.element_id.clone(),
-                                            offset_x: new_x,
-                                            offset_y: new_y,
-                                            content_width: cw,
-                                            content_height: ch,
-                                            viewport_width: vw,
-                                            viewport_height: vh,
-                                        });
-                                    }
+                                // Generate scroll change for handlers
+                                if let (Some((cw, ch)), Some((vw, vh))) = (
+                                    layout.content_size(&element_id),
+                                    layout.viewport_size(&element_id),
+                                ) {
+                                    changes.push(ScrollChange {
+                                        element_id: element_id.clone(),
+                                        offset_x: new_x,
+                                        offset_y: new_y,
+                                        content_width: cw,
+                                        content_height: ch,
+                                        viewport_width: vw,
+                                        viewport_height: vh,
+                                    });
                                 }
-                                // Consume this event
-                                continue;
                             }
+                            // Consume this event - don't let it become a click
+                            continue;
                         }
-
-                        _ => {}
                     }
+
+                    MouseEventKind::Up(MouseButton::Left) => {
+                        if self.drag.is_some() {
+                            self.drag = None;
+                            // Consume this event
+                            continue;
+                        }
+                    }
+
+                    MouseEventKind::Drag(MouseButton::Left) => {
+                        if let Some(drag) = self.drag.clone() {
+                            let mouse_pos = if drag.is_vertical { y } else { x };
+                            let scroll_pos =
+                                drag.geom.scroll_from_drag(mouse_pos, drag.grab_offset);
+                            let current = self.get(&drag.element_id);
+                            log::debug!(
+                                "[scroll-drag] Drag: is_vertical={} mouse_pos={} scroll_pos={} current=({},{})",
+                                drag.is_vertical,
+                                mouse_pos,
+                                scroll_pos,
+                                current.x,
+                                current.y
+                            );
+
+                            let (new_x, new_y) = if drag.is_vertical {
+                                (current.x, scroll_pos)
+                            } else {
+                                log::debug!(
+                                    "[scroll-drag] Setting horizontal scroll to {} for {}",
+                                    scroll_pos,
+                                    drag.element_id
+                                );
+                                (scroll_pos, current.y)
+                            };
+
+                            // Only update and generate change if position actually changed
+                            if new_x != current.x || new_y != current.y {
+                                self.set(&drag.element_id, new_x, new_y);
+
+                                // Generate scroll change for handlers
+                                if let (Some((cw, ch)), Some((vw, vh))) = (
+                                    layout.content_size(&drag.element_id),
+                                    layout.viewport_size(&drag.element_id),
+                                ) {
+                                    changes.push(ScrollChange {
+                                        element_id: drag.element_id.clone(),
+                                        offset_x: new_x,
+                                        offset_y: new_y,
+                                        content_width: cw,
+                                        content_height: ch,
+                                        viewport_width: vw,
+                                        viewport_height: vh,
+                                    });
+                                }
+                            }
+                            // Consume this event
+                            continue;
+                        }
+                    }
+
+                    _ => {}
                 }
-                _ => {}
             }
 
             unconsumed.push(event.clone());

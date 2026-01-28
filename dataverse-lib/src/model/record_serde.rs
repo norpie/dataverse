@@ -25,19 +25,19 @@
 use std::collections::HashMap;
 use std::fmt;
 
-use serde::de::MapAccess;
-use serde::de::Visitor;
-use serde::ser::SerializeMap;
-use serde::ser::SerializeStruct;
 use serde::Deserialize;
 use serde::Deserializer;
 use serde::Serialize;
 use serde::Serializer;
+use serde::de::MapAccess;
+use serde::de::Visitor;
+use serde::ser::SerializeMap;
+use serde::ser::SerializeStruct;
 use uuid::Uuid;
 
-use super::types::EntityReference;
 use super::Record;
 use super::Value;
+use super::types::EntityReference;
 
 // =============================================================================
 // Binary format helper (for bincode)

@@ -185,7 +185,7 @@ impl DataverseClient {
         }
 
         let full_url = self.build_url(&url);
-        let body = serde_json::to_string(&record).map_err(|e| Error::Serialization(e))?;
+        let body = serde_json::to_string(&record).map_err(Error::Serialization)?;
 
         let response = self
             .request(Method::POST, &full_url, headers, Some(body))
@@ -201,7 +201,7 @@ impl DataverseClient {
                 .headers()
                 .get("OData-EntityId")
                 .and_then(|v| v.to_str().ok())
-                .and_then(|s| extract_guid_from_entity_id(s))
+                .and_then(extract_guid_from_entity_id)
                 .ok_or_else(|| {
                     Error::Api(ApiError::Parse {
                         message: "Missing or invalid OData-EntityId header".to_string(),
@@ -272,7 +272,7 @@ impl DataverseClient {
         }
 
         let full_url = self.build_url(&url);
-        let body = serde_json::to_string(&record).map_err(|e| Error::Serialization(e))?;
+        let body = serde_json::to_string(&record).map_err(Error::Serialization)?;
 
         let response = self
             .request(Method::PATCH, &full_url, headers, Some(body))
@@ -338,7 +338,7 @@ impl DataverseClient {
         }
 
         let full_url = self.build_url(&url);
-        let body = serde_json::to_string(&record).map_err(|e| Error::Serialization(e))?;
+        let body = serde_json::to_string(&record).map_err(Error::Serialization)?;
 
         let response = self
             .request(Method::PATCH, &full_url, headers, Some(body))
@@ -355,7 +355,7 @@ impl DataverseClient {
                     .headers()
                     .get("OData-EntityId")
                     .and_then(|v| v.to_str().ok())
-                    .and_then(|s| extract_guid_from_entity_id(s))
+                    .and_then(extract_guid_from_entity_id)
                     .unwrap_or(id); // Fall back to provided id
                 Ok(UpsertResult::Created(CreateResult::Id(entity_id)))
             }

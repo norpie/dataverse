@@ -5,15 +5,15 @@ use std::collections::VecDeque;
 use dataverse_lib::api::{BatchItem, Operation};
 use rafter::prelude::*;
 use rafter::widgets::{Text, TreeItem};
-use rafter::{element, page};
+use rafter::element;
 use tuidom::Color;
 
 use crate::formatting::format_value;
 
-use super::repository::StatusCounts;
-use super::tree::{format_operation, QueueTreeNode};
-use super::types::{QueueItem, QueuePayload};
 use super::Queue;
+use super::repository::StatusCounts;
+use super::tree::{QueueTreeNode, format_operation};
+use super::types::{QueueItem, QueuePayload};
 
 /// Recursively find a node by key in the tree.
 fn find_node_recursive(
@@ -42,11 +42,10 @@ impl Queue {
                     .and_then(|id_str| id_str.parse().ok());
                 item_id.and_then(|id| {
                     s.roots.iter().find_map(|node| {
-                        if let QueueTreeNode::Item { item, .. } = &node.value {
-                            if item.id == id {
+                        if let QueueTreeNode::Item { item, .. } = &node.value
+                            && item.id == id {
                                 return Some(item.clone());
                             }
-                        }
                         None
                     })
                 })
@@ -91,11 +90,10 @@ impl Queue {
             item_id.and_then(|id| {
                 // Search roots for the matching item
                 s.roots.iter().find_map(|node| {
-                    if let QueueTreeNode::Item { item, .. } = &node.value {
-                        if item.id == id {
+                    if let QueueTreeNode::Item { item, .. } = &node.value
+                        && item.id == id {
                             return Some(item.clone());
                         }
-                    }
                     None
                 })
             })
@@ -128,7 +126,7 @@ impl Queue {
                         });
                     }
                     BatchItem::Changeset(cs) => {
-                        for (cs_idx, op) in cs.operations().iter().enumerate() {
+                        for (_cs_idx, op) in cs.operations().iter().enumerate() {
                             let op_label = format_operation(op);
                             let label_with_tx = format!("[tx] {}", op_label);
                             op_elements.push(element! {

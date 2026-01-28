@@ -11,7 +11,7 @@ use rafter::prelude::*;
 use rafter::widgets::{Button, Column, SelectionMode, Table, TableState, Text};
 
 use crate::apps::record_explorer::RecordRow;
-use crate::file_io::{list_sheets, read_csv, read_excel, ParsedFile};
+use crate::file_io::{ParsedFile, list_sheets, read_csv, read_excel};
 use crate::formatting::FormattedValue;
 use crate::modals::{FileBrowserModal, LoadingModal, SheetSelectorModal};
 use crate::paths;
@@ -164,7 +164,10 @@ impl Import {
 
         // For Excel: use sheet name as suggested entity (sheet name IS the entity name)
         // For CSV: no suggestion
-        let suggested_entity = parsed.sheet_name.as_ref().map(|name| name.trim().to_string());
+        let suggested_entity = parsed
+            .sheet_name
+            .as_ref()
+            .map(|name| name.trim().to_string());
 
         // Fetch entity list from Dataverse
         let client = self.client_info.client.clone();
@@ -213,29 +216,24 @@ impl Import {
         let attributes_result = gx
             .modal(LoadingModal::new(
                 "Fetching attribute metadata...",
-                async move {
-                    client
-                        .metadata()
-                        .attributes(Entity::set(&entity_set))
-                        .await
-                },
+                async move { client.metadata().attributes(Entity::set(&entity_set)).await },
             ))
             .await;
 
         let attributes = match attributes_result {
             Some(Ok(attrs)) => attrs,
             Some(Err(e)) => {
-                gx.toast(Toast::error(format!(
-                    "Failed to fetch attributes: {}",
-                    e
-                )));
+                gx.toast(Toast::error(format!("Failed to fetch attributes: {}", e)));
                 return;
             }
             None => return,
         };
 
         // Build attributes map
-        let attributes_map: std::collections::HashMap<String, dataverse_lib::model::metadata::AttributeMetadata> = attributes
+        let attributes_map: std::collections::HashMap<
+            String,
+            dataverse_lib::model::metadata::AttributeMetadata,
+        > = attributes
             .into_iter()
             .map(|a| (a.logical_name.clone(), a))
             .collect();
@@ -277,10 +275,7 @@ impl Import {
 
         // 5. Handle errors - STOP if any exist
         if !errors.is_empty() {
-            let error_messages: Vec<String> = errors
-                .iter()
-                .map(|e| e.to_string())
-                .collect();
+            let error_messages: Vec<String> = errors.iter().map(|e| e.to_string()).collect();
             gx.modal(crate::modals::ErrorModal::with_errors(
                 "Import Conversion Failed",
                 error_messages,
@@ -290,14 +285,14 @@ impl Import {
         }
 
         // 6. Split into batches and send to Queue
+        use crate::apps::queue::Queue;
         use crate::apps::queue::api::{AddItems, NewItem};
         use crate::apps::queue::types::QueuePayload;
-        use crate::apps::queue::Queue;
         use dataverse_lib::api::Batch;
 
         let batch_size = settings.batch_size;
         let total_ops = operations.len();
-        let total_batches = (total_ops + batch_size - 1) / batch_size;
+        let total_batches = total_ops.div_ceil(batch_size);
 
         for (batch_idx, chunk) in operations.chunks(batch_size).enumerate() {
             let mut batch = Batch::new();
@@ -321,9 +316,7 @@ impl Import {
 
             // Send to queue
             match gx
-                .request::<Queue, AddItems>(AddItems {
-                    items: vec![item],
-                })
+                .request::<Queue, AddItems>(AddItems { items: vec![item] })
                 .await
             {
                 Ok(_) => {}

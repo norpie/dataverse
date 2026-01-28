@@ -5,18 +5,18 @@ mod io;
 use std::collections::HashMap;
 
 use dataverse_lib::model::{Entity, Record};
+use rafter::InstanceId;
 use rafter::page;
 use rafter::prelude::*;
 use rafter::widgets::{Button, Column, SelectionMode, Table, TableState, Text};
-use rafter::InstanceId;
 
-use crate::apps::record_explorer::{convert_records_to_rows, RecordRow};
-use crate::file_io::{write_csv, write_excel, FileIoError};
+use crate::apps::record_explorer::{RecordRow, convert_records_to_rows};
+use crate::file_io::{FileIoError, write_csv, write_excel};
 use crate::modals::{FileBrowserModal, LoadingModal};
 use crate::paths;
 use crate::systems::client_management::ActiveClientInfo;
 
-use io::{records_to_rows, transform_headers, LookupColumns};
+use io::{LookupColumns, records_to_rows, transform_headers};
 
 /// Export app: execute query and export results to file.
 #[app(name = "Export")]
@@ -87,10 +87,9 @@ impl Export {
         let client = self.client_info.client.clone();
         let query = self.query.clone();
         let count_result = gx
-            .modal(LoadingModal::new(
-                "Counting records...",
-                async move { query.count(&client).await },
-            ))
+            .modal(LoadingModal::new("Counting records...", async move {
+                query.count(&client).await
+            }))
             .await;
 
         let count = match count_result {
@@ -117,7 +116,7 @@ impl Export {
         let mut pages = query.page_size(5000).into_async_iter(&client);
         let mut all_records = Vec::new();
         let mut page_num = 0;
-        let estimated_pages = (count + 4999) / 5000; // round up
+        let estimated_pages = count.div_ceil(5000); // round up
 
         loop {
             page_num += 1;
@@ -170,7 +169,10 @@ impl Export {
         };
 
         // Build preview table
-        let rows = convert_records_to_rows(&records, std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)));
+        let rows = convert_records_to_rows(
+            &records,
+            std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        );
         let table_columns: Vec<Column> = columns
             .iter()
             .map(|name| Column::new(name, name).fixed(20))
@@ -213,10 +215,9 @@ impl Export {
         let client = self.client_info.client.clone();
         let query = self.query.clone();
         let count_result = gx
-            .modal(LoadingModal::new(
-                "Counting records...",
-                async move { query.count(&client).await },
-            ))
+            .modal(LoadingModal::new("Counting records...", async move {
+                query.count(&client).await
+            }))
             .await;
 
         let count = match count_result {
@@ -237,7 +238,7 @@ impl Export {
         let mut pages = query.page_size(5000).into_async_iter(&client);
         let mut all_records = Vec::new();
         let mut page_num = 0;
-        let estimated_pages = (count + 4999) / 5000;
+        let estimated_pages = count.div_ceil(5000);
 
         loop {
             page_num += 1;
@@ -313,8 +314,7 @@ impl Export {
         let start_dir = paths::downloads_dir().unwrap_or_else(|| std::path::PathBuf::from("."));
         let file_types = vec!["csv".to_string(), "xlsx".to_string()];
 
-        let modal =
-            FileBrowserModal::new(&start_dir, file_types).with_filename(default_filename);
+        let modal = FileBrowserModal::new(&start_dir, file_types).with_filename(default_filename);
 
         let Some(result) = gx.modal(modal).await else {
             return;
@@ -406,8 +406,7 @@ impl Export {
                 })
                 .await
                 .map_err(|e| {
-                    FileIoError::Io(std::io::Error::new(
-                        std::io::ErrorKind::Other,
+                    FileIoError::Io(std::io::Error::other(
                         format!("Task join error: {}", e),
                     ))
                 })?

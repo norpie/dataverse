@@ -58,7 +58,7 @@ pub fn convert_records_to_rows(
 
             let mut row = RecordRow::new(id, advanced_mode.clone());
 
-            for (key, _value) in record.fields() {
+            for key in record.fields().keys() {
                 let formatted = if let Some(api_formatted) = record.get_formatted(key) {
                     let raw = record
                         .get(key)
@@ -66,7 +66,7 @@ pub fn convert_records_to_rows(
                         .unwrap_or_default();
                     FormattedValue::new(api_formatted, raw)
                 } else {
-                    record.get(key).map(|v| format_value(v)).unwrap_or_default()
+                    record.get(key).map(format_value).unwrap_or_default()
                 };
                 row.set_cell(key.clone(), formatted);
             }

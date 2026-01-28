@@ -191,7 +191,6 @@ impl CacheProvider for SqliteCache {
         self.client
             .conn(move |conn| {
                 conn.execute("DELETE FROM cache WHERE expires_at <= ?", [now])
-                    .map(|count| count)
             })
             .await
             .unwrap_or(0)

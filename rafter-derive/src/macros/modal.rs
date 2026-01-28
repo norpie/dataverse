@@ -15,7 +15,7 @@
 
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
-use syn::{parse2, DeriveInput, Field, Fields, FieldsNamed, Ident};
+use syn::{DeriveInput, Field, Fields, FieldsNamed, Ident, parse2};
 
 use super::fields::{has_state_skip, has_widget_attribute, is_resource_type};
 
@@ -146,7 +146,7 @@ impl ModalAttrs {
                 let ratio: f32 = value.base10_parse()?;
 
                 // Validate range at compile time
-                if ratio < 0.1 || ratio > 2.0 {
+                if !(0.1..=2.0).contains(&ratio) {
                     return Err(syn::Error::new(
                         value.span(),
                         "aspect_ratio must be between 0.1 and 2.0",

@@ -6,15 +6,11 @@ use crate::event::Event;
 
 /// Tracks the current mouse cursor position.
 #[derive(Debug, Clone)]
+#[derive(Default)]
 pub struct CursorState {
     position: (u16, u16),
 }
 
-impl Default for CursorState {
-    fn default() -> Self {
-        Self { position: (0, 0) }
-    }
-}
 
 impl CursorState {
     /// Create a new cursor state with position at (0, 0).

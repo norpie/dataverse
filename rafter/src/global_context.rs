@@ -136,6 +136,7 @@ pub struct GlobalModalRequest {
 // =============================================================================
 
 /// Inner state for GlobalContext.
+#[derive(Default)]
 struct GlobalContextInner {
     /// Request to shutdown the runtime.
     shutdown_requested: bool,
@@ -153,19 +154,6 @@ struct GlobalContextInner {
     focused_element_rect: Option<Rect>,
 }
 
-impl Default for GlobalContextInner {
-    fn default() -> Self {
-        Self {
-            shutdown_requested: false,
-            pending_toasts: Vec::new(),
-            theme_request: None,
-            modal_request: None,
-            context_menu_request: None,
-            instance_commands: Vec::new(),
-            focused_element_rect: None,
-        }
-    }
-}
 
 // =============================================================================
 // InstanceQuery

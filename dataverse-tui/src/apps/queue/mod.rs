@@ -88,14 +88,13 @@ impl Queue {
         };
 
         // Check for interrupted items (crash recovery)
-        if let Ok(count) = repo.mark_running_as_interrupted().await {
-            if count > 0 {
+        if let Ok(count) = repo.mark_running_as_interrupted().await
+            && count > 0 {
                 gx.toast(Toast::warning(format!(
                     "{} item(s) were interrupted, please review",
                     count
                 )));
             }
-        }
 
         // Load initial counts
         if let Ok(counts) = repo.count_by_status().await {
@@ -404,16 +403,14 @@ impl Queue {
         let Some(repo) = self.repository.get() else {
             return;
         };
-        if let Ok(executions) = repo.get_executions(item_id).await {
-            if let Some(exec) = executions.first() {
-                if let Some(error) = &exec.error {
+        if let Ok(executions) = repo.get_executions(item_id).await
+            && let Some(exec) = executions.first()
+                && let Some(error) = &exec.error {
                     gx.modal(crate::apps::queue::modals::ErrorDetailsModal::new(
                         error.clone(),
                     ))
                     .await;
                 }
-            }
-        }
     }
 
     #[handler]
@@ -440,11 +437,9 @@ impl Queue {
         if let Some(update) = gx
             .modal(crate::apps::queue::modals::EditItemModal::new(&item))
             .await
-        {
-            if repo.update_item(item_id, update).await.is_ok() {
+            && repo.update_item(item_id, update).await.is_ok() {
                 self.refresh_counts_and_tree(&repo, gx).await;
             }
-        }
     }
 
     // =========================================================================
@@ -718,9 +713,9 @@ impl Queue {
         }
 
         // Track duration for ETA
-        if let Some(repo) = self.repository.get() {
-            if let Ok(executions) = repo.get_executions(event.item_id).await {
-                if let Some(exec) = executions.first() {
+        if let Some(repo) = self.repository.get()
+            && let Ok(executions) = repo.get_executions(event.item_id).await
+                && let Some(exec) = executions.first() {
                     self.recent_durations.update(|d| {
                         d.push_back(exec.duration_ms);
                         if d.len() > 7 {
@@ -728,8 +723,6 @@ impl Queue {
                         }
                     });
                 }
-            }
-        }
 
         // Refresh counts and tree
         if let Some(repo) = self.repository.get() {
@@ -792,14 +785,19 @@ impl Queue {
                 // Add running items from memory
                 let running_times = self.running_start_times.get();
                 for (item_id, started_at) in running_times.iter() {
-                    timing_map.insert(*item_id, types::ItemTiming::Running { started_at: *started_at });
+                    timing_map.insert(
+                        *item_id,
+                        types::ItemTiming::Running {
+                            started_at: *started_at,
+                        },
+                    );
                 }
 
                 // Add completed items from execution history
                 for item in &items {
-                    if item.status.is_terminal() && !timing_map.contains_key(&item.id) {
-                        if let Ok(executions) = repo.get_executions(item.id).await {
-                            if let Some(exec) = executions.first() {
+                    if item.status.is_terminal() && !timing_map.contains_key(&item.id)
+                        && let Ok(executions) = repo.get_executions(item.id).await
+                            && let Some(exec) = executions.first() {
                                 timing_map.insert(
                                     item.id,
                                     types::ItemTiming::Completed {
@@ -807,8 +805,6 @@ impl Queue {
                                     },
                                 );
                             }
-                        }
-                    }
                 }
 
                 let nodes = build_tree_nodes(&items, &timing_map);
@@ -924,10 +920,11 @@ impl Queue {
 
         // Context-aware button logic
         let focused_item = self.focused_item();
-        let show_step = !is_running && focused_item.as_ref().map_or(false, |item| {
-            matches!(item.status, ItemStatus::Ready | ItemStatus::Paused)
-        });
-        let show_pause_resume = focused_item.as_ref().map_or(false, |item| {
+        let show_step = !is_running
+            && focused_item.as_ref().is_some_and(|item| {
+                matches!(item.status, ItemStatus::Ready | ItemStatus::Paused)
+            });
+        let show_pause_resume = focused_item.as_ref().is_some_and(|item| {
             matches!(item.status, ItemStatus::Ready | ItemStatus::Paused)
         });
         let pause_resume_label = focused_item.as_ref().map_or("Pause", |item| {
@@ -937,15 +934,15 @@ impl Queue {
                 "Pause"
             }
         });
-        let show_retry = focused_item.as_ref().map_or(false, |item| {
+        let show_retry = focused_item.as_ref().is_some_and(|item| {
             matches!(
                 item.status,
                 ItemStatus::Failed | ItemStatus::PartiallyFailed | ItemStatus::Interrupted
             )
         });
-        let show_delete = focused_item.as_ref().map_or(false, |item| {
-            item.status != ItemStatus::Running
-        });
+        let show_delete = focused_item
+            .as_ref()
+            .is_some_and(|item| item.status != ItemStatus::Running);
 
         let preview = self.render_preview();
 

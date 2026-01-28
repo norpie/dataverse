@@ -133,7 +133,7 @@ impl<T: Clone + Eq + Hash> AutocompleteState<T> {
 
         // Build scroller for filtered items
         let mut scroller = VirtualScroller::new();
-        let total = scroller.rebuild(std::iter::repeat(1).take(filtered.len()));
+        let total = scroller.rebuild(std::iter::repeat_n(1, filtered.len()));
 
         let mut scroll = ScrollState::new();
         scroll.set_content_height(total);
@@ -167,11 +167,10 @@ impl<T: Clone + Eq + Hash> AutocompleteState<T> {
     where
         T: PartialEq,
     {
-        if self.selection.mode == SelectionMode::Single {
-            if let Some((_, label)) = self.options.iter().find(|(v, _)| v == &value) {
+        if self.selection.mode == SelectionMode::Single
+            && let Some((_, label)) = self.options.iter().find(|(v, _)| v == &value) {
                 self.text = label.clone();
             }
-        }
         self.selection.selected.insert(value);
         self
     }
@@ -213,7 +212,7 @@ impl<T: Clone + Eq + Hash> AutocompleteState<T> {
         // Rebuild scroller for new filtered items
         let total = self
             .scroller
-            .rebuild(std::iter::repeat(1).take(self.filtered.len()));
+            .rebuild(std::iter::repeat_n(1, self.filtered.len()));
         self.scroll.set_content_height(total);
         self.scroll.offset = 0; // Reset scroll on filter change
     }
@@ -528,8 +527,8 @@ impl<'a, T: Clone + Eq + Hash + PartialEq + Send + Sync + 'static> Autocomplete<
                         // Select item at cursor
                         let cursor = current.cursor;
                         let is_multi = current.selection.mode == SelectionMode::Multi;
-                        if let Some(filter_match) = current.filtered.get(cursor) {
-                            if let Some((value, label)) = current.options.get(filter_match.index) {
+                        if let Some(filter_match) = current.filtered.get(cursor)
+                            && let Some((value, label)) = current.options.get(filter_match.index) {
                                 let value = value.clone();
                                 let label = label.clone();
                                 state_clone.update(|s| {
@@ -546,7 +545,6 @@ impl<'a, T: Clone + Eq + Hash + PartialEq + Send + Sync + 'static> Autocomplete<
                                     handler(hx);
                                 }
                             }
-                        }
                     }
                 }),
             );
@@ -585,8 +583,8 @@ impl<'a, T: Clone + Eq + Hash + PartialEq + Send + Sync + 'static> Autocomplete<
                 .scrollable(true);
 
             for (pos_in_visible, i) in visible_range.enumerate() {
-                if let Some(filter_match) = current.filtered.get(i) {
-                    if let Some((value, label)) = current.options.get(filter_match.index) {
+                if let Some(filter_match) = current.filtered.get(i)
+                    && let Some((value, label)) = current.options.get(filter_match.index) {
                         let opt_id = format!("{}-opt-{}", id, i);
                         let is_cursor = i == current.cursor;
                         let is_selected = current.selection.is_selected(value);
@@ -701,7 +699,6 @@ impl<'a, T: Clone + Eq + Hash + PartialEq + Send + Sync + 'static> Autocomplete<
                             );
                         }
                     }
-                }
             }
 
             // Register scroll handler for mouse wheel and keyboard on body

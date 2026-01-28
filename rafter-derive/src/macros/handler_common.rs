@@ -44,11 +44,10 @@ pub fn extract_message_type(func: &ItemFn) -> Option<String> {
             }
 
             // Skip self
-            if let Pat::Ident(pat) = pat_type.pat.as_ref() {
-                if pat.ident == "self" {
+            if let Pat::Ident(pat) = pat_type.pat.as_ref()
+                && pat.ident == "self" {
                     continue;
                 }
-            }
 
             return Some(ty_str.replace(' ', ""));
         }

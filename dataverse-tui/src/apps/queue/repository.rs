@@ -53,7 +53,8 @@ impl QueueRepository {
 
     /// Insert a new queue item, returning its ID.
     pub async fn insert(&self, item: NewQueueItem) -> Result<QueueItemId, RepositoryError> {
-        let payload_bytes = bincode::serde::encode_to_vec(&item.payload, bincode::config::standard())?;
+        let payload_bytes =
+            bincode::serde::encode_to_vec(&item.payload, bincode::config::standard())?;
         let status = status_to_str(item.status);
         let created_at = item.created_at.to_rfc3339();
 
@@ -605,10 +606,13 @@ fn str_to_execution_status(s: &str) -> ExecutionStatus {
 
 fn row_to_item(row: &rusqlite::Row) -> rusqlite::Result<QueueItem> {
     let payload_bytes: Vec<u8> = row.get(3)?;
-    let (payload, _): (QueuePayload, _) =
-        bincode::serde::decode_from_slice(&payload_bytes, bincode::config::standard()).map_err(
-            |e| rusqlite::Error::FromSqlConversionFailure(3, rusqlite::types::Type::Blob, Box::new(e)),
-        )?;
+    let (payload, _): (QueuePayload, _) = bincode::serde::decode_from_slice(
+        &payload_bytes,
+        bincode::config::standard(),
+    )
+    .map_err(|e| {
+        rusqlite::Error::FromSqlConversionFailure(3, rusqlite::types::Type::Blob, Box::new(e))
+    })?;
 
     let status_str: String = row.get(2)?;
     let created_at_str: String = row.get(8)?;

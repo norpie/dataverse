@@ -5,13 +5,13 @@ use quote::{format_ident, quote};
 
 use crate::macros::page::ast::{Attr, AttrValue, ElementNode, HandlerArg, HandlerAttr};
 
+use super::CodegenMode;
 use super::generate_conditional_attr_value;
 use super::generate_view_node;
 use super::handler;
 use super::is_conditional;
 use super::style;
 use super::transition;
-use super::CodegenMode;
 
 /// Generate code for an element node
 pub fn generate(elem: &ElementNode, mode: CodegenMode) -> TokenStream {
@@ -513,13 +513,12 @@ fn generate_edges_call(method: &str, value: &AttrValue) -> TokenStream {
         }
         AttrValue::Expr(expr) => {
             // Check if it's a tuple expression (vertical, horizontal)
-            if let syn::Expr::Tuple(tuple) = expr {
-                if tuple.elems.len() == 2 {
+            if let syn::Expr::Tuple(tuple) = expr
+                && tuple.elems.len() == 2 {
                     let vertical = &tuple.elems[0];
                     let horizontal = &tuple.elems[1];
                     return quote! { .#method_ident(tuidom::Edges::symmetric(#vertical as u16, #horizontal as u16)) };
                 }
-            }
             quote! { .#method_ident(tuidom::Edges::all(#expr as u16)) }
         }
         _ => {
@@ -538,13 +537,12 @@ fn generate_edges_value_leaf(value: &AttrValue) -> TokenStream {
         }
         AttrValue::Expr(expr) => {
             // Check if it's a tuple expression (vertical, horizontal)
-            if let syn::Expr::Tuple(tuple) = expr {
-                if tuple.elems.len() == 2 {
+            if let syn::Expr::Tuple(tuple) = expr
+                && tuple.elems.len() == 2 {
                     let vertical = &tuple.elems[0];
                     let horizontal = &tuple.elems[1];
                     return quote! { tuidom::Edges::symmetric(#vertical as u16, #horizontal as u16) };
                 }
-            }
             quote! { tuidom::Edges::all(#expr as u16) }
         }
         AttrValue::Ident(ident) => quote! { #ident },

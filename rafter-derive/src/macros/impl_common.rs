@@ -356,17 +356,14 @@ fn parse_arg_expr(input: ParseStream) -> syn::Result<TokenStream> {
 
         // Parse other tokens
         let tt: proc_macro2::TokenTree = input.parse()?;
-        match &tt {
-            proc_macro2::TokenTree::Group(g) => match g.delimiter() {
-                proc_macro2::Delimiter::Parenthesis
-                | proc_macro2::Delimiter::Bracket
-                | proc_macro2::Delimiter::Brace => {
-                    depth += 1;
-                }
-                _ => {}
-            },
+        if let proc_macro2::TokenTree::Group(g) = &tt { match g.delimiter() {
+            proc_macro2::Delimiter::Parenthesis
+            | proc_macro2::Delimiter::Bracket
+            | proc_macro2::Delimiter::Brace => {
+                depth += 1;
+            }
             _ => {}
-        }
+        } }
         tokens.extend(std::iter::once(tt));
     }
 
@@ -782,11 +779,10 @@ fn extract_message_type(method: &ImplItemFn) -> Option<String> {
             }
 
             // Skip self
-            if let syn::Pat::Ident(pat) = pat_type.pat.as_ref() {
-                if pat.ident == "self" {
+            if let syn::Pat::Ident(pat) = pat_type.pat.as_ref()
+                && pat.ident == "self" {
                     continue;
                 }
-            }
 
             return Some(ty_str);
         }
@@ -1835,7 +1831,7 @@ fn generate_request_handler_call_and_clones(
 pub fn generate_handler_wrappers(handlers: &[HandlerInfo]) -> TokenStream {
     let wrappers: Vec<TokenStream> = handlers
         .iter()
-        .map(|handler| generate_single_wrapper(handler))
+        .map(generate_single_wrapper)
         .collect();
 
     quote! {

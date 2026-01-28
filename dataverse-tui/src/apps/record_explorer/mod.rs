@@ -146,10 +146,9 @@ impl RecordExplorer {
         let client = self.client_info.client.clone();
         let query = self.query_template.clone();
         let count_result = gx
-            .modal(LoadingModal::new(
-                "Counting records...",
-                async move { query.count(&client).await },
-            ))
+            .modal(LoadingModal::new("Counting records...", async move {
+                query.count(&client).await
+            }))
             .await;
 
         match count_result {
@@ -215,10 +214,9 @@ impl RecordExplorer {
         let client = self.client_info.client.clone();
         let query = self.query_template.clone();
         let count_result = gx
-            .modal(LoadingModal::new(
-                "Counting records...",
-                async move { query.count(&client).await },
-            ))
+            .modal(LoadingModal::new("Counting records...", async move {
+                query.count(&client).await
+            }))
             .await;
 
         match count_result {

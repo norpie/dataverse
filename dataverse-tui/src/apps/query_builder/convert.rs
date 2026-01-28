@@ -1,6 +1,5 @@
 //! Converts `QueryData` into dataverse-lib query types.
 
-use dataverse_lib::DataverseClient;
 use dataverse_lib::api::query::odata::QueryBuilder as ODataQueryBuilder;
 use dataverse_lib::api::query::{Direction, Filter, OrderBy};
 use dataverse_lib::model::{Entity, Value};

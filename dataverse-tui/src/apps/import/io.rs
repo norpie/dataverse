@@ -8,7 +8,7 @@ use dataverse_lib::model::types::EntityBinding;
 use dataverse_lib::model::{Entity, Record, Value};
 use uuid::Uuid;
 
-use crate::file_io::{string_to_value, ConvertError, FileRow};
+use crate::file_io::{ConvertError, FileRow, string_to_value};
 
 /// Error during import parsing/conversion.
 #[derive(Debug, thiserror::Error)]

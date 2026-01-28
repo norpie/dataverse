@@ -101,8 +101,10 @@ pub struct QueueItem {
 
 /// Filter for which statuses to show in the tree view.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Default)]
 pub enum StatusFilter {
     /// Show all statuses.
+    #[default]
     All,
     /// Show only items with this specific status.
     Only(ItemStatus),
@@ -152,11 +154,6 @@ impl StatusFilter {
     }
 }
 
-impl Default for StatusFilter {
-    fn default() -> Self {
-        Self::All
-    }
-}
 
 /// Status of an execution attempt.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

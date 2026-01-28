@@ -130,8 +130,8 @@ impl ODataPages {
         );
 
         // Add page size preference if specified (only for first page)
-        if let Some(size) = self.page_size {
-            if let Ok(_value) = HeaderValue::from_str(&format!("odata.maxpagesize={}", size)) {
+        if let Some(size) = self.page_size
+            && let Ok(_value) = HeaderValue::from_str(&format!("odata.maxpagesize={}", size)) {
                 // Note: This overwrites the previous Prefer header
                 // In practice, we'd want to combine them, but for simplicity:
                 headers.insert(
@@ -145,7 +145,6 @@ impl ODataPages {
                     }),
                 );
             }
-        }
 
         // Make request
         let response: reqwest::Response =

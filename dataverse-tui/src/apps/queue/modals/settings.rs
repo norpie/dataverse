@@ -42,7 +42,7 @@ impl SettingsModal {
     async fn confirm(&self, mx: &ModalContext<Option<(usize, usize)>>) {
         let concurrency_text = self.concurrency_input.get();
         let concurrency: usize = match concurrency_text.trim().parse() {
-            Ok(c) if c >= 1 && c <= 20 => c,
+            Ok(c) if (1..=20).contains(&c) => c,
             _ => return,
         };
 

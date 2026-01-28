@@ -49,15 +49,12 @@ impl<'a> RelationshipMetadataBuilder<'a> {
         let cache_key = format!("{}{}", CACHE_KEY_RELATIONSHIP, self.schema_name);
 
         // Check cache first (unless bypassed)
-        if !self.bypass_cache {
-            if let Some(cache) = &self.client.inner.cache {
-                if let Some(cached) = cache.get(&cache_key).await {
-                    if let Ok(rel) = cache::deserialize::<RelationshipMetadata>(&cached.data) {
+        if !self.bypass_cache
+            && let Some(cache) = &self.client.inner.cache
+                && let Some(cached) = cache.get(&cache_key).await
+                    && let Ok(rel) = cache::deserialize::<RelationshipMetadata>(&cached.data) {
                         return Ok(rel);
                     }
-                }
-            }
-        }
 
         // Fetch from API
         let rel = fetch_relationship_from_api(self.client, &self.schema_name).await?;

@@ -132,7 +132,7 @@ impl LoadQueryModal {
     async fn on_input_submit(&self, mx: &ModalContext<Option<(Option<i64>, Vec<i64>)>>) {
         let first_key = self.list.with_ref(|s| s.items.first().map(|i| i.key()));
         if let Some(key) = first_key {
-            mx.focus(&format!("load-query-list-item-{}", key));
+            mx.focus(format!("load-query-list-item-{}", key));
         }
     }
 

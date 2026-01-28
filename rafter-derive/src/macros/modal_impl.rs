@@ -7,8 +7,7 @@ use quote::quote;
 use syn::{AngleBracketedGenericArguments, GenericArgument, PathArguments, Type, parse2};
 
 use super::impl_common::{
-    HandlerContexts, HandlerInfo, KeybindScope, KeybindsMethod, LifecycleContext,
-    LifecycleHookInfo, LifecycleHooksDefined, PageMethod, PartialImplBlock, extract_handler_info,
+    HandlerContexts, HandlerInfo, KeybindScope, KeybindsMethod, LifecycleContext, LifecycleHooksDefined, PageMethod, PartialImplBlock, extract_handler_info,
     extract_lifecycle_hook_info, generate_element_impl, generate_handler_wrappers,
     generate_keybinds_closures_impl, generate_lifecycle_hooks_impl, generate_name_impl,
     get_type_name, modal_metadata_mod, reconstruct_method_stripped,
@@ -112,7 +111,7 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
     // Get the type we're implementing for
     let self_ty = partial_impl.self_ty.clone();
     let generics = partial_impl.generics.clone();
-    let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
+    let (impl_generics, _ty_generics, _where_clause) = generics.split_for_impl();
 
     let type_name = match get_type_name(&self_ty) {
         Some(n) => n,

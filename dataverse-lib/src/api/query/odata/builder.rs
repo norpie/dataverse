@@ -394,12 +394,18 @@ fn transform_filter(filter: &Filter, lookup_fields: &HashSet<String>) -> Filter 
         }
         Filter::IsNull(field) => Filter::IsNull(transform_field_name(field, lookup_fields)),
         Filter::IsNotNull(field) => Filter::IsNotNull(transform_field_name(field, lookup_fields)),
-        Filter::And(filters) => {
-            Filter::And(filters.iter().map(|f| transform_filter(f, lookup_fields)).collect())
-        }
-        Filter::Or(filters) => {
-            Filter::Or(filters.iter().map(|f| transform_filter(f, lookup_fields)).collect())
-        }
+        Filter::And(filters) => Filter::And(
+            filters
+                .iter()
+                .map(|f| transform_filter(f, lookup_fields))
+                .collect(),
+        ),
+        Filter::Or(filters) => Filter::Or(
+            filters
+                .iter()
+                .map(|f| transform_filter(f, lookup_fields))
+                .collect(),
+        ),
         Filter::Raw(s) => Filter::Raw(s.clone()),
     }
 }
