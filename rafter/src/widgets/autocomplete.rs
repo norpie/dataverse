@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use nucleo_matcher::pattern::{AtomKind, CaseMatching, Normalization, Pattern};
 use nucleo_matcher::{Config, Matcher, Utf32Str};
-use tuidom::{Color, Element, Overflow, Position, Size, Style, Transitions};
+use tuidom::{Color, Edges, Element, Overflow, Position, Size, Style, Transitions};
 
 use super::scroll::{ScrollState, ScrollableWidgetState, Scrollbar};
 use super::selection::{Selection, SelectionMode};
@@ -439,20 +439,21 @@ impl<'a, T: Clone + Eq + Hash + PartialEq + Send + Sync + 'static> Autocomplete<
             .captures_input(!self.disabled)
             .clickable(!self.disabled)
             .disabled(self.disabled)
-            .width(Size::Fixed(min_width));
+            .width(Size::Fixed(min_width))
+            .padding(Edges::symmetric(0, 1));
 
         if !placeholder.is_empty() {
             input = input.placeholder(&placeholder);
         }
 
         let style = Style::new()
-            .background(Color::var("input.background"))
+            .background(Color::var("button.normal"))
             .merge(&self.style);
         let focused_style = Style::new()
-            .background(Color::var("input.background").lighten(0.05))
+            .background(Color::var("button.hover"))
             .merge(&self.style_focused);
         let disabled_style = Style::new()
-            .background(Color::var("surface").darken(0.05))
+            .background(Color::var("button.disabled"))
             .merge(&self.style_disabled);
         input = input.style(style);
         input = input.style_focused(focused_style);

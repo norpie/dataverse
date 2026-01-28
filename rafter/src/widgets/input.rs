@@ -159,7 +159,8 @@ impl<'a> Input<HasState<'a>> {
             .id(&id)
             .focusable(!self.disabled)
             .captures_input(!self.disabled)
-            .disabled(self.disabled);
+            .disabled(self.disabled)
+            .padding(tuidom::Edges::symmetric(0, 1));
 
         // Set width - use Fixed if specified, otherwise Fill
         elem = match self.width {
@@ -176,13 +177,13 @@ impl<'a> Input<HasState<'a>> {
         }
 
         let style = Style::new()
-            .background(Color::var("input.background"))
+            .background(Color::var("button.normal"))
             .merge(&self.style);
         let focused_style = Style::new()
-            .background(Color::var("input.background").lighten(0.05))
+            .background(Color::var("button.hover"))
             .merge(&self.style_focused);
         let disabled_style = Style::new()
-            .background(Color::var("surface").darken(0.05))
+            .background(Color::var("button.disabled"))
             .merge(&self.style_disabled);
         elem = elem.style(style);
         elem = elem.style_focused(focused_style);

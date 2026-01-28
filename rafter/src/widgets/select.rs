@@ -346,17 +346,19 @@ impl<'a, T: Clone + Eq + Hash + PartialEq + Send + Sync + 'static> Select<HasSta
             .focusable(!self.disabled)
             .clickable(!self.disabled)
             .disabled(self.disabled)
+            .padding(tuidom::Edges::symmetric(0, 1))
             .children(vec![Element::text(&display_text), Element::text(arrow)]);
 
-        if let Some(style) = self.style.clone() {
-            toggle = toggle.style(style);
-        }
+        let style = Style::new()
+            .background(Color::var("button.normal"))
+            .merge(&self.style);
         let focused_style = Style::new()
-            .background(Color::var("select.focused"))
+            .background(Color::var("button.hover"))
             .merge(&self.style_focused);
         let disabled_style = Style::new()
-            .background(Color::var("select.disabled"))
+            .background(Color::var("button.disabled"))
             .merge(&self.style_disabled);
+        toggle = toggle.style(style);
         toggle = toggle.style_focused(focused_style);
         toggle = toggle.style_disabled(disabled_style);
         if let Some(transitions) = self.transitions.clone() {
