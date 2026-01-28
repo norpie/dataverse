@@ -12,7 +12,7 @@ use tuidom::{Color, Element, Style};
 use crate::credentials::CredentialsProvider;
 use crate::modals::{BrowserAuthModal, ConfirmModal};
 
-use super::{EnvironmentAdded, EnvironmentRemoved};
+use super::{EnvironmentAdded, EnvironmentRemoved, SessionChanged};
 
 /// Page enum for the client management modal tabs.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -251,10 +251,10 @@ impl ClientManagementModal {
             .ok()
             .and_then(|accs| accs.into_iter().find(|a| a.id == acc_id));
 
-        let (env_url, client_id, tenant_id) = match (env, acc) {
+        let (env_url, env_name, client_id, acc_name, tenant_id) = match (env, acc) {
             (Some(e), Some(a)) => {
                 let tenant = a.tenant_id.unwrap_or_default();
-                (e.url, a.client_id, tenant)
+                (e.url.clone(), e.display_name.clone(), a.client_id.clone(), a.display_name.clone(), tenant)
             }
             _ => {
                 gx.toast(Toast::error("Could not find environment or account"));
@@ -289,6 +289,16 @@ impl ClientManagementModal {
             }
 
             self.is_connected.set(true);
+            
+            // Publish session changed event
+            gx.publish(SessionChanged {
+                account_id: Some(acc_id),
+                env_id: Some(env_id),
+                account_name: Some(acc_name),
+                environment_name: Some(env_name),
+                environment_url: Some(env_url),
+            });
+            
             gx.toast(Toast::success("Connected successfully!"));
         }
     }

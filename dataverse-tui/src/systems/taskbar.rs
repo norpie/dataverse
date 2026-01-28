@@ -44,9 +44,10 @@ impl Default for QueueStatus {
 /// Client connection information.
 #[derive(Clone, Debug, Default)]
 pub struct ClientStatus {
-    pub host: String,
-    pub auth_method: String,
-    pub status: StatusIndicator,
+    pub is_connected: bool,
+    pub account_name: Option<String>,
+    pub environment_name: Option<String>,
+    pub environment_url: Option<String>,
 }
 
 /// Indexer status information.
@@ -158,15 +159,34 @@ impl Taskbar {
     }
 
     #[on_start]
-    async fn on_start(&self) {
+    async fn on_start(&self, gx: &GlobalContext) {
         // Queue status will be set when QueueReady event is received
         // (Queue app starts after systems)
         
-        self.client.set(ClientStatus {
-            host: "localhost:8080".to_string(),
-            auth_method: "API Key".to_string(),
-            status: StatusIndicator::Available,
-        });
+        // Try to get initial client session state
+        use crate::systems::client_management::{ClientManagement, GetActiveSession};
+        match gx.request_system::<ClientManagement, GetActiveSession>(GetActiveSession).await {
+            Ok(Some(session)) => {
+                // ClientManagement already initialized with active session
+                self.client.set(ClientStatus {
+                    is_connected: true,
+                    account_name: Some(session.account_name),
+                    environment_name: Some(session.environment_name),
+                    environment_url: Some(session.environment_url),
+                });
+            }
+            Ok(None) | Err(_) => {
+                // ClientManagement not ready yet, or no active session
+                // Will be updated via SessionChanged event
+                self.client.set(ClientStatus {
+                    is_connected: false,
+                    account_name: None,
+                    environment_name: None,
+                    environment_url: None,
+                });
+            }
+        }
+        
         self.indexer.set(IndexerStatus {
             status: StatusIndicator::Idle,
         });
@@ -185,6 +205,16 @@ impl Taskbar {
         self.queue.set(QueueStatus {
             is_running: event.is_running,
             counts: event.counts,
+        });
+    }
+
+    #[event_handler]
+    async fn on_session_changed(&self, event: crate::systems::client_management::SessionChanged) {
+        self.client.set(ClientStatus {
+            is_connected: event.account_id.is_some() && event.env_id.is_some(),
+            account_name: event.account_name,
+            environment_name: event.environment_name,
+            environment_url: event.environment_url,
         });
     }
 
@@ -237,6 +267,12 @@ impl Taskbar {
     #[handler]
     async fn focus_queue(&self, gx: &GlobalContext) {
         let _ = crate::apps::Queue::get_or_spawn_and_focus(gx);
+    }
+
+    #[handler]
+    async fn open_client_management(&self, gx: &GlobalContext) {
+        use crate::systems::client_management::OpenClientManagementModal;
+        gx.publish(OpenClientManagementModal);
     }
 
     fn render_collapsed(&self) -> Element {
@@ -467,31 +503,77 @@ impl Taskbar {
 
         // Client subsection
         let client = self.client.get();
-        let (client_indicator, client_status_text) = self.render_status_indicator(&client.status);
-        let client_row1 = Element::row()
+        
+        let (client_indicator, client_status_text) = if client.is_connected {
+            (
+                Element::text("●").style(Style::new().foreground(Color::var("success"))),
+                "Connected"
+            )
+        } else {
+            (
+                Element::text("●").style(Style::new().foreground(Color::var("text.muted"))),
+                "Not connected"
+            )
+        };
+        
+        let mut client_content = Element::col()
             .width(Size::Fill)
-            .justify(tuidom::Justify::SpaceBetween)
-            .child(Element::text("Client"))
+            .gap(0)
             .child(
                 Element::row()
-                    .gap(1)
-                    .child(client_indicator)
-                    .child(Element::text(client_status_text)),
+                    .width(Size::Fill)
+                    .justify(tuidom::Justify::SpaceBetween)
+                    .child(Element::text("Client"))
+                    .child(
+                        Element::row()
+                            .gap(1)
+                            .child(client_indicator)
+                            .child(Element::text(client_status_text)),
+                    )
             );
-        let client_row2 = Element::row()
-            .width(Size::Fill)
-            .justify(tuidom::Justify::End)
-            .child(
-                Element::text(&client.host)
-                    .style(Style::new().foreground(Color::var("text.muted"))),
+        
+        // Add info lines if connected
+        if client.is_connected {
+            // Environment name + credentials
+            if let (Some(env_name), Some(acc)) = (&client.environment_name, &client.account_name) {
+                let env_text = format!("{} ({})", env_name, acc);
+                client_content = client_content.child(
+                    Element::row()
+                        .width(Size::Fill)
+                        .justify(tuidom::Justify::End)
+                        .child(Element::text(&env_text)
+                            .style(Style::new().foreground(Color::var("text.muted"))))
+                );
+            }
+            
+            // URL on separate line
+            if let Some(url) = &client.environment_url {
+                client_content = client_content.child(
+                    Element::row()
+                        .width(Size::Fill)
+                        .justify(tuidom::Justify::End)
+                        .child(Element::text(url)
+                            .style(Style::new().foreground(Color::var("text.muted"))))
+                );
+            }
+        } else {
+            // Show hint when not connected
+            client_content = client_content.child(
+                Element::row()
+                    .width(Size::Fill)
+                    .justify(tuidom::Justify::End)
+                    .child(Element::text("(click to connect)")
+                        .style(Style::new().foreground(Color::var("text.muted"))))
             );
-        let client_row3 = Element::row()
-            .width(Size::Fill)
-            .justify(tuidom::Justify::End)
-            .child(
-                Element::text(&client.auth_method)
-                    .style(Style::new().foreground(Color::var("text.muted"))),
-            );
+        }
+        
+        let client_button = page! {
+            button (id: "client-status", width: fill, ghost)
+                on_activate: open_client_management()
+            {
+                { client_content }
+            }
+        };
 
         // Indexer subsection
         let indexer = self.indexer.get();
@@ -514,9 +596,7 @@ impl Taskbar {
             .child(status_title)
             .child(Element::col().height(Size::Fixed(1))) // Spacer after title
             .child(queue_button)
-            .child(client_row1)
-            .child(client_row2)
-            .child(client_row3)
+            .child(client_button)
             .child(indexer_row);
 
         let content_col = Element::col()

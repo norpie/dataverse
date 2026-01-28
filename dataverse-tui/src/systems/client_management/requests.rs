@@ -36,9 +36,38 @@ pub struct GetClient {
     pub env_id: i64,
 }
 
+/// Request to get the current active session info (lightweight, no client creation).
+#[derive(Request)]
+#[response(Option<SessionInfo>)]
+pub struct GetActiveSession;
+
+/// Current session information (without creating a client).
+#[derive(Clone)]
+pub struct SessionInfo {
+    pub account_id: i64,
+    pub env_id: i64,
+    pub account_name: String,
+    pub environment_name: String,
+    pub environment_url: String,
+}
+
 // =============================================================================
 // Events
 // =============================================================================
+
+/// Event to request opening the client management modal.
+#[derive(Clone, Event)]
+pub struct OpenClientManagementModal;
+
+/// Event published when the active session changes (connect/disconnect).
+#[derive(Clone, Event)]
+pub struct SessionChanged {
+    pub account_id: Option<i64>,
+    pub env_id: Option<i64>,
+    pub account_name: Option<String>,
+    pub environment_name: Option<String>,
+    pub environment_url: Option<String>,
+}
 
 /// Event published when an environment is added.
 #[derive(Clone, Event)]

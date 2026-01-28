@@ -28,6 +28,26 @@ impl ClientManagement {
         let credentials = gx.data::<CredentialsProvider>().clone();
         self.manager
             .set(Some(Arc::new(ClientManager::new(credentials))));
+
+        // Publish initial session state
+        if let Some(session) = self.handle_get_active_session(GetActiveSession, gx).await {
+            gx.publish(SessionChanged {
+                account_id: Some(session.account_id),
+                env_id: Some(session.env_id),
+                account_name: Some(session.account_name),
+                environment_name: Some(session.environment_name),
+                environment_url: Some(session.environment_url),
+            });
+        } else {
+            // No active session
+            gx.publish(SessionChanged {
+                account_id: None,
+                env_id: None,
+                account_name: None,
+                environment_name: None,
+                environment_url: None,
+            });
+        }
     }
 
     #[keybinds]
@@ -37,6 +57,11 @@ impl ClientManagement {
 
     #[handler]
     async fn open_client_management(&self, gx: &GlobalContext) {
+        let _result = gx.modal(ClientManagementModal::default()).await;
+    }
+
+    #[event_handler]
+    async fn on_open_client_management_modal(&self, _event: OpenClientManagementModal, gx: &GlobalContext) {
         let _result = gx.modal(ClientManagementModal::default()).await;
     }
 
@@ -147,6 +172,32 @@ impl ClientManagement {
             client,
             account_id: request.account_id,
             env_id: request.env_id,
+            account_name: account.display_name,
+            environment_name: environment.display_name,
+            environment_url: environment.url,
+        })
+    }
+
+    #[request_handler]
+    async fn handle_get_active_session(
+        &self,
+        _request: GetActiveSession,
+        gx: &GlobalContext,
+    ) -> Option<SessionInfo> {
+        let credentials = gx.data::<CredentialsProvider>();
+
+        let session = credentials.get_active_session().await.ok()?;
+        let (account_id, env_id) = match (session.account_id, session.environment_id) {
+            (Some(a), Some(e)) => (a, e),
+            _ => return None,
+        };
+
+        let account = credentials.get_account(account_id).await.ok()??;
+        let environment = credentials.get_environment(env_id).await.ok()??;
+
+        Some(SessionInfo {
+            account_id,
+            env_id,
             account_name: account.display_name,
             environment_name: environment.display_name,
             environment_url: environment.url,
