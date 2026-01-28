@@ -88,6 +88,7 @@ impl<T: Clone + Eq + Hash> SelectState<T> {
         self.selection = match mode {
             SelectionMode::None => Selection::none(),
             SelectionMode::Single => Selection::single(),
+            SelectionMode::Forced => Selection::forced(),
             SelectionMode::Multi => Selection::multi(),
         };
         self
@@ -178,7 +179,7 @@ pub struct Select<S = NeedsState> {
     placeholder: Option<String>,
     label: Option<String>,
     disabled: bool,
-    width: Option<u16>,
+    min_width: Option<u16>,
     style: Option<Style>,
     style_focused: Option<Style>,
     style_disabled: Option<Style>,
@@ -201,7 +202,7 @@ impl Select<NeedsState> {
             placeholder: None,
             label: None,
             disabled: false,
-            width: None,
+            min_width: None,
             style: None,
             style_focused: None,
             style_disabled: None,
@@ -221,7 +222,7 @@ impl Select<NeedsState> {
             placeholder: self.placeholder,
             label: self.label,
             disabled: self.disabled,
-            width: self.width,
+            min_width: self.min_width,
             style: self.style,
             style_focused: self.style_focused,
             style_disabled: self.style_disabled,
@@ -256,9 +257,10 @@ impl<S> Select<S> {
         self
     }
 
-    /// Set the select width in characters.
-    pub fn width(mut self, width: u16) -> Self {
-        self.width = Some(width);
+    /// Set the select toggle width in characters.
+    /// This controls the width of the toggle button and dropdown.
+    pub fn toggle_width(mut self, width: u16) -> Self {
+        self.min_width = Some(width);
         self
     }
 
@@ -335,8 +337,8 @@ impl<'a, T: Clone + Eq + Hash + PartialEq + Send + Sync + 'static> Select<HasSta
                 .unwrap_or_else(|| placeholder.clone())
         };
 
-        // Calculate width: use explicit width if provided, otherwise calculate from options
-        let min_width = if let Some(w) = self.width {
+        // Calculate width: use explicit min_width if provided, otherwise calculate from options
+        let min_width = if let Some(w) = self.min_width {
             w
         } else {
             let max_label_width = current
@@ -353,6 +355,15 @@ impl<'a, T: Clone + Eq + Hash + PartialEq + Send + Sync + 'static> Select<HasSta
         // Build toggle row
         let arrow = if current.open { "▲" } else { "▼" };
 
+        log::debug!(
+            "[select] id={} open={} min_width={} explicit_min_width={:?} display_text_len={}",
+            id,
+            current.open,
+            min_width,
+            self.min_width,
+            display_text.chars().count()
+        );
+
         // Build toggle content (text + arrow)
         let toggle_content = Element::row()
             .justify(tuidom::Justify::SpaceBetween)
@@ -362,6 +373,7 @@ impl<'a, T: Clone + Eq + Hash + PartialEq + Send + Sync + 'static> Select<HasSta
         let mut toggle = Element::box_()
             .id(&id)
             .width(tuidom::Size::Fixed(min_width))
+            .flex_shrink(0)
             .padding(tuidom::Edges::symmetric(0, 1))
             .focusable(!self.disabled)
             .clickable(!self.disabled)
@@ -679,7 +691,14 @@ impl<'a, T: Clone + Eq + Hash + PartialEq + Send + Sync + 'static> Select<HasSta
                 }),
             );
 
-            toggle.child(backdrop).child(dropdown)
+            // Wrap toggle in a positioned container with backdrop and dropdown
+            Element::box_()
+                .width(Size::Fixed(min_width))
+                .height(Size::Fixed(1))
+                .flex_shrink(0)
+                .child(toggle)
+                .child(backdrop)
+                .child(dropdown)
         } else {
             // Reset scroll when closed
             state.update(|s| s.scroll.offset = 0);

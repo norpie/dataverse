@@ -157,6 +157,7 @@ impl<T: Clone + Eq + Hash> AutocompleteState<T> {
         self.selection = match mode {
             SelectionMode::None => Selection::none(),
             SelectionMode::Single => Selection::single(),
+            SelectionMode::Forced => Selection::forced(),
             SelectionMode::Multi => Selection::multi(),
         };
         self

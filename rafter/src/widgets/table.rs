@@ -211,6 +211,7 @@ impl<T: TableRow> TableState<T> {
         self.selection = match mode {
             SelectionMode::None => Selection::none(),
             SelectionMode::Single => Selection::single(),
+            SelectionMode::Forced => Selection::forced(),
             SelectionMode::Multi => Selection::multi(),
         };
         self

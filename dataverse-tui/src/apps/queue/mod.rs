@@ -9,7 +9,7 @@ mod tree;
 pub mod types;
 mod ui;
 
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 
 use chrono::{DateTime, Utc};
 use rafter::page;
@@ -58,8 +58,10 @@ pub struct Queue {
     recent_durations: VecDeque<i64>,
     /// Active status filter.
     status_filter: StatusFilter,
-    /// Source filter (multi-select).
+    /// Source filter (multi-select with forced selection).
     source_filter: SelectState<String>,
+    /// Previous source filter selection (to detect what changed).
+    prev_source_selection: HashSet<String>,
     /// Search text for filtering by description.
     search_text: String,
     /// Track start times for running items (item_id -> started_at).
@@ -144,7 +146,7 @@ impl Queue {
                 .map(|s| (s.clone(), s.clone())),
         );
         let mut source_state = SelectState::new(options)
-            .with_selection(SelectionMode::Multi);
+            .with_selection(SelectionMode::Forced);
         
         // Restore previously selected sources, or default to "All sources"
         if saved_sources.is_empty() {
@@ -155,10 +157,17 @@ impl Queue {
                     source_state.selection.selected.insert(src.clone());
                 }
             }
+            // Ensure at least one is selected (Forced mode requirement)
+            if source_state.selection.selected.is_empty() {
+                source_state.selection.selected.insert("__all__".to_string());
+            }
         }
 
         self.status_filter.set(status_filter);
+        // Track initial selection for change detection
+        let initial_selection: HashSet<String> = source_state.selection.selected.clone();
         self.source_filter.set(source_state);
+        self.prev_source_selection.set(initial_selection);
         self.search_text.set(search_text);
 
         // Load initial tree (uses filter state)
@@ -554,14 +563,48 @@ impl Queue {
 
     #[handler]
     async fn source_filter_changed(&self) {
-        let selected: Vec<String> = self
+        let current: HashSet<String> = self
             .source_filter
             .get()
             .selected_values()
             .cloned()
             .collect();
+        let prev = self.prev_source_selection.get();
+
+        // Find what was just added
+        let added: Vec<_> = current.difference(&prev).cloned().collect();
+
+        // Handle mutual exclusivity between "__all__" and specific sources
+        if !added.is_empty() {
+            let all_sources = "__all__".to_string();
+            
+            if added.contains(&all_sources) {
+                // "All sources" was just selected → clear specific sources
+                self.source_filter.update(|s| {
+                    s.selection.selected.clear();
+                    s.selection.selected.insert(all_sources.clone());
+                });
+            } else if current.contains(&all_sources) {
+                // A specific source was selected while "All sources" was active → clear "All sources"
+                self.source_filter.update(|s| {
+                    s.selection.selected.remove(&all_sources);
+                });
+            }
+        }
+
+        // Update prev selection for next change
+        let final_selection: HashSet<String> = self
+            .source_filter
+            .get()
+            .selected_values()
+            .cloned()
+            .collect();
+        self.prev_source_selection.set(final_selection.clone());
+
+        // Save and refresh
+        let selected: Vec<String> = final_selection.into_iter().collect();
         if let Some(repo) = self.repository.get() {
-            let _ = repo.set_setting("source_filter", selected.clone()).await;
+            let _ = repo.set_setting("source_filter", selected).await;
             self.refresh_tree(&repo).await;
         }
     }
@@ -958,7 +1001,7 @@ impl Queue {
                 row (width: fill, gap: 2, justify: between) {
                     row (gap: 2) {
                         button (label: {filter_label}, hint: "f", id: "filter") on_activate: cycle_status_filter()
-                        select (state: self.source_filter, id: "queue-source-filter", placeholder: "sources...", width: 20)
+                        select (state: self.source_filter, id: "queue-source-filter", placeholder: "sources...", toggle_width: 20)
                             on_change: source_filter_changed()
                         input (state: self.search_text, id: "queue-search", placeholder: "search (/)...", width: 25)
                             on_change: search_changed()

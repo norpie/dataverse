@@ -13,6 +13,8 @@ pub enum SelectionMode {
     Single,
     /// Multiple items can be selected (checkbox style).
     Multi,
+    /// Like Multi, but at least one item must always be selected.
+    Forced,
 }
 
 /// Tracks selected items by their keys.
@@ -53,6 +55,14 @@ impl<K: Clone + Eq + Hash> Selection<K> {
         }
     }
 
+    /// Create forced multi-selection mode (at least one item must remain selected).
+    pub fn forced() -> Self {
+        Self {
+            mode: SelectionMode::Forced,
+            selected: HashSet::new(),
+        }
+    }
+
     /// Toggle selection for a key. Returns true if selection changed.
     pub fn toggle(&mut self, key: K) -> bool {
         match self.mode {
@@ -63,6 +73,22 @@ impl<K: Clone + Eq + Hash> Selection<K> {
                     true
                 } else {
                     self.selected.clear();
+                    self.selected.insert(key);
+                    true
+                }
+            }
+            SelectionMode::Forced => {
+                // Like Multi, but at least one item must remain selected
+                if self.selected.contains(&key) {
+                    // Only allow deselection if more than one item is selected
+                    if self.selected.len() > 1 {
+                        self.selected.remove(&key);
+                        true
+                    } else {
+                        // Can't deselect the last item
+                        false
+                    }
+                } else {
                     self.selected.insert(key);
                     true
                 }
