@@ -184,14 +184,14 @@ fn generate_if(node: &IfNode, mode: CodegenMode) -> TokenStream {
             }
         }
         None => {
-            // No else branch - return empty element if condition is false
-            quote! {
+            // No else branch - return empty vec if condition is false (avoids gap stacking)
+            quote! {{
                 if #cond {
-                    #then_branch
+                    rafter::IntoPageChildren::into_page_children(#then_branch)
                 } else {
-                    tuidom::Element::col()
+                    Vec::new()
                 }
-            }
+            }}
         }
     }
 }
