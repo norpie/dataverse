@@ -178,6 +178,7 @@ pub struct Select<S = NeedsState> {
     placeholder: Option<String>,
     label: Option<String>,
     disabled: bool,
+    width: Option<u16>,
     style: Option<Style>,
     style_focused: Option<Style>,
     style_disabled: Option<Style>,
@@ -200,6 +201,7 @@ impl Select<NeedsState> {
             placeholder: None,
             label: None,
             disabled: false,
+            width: None,
             style: None,
             style_focused: None,
             style_disabled: None,
@@ -219,6 +221,7 @@ impl Select<NeedsState> {
             placeholder: self.placeholder,
             label: self.label,
             disabled: self.disabled,
+            width: self.width,
             style: self.style,
             style_focused: self.style_focused,
             style_disabled: self.style_disabled,
@@ -250,6 +253,12 @@ impl<S> Select<S> {
     /// Mark the select as disabled.
     pub fn disabled(mut self) -> Self {
         self.disabled = true;
+        self
+    }
+
+    /// Set the select width in characters.
+    pub fn width(mut self, width: u16) -> Self {
+        self.width = Some(width);
         self
     }
 
@@ -326,28 +335,38 @@ impl<'a, T: Clone + Eq + Hash + PartialEq + Send + Sync + 'static> Select<HasSta
                 .unwrap_or_else(|| placeholder.clone())
         };
 
-        // Calculate min width: max of all option labels and placeholder + arrow + gap
-        let max_label_width = current
-            .options
-            .iter()
-            .map(|(_, label)| label.chars().count())
-            .max()
-            .unwrap_or(0)
-            .max(placeholder.chars().count());
-        // +2 for arrow and gap
-        let min_width = (max_label_width + 2) as u16;
+        // Calculate width: use explicit width if provided, otherwise calculate from options
+        let min_width = if let Some(w) = self.width {
+            w
+        } else {
+            let max_label_width = current
+                .options
+                .iter()
+                .map(|(_, label)| label.chars().count())
+                .max()
+                .unwrap_or(0)
+                .max(placeholder.chars().count());
+            // +2 for arrow and gap
+            (max_label_width + 2) as u16
+        };
 
         // Build toggle row
         let arrow = if current.open { "▲" } else { "▼" };
-        let mut toggle = Element::row()
-            .id(&id)
-            .min_width(min_width)
+
+        // Build toggle content (text + arrow)
+        let toggle_content = Element::row()
             .justify(tuidom::Justify::SpaceBetween)
+            .width(Size::Fill)
+            .children(vec![Element::text(&display_text), Element::text(arrow)]);
+
+        let mut toggle = Element::box_()
+            .id(&id)
+            .width(tuidom::Size::Fixed(min_width))
+            .padding(tuidom::Edges::symmetric(0, 1))
             .focusable(!self.disabled)
             .clickable(!self.disabled)
             .disabled(self.disabled)
-            .padding(tuidom::Edges::symmetric(0, 1))
-            .children(vec![Element::text(&display_text), Element::text(arrow)]);
+            .child(toggle_content);
 
         let style = Style::new()
             .background(Color::var("button.normal"))
@@ -660,16 +679,11 @@ impl<'a, T: Clone + Eq + Hash + PartialEq + Send + Sync + 'static> Select<HasSta
                 }),
             );
 
-            Element::box_()
-                .width(Size::Fixed(min_width))
-                .height(Size::Fixed(1))
-                .child(toggle)
-                .child(backdrop)
-                .child(dropdown)
+            toggle.child(backdrop).child(dropdown)
         } else {
             // Reset scroll when closed
             state.update(|s| s.scroll.offset = 0);
-            toggle.width(Size::Fixed(min_width))
+            toggle
         };
 
         // Wrap in column with label if label is present
