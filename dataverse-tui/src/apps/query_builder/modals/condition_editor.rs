@@ -24,7 +24,7 @@ pub struct ConditionData {
 }
 
 /// Modal for creating or editing a filter condition.
-#[modal(size = Md)]
+#[modal(default, size = Md)]
 pub struct ConditionEditorModal {
     #[state(skip)]
     options: Vec<(String, String)>,

@@ -26,7 +26,7 @@ impl ListItem for QueryItem {
 
 /// Modal for selecting a saved query to load or delete.
 /// Returns (query_to_load, queries_to_delete).
-#[modal(size = Md)]
+#[modal(default, size = Md)]
 pub struct LoadQueryModal {
     #[state(skip)]
     items: Vec<QueryItem>,

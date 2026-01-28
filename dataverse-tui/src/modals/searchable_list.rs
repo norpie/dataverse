@@ -215,7 +215,7 @@ fn fuzzy_filter(query: &str, entries: &[ListEntry]) -> Vec<FuzzyMatch> {
 ///     // User selected item with this ID
 /// }
 /// ```
-#[modal(size = Md, aspect_ratio = 0.6)]
+#[modal(default, size = Md, aspect_ratio = 0.6)]
 pub struct SearchableListModal {
     #[state(skip)]
     title: String,

@@ -131,7 +131,7 @@ enum LoadingState {
 ///     }
 /// }
 /// ```
-#[modal]
+#[modal(default)]
 pub struct ParallelLoadingModal {
     #[state(skip)]
     tasks: Arc<Mutex<Option<Vec<LoadingTask>>>>,

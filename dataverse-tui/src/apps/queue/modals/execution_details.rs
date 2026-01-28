@@ -7,7 +7,7 @@ use rafter::widgets::{Button, Text};
 use crate::apps::queue::types::ExecutionRecord;
 
 /// Modal that displays execution history records for a queue item.
-#[modal(size = Lg)]
+#[modal(default, size = Lg)]
 pub struct ExecutionDetailsModal {
     #[state(skip)]
     executions: Vec<ExecutionRecord>,

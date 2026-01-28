@@ -5,7 +5,7 @@ use rafter::prelude::*;
 use rafter::widgets::{Button, Text};
 
 /// Modal that displays the full error text from a failed queue item execution.
-#[modal(size = Lg)]
+#[modal(default, size = Lg)]
 pub struct ErrorDetailsModal {
     #[state(skip)]
     error_text: String,

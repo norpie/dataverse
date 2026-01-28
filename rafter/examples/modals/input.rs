@@ -8,7 +8,7 @@ use rafter::widgets::{Button, Input, Text};
 // Input Modal (returns String)
 // ============================================================================
 
-#[modal(size = Md)]
+#[modal(default, size = Md)]
 pub struct InputModal {
     #[state(skip)]
     pub prompt: String,
@@ -66,7 +66,7 @@ impl InputModal {
 // Name Input Modal (demonstrates typed result)
 // ============================================================================
 
-#[modal(size = Sm)]
+#[modal(default, size = Sm)]
 pub struct NameModal {
     first_name: String,
     last_name: String,

@@ -74,7 +74,7 @@ impl ListItem for AccListItem {
 }
 
 /// Modal for managing environments, accounts, and their connections.
-#[modal(size = Lg, pages)]
+#[modal(default, size = Lg, pages)]
 pub struct ClientManagementModal {
     // Active tab state
     env_select: SelectState<i64>,

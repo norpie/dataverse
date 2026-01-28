@@ -27,7 +27,7 @@ enum SetupStep {
 /// 3. Error - Only shown on failure (auth via BrowserAuthModal)
 ///
 /// On success, toasts and closes with `Some(())`.
-#[modal]
+#[modal(default)]
 pub struct SetupModal {
     // Wizard state
     step: SetupStep,

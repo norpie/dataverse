@@ -8,7 +8,7 @@ use rafter::widgets::{Button, Text};
 // Auto Size Modal (default - fits content)
 // ============================================================================
 
-#[modal]
+#[modal(default)]
 pub struct AutoModal;
 
 #[modal_impl]
@@ -39,7 +39,7 @@ impl AutoModal {
 // Small Size Modal (30% of screen)
 // ============================================================================
 
-#[modal(size = Sm)]
+#[modal(default, size = Sm)]
 pub struct SmModal;
 
 #[modal_impl]
@@ -70,7 +70,7 @@ impl SmModal {
 // Medium Size Modal (50% of screen)
 // ============================================================================
 
-#[modal(size = Md)]
+#[modal(default, size = Md)]
 pub struct MdModal;
 
 #[modal_impl]
@@ -102,7 +102,7 @@ impl MdModal {
 // Large Size Modal (80% of screen)
 // ============================================================================
 
-#[modal(size = Lg)]
+#[modal(default, size = Lg)]
 pub struct LgModal;
 
 #[modal_impl]
@@ -135,7 +135,7 @@ impl LgModal {
 // Fixed Size Modal (exact dimensions)
 // ============================================================================
 
-#[modal(size = Fixed { width: 50, height: 12 })]
+#[modal(default, size = Fixed { width: 50, height: 12 })]
 pub struct FixedModal;
 
 #[modal_impl]
@@ -167,7 +167,7 @@ impl FixedModal {
 // Proportional Size Modal (percentage of screen)
 // ============================================================================
 
-#[modal(size = Proportional { width: 0.6, height: 0.4 })]
+#[modal(default, size = Proportional { width: 0.6, height: 0.4 })]
 pub struct ProportionalModal;
 
 #[modal_impl]

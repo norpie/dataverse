@@ -5,7 +5,7 @@ use rafter::prelude::*;
 use rafter::widgets::{Button, NumberInput, NumberInputState, Text};
 
 /// Modal for editing the Top (record limit) value.
-#[modal]
+#[modal(default)]
 pub struct NumberEditorModal {
     #[state(skip)]
     initial: f64,

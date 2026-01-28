@@ -5,7 +5,7 @@ use rafter::prelude::*;
 use rafter::widgets::{Autocomplete, AutocompleteState, Button, SelectionMode, Text};
 
 /// Modal for selecting one or more entity fields.
-#[modal(size = Md)]
+#[modal(default, size = Md)]
 pub struct FieldPickerModal {
     #[state(skip)]
     options: Vec<(String, String)>,

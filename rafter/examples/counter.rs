@@ -22,7 +22,7 @@ use simplelog::{Config, LevelFilter, WriteLogger};
 // Really Sure Modal (nested confirmation)
 // ============================================================================
 
-#[modal]
+#[modal(default)]
 struct ReallySureModal;
 
 #[modal_impl]
@@ -65,7 +65,7 @@ impl ReallySureModal {
 // Confirm Modal
 // ============================================================================
 
-#[modal]
+#[modal(default)]
 struct ConfirmModal {
     #[state(skip)]
     message: String,

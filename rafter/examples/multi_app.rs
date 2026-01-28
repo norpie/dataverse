@@ -82,7 +82,7 @@ struct IncrementCounter;
 // Quit Confirmation Modal
 // ============================================================================
 
-#[modal]
+#[modal(default)]
 struct QuitConfirmModal;
 
 #[modal_impl]

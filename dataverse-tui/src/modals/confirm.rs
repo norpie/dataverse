@@ -21,7 +21,7 @@ use rafter::widgets::{Button, Text};
 ///     ConfirmModal::new("Are you sure?").title("Warning")
 /// ).await;
 /// ```
-#[modal]
+#[modal(default)]
 pub struct ConfirmModal {
     #[state(skip)]
     title: String,

@@ -9,7 +9,7 @@ use rafter::widgets::{Button, Text};
 // Positioned Modal (absolute position)
 // ============================================================================
 
-#[modal(position = At { x: 5, y: 3 })]
+#[modal(default, position = At { x: 5, y: 3 })]
 pub struct PositionedModal {
     started: bool,
 }
@@ -59,7 +59,7 @@ impl PositionedModal {
 // Corner Modal (demonstrates another position)
 // ============================================================================
 
-#[modal(position = At { x: 2, y: 2 }, size = Fixed { width: 35, height: 8 })]
+#[modal(default, position = At { x: 2, y: 2 }, size = Fixed { width: 35, height: 8 })]
 pub struct CornerModal;
 
 #[modal_impl]

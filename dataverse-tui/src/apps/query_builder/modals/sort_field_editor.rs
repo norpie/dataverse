@@ -6,7 +6,7 @@ use rafter::prelude::*;
 use rafter::widgets::{Autocomplete, AutocompleteState, Button, RadioGroup, RadioState, Text};
 
 /// Modal for selecting a sort field and direction.
-#[modal]
+#[modal(default)]
 pub struct SortFieldEditorModal {
     #[state(skip)]
     options: Vec<(String, String)>,

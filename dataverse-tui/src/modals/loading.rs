@@ -26,7 +26,7 @@ type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 ///     client.metadata().attributes(entity)
 /// )).await;
 /// ```
-#[modal]
+#[modal(default)]
 pub struct LoadingModal<T> {
     #[state(skip)]
     message: String,

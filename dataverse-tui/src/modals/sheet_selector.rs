@@ -5,7 +5,7 @@ use rafter::prelude::*;
 use rafter::widgets::{Button, Select, SelectState, Text};
 
 /// Modal for selecting an Excel sheet.
-#[modal(size = Auto)]
+#[modal(default, size = Auto)]
 pub struct SheetSelectorModal {
     /// Available sheets.
     #[state(skip)]

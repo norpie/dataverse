@@ -36,7 +36,7 @@ impl ListItem for FsEntry {
 }
 
 /// Modal for browsing and selecting files.
-#[modal(size = Md)]
+#[modal(default, size = Md)]
 pub struct FileBrowserModal {
     current_dir: PathBuf,
     list: ListState<FsEntry>,

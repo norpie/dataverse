@@ -9,7 +9,7 @@ use crate::apps::queue::types::QueueItem;
 
 /// Modal for editing a queue item's properties.
 /// Returns `Some(UpdateItem)` on confirm, `None` on cancel.
-#[modal]
+#[modal(default)]
 pub struct EditItemModal {
     #[state(skip)]
     env_id: i64,

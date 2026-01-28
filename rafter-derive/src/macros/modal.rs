@@ -1,7 +1,8 @@
 //! The `#[modal]` attribute macro for defining modal structs.
 //!
 //! Supports attributes:
-//! - `#[modal]` - default centered position, auto size
+//! - `#[modal]` - default centered position, auto size, no Default impl
+//! - `#[modal(default)]` - generate Default impl (for unit modals or struct update syntax)
 //! - `#[modal(pages)]` - enable page routing (expects `Page` enum in scope)
 //! - `#[modal(size = Sm)]` - small size preset
 //! - `#[modal(size = Md)]` - medium size preset
@@ -14,7 +15,7 @@
 
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
-use syn::{DeriveInput, Field, Fields, FieldsNamed, Ident, parse2};
+use syn::{parse2, DeriveInput, Field, Fields, FieldsNamed, Ident};
 
 use super::fields::{has_state_skip, has_widget_attribute, is_resource_type};
 
@@ -43,6 +44,8 @@ struct ModalAttrs {
     aspect_ratio: Option<f32>,
     /// Whether page routing is enabled (expects `Page` enum in scope)
     pages: bool,
+    /// Whether to generate a Default impl
+    default: bool,
 }
 
 impl ModalAttrs {
@@ -51,6 +54,7 @@ impl ModalAttrs {
         let mut position: Option<ModalPosition> = None;
         let mut aspect_ratio: Option<f32> = None;
         let mut pages = false;
+        let mut default = false;
 
         if attr.is_empty() {
             return Ok(Self {
@@ -58,12 +62,15 @@ impl ModalAttrs {
                 position,
                 aspect_ratio,
                 pages,
+                default,
             });
         }
 
         let parser = syn::meta::parser(|meta| {
             if meta.path.is_ident("pages") {
                 pages = true;
+            } else if meta.path.is_ident("default") {
+                default = true;
             } else if meta.path.is_ident("size") {
                 // Parse: size = Sm or size = Fixed { width: 40, height: 10 }
                 let _eq: syn::Token![=] = meta.input.parse()?;
@@ -194,6 +201,7 @@ impl ModalAttrs {
             position,
             aspect_ratio,
             pages,
+            default,
         })
     }
 }
@@ -529,14 +537,18 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
         }
     };
 
-    let default_impl = generate_default_impl(
-        name,
-        &impl_generics,
-        &ty_generics,
-        &where_clause,
-        fields,
-        &attrs,
-    );
+    let default_impl = if attrs.default {
+        generate_default_impl(
+            name,
+            &impl_generics,
+            &ty_generics,
+            &where_clause,
+            fields,
+            &attrs,
+        )
+    } else {
+        quote! {}
+    };
     let clone_impl = generate_clone_impl(
         name,
         &impl_generics,

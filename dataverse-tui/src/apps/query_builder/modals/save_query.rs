@@ -6,7 +6,7 @@ use rafter::widgets::{Button, Input, Text};
 
 /// Modal for entering a name to save the query as.
 /// Returns the chosen name, or None if cancelled.
-#[modal(size = Md)]
+#[modal(default, size = Md)]
 pub struct SaveQueryModal {
     #[state(skip)]
     initial_name: String,

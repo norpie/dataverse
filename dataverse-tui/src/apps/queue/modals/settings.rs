@@ -6,7 +6,7 @@ use rafter::widgets::{Button, Input, Text};
 
 /// Modal for editing queue settings.
 /// Returns `Some((concurrency, max_failures))` on confirm, `None` on cancel.
-#[modal]
+#[modal(default)]
 pub struct SettingsModal {
     concurrency_input: String,
     max_failures_input: String,

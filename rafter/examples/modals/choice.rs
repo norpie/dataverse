@@ -29,7 +29,7 @@ impl std::fmt::Display for Choice {
 // Choice Modal
 // ============================================================================
 
-#[modal(size = Sm)]
+#[modal(default, size = Sm)]
 pub struct ChoiceModal {
     #[state(skip)]
     pub title: String,
@@ -96,7 +96,7 @@ impl ChoiceModal {
 // Confirm Modal (boolean choice)
 // ============================================================================
 
-#[modal]
+#[modal(default)]
 pub struct ConfirmModal {
     #[state(skip)]
     pub message: String,

@@ -8,7 +8,7 @@ use rafter::widgets::{Button, Text};
 // Inner Confirmation Modal
 // ============================================================================
 
-#[modal]
+#[modal(default)]
 pub struct InnerConfirmModal;
 
 #[modal_impl(Result = bool)]
@@ -47,7 +47,7 @@ impl InnerConfirmModal {
 // Outer Modal (opens nested modal)
 // ============================================================================
 
-#[modal(size = Md)]
+#[modal(default, size = Md)]
 pub struct OuterModal {
     confirmed_count: i32,
 }
@@ -99,7 +99,7 @@ impl OuterModal {
 // Deep Nested Modal (3 levels)
 // ============================================================================
 
-#[modal]
+#[modal(default)]
 pub struct Level3Modal;
 
 #[modal_impl(Result = bool)]
@@ -134,7 +134,7 @@ impl Level3Modal {
     }
 }
 
-#[modal(size = Sm)]
+#[modal(default, size = Sm)]
 pub struct Level2Modal;
 
 #[modal_impl(Result = bool)]
@@ -172,7 +172,7 @@ impl Level2Modal {
     }
 }
 
-#[modal(size = Md)]
+#[modal(default, size = Md)]
 pub struct Level1Modal;
 
 #[modal_impl(Result = bool)]

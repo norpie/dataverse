@@ -5,7 +5,7 @@ use rafter::prelude::*;
 use rafter::widgets::{Autocomplete, AutocompleteState, Button, Text};
 
 /// Modal for selecting an entity set name.
-#[modal(size = Md)]
+#[modal(default, size = Md)]
 pub struct EntityPickerModal {
     #[state(skip)]
     options: Vec<(String, String)>,

@@ -39,7 +39,7 @@ enum AuthState {
 ///     // Auth succeeded
 /// }
 /// ```
-#[modal]
+#[modal(default)]
 pub struct BrowserAuthModal {
     #[state(skip)]
     env_url: String,
