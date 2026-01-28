@@ -11,6 +11,10 @@ use crate::client_manager::ClientManagerError;
 pub struct ActiveClientInfo {
     /// The Dataverse client.
     pub client: DataverseClient,
+    /// Account ID.
+    pub account_id: i64,
+    /// Environment ID.
+    pub env_id: i64,
     /// Account display name.
     pub account_name: String,
     /// Environment display name.

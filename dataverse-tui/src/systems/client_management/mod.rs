@@ -97,6 +97,8 @@ impl ClientManagement {
 
         Ok(ActiveClientInfo {
             client,
+            account_id,
+            env_id,
             account_name: account.display_name,
             environment_name: environment.display_name,
             environment_url: environment.url,
@@ -144,6 +146,8 @@ impl ClientManagement {
 
         Ok(ActiveClientInfo {
             client,
+            account_id: request.account_id,
+            env_id: request.env_id,
             account_name: account.display_name,
             environment_name: environment.display_name,
             environment_url: environment.url,
