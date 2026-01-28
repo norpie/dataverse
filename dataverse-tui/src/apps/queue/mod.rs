@@ -14,7 +14,7 @@ use std::collections::{HashMap, VecDeque};
 use chrono::{DateTime, Utc};
 use rafter::page;
 use rafter::prelude::*;
-use rafter::widgets::{Input, Select, SelectState, SelectionMode, Text, Tree, TreeState};
+use rafter::widgets::{Button, Input, Select, SelectState, SelectionMode, Text, Tree, TreeState};
 use tuidom::Color;
 
 use crate::credentials::CredentialsProvider;
@@ -902,15 +902,9 @@ impl Queue {
         } else {
             (Color::var("primary"), "Ready")
         };
-        let toggle_hint = if is_running { "pause" } else { "start" };
 
         let status_filter = self.status_filter.get();
         let filter_label = status_filter.label().to_string();
-        let filter_color = if status_filter != StatusFilter::All {
-            Color::var("primary")
-        } else {
-            Color::var("muted")
-        };
 
         let counts_text = format!(
             "{} ready  {} running  {} done  {} failed",
@@ -920,48 +914,65 @@ impl Queue {
             counts.failed + counts.partially_failed,
         );
         let eta_text = ui::format_eta(&self.recent_durations.get(), &counts);
+        let stats_text = if !eta_text.is_empty() {
+            format!("{}  {}", counts_text, eta_text)
+        } else {
+            counts_text
+        };
+
+        let has_completed = counts.done > 0;
+
+        // Context-aware button logic
+        let focused_item = self.focused_item();
+        let show_step = !is_running && focused_item.as_ref().map_or(false, |item| {
+            matches!(item.status, ItemStatus::Ready | ItemStatus::Paused)
+        });
+        let show_pause_resume = focused_item.as_ref().map_or(false, |item| {
+            matches!(item.status, ItemStatus::Ready | ItemStatus::Paused)
+        });
+        let pause_resume_label = focused_item.as_ref().map_or("Pause", |item| {
+            if item.status == ItemStatus::Paused {
+                "Resume"
+            } else {
+                "Pause"
+            }
+        });
+        let show_retry = focused_item.as_ref().map_or(false, |item| {
+            matches!(
+                item.status,
+                ItemStatus::Failed | ItemStatus::PartiallyFailed | ItemStatus::Interrupted
+            )
+        });
+        let show_delete = focused_item.as_ref().map_or(false, |item| {
+            item.status != ItemStatus::Running
+        });
 
         let preview = self.render_preview();
 
         page! {
             column (padding: (1, 2), gap: 1, width: fill, height: fill) style (bg: background) {
                 // Header
-                row (width: fill, justify: between) {
-                    row (gap: 1) {
-                        text (content: "Queue") style (bold, fg: interact)
-                        text (content: "●") style (fg: {status_color})
-                        text (content: {status_label}) style (fg: muted)
-                    }
-                    row (gap: 2) {
-                        row (gap: 1) {
-                            text (content: "P") style (fg: primary)
-                            text (content: {toggle_hint}) style (fg: muted)
-                        }
-                        row (gap: 1) {
-                            text (content: "f") style (fg: primary)
-                            text (content: "filter") style (fg: muted)
-                        }
-                        row (gap: 1) {
-                            text (content: "/") style (fg: primary)
-                            text (content: "search") style (fg: muted)
-                        }
-                        row (gap: 1) {
-                            text (content: ",") style (fg: primary)
-                            text (content: "settings") style (fg: muted)
-                        }
-                    }
+                row (gap: 1) {
+                    text (content: "Queue") style (bold, fg: interact)
+                    text (content: "●") style (fg: {status_color})
+                    button (label: {status_label}, hint: "P", id: "toggle-running") on_activate: toggle_running()
                 }
 
-                // Filter row
-                row (width: fill, gap: 2) {
-                    row (gap: 1) {
-                        text (content: "status:") style (fg: muted)
-                        text (content: {filter_label}) style (fg: {filter_color})
+                // Filter and search row
+                row (width: fill, gap: 2, justify: between) {
+                    row (gap: 2) {
+                        button (label: {filter_label}, hint: "f", id: "filter") on_activate: cycle_status_filter()
+                        select (state: self.source_filter, id: "queue-source-filter", placeholder: "sources...", width: 20)
+                            on_change: source_filter_changed()
+                        input (state: self.search_text, id: "queue-search", placeholder: "search (/)...", width: 25)
+                            on_change: search_changed()
                     }
-                    select (state: self.source_filter, id: "queue-source-filter", placeholder: "sources...", width: 20)
-                        on_change: source_filter_changed()
-                    input (state: self.search_text, id: "queue-search", placeholder: "search...", width: 20)
-                        on_change: search_changed()
+                    row (gap: 1) {
+                        text (content: {stats_text}) style (fg: muted)
+                        if has_completed {
+                            button (label: "Clear", hint: "C", id: "clear") on_activate: clear_completed()
+                        }
+                    }
                 }
 
                 // Main content: 50/50 tree + preview
@@ -977,8 +988,21 @@ impl Queue {
 
                 // Footer
                 row (width: fill, justify: between) {
-                    text (content: {counts_text}) style (fg: muted)
-                    text (content: {eta_text}) style (fg: muted)
+                    row (gap: 1) {
+                        if show_step {
+                            button (label: "Step", hint: "s", id: "step") on_activate: step_one()
+                        }
+                        if show_pause_resume {
+                            button (label: {pause_resume_label}, hint: "p", id: "pause-resume") on_activate: quick_pause_resume()
+                        }
+                        if show_retry {
+                            button (label: "Retry", hint: "r", id: "retry") on_activate: quick_retry()
+                        }
+                        if show_delete {
+                            button (label: "Delete", hint: "d", id: "delete") on_activate: quick_delete()
+                        }
+                    }
+                    button (label: "Settings", hint: ",", id: "settings") on_activate: open_settings()
                 }
             }
         }
