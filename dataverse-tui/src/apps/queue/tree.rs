@@ -100,7 +100,7 @@ fn format_duration(ms: i64) -> String {
 }
 
 /// Format an operation as a short label.
-fn format_operation(op: &Operation) -> String {
+pub fn format_operation(op: &Operation) -> String {
     match op {
         Operation::Create { entity, .. } => format!("Create {}", entity.set_name()),
         Operation::Retrieve { entity, id, .. } => {

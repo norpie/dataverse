@@ -2,7 +2,7 @@
 
 use std::collections::VecDeque;
 
-use dataverse_lib::api::Operation;
+use dataverse_lib::api::{BatchItem, Operation};
 use rafter::prelude::*;
 use rafter::widgets::{Text, TreeItem};
 use rafter::{element, page};
@@ -11,8 +11,8 @@ use tuidom::Color;
 use crate::formatting::format_value;
 
 use super::repository::StatusCounts;
-use super::tree::QueueTreeNode;
-use super::types::QueueItem;
+use super::tree::{format_operation, QueueTreeNode};
+use super::types::{QueueItem, QueuePayload};
 use super::Queue;
 
 /// Recursively find a node by key in the tree.
@@ -113,6 +113,36 @@ impl Queue {
         let priority_text = item.priority.to_string();
         let ops_text = format!("{} operation(s)", item.payload.operation_count());
 
+        // Build operation list for batch items
+        let mut op_elements = vec![];
+        if let QueuePayload::Batch(batch) = &item.payload {
+            for (index, batch_item) in batch.items().iter().enumerate() {
+                match batch_item {
+                    BatchItem::Operation(op) => {
+                        let op_label = format_operation(op);
+                        op_elements.push(element! {
+                            row (gap: 1) {
+                                text (content: {format!("{}.", index + 1)}) style (fg: muted)
+                                text (content: {op_label})
+                            }
+                        });
+                    }
+                    BatchItem::Changeset(cs) => {
+                        for (cs_idx, op) in cs.operations().iter().enumerate() {
+                            let op_label = format_operation(op);
+                            let label_with_tx = format!("[tx] {}", op_label);
+                            op_elements.push(element! {
+                                row (gap: 1) {
+                                    text (content: {format!("{}.", index + 1)}) style (fg: muted)
+                                    text (content: {label_with_tx})
+                                }
+                            });
+                        }
+                    }
+                }
+            }
+        }
+
         element! {
             column (padding: (1, 2), gap: 1, width: fill, height: fill) style (bg: surface) {
                 text (content: {item.description.clone()}) style (bold, fg: primary)
@@ -137,6 +167,9 @@ impl Queue {
                     text (content: "ops") style (fg: muted)
                     text (content: {ops_text})
                 }
+
+                    text (content: "Operations:") style (fg: interact)
+                    ...op_elements
             }
         }
     }
