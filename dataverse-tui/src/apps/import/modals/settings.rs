@@ -1,10 +1,15 @@
 //! Import settings modal for configuring batch size and entity.
 
+use std::sync::Arc;
+
+use dataverse_lib::DataverseClient;
+use dataverse_lib::model::Entity;
 use rafter::page;
 use rafter::prelude::*;
 use rafter::widgets::{Autocomplete, AutocompleteState, Button, NumberInput, NumberInputState, Text};
 
 use crate::file_io::FileRow;
+use crate::modals::LoadingModal;
 
 use super::super::io::{count_operation_types, parse_headers, ColumnInfo};
 
@@ -19,9 +24,13 @@ pub struct ImportSettings {
 /// Modal for configuring import settings.
 #[modal(size = Md)]
 pub struct ImportSettingsModal {
+    /// Dataverse client for fetching metadata.
+    #[state(skip)]
+    client: DataverseClient,
+
     /// Pre-parsed entity name from sheet (suggestion).
     #[state(skip)]
-    suggested_entity: String,
+    suggested_entity: Option<String>,
 
     /// Available entity options: (entity_set, display_label).
     #[state(skip)]
@@ -35,9 +44,8 @@ pub struct ImportSettingsModal {
     #[state(skip)]
     rows: Vec<FileRow>,
 
-    /// Primary key field name.
-    #[state(skip)]
-    primary_key_field: String,
+    /// Primary key field name (reactively updated).
+    primary_key_field: Option<String>,
 
     /// Entity autocomplete state.
     entity: AutocompleteState<String>,
@@ -48,21 +56,25 @@ pub struct ImportSettingsModal {
 
 impl ImportSettingsModal {
     pub fn new(
-        suggested_entity: String,
+        client: DataverseClient,
+        suggested_entity: Option<String>,
         entity_options: Vec<(String, String)>,
         columns: Vec<String>,
         rows: Vec<FileRow>,
-        primary_key_field: String,
     ) -> Self {
         let parsed_columns = parse_headers(&columns);
 
         Self {
+            client,
             suggested_entity,
             entity_options,
             columns: parsed_columns,
             rows,
-            primary_key_field,
-            ..Default::default()
+            primary_key_field: State::default(),
+            entity: State::default(),
+            batch_size: State::default(),
+            __handler_registry: Default::default(),
+            __derived_cache: Default::default(),
         }
     }
 }
@@ -74,12 +86,13 @@ impl ImportSettingsModal {
     }
 
     #[on_start]
-    async fn on_start(&self, mx: &ModalContext<Option<ImportSettings>>) {
-        // Initialize entity autocomplete with suggested value
-        self.entity.set(
-            AutocompleteState::new(self.entity_options.clone())
-                .with_value(self.suggested_entity.clone()),
-        );
+    async fn on_start(&self, gx: &GlobalContext, mx: &ModalContext<Option<ImportSettings>>) {
+        // Initialize entity autocomplete with suggested value (if any)
+        let mut autocomplete = AutocompleteState::new(self.entity_options.clone());
+        if let Some(ref entity) = self.suggested_entity {
+            autocomplete = autocomplete.with_value(entity.clone());
+        }
+        self.entity.set(autocomplete);
 
         // Initialize batch size to 1000
         self.batch_size.set(
@@ -88,6 +101,11 @@ impl ImportSettingsModal {
                 .with_max(1000.0)
                 .integer(),
         );
+
+        // If we have a suggested entity, fetch its primary key immediately
+        if let Some(ref entity_set) = self.suggested_entity {
+            self.fetch_primary_key(gx, entity_set).await;
+        }
 
         mx.focus("entity-autocomplete");
     }
@@ -100,6 +118,53 @@ impl ImportSettingsModal {
     #[handler]
     async fn cancel(&self, mx: &ModalContext<Option<ImportSettings>>) {
         mx.close(None);
+    }
+
+    #[handler]
+    async fn on_entity_change(&self, gx: &GlobalContext) {
+        log::debug!("on_entity_change called");
+        let entity_set = self.entity.with_ref(|s| s.value().cloned());
+        
+        log::debug!("Selected entity: {:?}", entity_set);
+        
+        if let Some(entity_set) = entity_set {
+            self.fetch_primary_key(gx, &entity_set).await;
+        } else {
+            // No entity selected, clear primary key
+            self.primary_key_field.set(None);
+        }
+    }
+
+    /// Fetch primary key for the given entity.
+    async fn fetch_primary_key(&self, gx: &GlobalContext, entity_set: &str) {
+        log::debug!("Fetching primary key for entity: {}", entity_set);
+        let client = self.client.clone();
+        let entity = Entity::set(entity_set.to_string());
+        
+        // Fetch entity metadata to get primary_id_attribute
+        let entity_result = gx
+            .modal(LoadingModal::new("Fetching metadata...", async move {
+                client.metadata().entity(entity).await
+            }))
+            .await;
+
+        log::debug!("Metadata fetch result: {:?}", entity_result.as_ref().map(|r| r.as_ref().map(|e| &e.primary_id_attribute)));
+
+        match entity_result {
+            Some(Ok(entity_metadata)) => {
+                let pk = entity_metadata.primary_id_attribute.clone();
+                log::debug!("Found primary key: {}", pk);
+                self.primary_key_field.set(Some(pk));
+            }
+            Some(Err(e)) => {
+                gx.toast(Toast::error(format!("Failed to fetch metadata: {}", e)));
+                self.primary_key_field.set(None);
+            }
+            None => {
+                // User cancelled
+                self.primary_key_field.set(None);
+            }
+        }
     }
 
     #[handler]
@@ -116,16 +181,27 @@ impl ImportSettingsModal {
         }
     }
 
-    fn element(&self) -> Element {
-        // Calculate operation counts
-        let (create_count, upsert_count) =
-            count_operation_types(&self.rows, &self.columns, &self.primary_key_field);
+    #[derived]
+    fn operation_counts(&self) -> (usize, usize) {
+        let primary_key = self.primary_key_field.get().unwrap_or_default();
+        log::debug!("operation_counts: primary_key={:?}, rows={}, columns={}", 
+            primary_key, self.rows.len(), self.columns.len());
+        let counts = count_operation_types(&self.rows, &self.columns, &primary_key);
+        log::debug!("operation_counts result: creates={}, upserts={}", counts.0, counts.1);
+        counts
+    }
 
+    #[derived]
+    fn batch_count(&self) -> usize {
+        let (create_count, upsert_count) = self.operation_counts();
         let total_ops = create_count + upsert_count;
-
-        // Calculate batch count based on current batch size
         let batch_size = self.batch_size.with_ref(|s| s.value() as usize).max(1);
-        let batch_count = (total_ops + batch_size - 1) / batch_size;
+        (total_ops + batch_size - 1) / batch_size
+    }
+
+    fn element(&self) -> Element {
+        let (create_count, upsert_count) = self.operation_counts();
+        let batch_count = self.batch_count();
 
         page! {
             column (padding: (1, 2), gap: 1, width: fill, height: fill) style (bg: surface) {
@@ -139,7 +215,7 @@ impl ImportSettingsModal {
                         state: self.entity,
                         id: "entity-autocomplete",
                         placeholder: "Select entity..."
-                    )
+                    ) on_select: on_entity_change()
                 }
 
                 // Batch size
