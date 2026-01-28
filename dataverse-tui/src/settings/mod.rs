@@ -20,9 +20,9 @@ pub enum SettingsError {
     #[error("migration error: {0}")]
     Migration(#[from] crate::migrations::MigrationError),
     #[error("serialization error: {0}")]
-    Serialization(bincode::Error),
+    Serialization(#[from] bincode::error::EncodeError),
     #[error("deserialization error: {0}")]
-    Deserialization(bincode::Error),
+    Deserialization(#[from] bincode::error::DecodeError),
 }
 
 /// Typed settings provider.
@@ -44,9 +44,11 @@ impl SettingsProvider {
     /// Get a typed value for a key.
     pub async fn get<T: DeserializeOwned>(&self, key: &str) -> Result<Option<T>, SettingsError> {
         match self.backend.get_bytes(key).await? {
-            Some(bytes) => Ok(Some(
-                bincode::deserialize(&bytes).map_err(SettingsError::Deserialization)?,
-            )),
+            Some(bytes) => {
+                let (value, _): (T, _) =
+                    bincode::serde::decode_from_slice(&bytes, bincode::config::standard())?;
+                Ok(Some(value))
+            }
             None => Ok(None),
         }
     }
@@ -66,7 +68,7 @@ impl SettingsProvider {
         key: &str,
         value: &T,
     ) -> Result<(), SettingsError> {
-        let bytes = bincode::serialize(value).map_err(SettingsError::Serialization)?;
+        let bytes = bincode::serde::encode_to_vec(value, bincode::config::standard())?;
         self.backend.set_bytes(key, bytes).await
     }
 

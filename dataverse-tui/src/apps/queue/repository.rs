@@ -22,7 +22,9 @@ pub enum RepositoryError {
     #[error("Migration error: {0}")]
     Migration(#[from] crate::migrations::MigrationError),
     #[error("Serialization error: {0}")]
-    Serialization(#[from] Box<bincode::ErrorKind>),
+    Serialization(#[from] bincode::error::EncodeError),
+    #[error("Deserialization error: {0}")]
+    Deserialization(#[from] bincode::error::DecodeError),
     #[error("Item not found: {0}")]
     NotFound(QueueItemId),
 }
@@ -51,7 +53,7 @@ impl QueueRepository {
 
     /// Insert a new queue item, returning its ID.
     pub async fn insert(&self, item: NewQueueItem) -> Result<QueueItemId, RepositoryError> {
-        let payload_bytes = bincode::serialize(&item.payload)?;
+        let payload_bytes = bincode::serde::encode_to_vec(&item.payload, bincode::config::standard())?;
         let status = status_to_str(item.status);
         let created_at = item.created_at.to_rfc3339();
 
@@ -379,13 +381,15 @@ impl QueueRepository {
                     Ok(bytes)
                 }) {
                     Ok(bytes) => {
-                        let value: T = bincode::deserialize(&bytes).map_err(|e| {
-                            rusqlite::Error::FromSqlConversionFailure(
-                                0,
-                                rusqlite::types::Type::Blob,
-                                e,
-                            )
-                        })?;
+                        let (value, _): (T, _) =
+                            bincode::serde::decode_from_slice(&bytes, bincode::config::standard())
+                                .map_err(|e| {
+                                    rusqlite::Error::FromSqlConversionFailure(
+                                        0,
+                                        rusqlite::types::Type::Blob,
+                                        Box::new(e),
+                                    )
+                                })?;
                         Ok(Some(value))
                     }
                     Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
@@ -403,7 +407,7 @@ impl QueueRepository {
         value: T,
     ) -> Result<(), RepositoryError> {
         let key = key.to_string();
-        let bytes = bincode::serialize(&value)?;
+        let bytes = bincode::serde::encode_to_vec(&value, bincode::config::standard())?;
         self.client
             .conn(move |conn| {
                 conn.execute(
@@ -601,9 +605,10 @@ fn str_to_execution_status(s: &str) -> ExecutionStatus {
 
 fn row_to_item(row: &rusqlite::Row) -> rusqlite::Result<QueueItem> {
     let payload_bytes: Vec<u8> = row.get(3)?;
-    let payload: QueuePayload = bincode::deserialize(&payload_bytes).map_err(|e| {
-        rusqlite::Error::FromSqlConversionFailure(3, rusqlite::types::Type::Blob, e)
-    })?;
+    let (payload, _): (QueuePayload, _) =
+        bincode::serde::decode_from_slice(&payload_bytes, bincode::config::standard()).map_err(
+            |e| rusqlite::Error::FromSqlConversionFailure(3, rusqlite::types::Type::Blob, Box::new(e)),
+        )?;
 
     let status_str: String = row.get(2)?;
     let created_at_str: String = row.get(8)?;

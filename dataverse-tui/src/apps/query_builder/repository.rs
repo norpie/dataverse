@@ -17,7 +17,9 @@ pub enum RepositoryError {
     #[error("Migration error: {0}")]
     Migration(#[from] crate::migrations::MigrationError),
     #[error("Serialization error: {0}")]
-    Serialization(#[from] Box<bincode::ErrorKind>),
+    Serialization(#[from] bincode::error::EncodeError),
+    #[error("Deserialization error: {0}")]
+    Deserialization(#[from] bincode::error::DecodeError),
     #[error("Query not found: {0}")]
     NotFound(i64),
 }
@@ -67,7 +69,7 @@ impl QueryRepository {
         name: String,
         data: &QueryData,
     ) -> Result<i64, RepositoryError> {
-        let data_bytes = bincode::serialize(data)?;
+        let data_bytes = bincode::serde::encode_to_vec(data, bincode::config::standard())?;
         let entity = data.entity.clone();
         let now = Utc::now().to_rfc3339();
 
@@ -127,7 +129,8 @@ impl QueryRepository {
                 _ => RepositoryError::Database(e),
             })
             .and_then(|(id, name, data_bytes, created_at, updated_at)| {
-                let data: QueryData = bincode::deserialize(&data_bytes)?;
+                let (data, _): (QueryData, _) =
+                    bincode::serde::decode_from_slice(&data_bytes, bincode::config::standard())?;
                 let created_at = DateTime::parse_from_rfc3339(&created_at)
                     .unwrap_or_default()
                     .with_timezone(&Utc);

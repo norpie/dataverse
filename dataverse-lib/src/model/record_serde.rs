@@ -1,6 +1,8 @@
-//! Custom serialization for Record to handle Dataverse OData format.
+//! Custom serialization for Record to handle both JSON (OData) and binary (bincode) formats.
 //!
-//! ## Write Format (Serialization)
+//! ## JSON Format (is_human_readable = true)
+//!
+//! ### Write Format (Serialization)
 //!
 //! When serializing a Record for create/update operations:
 //! - Regular fields serialize normally: `"name": "Contoso"`
@@ -8,32 +10,51 @@
 //! - OptionSet serializes as just the value: `"statecode": 0`
 //! - Money serializes as decimal: `"revenue": 1000000.00`
 //!
-//! ## Read Format (Deserialization)
+//! ### Read Format (Deserialization)
 //!
 //! When deserializing from Dataverse responses:
 //! - Lookup fields come as: `"_primarycontactid_value": "guid"`
 //! - Lookup metadata: `"_field_value@Microsoft.Dynamics.CRM.lookuplogicalname": "contact"`
 //! - Formatted values: `"field@OData.Community.Display.V1.FormattedValue": "Display Text"`
 //! - ETag: `"@odata.etag": "W/\"12345\""`
+//!
+//! ## Binary Format (is_human_readable = false)
+//!
+//! Uses a simple struct with all fields directly serialized.
 
 use std::collections::HashMap;
 use std::fmt;
 
+use serde::de::MapAccess;
+use serde::de::Visitor;
+use serde::ser::SerializeMap;
+use serde::ser::SerializeStruct;
 use serde::Deserialize;
 use serde::Deserializer;
 use serde::Serialize;
 use serde::Serializer;
-use serde::de::MapAccess;
-use serde::de::Visitor;
-use serde::ser::SerializeMap;
 use uuid::Uuid;
 
+use super::types::EntityReference;
 use super::Record;
 use super::Value;
-use super::types::EntityReference;
 
 // =============================================================================
-// Serialization (for writes)
+// Binary format helper (for bincode)
+// =============================================================================
+
+/// Helper struct for binary serialization/deserialization.
+#[derive(Serialize, Deserialize)]
+struct BinaryRecord {
+    entity_name: String,
+    id: Option<Uuid>,
+    fields: HashMap<String, Value>,
+    formatted_values: HashMap<String, String>,
+    etag: Option<String>,
+}
+
+// =============================================================================
+// Serialization
 // =============================================================================
 
 impl Serialize for Record {
@@ -41,47 +62,59 @@ impl Serialize for Record {
     where
         S: Serializer,
     {
-        // Count fields: regular fields + EntityBinding (which serialize as @odata.bind)
-        let mut map = serializer.serialize_map(Some(self.fields.len()))?;
+        if serializer.is_human_readable() {
+            // JSON format: OData-compatible (fields only, no metadata)
+            let mut map = serializer.serialize_map(Some(self.fields.len()))?;
 
-        for (key, value) in &self.fields {
-            match value {
-                // EntityBinding serializes as "field@odata.bind": "/entities(guid)"
-                Value::EntityBinding(binding) => {
-                    let bind_key = format!("{}@odata.bind", key);
-                    map.serialize_entry(&bind_key, &binding.odata_bind())?;
-                }
-                // OptionSet serializes as just the integer value
-                Value::OptionSet(opt) => {
-                    map.serialize_entry(key, &opt.value)?;
-                }
-                // MultiOptionSet serializes as comma-separated string
-                Value::MultiOptionSet(opt) => {
-                    let csv: String = opt
-                        .values
-                        .iter()
-                        .map(|v| v.to_string())
-                        .collect::<Vec<_>>()
-                        .join(",");
-                    map.serialize_entry(key, &csv)?;
-                }
-                // Null values should not be serialized (Dataverse ignores them anyway)
-                Value::Null => {
-                    // Skip null values in serialization
-                }
-                // All other values serialize normally
-                _ => {
-                    map.serialize_entry(key, value)?;
+            for (key, value) in &self.fields {
+                match value {
+                    // EntityBinding serializes as "field@odata.bind": "/entities(guid)"
+                    Value::EntityBinding(binding) => {
+                        let bind_key = format!("{}@odata.bind", key);
+                        map.serialize_entry(&bind_key, &binding.odata_bind())?;
+                    }
+                    // OptionSet serializes as just the integer value
+                    Value::OptionSet(opt) => {
+                        map.serialize_entry(key, &opt.value)?;
+                    }
+                    // MultiOptionSet serializes as comma-separated string
+                    Value::MultiOptionSet(opt) => {
+                        let csv: String = opt
+                            .values
+                            .iter()
+                            .map(|v| v.to_string())
+                            .collect::<Vec<_>>()
+                            .join(",");
+                        map.serialize_entry(key, &csv)?;
+                    }
+                    // Null values should not be serialized (Dataverse ignores them anyway)
+                    Value::Null => {
+                        // Skip null values in serialization
+                    }
+                    // All other values serialize normally
+                    _ => {
+                        map.serialize_entry(key, value)?;
+                    }
                 }
             }
-        }
 
-        map.end()
+            map.end()
+        } else {
+            // Binary format: serialize all fields as a struct
+            let binary = BinaryRecord {
+                entity_name: self.entity_name.clone(),
+                id: self.id,
+                fields: self.fields.clone(),
+                formatted_values: self.formatted_values.clone(),
+                etag: self.etag.clone(),
+            };
+            binary.serialize(serializer)
+        }
     }
 }
 
 // =============================================================================
-// Deserialization (from reads)
+// Deserialization
 // =============================================================================
 
 impl<'de> Deserialize<'de> for Record {
@@ -89,7 +122,20 @@ impl<'de> Deserialize<'de> for Record {
     where
         D: Deserializer<'de>,
     {
-        deserializer.deserialize_map(RecordVisitor)
+        if deserializer.is_human_readable() {
+            // JSON format: use custom visitor for OData format
+            deserializer.deserialize_map(RecordVisitor)
+        } else {
+            // Binary format: deserialize as simple struct
+            let binary = BinaryRecord::deserialize(deserializer)?;
+            Ok(Record {
+                entity_name: binary.entity_name,
+                id: binary.id,
+                fields: binary.fields,
+                formatted_values: binary.formatted_values,
+                etag: binary.etag,
+            })
+        }
     }
 }
 
