@@ -11,22 +11,27 @@ use super::handler;
 use super::is_conditional;
 use super::style;
 use super::transition;
+use super::CodegenMode;
 
 /// Generate code for an element node
-pub fn generate(elem: &ElementNode) -> TokenStream {
+pub fn generate(elem: &ElementNode, mode: CodegenMode) -> TokenStream {
     let name_str = elem.name.to_string();
 
     match name_str.as_str() {
-        "column" | "col" => generate_container(elem, quote! { tuidom::Element::col() }),
-        "row" => generate_container(elem, quote! { tuidom::Element::row() }),
-        "box" | "box_" => generate_container(elem, quote! { tuidom::Element::box_() }),
-        "text" => generate_text(elem),
-        _ => generate_widget(elem),
+        "column" | "col" => generate_container(elem, quote! { tuidom::Element::col() }, mode),
+        "row" => generate_container(elem, quote! { tuidom::Element::row() }, mode),
+        "box" | "box_" => generate_container(elem, quote! { tuidom::Element::box_() }, mode),
+        "text" => generate_text(elem, mode),
+        _ => generate_widget(elem, mode),
     }
 }
 
 /// Generate a container element (col/row/box)
-fn generate_container(elem: &ElementNode, constructor: TokenStream) -> TokenStream {
+fn generate_container(
+    elem: &ElementNode,
+    constructor: TokenStream,
+    mode: CodegenMode,
+) -> TokenStream {
     let layout_refs: Vec<_> = elem.layout_attrs.iter().collect();
     let style_refs: Vec<_> = elem.style_attrs.iter().collect();
     let style_focused_refs: Vec<_> = elem.style_focused_attrs.iter().collect();
@@ -34,7 +39,11 @@ fn generate_container(elem: &ElementNode, constructor: TokenStream) -> TokenStre
     let style_call = style::generate_merged_style(&style_refs);
     let style_focused_call = style::generate_merged_style_focused(&style_focused_refs);
     let transition_call = transition::generate_transitions(&elem.transition_attrs);
-    let children: Vec<_> = elem.children.iter().map(generate_view_node).collect();
+    let children: Vec<_> = elem
+        .children
+        .iter()
+        .map(|c| generate_view_node(c, mode))
+        .collect();
 
     // Check if there are any handlers to register
     let has_handlers = !elem.handlers.is_empty();
@@ -65,8 +74,8 @@ fn generate_container(elem: &ElementNode, constructor: TokenStream) -> TokenStre
         }
     };
 
-    // If there are handlers, wrap in a block that registers them
-    if has_handlers {
+    // If there are handlers, wrap in a block that registers them (only in Page mode)
+    if has_handlers && mode == CodegenMode::Page {
         let handler_registrations = generate_container_handler_registrations(&elem.handlers);
         quote! {
             {
@@ -144,7 +153,7 @@ fn generate_container_handler_registrations(handlers: &[HandlerAttr]) -> TokenSt
 }
 
 /// Generate a text element using the Text widget
-fn generate_text(elem: &ElementNode) -> TokenStream {
+fn generate_text(elem: &ElementNode, mode: CodegenMode) -> TokenStream {
     // Separate widget attrs from layout attrs
     // For widgets, id should be a widget prop, not a layout attr
     let widget_attrs: Vec<_> = elem
@@ -176,24 +185,44 @@ fn generate_text(elem: &ElementNode) -> TokenStream {
     // Layout calls applied after build()
     let layout_calls = generate_layout_calls(&layout_attrs);
 
-    // Text widget: Text::new().content(...).style(...).style_focused(...).build(registry, handlers)
-    // Then apply layout calls to the resulting Element
-    quote! {
-        {
-            let __handlers = rafter::WidgetHandlers::new();
-            Text::new()
-                #(#widget_attr_calls)*
-                #style_call
-                #style_focused_call
-                #transition_call
-                .build(&self.__handler_registry, &__handlers)
-                #(#layout_calls)*
+    // Generate code based on mode
+    match mode {
+        CodegenMode::Page => {
+            // Page mode: requires self.__handler_registry
+            quote! {
+                {
+                    let __handlers = rafter::WidgetHandlers::new();
+                    Text::new()
+                        #(#widget_attr_calls)*
+                        #style_call
+                        #style_focused_call
+                        #transition_call
+                        .build(&self.__handler_registry, &__handlers)
+                        #(#layout_calls)*
+                }
+            }
+        }
+        CodegenMode::Element => {
+            // Element mode: create a temporary registry (won't be used since no handlers allowed)
+            quote! {
+                {
+                    let __registry = rafter::HandlerRegistry::new();
+                    let __handlers = rafter::WidgetHandlers::new();
+                    Text::new()
+                        #(#widget_attr_calls)*
+                        #style_call
+                        #style_focused_call
+                        #transition_call
+                        .build(&__registry, &__handlers)
+                        #(#layout_calls)*
+                }
+            }
         }
     }
 }
 
 /// Generate a widget element (unknown element name = widget)
-fn generate_widget(elem: &ElementNode) -> TokenStream {
+fn generate_widget(elem: &ElementNode, mode: CodegenMode) -> TokenStream {
     // Convert snake_case widget name to PascalCase type name
     let widget_type = snake_to_pascal(&elem.name.to_string());
     let widget_type_ident = format_ident!("{}", widget_type);
@@ -230,30 +259,60 @@ fn generate_widget(elem: &ElementNode) -> TokenStream {
     // Layout calls applied after build()
     let layout_calls = generate_layout_calls(&layout_attrs);
 
-    // Generate handler insertions into WidgetHandlers map
-    let handler_insertions = handler::generate_handler_insertions(&elem.handlers);
+    // Generate handler insertions into WidgetHandlers map (only in Page mode)
+    let handler_insertions = if mode == CodegenMode::Page {
+        handler::generate_handler_insertions(&elem.handlers)
+    } else {
+        quote! {}
+    };
 
     // Generate children if present (for container widgets like Card)
-    let children: Vec<_> = elem.children.iter().map(generate_view_node).collect();
+    let children: Vec<_> = elem
+        .children
+        .iter()
+        .map(|c| generate_view_node(c, mode))
+        .collect();
     let children_call = if children.is_empty() {
         quote! {}
     } else {
         quote! { .children(vec![#(#children),*]) }
     };
 
-    // Build the widget: Widget::new().props().children().style().style_focused().build(registry, handlers)
-    quote! {
-        {
-            let mut __handlers = rafter::WidgetHandlers::new();
-            #handler_insertions
-            #widget_type_ident::new()
-                #(#widget_attr_calls)*
-                #children_call
-                #style_call
-                #style_focused_call
-                #transition_call
-                .build(&self.__handler_registry, &__handlers)
-                #(#layout_calls)*
+    // Generate code based on mode
+    match mode {
+        CodegenMode::Page => {
+            // Page mode: requires self.__handler_registry
+            quote! {
+                {
+                    let mut __handlers = rafter::WidgetHandlers::new();
+                    #handler_insertions
+                    #widget_type_ident::new()
+                        #(#widget_attr_calls)*
+                        #children_call
+                        #style_call
+                        #style_focused_call
+                        #transition_call
+                        .build(&self.__handler_registry, &__handlers)
+                        #(#layout_calls)*
+                }
+            }
+        }
+        CodegenMode::Element => {
+            // Element mode: create a temporary registry (won't be used since no handlers allowed)
+            quote! {
+                {
+                    let __registry = rafter::HandlerRegistry::new();
+                    let __handlers = rafter::WidgetHandlers::new();
+                    #widget_type_ident::new()
+                        #(#widget_attr_calls)*
+                        #children_call
+                        #style_call
+                        #style_focused_call
+                        #transition_call
+                        .build(&__registry, &__handlers)
+                        #(#layout_calls)*
+                }
+            }
         }
     }
 }

@@ -4,6 +4,7 @@
 
 use std::fs::File;
 
+use rafter::element;
 use rafter::page;
 use rafter::prelude::*;
 use rafter::widgets::{SelectionMode, Text, Tree, TreeItem, TreeNode, TreeState};
@@ -27,10 +28,12 @@ impl TreeItem for FsNode {
 
     fn render(&self) -> Element {
         let icon = if self.is_dir { "📁" } else { "📄" };
-        Element::row()
-            .gap(1)
-            .child(Element::text(icon))
-            .child(Element::text(&self.name))
+        element! {
+            row (gap: 1) {
+                text (content: icon)
+                text (content: self.name.clone())
+            }
+        }
     }
 }
 

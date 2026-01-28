@@ -87,28 +87,46 @@ pub fn is_conditional(value: &AttrValue) -> bool {
     matches!(value, AttrValue::If { .. })
 }
 
-/// Generate code for the entire page
+/// Generate code for the entire page (with handler support)
 pub fn generate(page: &Page) -> TokenStream {
-    generate_view_node(&page.root)
+    generate_view_node(&page.root, CodegenMode::Page)
+}
+
+/// Generate code for the entire element (without handler support)
+pub fn generate_element(page: &Page) -> TokenStream {
+    generate_view_node(&page.root, CodegenMode::Element)
+}
+
+/// Code generation mode
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CodegenMode {
+    /// Generate code for page! macro (with handler support, requires self.__handler_registry)
+    Page,
+    /// Generate code for element! macro (without handler support, no self required)
+    Element,
 }
 
 /// Generate code for a view node
-pub fn generate_view_node(node: &ViewNode) -> TokenStream {
+fn generate_view_node(node: &ViewNode, mode: CodegenMode) -> TokenStream {
     match node {
-        ViewNode::Element(elem) => element::generate(elem),
-        ViewNode::For(for_node) => generate_for(for_node),
-        ViewNode::If(if_node) => generate_if(if_node),
-        ViewNode::Match(match_node) => generate_match(match_node),
+        ViewNode::Element(elem) => element::generate(elem, mode),
+        ViewNode::For(for_node) => generate_for(for_node, mode),
+        ViewNode::If(if_node) => generate_if(if_node, mode),
+        ViewNode::Match(match_node) => generate_match(match_node, mode),
         ViewNode::Expr(expr) => quote! { #expr },
         ViewNode::Spread(expr) => quote! { #expr },
     }
 }
 
 /// Generate code for a for loop
-fn generate_for(node: &ForNode) -> TokenStream {
+fn generate_for(node: &ForNode, mode: CodegenMode) -> TokenStream {
     let pat = &node.pat;
     let iter = &node.iter;
-    let body: Vec<_> = node.body.iter().map(generate_view_node).collect();
+    let body: Vec<_> = node
+        .body
+        .iter()
+        .map(|n| generate_view_node(n, mode))
+        .collect();
 
     // Use __page_spread marker - will be detected and flattened by parent
     quote! {{
@@ -120,9 +138,13 @@ fn generate_for(node: &ForNode) -> TokenStream {
 }
 
 /// Generate code for an if statement
-fn generate_if(node: &IfNode) -> TokenStream {
+fn generate_if(node: &IfNode, mode: CodegenMode) -> TokenStream {
     let cond = &node.cond;
-    let then_body: Vec<_> = node.then_branch.iter().map(generate_view_node).collect();
+    let then_body: Vec<_> = node
+        .then_branch
+        .iter()
+        .map(|n| generate_view_node(n, mode))
+        .collect();
 
     let then_branch = if then_body.len() == 1 {
         let first = &then_body[0];
@@ -133,7 +155,10 @@ fn generate_if(node: &IfNode) -> TokenStream {
 
     match &node.else_branch {
         Some(ElseBranch::Else(else_body)) => {
-            let else_children: Vec<_> = else_body.iter().map(generate_view_node).collect();
+            let else_children: Vec<_> = else_body
+                .iter()
+                .map(|n| generate_view_node(n, mode))
+                .collect();
             let else_branch = if else_children.len() == 1 {
                 let first = &else_children[0];
                 quote! { #first }
@@ -149,7 +174,7 @@ fn generate_if(node: &IfNode) -> TokenStream {
             }
         }
         Some(ElseBranch::ElseIf(else_if)) => {
-            let else_if_code = generate_if(else_if);
+            let else_if_code = generate_if(else_if, mode);
             quote! {
                 if #cond {
                     #then_branch
@@ -172,14 +197,18 @@ fn generate_if(node: &IfNode) -> TokenStream {
 }
 
 /// Generate code for a match expression
-fn generate_match(node: &MatchNode) -> TokenStream {
+fn generate_match(node: &MatchNode, mode: CodegenMode) -> TokenStream {
     let expr = &node.expr;
     let arms: Vec<_> = node
         .arms
         .iter()
         .map(|arm| {
             let pat = &arm.pat;
-            let body: Vec<_> = arm.body.iter().map(generate_view_node).collect();
+            let body: Vec<_> = arm
+                .body
+                .iter()
+                .map(|n| generate_view_node(n, mode))
+                .collect();
 
             let body_code = if body.len() == 1 {
                 let first = &body[0];
