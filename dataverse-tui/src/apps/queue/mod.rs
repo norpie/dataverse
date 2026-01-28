@@ -137,17 +137,23 @@ impl Queue {
 
         // Build source filter select state
         let available_sources = repo.get_sources().await.unwrap_or_default();
-        let mut source_state = SelectState::new(
+        let mut options = vec![("__all__".to_string(), "All sources".to_string())];
+        options.extend(
             available_sources
                 .iter()
-                .map(|s| (s.clone(), s.clone()))
-                .collect::<Vec<_>>(),
-        )
-        .with_selection(SelectionMode::Multi);
-        // Restore previously selected sources
-        for src in &saved_sources {
-            if available_sources.contains(src) {
-                source_state.selection.selected.insert(src.clone());
+                .map(|s| (s.clone(), s.clone())),
+        );
+        let mut source_state = SelectState::new(options)
+            .with_selection(SelectionMode::Multi);
+        
+        // Restore previously selected sources, or default to "All sources"
+        if saved_sources.is_empty() {
+            source_state.selection.selected.insert("__all__".to_string());
+        } else {
+            for src in &saved_sources {
+                if src == "__all__" || available_sources.contains(src) {
+                    source_state.selection.selected.insert(src.clone());
+                }
             }
         }
 
@@ -759,7 +765,8 @@ impl Queue {
         let sources = {
             let state = self.source_filter.get();
             let selected: Vec<String> = state.selected_values().cloned().collect();
-            if selected.is_empty() {
+            // If "All sources" is selected or nothing is selected, don't filter by source
+            if selected.is_empty() || selected.contains(&"__all__".to_string()) {
                 None
             } else {
                 Some(selected)
@@ -824,15 +831,19 @@ impl Queue {
             // Preserve current selections that still exist
             let current_selected: Vec<String> = s
                 .selected_values()
-                .filter(|v| available.contains(v))
+                .filter(|v| *v == "__all__" || available.contains(v))
                 .cloned()
                 .collect();
-            s.set_options(
+            
+            // Build options with "All sources" at the top
+            let mut options = vec![("__all__".to_string(), "All sources".to_string())];
+            options.extend(
                 available
                     .iter()
-                    .map(|src| (src.clone(), src.clone()))
-                    .collect::<Vec<_>>(),
+                    .map(|src| (src.clone(), src.clone())),
             );
+            s.set_options(options);
+            
             // Restore valid selections
             for src in current_selected {
                 s.selection.selected.insert(src);
