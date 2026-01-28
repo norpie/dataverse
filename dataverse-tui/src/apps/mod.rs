@@ -2,6 +2,7 @@
 
 mod entity_explorer;
 mod export;
+mod import;
 mod query_builder;
 mod queue;
 mod record_explorer;
@@ -9,6 +10,7 @@ mod welcome;
 
 pub use entity_explorer::EntityExplorer;
 pub use export::Export;
+pub use import::Import;
 pub use query_builder::QueryBuilder;
 pub use queue::Queue;
 pub use record_explorer::RecordExplorer;

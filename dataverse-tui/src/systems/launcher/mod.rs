@@ -2,7 +2,7 @@
 
 use rafter::prelude::*;
 
-use crate::apps::{EntityExplorer, QueryBuilder};
+use crate::apps::{EntityExplorer, Import, QueryBuilder};
 use crate::modals::{ListEntry, SearchableListModal};
 use crate::systems::client_management::{ClientManagement, GetActiveClient};
 
@@ -32,6 +32,7 @@ impl Launcher {
         let items = vec![
             ListEntry::with_category("entity-explorer", "Entity Explorer", "Data"),
             ListEntry::with_category("query-builder", "Query Builder", "Tools"),
+            ListEntry::with_category("import", "Import", "Tools"),
         ];
 
         let result = gx.modal(SearchableListModal::new("Launcher", items)).await;
@@ -64,6 +65,9 @@ impl Launcher {
                 }
                 "query-builder" => {
                     let _ = gx.spawn_and_focus(QueryBuilder::new(client_info));
+                }
+                "import" => {
+                    let _ = gx.spawn_and_focus(Import::new(client_info));
                 }
                 _ => {
                     gx.toast(Toast::info(format!("App not implemented: {}", selected)));
