@@ -407,4 +407,23 @@ impl CredentialsBackend for SqliteCredentialsBackend {
 
         Ok(())
     }
+
+    // =========================================================================
+    // Authenticated Pairs
+    // =========================================================================
+
+    async fn list_authenticated_pairs(&self) -> Result<Vec<(i64, i64)>, CredentialsError> {
+        self.client
+            .conn(|conn| {
+                let mut stmt = conn.prepare(
+                    "SELECT DISTINCT account_id, environment_id FROM tokens",
+                )?;
+                let rows = stmt.query_map([], |row| {
+                    Ok((row.get(0)?, row.get(1)?))
+                })?;
+                rows.collect::<Result<Vec<_>, _>>()
+            })
+            .await
+            .map_err(CredentialsError::from)
+    }
 }

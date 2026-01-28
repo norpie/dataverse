@@ -90,6 +90,10 @@ pub trait CredentialsBackend: Send + Sync {
         account_id: Option<i64>,
         env_id: Option<i64>,
     ) -> Result<(), CredentialsError>;
+
+    // Authenticated pairs
+    /// List all (account_id, environment_id) pairs that have stored tokens.
+    async fn list_authenticated_pairs(&self) -> Result<Vec<(i64, i64)>, CredentialsError>;
 }
 
 /// Credentials provider for managing accounts, environments, and tokens.
@@ -225,6 +229,15 @@ impl CredentialsProvider {
         env_id: Option<i64>,
     ) -> Result<(), CredentialsError> {
         self.backend.set_active_session(account_id, env_id).await
+    }
+
+    // =========================================================================
+    // Authenticated Pairs
+    // =========================================================================
+
+    /// List all (account_id, environment_id) pairs that have stored tokens.
+    pub async fn list_authenticated_pairs(&self) -> Result<Vec<(i64, i64)>, CredentialsError> {
+        self.backend.list_authenticated_pairs().await
     }
 
     // =========================================================================

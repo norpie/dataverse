@@ -23,6 +23,8 @@ pub enum StatusIndicator {
     Paused,
     Done,
     Available,
+    PartialError,
+    Error,
 }
 
 /// Queue status information.
@@ -154,6 +156,14 @@ impl Taskbar {
             StatusIndicator::Available => (
                 Element::text("●").style(Style::new().foreground(Color::var("success"))),
                 "Available",
+            ),
+            StatusIndicator::PartialError => (
+                Element::text("●").style(Style::new().foreground(Color::var("warning"))),
+                "Partial Error",
+            ),
+            StatusIndicator::Error => (
+                Element::text("●").style(Style::new().foreground(Color::var("error"))),
+                "Error",
             ),
         }
     }

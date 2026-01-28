@@ -179,6 +179,72 @@ impl ClientManagement {
     }
 
     #[request_handler]
+    async fn handle_get_authenticated_environments(
+        &self,
+        _request: GetAuthenticatedEnvironments,
+        gx: &GlobalContext,
+    ) -> Vec<AuthenticatedEnvironment> {
+        let credentials = gx.data::<CredentialsProvider>();
+
+        // Get all (account_id, env_id) pairs with tokens
+        let pairs = match credentials.list_authenticated_pairs().await {
+            Ok(pairs) => pairs,
+            Err(e) => {
+                log::error!("Failed to list authenticated pairs: {}", e);
+                return vec![];
+            }
+        };
+
+        // Determine the active session's account for deduplication preference
+        let active_account_id = credentials
+            .get_active_session()
+            .await
+            .ok()
+            .and_then(|s| s.account_id);
+
+        // Deduplicate by environment: prefer active session account, else lowest ID
+        let mut env_map: std::collections::HashMap<i64, (i64, i64)> =
+            std::collections::HashMap::new();
+        for (account_id, env_id) in pairs {
+            env_map
+                .entry(env_id)
+                .and_modify(|existing| {
+                    let prefer_new =
+                        active_account_id == Some(account_id) && active_account_id != Some(existing.0);
+                    let lower_id = account_id < existing.0 && active_account_id != Some(existing.0);
+                    if prefer_new || lower_id {
+                        *existing = (account_id, env_id);
+                    }
+                })
+                .or_insert((account_id, env_id));
+        }
+
+        // Resolve full info for each unique pair
+        let mut result = Vec::with_capacity(env_map.len());
+        for (env_id, (account_id, _)) in env_map {
+            let account = match credentials.get_account(account_id).await {
+                Ok(Some(a)) => a,
+                _ => continue,
+            };
+            let environment = match credentials.get_environment(env_id).await {
+                Ok(Some(e)) => e,
+                _ => continue,
+            };
+            result.push(AuthenticatedEnvironment {
+                account_id,
+                env_id,
+                account_name: account.display_name,
+                environment_name: environment.display_name,
+                environment_url: environment.url,
+            });
+        }
+
+        // Sort by environment name
+        result.sort_by(|a, b| a.environment_name.cmp(&b.environment_name));
+        result
+    }
+
+    #[request_handler]
     async fn handle_get_active_session(
         &self,
         _request: GetActiveSession,

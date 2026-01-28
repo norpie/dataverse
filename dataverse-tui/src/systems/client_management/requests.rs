@@ -51,6 +51,29 @@ pub struct SessionInfo {
     pub environment_url: String,
 }
 
+/// Information about an environment with a valid authenticated account.
+#[derive(Clone)]
+pub struct AuthenticatedEnvironment {
+    /// Account ID used for this environment.
+    pub account_id: i64,
+    /// Environment ID.
+    pub env_id: i64,
+    /// Account display name.
+    pub account_name: String,
+    /// Environment display name.
+    pub environment_name: String,
+    /// Environment URL.
+    pub environment_url: String,
+}
+
+/// Request to get all environments that have at least one authenticated account.
+///
+/// Deduplicates by environment (prefers the active session's account).
+/// Returns sorted by environment name.
+#[derive(Request)]
+#[response(Vec<AuthenticatedEnvironment>)]
+pub struct GetAuthenticatedEnvironments;
+
 // =============================================================================
 // Events
 // =============================================================================
