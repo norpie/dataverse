@@ -198,17 +198,146 @@ impl Import {
                 self.client_info.client.clone(),
                 suggested_entity,
                 entity_options,
-                parsed.columns,
-                parsed.rows,
+                parsed.columns.clone(),
+                parsed.rows.clone(),
             ))
             .await;
 
-        if let Some(settings) = settings {
-            gx.toast(Toast::info(format!(
-                "TODO: Import to {} in batches of {}",
-                settings.entity_set, settings.batch_size
-            )));
+        let Some(settings) = settings else {
+            return; // User cancelled
+        };
+
+        // 1. Fetch attributes for metadata validation
+        let client = self.client_info.client.clone();
+        let entity_set = settings.entity_set.clone();
+        let attributes_result = gx
+            .modal(LoadingModal::new(
+                "Fetching attribute metadata...",
+                async move {
+                    client
+                        .metadata()
+                        .attributes(Entity::set(&entity_set))
+                        .await
+                },
+            ))
+            .await;
+
+        let attributes = match attributes_result {
+            Some(Ok(attrs)) => attrs,
+            Some(Err(e)) => {
+                gx.toast(Toast::error(format!(
+                    "Failed to fetch attributes: {}",
+                    e
+                )));
+                return;
+            }
+            None => return,
+        };
+
+        // Build attributes map
+        let attributes_map: std::collections::HashMap<String, dataverse_lib::model::metadata::AttributeMetadata> = attributes
+            .into_iter()
+            .map(|a| (a.logical_name.clone(), a))
+            .collect();
+
+        // 2. Get primary key from entity metadata
+        let client = self.client_info.client.clone();
+        let entity_set = settings.entity_set.clone();
+        let primary_key_result = gx
+            .modal(LoadingModal::new("Fetching primary key...", async move {
+                let metadata = client.metadata().entity(Entity::set(&entity_set)).await?;
+                Ok::<_, dataverse_lib::error::Error>(metadata.primary_id_attribute.to_string())
+            }))
+            .await;
+
+        let primary_key = match primary_key_result {
+            Some(Ok(pk)) => pk,
+            Some(Err(e)) => {
+                gx.toast(Toast::error(format!("Failed to fetch primary key: {}", e)));
+                return;
+            }
+            None => return,
+        };
+
+        // 3. Parse headers to identify lookup columns
+        let columns = io::parse_headers(&parsed.columns);
+
+        // 4. Convert rows to operations
+        let rows = parsed.rows.clone();
+        let entity = Entity::set(settings.entity_set.clone());
+        let (operations, errors) = gx
+            .modal(LoadingModal::new(
+                "Converting rows to operations...",
+                async move {
+                    io::rows_to_operations(&rows, &columns, &attributes_map, entity, &primary_key)
+                },
+            ))
+            .await
+            .unwrap_or_else(|| (vec![], vec![]));
+
+        // 5. Handle errors - STOP if any exist
+        if !errors.is_empty() {
+            let error_messages: Vec<String> = errors
+                .iter()
+                .map(|e| e.to_string())
+                .collect();
+            gx.modal(crate::modals::ErrorModal::with_errors(
+                "Import Conversion Failed",
+                error_messages,
+            ))
+            .await;
+            return;
         }
+
+        // 6. Split into batches and send to Queue
+        use crate::apps::queue::api::{AddItems, NewItem};
+        use crate::apps::queue::types::QueuePayload;
+        use crate::apps::queue::Queue;
+        use dataverse_lib::api::Batch;
+
+        let batch_size = settings.batch_size;
+        let total_ops = operations.len();
+        let total_batches = (total_ops + batch_size - 1) / batch_size;
+
+        for (batch_idx, chunk) in operations.chunks(batch_size).enumerate() {
+            let mut batch = Batch::new();
+            for op in chunk {
+                batch = batch.add(op.clone());
+            }
+
+            let item = NewItem {
+                priority: 0,
+                payload: QueuePayload::Batch(batch),
+                env_id: self.client_info.env_id,
+                account_id: self.client_info.account_id,
+                source: "import".to_string(),
+                description: format!(
+                    "Import batch {}/{} to {}",
+                    batch_idx + 1,
+                    total_batches,
+                    settings.entity_set
+                ),
+            };
+
+            // Send to queue
+            match gx
+                .request::<Queue, AddItems>(AddItems {
+                    items: vec![item],
+                })
+                .await
+            {
+                Ok(_) => {}
+                Err(e) => {
+                    gx.toast(Toast::error(format!("Queue request failed: {}", e)));
+                    return;
+                }
+            }
+        }
+
+        gx.toast(Toast::success(format!(
+            "Sent {} operations in {} batches to queue",
+            total_ops, total_batches
+        )));
     }
 
     fn element(&self) -> Element {
