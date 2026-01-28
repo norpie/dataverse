@@ -13,9 +13,6 @@ use crate::file_io::{string_to_value, ConvertError, FileRow};
 /// Error during import parsing/conversion.
 #[derive(Debug, thiserror::Error)]
 pub enum ImportError {
-    #[error("Invalid sheet name format: {0}")]
-    InvalidSheetName(String),
-
     #[error("Invalid odata.bind value: {0}")]
     InvalidODataBind(String),
 
@@ -38,26 +35,6 @@ pub struct ColumnInfo {
     pub field_name: String,
     /// Whether this is a lookup column.
     pub is_lookup: bool,
-}
-
-/// Parse entity name from sheet name.
-///
-/// Supports formats:
-/// - "Create (accounts)" → "accounts"
-/// - "Update (nrq_capacities)" → "nrq_capacities"
-/// - "accounts" → "accounts"
-pub fn parse_entity_from_sheet(name: &str) -> String {
-    // Try to extract from "Operation (entity)" format
-    if let Some(start) = name.find('(') {
-        if let Some(end) = name.find(')') {
-            if end > start + 1 {
-                return name[start + 1..end].trim().to_string();
-            }
-        }
-    }
-
-    // Fallback: use the whole name
-    name.trim().to_string()
 }
 
 /// Parse headers to identify lookup columns.
