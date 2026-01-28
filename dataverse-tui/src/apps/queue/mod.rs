@@ -902,19 +902,7 @@ impl Queue {
         let status_filter = self.status_filter.get();
         let filter_label = status_filter.label().to_string();
 
-        let counts_text = format!(
-            "{} ready  {} running  {} done  {} failed",
-            counts.ready,
-            counts.running,
-            counts.done,
-            counts.failed + counts.partially_failed,
-        );
         let eta_text = ui::format_eta(&self.recent_durations.get(), &counts);
-        let stats_text = if !eta_text.is_empty() {
-            format!("{}  {}", counts_text, eta_text)
-        } else {
-            counts_text
-        };
 
         let has_completed = counts.done > 0;
 
@@ -964,8 +952,26 @@ impl Queue {
                         input (state: self.search_text, id: "queue-search", placeholder: "search (/)...", width: 25)
                             on_change: search_changed()
                     }
-                    row (gap: 1) {
-                        text (content: {stats_text}) style (fg: muted)
+                    row (gap: 2) {
+                        row (gap: 1) {
+                            text (content: {format!("{}", counts.ready)}) style (fg: primary)
+                            text (content: "ready") style (fg: muted)
+                        }
+                        row (gap: 1) {
+                            text (content: {format!("{}", counts.running)}) style (fg: warning)
+                            text (content: "running") style (fg: muted)
+                        }
+                        row (gap: 1) {
+                            text (content: {format!("{}", counts.done)}) style (fg: success)
+                            text (content: "done") style (fg: muted)
+                        }
+                        row (gap: 1) {
+                            text (content: {format!("{}", counts.failed + counts.partially_failed)}) style (fg: error)
+                            text (content: "failed") style (fg: muted)
+                        }
+                        if !eta_text.is_empty() {
+                            text (content: {eta_text}) style (fg: muted)
+                        }
                         if has_completed {
                             button (label: "Clear", hint: "C", id: "clear") on_activate: clear_completed()
                         }
