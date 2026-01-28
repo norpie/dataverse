@@ -1,23 +1,30 @@
 //! Tree item implementation for the queue.
 
+use std::collections::HashMap;
+
+use chrono::Utc;
 use dataverse_lib::api::BatchItem;
 use dataverse_lib::api::Operation;
 use rafter::widgets::TreeItem;
 use tuidom::{Color, Element, Style};
 use uuid::Uuid;
 
-use super::types::{QueueItem, QueuePayload};
+use super::types::{ItemTiming, QueueItem, QueuePayload};
 
 /// A node in the queue tree.
 #[derive(Clone, Debug)]
 pub enum QueueTreeNode {
     /// A top-level queue item.
-    Item(QueueItem),
+    Item {
+        item: QueueItem,
+        timing: Option<ItemTiming>,
+    },
     /// A child operation within a batch item.
     Operation {
         parent_id: i64,
         index: usize,
         label: String,
+        operation: Operation,
     },
 }
 
@@ -26,7 +33,7 @@ impl TreeItem for QueueTreeNode {
 
     fn key(&self) -> String {
         match self {
-            Self::Item(item) => format!("item-{}", item.id),
+            Self::Item { item, .. } => format!("item-{}", item.id),
             Self::Operation {
                 parent_id, index, ..
             } => format!("item-{}-op-{}", parent_id, index),
@@ -35,11 +42,11 @@ impl TreeItem for QueueTreeNode {
 
     fn render(&self) -> Element {
         match self {
-            Self::Item(item) => {
+            Self::Item { item, timing } => {
                 let priority_text = format!("{}", item.priority);
                 let dot_color = item.status.color();
 
-                Element::row()
+                let mut row = Element::row()
                     .gap(1)
                     .child(
                         Element::text(&priority_text)
@@ -50,11 +57,45 @@ impl TreeItem for QueueTreeNode {
                         Element::text(&item.source)
                             .style(Style::new().foreground(Color::var("muted"))),
                     )
-                    .child(Element::text(&item.description))
+                    .child(Element::text(&item.description));
+
+                // Add timing information if available
+                if let Some(timing) = timing {
+                    let timing_text = match timing {
+                        ItemTiming::Running { started_at } => {
+                            let elapsed = Utc::now() - *started_at;
+                            format_duration(elapsed.num_milliseconds())
+                        }
+                        ItemTiming::Completed { duration_ms } => format_duration(*duration_ms),
+                    };
+                    row = row.child(
+                        Element::text(&timing_text)
+                            .style(Style::new().foreground(Color::var("muted"))),
+                    );
+                }
+
+                row
             }
             Self::Operation { label, .. } => Element::row()
                 .child(Element::text(label).style(Style::new().foreground(Color::var("muted")))),
         }
+    }
+}
+
+/// Format duration in milliseconds as a human-readable string.
+fn format_duration(ms: i64) -> String {
+    if ms < 1000 {
+        format!("{}ms", ms)
+    } else if ms < 60_000 {
+        format!("{:.1}s", ms as f64 / 1000.0)
+    } else if ms < 3_600_000 {
+        let mins = ms / 60_000;
+        let secs = (ms % 60_000) / 1000;
+        format!("{}m{}s", mins, secs)
+    } else {
+        let hours = ms / 3_600_000;
+        let mins = (ms % 3_600_000) / 60_000;
+        format!("{}h{}m", hours, mins)
     }
 }
 
@@ -115,13 +156,25 @@ fn short_id(id: &Uuid) -> String {
     s[..8].to_string()
 }
 
-/// Convert queue items into tree nodes.
-pub fn build_tree_nodes(items: &[QueueItem]) -> Vec<rafter::widgets::TreeNode<QueueTreeNode>> {
-    items.iter().map(|item| build_item_node(item)).collect()
+/// Convert queue items into tree nodes with timing information.
+pub fn build_tree_nodes(
+    items: &[QueueItem],
+    timing_map: &HashMap<i64, ItemTiming>,
+) -> Vec<rafter::widgets::TreeNode<QueueTreeNode>> {
+    items
+        .iter()
+        .map(|item| build_item_node(item, timing_map.get(&item.id).copied()))
+        .collect()
 }
 
-fn build_item_node(item: &QueueItem) -> rafter::widgets::TreeNode<QueueTreeNode> {
-    let node = QueueTreeNode::Item(item.clone());
+fn build_item_node(
+    item: &QueueItem,
+    timing: Option<ItemTiming>,
+) -> rafter::widgets::TreeNode<QueueTreeNode> {
+    let node = QueueTreeNode::Item {
+        item: item.clone(),
+        timing,
+    };
 
     match &item.payload {
         QueuePayload::Single(_) => rafter::widgets::TreeNode::leaf(node),
@@ -134,6 +187,7 @@ fn build_item_node(item: &QueueItem) -> rafter::widgets::TreeNode<QueueTreeNode>
                             parent_id: item.id,
                             index,
                             label: format_operation(op),
+                            operation: op.clone(),
                         }));
                     }
                     BatchItem::Changeset(cs) => {
@@ -143,6 +197,7 @@ fn build_item_node(item: &QueueItem) -> rafter::widgets::TreeNode<QueueTreeNode>
                                     parent_id: item.id,
                                     index: index * 1000 + cs_idx,
                                     label: format!("[tx] {}", format_operation(op)),
+                                    operation: op.clone(),
                                 },
                             ));
                         }

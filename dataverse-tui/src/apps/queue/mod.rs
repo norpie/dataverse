@@ -9,9 +9,9 @@ mod tree;
 pub mod types;
 mod ui;
 
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use rafter::page;
 use rafter::prelude::*;
 use rafter::widgets::{Input, Select, SelectState, SelectionMode, Text, Tree, TreeState};
@@ -62,6 +62,8 @@ pub struct Queue {
     source_filter: SelectState<String>,
     /// Search text for filtering by description.
     search_text: String,
+    /// Track start times for running items (item_id -> started_at).
+    running_start_times: HashMap<i64, DateTime<Utc>>,
 }
 
 #[app_impl]
@@ -232,6 +234,9 @@ impl Queue {
                     .is_ok()
                 {
                     self.running_count.set(self.running_count.get() + 1);
+                    self.running_start_times.update(|times| {
+                        times.insert(item.id, Utc::now());
+                    });
                     self.refresh_tree(&repo).await;
 
                     let gx = gx.clone();
@@ -690,6 +695,11 @@ impl Queue {
         let running = self.running_count.get().saturating_sub(1);
         self.running_count.set(running);
 
+        // Remove from running start times
+        self.running_start_times.update(|times| {
+            times.remove(&event.item_id);
+        });
+
         // Track failures for auto-pause
         if event.status == ItemStatus::Failed {
             let failures = self.failure_count.get() + 1;
@@ -776,7 +786,32 @@ impl Queue {
 
         match repo.list(filter).await {
             Ok(items) => {
-                let nodes = build_tree_nodes(&items);
+                // Build timing map
+                let mut timing_map = std::collections::HashMap::new();
+
+                // Add running items from memory
+                let running_times = self.running_start_times.get();
+                for (item_id, started_at) in running_times.iter() {
+                    timing_map.insert(*item_id, types::ItemTiming::Running { started_at: *started_at });
+                }
+
+                // Add completed items from execution history
+                for item in &items {
+                    if item.status.is_terminal() && !timing_map.contains_key(&item.id) {
+                        if let Ok(executions) = repo.get_executions(item.id).await {
+                            if let Some(exec) = executions.first() {
+                                timing_map.insert(
+                                    item.id,
+                                    types::ItemTiming::Completed {
+                                        duration_ms: exec.duration_ms,
+                                    },
+                                );
+                            }
+                        }
+                    }
+                }
+
+                let nodes = build_tree_nodes(&items, &timing_map);
                 self.tree_state.update(|s| {
                     s.set_roots(nodes);
                 });
@@ -827,6 +862,9 @@ impl Queue {
                         .is_ok()
                     {
                         self.running_count.set(self.running_count.get() + 1);
+                        self.running_start_times.update(|times| {
+                            times.insert(item.id, Utc::now());
+                        });
 
                         let gx = gx.clone();
                         let repo = repo.clone();
@@ -928,8 +966,10 @@ impl Queue {
 
                 // Main content: 50/50 tree + preview
                 row (width: fill, height: fill, gap: 1) {
-                    tree (state: self.tree_state, id: "queue-tree", width: fill, height: fill)
-                        on_activate: item_activated()
+                    box_ (id: "queue-tree-container", height: fill, width: fill) style (bg: surface) {
+                        tree (state: self.tree_state, id: "queue-tree", width: fill, height: fill)
+                            on_activate: item_activated()
+                    }
                     column (width: fill, height: fill) {
                         { preview }
                     }

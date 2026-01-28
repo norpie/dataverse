@@ -48,9 +48,9 @@ impl ItemStatus {
             Self::Blocked => "muted",
             Self::Ready => "primary",
             Self::Paused => "warning",
-            Self::Running => "success",
+            Self::Running => "warning",
             Self::Interrupted => "warning",
-            Self::Done => "primary",
+            Self::Done => "success",
             Self::Failed => "error",
             Self::PartiallyFailed => "warning",
         }
@@ -190,4 +190,13 @@ pub struct ExecutionRecord {
     pub success_count: i32,
     /// Number of failed operations.
     pub failure_count: i32,
+}
+
+/// Timing information for displaying elapsed/duration on queue items.
+#[derive(Debug, Clone, Copy)]
+pub enum ItemTiming {
+    /// Currently running - show elapsed time since start.
+    Running { started_at: DateTime<Utc> },
+    /// Completed - show duration from last execution.
+    Completed { duration_ms: i64 },
 }
