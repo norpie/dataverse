@@ -348,32 +348,32 @@ impl IndexerDashboardModal {
             Element::text(indicator).style(Style::new().foreground(Color::var(color)));
 
         page! {
-            column (gap: 1, width: fill, height: fill) {
-                // Overall status row
-                row (gap: 1, width: fill, justify: between) {
+            column (gap: 1, width: fill, height: fill, justify: between) {
+                column (gap: 1, width: fill) {
+                    // Overall status
                     row (gap: 1) {
                         { status_indicator }
                         text (content: status_text)
                     }
-                    button (label: pause_label, hint: "p", id: "toggle-pause")
-                        on_activate: toggle_pause()
+
+                    // Environment list
+                    text (content: "Environments") style (fg: muted)
+                    list (state: self.env_list, id: "env-list", height: fill)
+                        style (bg: background)
                 }
 
-                // Environment list
-                text (content: "Environments") style (fg: muted)
-                list (state: self.env_list, id: "env-list", height: fill)
-                    style (bg: background)
-
-                // Bottom buttons
+                // Bottom buttons: Cancel (left) / Actions (right)
                 row (width: fill, justify: between) {
-                    row (gap: 1) {
-                        button (label: "Sync All", hint: "s", id: "sync-all")
-                            on_activate: sync_all()
-                        button (label: "Sync Selected", id: "sync-selected")
-                            on_activate: sync_selected()
-                    }
                     button (label: "Close", hint: "esc", id: "close")
                         on_activate: close()
+                    row (gap: 1) {
+                        button (label: pause_label, hint: "p", id: "toggle-pause")
+                            on_activate: toggle_pause()
+                        button (label: "Sync Selected", id: "sync-selected")
+                            on_activate: sync_selected()
+                        button (label: "Sync All", hint: "s", id: "sync-all")
+                            on_activate: sync_all()
+                    }
                 }
             }
         }
@@ -384,38 +384,35 @@ impl IndexerDashboardModal {
         let is_dirty = self.settings_dirty.get();
 
         page! {
-            column (gap: 1, width: fill, height: fill) {
-                number_input (
-                    state: self.check_interval,
-                    id: "check-interval",
-                    label: "Check Interval (seconds)"
-                ) on_change: on_interval_change()
+            column (gap: 1, width: fill, height: fill, justify: between) {
+                column (gap: 1, width: fill) {
+                    number_input (
+                        state: self.check_interval,
+                        id: "check-interval",
+                        label: "Check Interval (seconds)"
+                    ) on_change: on_interval_change()
 
-                number_input (
-                    state: self.refresh_threshold,
-                    id: "refresh-threshold",
-                    label: "Refresh Threshold (%)"
-                ) on_change: on_threshold_change()
+                    number_input (
+                        state: self.refresh_threshold,
+                        id: "refresh-threshold",
+                        label: "Refresh Threshold (%)"
+                    ) on_change: on_threshold_change()
 
-                // Help text
-                column (gap: 0) style (fg: muted) {
-                    text (content: "Check interval: how often to check for stale cache")
-                    text (content: "Refresh threshold: % of TTL elapsed before refresh")
+                    // Help text
+                    column (gap: 0) style (fg: muted) {
+                        text (content: "Check interval: how often to check for stale cache")
+                        text (content: "Refresh threshold: % of TTL elapsed before refresh")
+                    }
                 }
 
-                // Spacer
-                row (height: fill)
-
-                // Bottom buttons
+                // Bottom buttons: Cancel (left) / Save (right)
                 row (width: fill, justify: between) {
+                    button (label: "Close", hint: "esc", id: "close")
+                        on_activate: close()
                     if is_dirty {
                         button (label: "Save", id: "save-settings")
                             on_activate: save_settings()
-                    } else {
-                        text (content: "")
                     }
-                    button (label: "Close", hint: "esc", id: "close")
-                        on_activate: close()
                 }
             }
         }

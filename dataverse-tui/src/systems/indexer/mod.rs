@@ -10,6 +10,7 @@ pub mod repository;
 pub mod sync;
 
 pub use api::*;
+pub use modal::IndexerDashboardModal;
 pub use repository::{IndexerRepository, SyncLogEntry, SyncStatus};
 pub use sync::{
     execute_task, get_check_tasks, SyncTask, DEFAULT_CHECK_INTERVAL_SECS,
@@ -625,6 +626,16 @@ impl IndexerSystem {
         self.publish_settings(gx);
     }
 
+    #[event_handler]
+    async fn on_open_dashboard(&self, _: OpenIndexerDashboard, gx: &GlobalContext) {
+        let status = self.get_current_status(gx).await;
+        let settings = SyncSettings {
+            check_interval_secs: self.check_interval_secs.get(),
+            refresh_threshold_pct: self.refresh_threshold_pct.get(),
+        };
+        let _ = gx.modal(IndexerDashboardModal::new(status, settings)).await;
+    }
+
     // =========================================================================
     // Helpers
     // =========================================================================
@@ -730,12 +741,16 @@ impl IndexerSystem {
                 (StatusIndicator::Idle, None, None)
             };
 
-            // Check if there's a task in queue for this env (means it's running)
-            let has_queued_task = queue.iter().any(|t| t.env_id() == env.env_id);
-            let status = if has_queued_task && db_status != StatusIndicator::PartialError {
+            // Only the front of queue is actively running
+            let is_current = queue.front().map(|t| t.env_id()) == Some(env.env_id);
+            let status = if db_status == StatusIndicator::PartialError {
+                // Preserve error state
+                StatusIndicator::PartialError
+            } else if is_current {
                 StatusIndicator::Running
             } else {
-                db_status
+                // Not current - show Idle even if DB says Syncing
+                StatusIndicator::Idle
             };
 
             // Get per-env progress

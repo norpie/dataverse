@@ -179,3 +179,7 @@ pub struct UpdateIndexerSettingsEvent {
     /// Refresh threshold as percentage of TTL (0-100).
     pub refresh_threshold_pct: u64,
 }
+
+/// Event to open the indexer dashboard modal.
+#[derive(Clone, Event)]
+pub struct OpenIndexerDashboard;

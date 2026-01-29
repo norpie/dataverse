@@ -55,7 +55,16 @@ pub struct ClientStatus {
 /// Indexer status information.
 #[derive(Clone, Debug, Default)]
 pub struct IndexerStatus {
-    pub status: StatusIndicator,
+    pub is_paused: bool,
+    pub overall_status: StatusIndicator,
+    /// Name of environment currently being synced.
+    pub syncing_env: Option<String>,
+    /// Current sync progress (entities done, total).
+    pub progress: Option<(u32, u32)>,
+    /// Number of environments with no errors.
+    pub envs_ok: u32,
+    /// Number of environments with errors.
+    pub envs_error: u32,
 }
 
 #[system]
@@ -197,8 +206,14 @@ impl Taskbar {
             }
         }
         
+        // Indexer status will be set when IndexerReady event is received
         self.indexer.set(IndexerStatus {
-            status: StatusIndicator::Idle,
+            is_paused: false,
+            overall_status: StatusIndicator::Idle,
+            syncing_env: None,
+            progress: None,
+            envs_ok: 0,
+            envs_error: 0,
         });
     }
 
@@ -226,6 +241,65 @@ impl Taskbar {
             environment_name: event.environment_name,
             environment_url: event.environment_url,
         });
+    }
+
+    #[event_handler]
+    async fn on_indexer_ready(&self, event: crate::systems::indexer::IndexerReady) {
+        self.indexer.set(Self::build_indexer_status(
+            false,
+            event.overall_status,
+            &event.environments,
+        ));
+    }
+
+    #[event_handler]
+    async fn on_indexer_status_changed(&self, event: crate::systems::indexer::IndexerStatusChanged) {
+        self.indexer.set(Self::build_indexer_status(
+            event.is_paused,
+            event.overall_status,
+            &event.environments,
+        ));
+    }
+
+    fn build_indexer_status(
+        is_paused: bool,
+        overall_status: StatusIndicator,
+        environments: &[crate::systems::indexer::EnvSyncStatus],
+    ) -> IndexerStatus {
+        let mut status = IndexerStatus {
+            is_paused,
+            overall_status,
+            syncing_env: None,
+            progress: None,
+            envs_ok: 0,
+            envs_error: 0,
+        };
+
+        for env in environments {
+            match env.status {
+                StatusIndicator::Running => {
+                    status.syncing_env = Some(env.env_name.clone());
+                    if let Some(ref progress) = env.progress {
+                        status.progress = Some((progress.entities_done, progress.entities_total));
+                    }
+                }
+                StatusIndicator::Error | StatusIndicator::PartialError => {
+                    status.envs_error += 1;
+                }
+                StatusIndicator::Done | StatusIndicator::Available => {
+                    status.envs_ok += 1;
+                }
+                StatusIndicator::Idle => {
+                    // Count as ok if previously synced
+                    if env.last_sync.is_some() {
+                        status.envs_ok += 1;
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        status
     }
 
     #[event_handler]
@@ -283,6 +357,12 @@ impl Taskbar {
     async fn open_client_management(&self, gx: &GlobalContext) {
         use crate::systems::client_management::OpenClientManagementModal;
         gx.publish(OpenClientManagementModal);
+    }
+
+    #[handler]
+    async fn open_indexer_dashboard(&self, gx: &GlobalContext) {
+        use crate::systems::indexer::OpenIndexerDashboard;
+        gx.publish(OpenIndexerDashboard);
     }
 
     fn render_collapsed(&self) -> Element {
@@ -588,17 +668,64 @@ impl Taskbar {
         // Indexer subsection
         let indexer = self.indexer.get();
         let (indexer_indicator, indexer_status_text) =
-            self.render_status_indicator(&indexer.status);
-        let indexer_row = Element::row()
+            self.render_status_indicator(&indexer.overall_status);
+        
+        let mut indexer_content = Element::col()
             .width(Size::Fill)
-            .justify(tuidom::Justify::SpaceBetween)
-            .child(Element::text("Indexer"))
+            .gap(0)
             .child(
                 Element::row()
-                    .gap(1)
-                    .child(indexer_indicator)
-                    .child(Element::text(indexer_status_text)),
+                    .width(Size::Fill)
+                    .justify(tuidom::Justify::SpaceBetween)
+                    .child(Element::text("Indexer"))
+                    .child(
+                        Element::row()
+                            .gap(1)
+                            .child(indexer_indicator)
+                            .child(Element::text(indexer_status_text)),
+                    )
             );
+        
+        // Add detail row based on state
+        if let (Some(env_name), Some((done, total))) = (&indexer.syncing_env, indexer.progress) {
+            // Show progress when syncing
+            let progress_text = format!("{}: {}/{}", env_name, done, total);
+            indexer_content = indexer_content.child(
+                Element::row()
+                    .width(Size::Fill)
+                    .justify(tuidom::Justify::End)
+                    .child(Element::text(&progress_text)
+                        .style(Style::new().foreground(Color::var("text.muted"))))
+            );
+        } else if indexer.envs_error > 0 {
+            // Show error count when there are errors
+            let error_text = format!("{} env(s) with errors", indexer.envs_error);
+            indexer_content = indexer_content.child(
+                Element::row()
+                    .width(Size::Fill)
+                    .justify(tuidom::Justify::End)
+                    .child(Element::text(&error_text)
+                        .style(Style::new().foreground(Color::var("error"))))
+            );
+        } else if indexer.envs_ok > 0 {
+            // Show OK count when all is well
+            let ok_text = format!("{} env(s) synced", indexer.envs_ok);
+            indexer_content = indexer_content.child(
+                Element::row()
+                    .width(Size::Fill)
+                    .justify(tuidom::Justify::End)
+                    .child(Element::text(&ok_text)
+                        .style(Style::new().foreground(Color::var("text.muted"))))
+            );
+        }
+        
+        let indexer_button = page! {
+            button (id: "indexer-status", width: fill, ghost)
+                on_activate: open_indexer_dashboard()
+            {
+                { indexer_content }
+            }
+        };
 
         let status_section = Element::col()
             .width(Size::Fill)
@@ -607,7 +734,7 @@ impl Taskbar {
             .child(Element::col().height(Size::Fixed(1))) // Spacer after title
             .child(queue_button)
             .child(client_button)
-            .child(indexer_row);
+            .child(indexer_button);
 
         let content_col = Element::col()
             .width(Size::Fill)
