@@ -148,8 +148,14 @@ impl TokenProvider for StoredTokenProvider {
         // Attempt refresh
         let new_token = match self.refresh_token(refresh_token).await {
             Ok(token) => token,
-            Err(_) => {
+            Err(e) => {
                 // Refresh failed - need re-auth
+                log::warn!(
+                    "Token refresh failed for account {} on environment {}: {}",
+                    self.account_id,
+                    self.environment_id,
+                    e
+                );
                 return Err(self.reauth_required());
             }
         };
