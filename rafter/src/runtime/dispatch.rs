@@ -11,6 +11,7 @@
 //! Note: Modals capture mouse/input events but unhandled key events fall through
 //! to system keybinds, allowing global shortcuts like Ctrl+Q to work.
 
+use std::any::{Any, TypeId};
 use std::sync::{Arc, RwLock};
 
 use tuidom::{Event, Key, LayoutResult, Modifiers};
@@ -1429,7 +1430,7 @@ pub trait AnyModal: Send + Sync {
     /// Get the modal's element for rendering.
     fn element(&self) -> tuidom::Element;
     /// Get the modal context as a type-erased reference.
-    fn modal_context(&self) -> &(dyn std::any::Any + Send + Sync);
+    fn modal_context(&self) -> &(dyn Any + Send + Sync);
     /// Get the modal's size configuration.
     fn size(&self) -> crate::ModalSize;
     /// Get the modal's position configuration.
@@ -1438,6 +1439,24 @@ pub trait AnyModal: Send + Sync {
     fn aspect_ratio(&self) -> f32;
     /// Take any pending focus request from the modal.
     fn take_focus_request(&self) -> Option<String>;
+    /// Check if this modal has a handler for the given event type.
+    fn has_event_handler(&self, event_type: TypeId) -> bool;
+    /// Dispatch an event to this modal's handlers.
+    ///
+    /// # Parameters
+    /// - `event_type`: The TypeId of the event
+    /// - `event`: The event data (type-erased)
+    /// - `cx`: App context (used by the modal's dispatch_event, may be ignored by system modals)
+    /// - `gx`: Global context
+    ///
+    /// Note: The modal context is accessed internally via `modal_context()`.
+    fn dispatch_event(
+        &self,
+        event_type: TypeId,
+        event: &(dyn Any + Send + Sync),
+        cx: &AppContext,
+        gx: &GlobalContext,
+    ) -> bool;
 }
 
 impl<M: Modal> AnyModal for ModalEntry<M> {
@@ -1487,6 +1506,22 @@ impl<M: Modal> AnyModal for ModalEntry<M> {
 
     fn take_focus_request(&self) -> Option<String> {
         self.context.take_focus_request()
+    }
+
+    fn has_event_handler(&self, event_type: TypeId) -> bool {
+        self.modal.has_event_handler(event_type)
+    }
+
+    fn dispatch_event(
+        &self,
+        event_type: TypeId,
+        event: &(dyn Any + Send + Sync),
+        cx: &AppContext,
+        gx: &GlobalContext,
+    ) -> bool {
+        // Get the modal context and pass it to the modal's dispatch_event
+        let mx = self.modal_context();
+        self.modal.dispatch_event(event_type, event, cx, gx, mx)
     }
 }
 

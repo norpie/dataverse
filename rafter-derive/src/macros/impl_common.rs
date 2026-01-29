@@ -1552,19 +1552,42 @@ pub enum DispatchContextType {
     App,
     /// System dispatch: only GlobalContext
     System,
+    /// App modal dispatch: has AppContext + GlobalContext (ModalContext accessed via self)
+    AppModal,
+    /// System modal dispatch: only GlobalContext (ModalContext accessed via self)
+    SystemModal,
 }
 
 /// Generate event dispatch methods.
 ///
 /// For App: `dispatch_event(&self, event_type, event, cx, gx)`
 /// For System: `dispatch_event(&self, event_type, event, gx)`
+/// For Modal: `dispatch_event(&self, event_type, event, cx, gx, mx)`
+///
+/// # Parameters
+/// - `event_handlers`: The event handler methods to dispatch
+/// - `context_type`: The type of context available (App, System, AppModal, SystemModal)
+/// - `result_type`: For modals, the Result type for ModalContext downcasting (required for modal contexts)
 pub fn generate_event_dispatch(
     event_handlers: &[EventHandlerMethod],
     context_type: DispatchContextType,
+    result_type: Option<&Type>,
 ) -> TokenStream {
     if event_handlers.is_empty() {
         return quote! {};
     }
+
+    // For modals, we need to downcast mx to ModalContext<Result>
+    let mx_downcast = match context_type {
+        DispatchContextType::AppModal | DispatchContextType::SystemModal => {
+            let result_ty = result_type.expect("result_type required for modal dispatch");
+            quote! {
+                let mx = mx.downcast_ref::<rafter::ModalContext<#result_ty>>()
+                    .expect("ModalContext downcast failed");
+            }
+        }
+        _ => quote! {},
+    };
 
     let dispatch_arms: Vec<_> = event_handlers
         .iter()
@@ -1618,10 +1641,22 @@ pub fn generate_event_dispatch(
                 gx: &rafter::GlobalContext,
             ) -> bool
         },
+        // Modal dispatch has an additional mx parameter for ModalContext
+        DispatchContextType::AppModal | DispatchContextType::SystemModal => quote! {
+            fn dispatch_event(
+                &self,
+                event_type: std::any::TypeId,
+                event: &(dyn std::any::Any + Send + Sync),
+                cx: &rafter::AppContext,
+                gx: &rafter::GlobalContext,
+                mx: &(dyn std::any::Any + Send + Sync),
+            ) -> bool
+        },
     };
 
     quote! {
         #sig {
+            #mx_downcast
             match event_type {
                 #(#dispatch_arms)*
                 _ => false,
@@ -1683,7 +1718,7 @@ pub fn generate_request_dispatch(
         .collect();
 
     let sig = match context_type {
-        DispatchContextType::App => quote! {
+        DispatchContextType::App | DispatchContextType::AppModal | DispatchContextType::SystemModal => quote! {
             fn dispatch_request(
                 &self,
                 request_type: std::any::TypeId,
@@ -1757,6 +1792,46 @@ fn generate_event_handler_call_and_clones(
             };
             (call, clones)
         }
+        DispatchContextType::AppModal => {
+            // App modals have AppContext + GlobalContext, ModalContext accessed via mx parameter
+            let call = match (contexts.app_context, contexts.global_context, contexts.modal_context) {
+                (false, false, false) => quote! { this.#name(event).await; },
+                (true, false, false) => quote! { this.#name(event, &cx).await; },
+                (false, true, false) => quote! { this.#name(event, &gx).await; },
+                (true, true, false) => quote! { this.#name(event, &cx, &gx).await; },
+                (false, false, true) => quote! { this.#name(event, &mx).await; },
+                (true, false, true) => quote! { this.#name(event, &cx, &mx).await; },
+                (false, true, true) => quote! { this.#name(event, &gx, &mx).await; },
+                (true, true, true) => quote! { this.#name(event, &cx, &gx, &mx).await; },
+            };
+            let clones = match (contexts.app_context, contexts.global_context, contexts.modal_context) {
+                (false, false, false) => quote! { let this = self.clone(); },
+                (true, false, false) => quote! { let this = self.clone(); let cx = cx.clone(); },
+                (false, true, false) => quote! { let this = self.clone(); let gx = gx.clone(); },
+                (true, true, false) => quote! { let this = self.clone(); let cx = cx.clone(); let gx = gx.clone(); },
+                (false, false, true) => quote! { let this = self.clone(); let mx = mx.clone(); },
+                (true, false, true) => quote! { let this = self.clone(); let cx = cx.clone(); let mx = mx.clone(); },
+                (false, true, true) => quote! { let this = self.clone(); let gx = gx.clone(); let mx = mx.clone(); },
+                (true, true, true) => quote! { let this = self.clone(); let cx = cx.clone(); let gx = gx.clone(); let mx = mx.clone(); },
+            };
+            (call, clones)
+        }
+        DispatchContextType::SystemModal => {
+            // System modals only have GlobalContext, ModalContext accessed via mx parameter (no AppContext)
+            let call = match (contexts.global_context, contexts.modal_context) {
+                (false, false) => quote! { this.#name(event).await; },
+                (true, false) => quote! { this.#name(event, &gx).await; },
+                (false, true) => quote! { this.#name(event, &mx).await; },
+                (true, true) => quote! { this.#name(event, &gx, &mx).await; },
+            };
+            let clones = match (contexts.global_context, contexts.modal_context) {
+                (false, false) => quote! { let this = self.clone(); },
+                (true, false) => quote! { let this = self.clone(); let gx = gx.clone(); },
+                (false, true) => quote! { let this = self.clone(); let mx = mx.clone(); },
+                (true, true) => quote! { let this = self.clone(); let gx = gx.clone(); let mx = mx.clone(); },
+            };
+            (call, clones)
+        }
     }
 }
 
@@ -1795,6 +1870,25 @@ fn generate_request_handler_call_and_clones(
                 quote! { let this = self.clone(); let gx = gx.clone(); }
             } else {
                 quote! { let this = self.clone(); }
+            };
+            (call, clones)
+        }
+        // Request handlers are not supported for modals - these cases should never be reached
+        DispatchContextType::AppModal | DispatchContextType::SystemModal => {
+            // Fallback to App-like behavior in case this is ever called
+            let call = match (contexts.app_context, contexts.global_context) {
+                (false, false) => quote! { this.#name(*request).await },
+                (true, false) => quote! { this.#name(*request, &cx).await },
+                (false, true) => quote! { this.#name(*request, &gx).await },
+                (true, true) => quote! { this.#name(*request, &cx, &gx).await },
+            };
+            let clones = match (contexts.app_context, contexts.global_context) {
+                (false, false) => quote! { let this = self.clone(); },
+                (true, false) => quote! { let this = self.clone(); let cx = cx.clone(); },
+                (false, true) => quote! { let this = self.clone(); let gx = gx.clone(); },
+                (true, true) => {
+                    quote! { let this = self.clone(); let cx = cx.clone(); let gx = gx.clone(); }
+                }
             };
             (call, clones)
         }

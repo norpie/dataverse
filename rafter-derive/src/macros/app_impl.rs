@@ -425,7 +425,7 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
     };
 
     // Generate event/request dispatch methods
-    let event_dispatch_impl = generate_event_dispatch(&event_handlers, DispatchContextType::App);
+    let event_dispatch_impl = generate_event_dispatch(&event_handlers, DispatchContextType::App, None);
     let request_dispatch_impl =
         generate_request_dispatch(&request_handlers, DispatchContextType::App);
 

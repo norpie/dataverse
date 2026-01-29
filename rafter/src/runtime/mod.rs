@@ -355,7 +355,7 @@ impl Runtime {
             }
 
             // 2. Process pending commands
-            self.process_commands(registry, systems, gx, job_scheduler)
+            self.process_commands(registry, systems, gx, global_modals, job_scheduler)
                 .await?;
             let t_commands = Instant::now();
 
@@ -1443,6 +1443,7 @@ impl Runtime {
         registry: &Arc<RwLock<InstanceRegistry>>,
         systems: &[Box<dyn AnySystem>],
         gx: &GlobalContext,
+        global_modals: &[Box<dyn AnyModal>],
         job_scheduler: &mut scheduler::JobScheduler,
     ) -> Result<(), RuntimeError> {
         let commands = gx.take_instance_commands();
@@ -1733,6 +1734,44 @@ impl Runtime {
                                 system.name(),
                                 handled
                             );
+                        }
+                    }
+
+                    // Dispatch to global modals
+                    for modal in global_modals.iter() {
+                        if !modal.is_closed() && modal.has_event_handler(event_type) {
+                            // Global modals use a default AppContext
+                            let cx = AppContext::default();
+                            let handled = modal.dispatch_event(event_type, event.as_ref(), &cx, gx);
+                            log::debug!(
+                                "[PublishEvent] dispatched to global modal, handled={}",
+                                handled
+                            );
+                        }
+                    }
+
+                    // Dispatch to app modals
+                    {
+                        let reg = registry.read().unwrap();
+                        for instance in reg.iter() {
+                            if let Ok(modals) = instance.modals().read() {
+                                for modal in modals.iter() {
+                                    if !modal.is_closed() && modal.has_event_handler(event_type) {
+                                        let cx = AppContext::new(
+                                            instance.id(),
+                                            gx.clone(),
+                                            instance.config().name,
+                                        );
+                                        let handled =
+                                            modal.dispatch_event(event_type, event.as_ref(), &cx, gx);
+                                        log::debug!(
+                                            "[PublishEvent] dispatched to app modal in {}, handled={}",
+                                            instance.config().name,
+                                            handled
+                                        );
+                                    }
+                                }
+                            }
                         }
                     }
                 }

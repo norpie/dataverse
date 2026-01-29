@@ -3,11 +3,14 @@
 //! Modals are overlay views that capture input until closed.
 //! They return a result to the caller.
 
+use std::any::{Any, TypeId};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 
 use tokio::sync::oneshot;
 use tuidom::Element;
+
+use crate::{AppContext, GlobalContext};
 
 use crate::{HandlerRegistry, KeybindClosures, LifecycleHooks};
 
@@ -200,6 +203,39 @@ pub trait Modal: Clone + Send + Sync + 'static {
 
     /// Clear dirty flags after rendering.
     fn clear_dirty(&self) {}
+
+    /// Check if this modal has a handler for the given event type.
+    ///
+    /// Override via `#[event_handler]` attribute in `#[modal_impl]`.
+    fn has_event_handler(&self, event_type: TypeId) -> bool {
+        let _ = event_type;
+        false
+    }
+
+    /// Dispatch an event to this modal's handlers.
+    ///
+    /// Override via `#[event_handler]` attribute in `#[modal_impl]`.
+    ///
+    /// # Parameters
+    /// - `event_type`: The TypeId of the event
+    /// - `event`: The event data (type-erased)
+    /// - `cx`: App context (available for app modals, ignored by system modals)
+    /// - `gx`: Global context
+    /// - `mx`: Modal context (type-erased, downcast to `ModalContext<Self::Result>` internally)
+    ///
+    /// # Returns
+    /// `true` if the event was handled, `false` otherwise.
+    fn dispatch_event(
+        &self,
+        event_type: TypeId,
+        event: &(dyn Any + Send + Sync),
+        cx: &AppContext,
+        gx: &GlobalContext,
+        mx: &(dyn Any + Send + Sync),
+    ) -> bool {
+        let _ = (event_type, event, cx, gx, mx);
+        false
+    }
 }
 
 // =============================================================================
