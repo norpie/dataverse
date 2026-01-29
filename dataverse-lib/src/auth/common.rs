@@ -107,13 +107,26 @@ pub(crate) fn map_error_response(error: ErrorResponse) -> AuthError {
         .error_description
         .unwrap_or_else(|| error.error.clone());
 
+    log::debug!(
+        "Azure AD error response: error={}, description={}",
+        error.error,
+        description
+    );
+
     match error.error.as_str() {
         "invalid_grant" => {
             if description.contains("AADSTS50126") {
                 // Invalid username or password
                 AuthError::InvalidCredentials
-            } else if description.contains("AADSTS700082") || description.contains("AADSTS50173") {
-                // Refresh token expired
+            } else if description.contains("AADSTS700082")
+                || description.contains("AADSTS50173")
+                || description.contains("AADSTS50076")
+                || description.contains("AADSTS50078")
+            {
+                // AADSTS700082: Refresh token expired
+                // AADSTS50173: Refresh token expired (variant)
+                // AADSTS50076: MFA required
+                // AADSTS50078: MFA session expired
                 AuthError::TokenExpired {
                     message: description,
                 }
