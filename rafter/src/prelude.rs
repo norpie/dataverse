@@ -10,6 +10,7 @@ pub use crate::app_context::AppContext;
 pub use crate::context_menu::{ContextMenuBuilder, ContextMenuDefinition};
 pub use crate::global_context::GlobalContext;
 pub use crate::handler_context::HandlerRegistry;
+pub use crate::job::JobId;
 pub use crate::keybinds::Keybinds;
 pub use crate::modal::{Modal, ModalContext, ModalSize};
 pub use crate::resource::{ProgressState, Resource, ResourceState};

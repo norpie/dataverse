@@ -7,6 +7,7 @@ mod event;
 mod global_context;
 mod handler_context;
 mod instance;
+mod job;
 pub mod keybinds;
 mod lifecycle;
 mod modal;
@@ -43,6 +44,7 @@ pub use instance::{
     AnyAppInstance, AppInstance, InstanceId, InstanceInfo, InstanceRegistry, RequestError,
     SpawnError,
 };
+pub use job::JobId;
 pub use keybinds::{
     HandlerId, KeyCombo, Keybind, KeybindClosures, KeybindEntry, KeybindError, KeybindInfo,
     KeybindScope, Keybinds, ParseKeyError, parse_key_string,

@@ -9,16 +9,20 @@
 //! - Inter-app communication (publish, request)
 //! - Global data
 //! - Keybind management
+//! - Scheduled jobs
 
 use std::any::{Any, TypeId};
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
+use std::time::Duration;
 
 use tokio::sync::oneshot;
 use tuidom::{CursorState, Rect, Theme};
 
 use crate::context_menu::ContextMenuRequest;
+use crate::handler_context::Handler;
 use crate::instance::{InstanceId, InstanceInfo, RequestError, SpawnError};
+use crate::job::{JobId, Schedule, ScheduledJob};
 use crate::modal::{Modal, ModalContext, ModalEntry};
 use crate::registration::CloneableApp;
 use crate::wakeup::WakeupSender;
@@ -118,6 +122,16 @@ pub enum InstanceCommand {
         request_type: TypeId,
         /// Channel to send the response back.
         response_tx: oneshot::Sender<Result<Box<dyn Any + Send + Sync>, RequestError>>,
+    },
+    /// Schedule a job for later execution.
+    ScheduleJob {
+        /// The job to schedule.
+        job: ScheduledJob,
+    },
+    /// Cancel a scheduled job.
+    CancelJob {
+        /// The job ID to cancel.
+        id: JobId,
     },
 }
 
@@ -635,6 +649,116 @@ impl GlobalContext {
             .downcast()
             .map_err(|_| RequestError::HandlerPanicked)?;
         Ok(*response)
+    }
+
+    // =========================================================================
+    // Scheduled Jobs
+    // =========================================================================
+
+    /// Schedule a one-time job to run after a delay.
+    ///
+    /// The handler will be called once after the delay elapses.
+    /// Returns a `JobId` that can be used to cancel the job before it runs.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// #[handler]
+    /// async fn on_start(&self, gx: &GlobalContext) {
+    ///     // Show a reminder in 5 seconds
+    ///     gx.schedule_after(Duration::from_secs(5), self.show_reminder());
+    /// }
+    /// ```
+    pub fn schedule_after(&self, delay: Duration, handler: Handler) -> JobId {
+        self.schedule_after_for_instance(delay, handler, None)
+    }
+
+    /// Schedule a one-time job for a specific instance.
+    ///
+    /// The job will be automatically cancelled if the instance is closed.
+    pub fn schedule_after_for_instance(
+        &self,
+        delay: Duration,
+        handler: Handler,
+        instance_id: Option<InstanceId>,
+    ) -> JobId {
+        let job = ScheduledJob::new(Schedule::after(delay), handler, instance_id);
+        let id = job.id;
+
+        if let Ok(mut inner) = self.inner.write() {
+            inner
+                .instance_commands
+                .push(InstanceCommand::ScheduleJob { job });
+            self.send_wakeup();
+        }
+
+        id
+    }
+
+    /// Schedule a recurring job at fixed intervals.
+    ///
+    /// The handler will be called immediately, then every `interval`.
+    /// Returns a `JobId` that can be used to cancel the job.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// #[handler]
+    /// async fn on_start(&self, gx: &GlobalContext) {
+    ///     // Poll every 30 seconds, starting now
+    ///     let job_id = gx.schedule_every(Duration::from_secs(30), self.poll_api());
+    ///     self.poll_job.set(Some(job_id));
+    /// }
+    /// ```
+    pub fn schedule_every(&self, interval: Duration, handler: Handler) -> JobId {
+        self.schedule_every_for_instance(interval, handler, None)
+    }
+
+    /// Schedule a recurring job for a specific instance.
+    ///
+    /// The job will be automatically cancelled if the instance is closed.
+    pub fn schedule_every_for_instance(
+        &self,
+        interval: Duration,
+        handler: Handler,
+        instance_id: Option<InstanceId>,
+    ) -> JobId {
+        let job = ScheduledJob::new(Schedule::every(interval), handler, instance_id);
+        let id = job.id;
+
+        if let Ok(mut inner) = self.inner.write() {
+            inner
+                .instance_commands
+                .push(InstanceCommand::ScheduleJob { job });
+            self.send_wakeup();
+        }
+
+        id
+    }
+
+    /// Cancel a scheduled job.
+    ///
+    /// If the job has already executed (for one-time jobs) or doesn't exist,
+    /// this is a no-op.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// #[handler]
+    /// async fn stop_polling(&self, gx: &GlobalContext) {
+    ///     if let Some(job_id) = self.poll_job.get() {
+    ///         gx.cancel_job(job_id);
+    ///         self.poll_job.set(None);
+    ///     }
+    /// }
+    /// ```
+    pub fn cancel_job(&self, id: JobId) {
+        if let Ok(mut inner) = self.inner.write() {
+            inner
+                .instance_commands
+                .push(InstanceCommand::CancelJob { id });
+            self.send_wakeup();
+        }
     }
 
     // =========================================================================

@@ -11,6 +11,7 @@
 
 pub mod dispatch;
 mod enrich;
+pub(crate) mod scheduler;
 
 use std::any::{Any, TypeId};
 use std::collections::HashMap;
@@ -285,6 +286,9 @@ impl Runtime {
         let mut app_context_menu: Option<crate::ContextMenuState> = None;
         let mut global_context_menu: Option<crate::ContextMenuState> = None;
 
+        // Job scheduler
+        let mut job_scheduler = scheduler::JobScheduler::new();
+
         // Run event loop
         let mut wakeup_rx = wakeup_rx;
         self.event_loop(
@@ -301,6 +305,7 @@ impl Runtime {
             &mut global_modals,
             &mut app_context_menu,
             &mut global_context_menu,
+            &mut job_scheduler,
         )
         .await
     }
@@ -322,6 +327,7 @@ impl Runtime {
         global_modals: &mut Vec<Box<dyn AnyModal>>,
         app_context_menu: &mut Option<crate::ContextMenuState>,
         global_context_menu: &mut Option<crate::ContextMenuState>,
+        job_scheduler: &mut scheduler::JobScheduler,
     ) -> Result<(), RuntimeError> {
         // Default poll timeout (16ms for ~60fps when animations active)
         let animation_timeout = Duration::from_millis(16);
@@ -349,8 +355,72 @@ impl Runtime {
             }
 
             // 2. Process pending commands
-            self.process_commands(registry, systems, gx).await?;
+            self.process_commands(registry, systems, gx, job_scheduler)
+                .await?;
             let t_commands = Instant::now();
+
+            // 2b. Execute due scheduled jobs
+            let due_jobs = job_scheduler.take_due(Instant::now());
+            for job in due_jobs {
+                // Track whether to reschedule (for interval jobs)
+                let mut should_reschedule = false;
+
+                // Execute based on job source
+                if let Some(instance_id) = job.source_instance {
+                    // App job - needs AppContext
+                    let reg = registry.read().unwrap();
+                    if let Some(instance) = reg.get(instance_id) {
+                        if !instance.is_sleeping() {
+                            let cx = instance.app_context();
+                            let hx = HandlerContext::for_app(&cx, gx);
+                            log::debug!(
+                                "[scheduler] Executing job {:?} (app: {})",
+                                job.id,
+                                instance.config().name
+                            );
+                            let result = crate::handler_context::call_handler(&job.handler, &hx);
+                            if result.is_panic() {
+                                log::warn!(
+                                    "[scheduler] Job {:?} handler panicked: {:?}",
+                                    job.id,
+                                    result.panic_message()
+                                );
+                            }
+                            should_reschedule = matches!(job.schedule, crate::job::Schedule::Every { .. });
+                        } else {
+                            log::debug!(
+                                "[scheduler] Skipping job {:?}: instance {:?} is sleeping",
+                                job.id,
+                                instance_id
+                            );
+                        }
+                    } else {
+                        log::debug!(
+                            "[scheduler] Skipping job {:?}: instance {:?} no longer exists",
+                            job.id,
+                            instance_id
+                        );
+                    }
+                } else {
+                    // System job - just GlobalContext
+                    let hx = HandlerContext::for_system(gx);
+                    log::debug!("[scheduler] Executing system job {:?}", job.id);
+                    let result = crate::handler_context::call_handler(&job.handler, &hx);
+                    if result.is_panic() {
+                        log::warn!(
+                            "[scheduler] Job {:?} handler panicked: {:?}",
+                            job.id,
+                            result.panic_message()
+                        );
+                    }
+                    should_reschedule = matches!(job.schedule, crate::job::Schedule::Every { .. });
+                }
+
+                // Reschedule interval jobs
+                if should_reschedule {
+                    job_scheduler.reschedule_interval(job);
+                }
+            }
 
             // 3. Process modal requests from focused app and clean up closed modals
             // Take modal request outside the lock so we can await on_start
@@ -662,9 +732,18 @@ impl Runtime {
                     })
                     .min();
 
-                match next_phase_change {
+                // Also check scheduled jobs
+                let next_job = job_scheduler.time_until_next();
+
+                // Take minimum of toast timeout, job timeout, and idle timeout
+                let base_timeout = match next_phase_change {
                     Some(dur) if dur < idle_timeout => dur,
                     _ => idle_timeout,
+                };
+
+                match next_job {
+                    Some(job_dur) if job_dur < base_timeout => job_dur,
+                    _ => base_timeout,
                 }
             };
 
@@ -1364,6 +1443,7 @@ impl Runtime {
         registry: &Arc<RwLock<InstanceRegistry>>,
         systems: &[Box<dyn AnySystem>],
         gx: &GlobalContext,
+        job_scheduler: &mut scheduler::JobScheduler,
     ) -> Result<(), RuntimeError> {
         let commands = gx.take_instance_commands();
 
@@ -1458,6 +1538,9 @@ impl Runtime {
                                 reg.get(close_id).map(|i| i.config().name)
                             };
 
+                            // Cancel all scheduled jobs for the closing instance
+                            job_scheduler.cancel_for_instance(close_id);
+
                             {
                                 let mut reg = registry.write().unwrap();
                                 reg.close(close_id);
@@ -1488,6 +1571,9 @@ impl Runtime {
                         let reg = registry.read().unwrap();
                         reg.get(id).map(|i| i.config().name)
                     };
+
+                    // Cancel all scheduled jobs for this instance
+                    job_scheduler.cancel_for_instance(id);
 
                     {
                         let mut reg = registry.write().unwrap();
@@ -1567,6 +1653,9 @@ impl Runtime {
                             let reg = registry.read().unwrap();
                             reg.get(close_id).map(|i| i.config().name)
                         };
+
+                        // Cancel all scheduled jobs for the closing instance
+                        job_scheduler.cancel_for_instance(close_id);
 
                         {
                             let mut reg = registry.write().unwrap();
@@ -1658,6 +1747,16 @@ impl Runtime {
                         .handle_request(registry, systems, gx, target, request, request_type)
                         .await;
                     let _ = response_tx.send(result);
+                }
+
+                InstanceCommand::ScheduleJob { job } => {
+                    let id = job_scheduler.add(job);
+                    log::debug!("[runtime] Scheduled job {:?}", id);
+                }
+
+                InstanceCommand::CancelJob { id } => {
+                    let cancelled = job_scheduler.cancel(id);
+                    log::debug!("[runtime] Cancel job {:?}: {}", id, cancelled);
                 }
             }
         }
