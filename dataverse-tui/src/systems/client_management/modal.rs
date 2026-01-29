@@ -23,6 +23,21 @@ pub enum Page {
     Accounts,
 }
 
+/// Connection status for an environment-account pair.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum ConnectionStatus {
+    /// No tokens stored.
+    #[default]
+    NotConnected,
+    /// Tokens exist and are valid.
+    Connected,
+    /// Tokens exist but are expired (needs re-auth).
+    Expired,
+}
+
+/// Buffer time before expiry to consider tokens as "expiring soon" (5 minutes).
+const TOKEN_EXPIRY_BUFFER_SECS: i64 = 300;
+
 /// Environment list item.
 #[derive(Clone, Debug)]
 struct EnvListItem {
@@ -79,7 +94,7 @@ pub struct ClientManagementModal {
     // Active tab state
     env_select: SelectState<i64>,
     acc_select: SelectState<i64>,
-    is_connected: bool,
+    connection_status: ConnectionStatus,
 
     // Environments tab state
     env_list: ListState<EnvListItem>,
@@ -166,10 +181,19 @@ impl ClientManagementModal {
                 .set(ListState::new(list_items).with_selection(SelectionMode::Single));
         }
 
-        // Check if connected (has tokens for current selection)
+        // Check connection status for current selection
         if let (Some(acc_id), Some(env_id)) = (active_acc_id, active_env_id) {
-            let has_tokens = credentials.get_tokens(acc_id, env_id).await.is_ok();
-            self.is_connected.set(has_tokens);
+            let status = match credentials.get_tokens(acc_id, env_id).await {
+                Ok(Some(tokens)) => {
+                    if tokens.is_expired_within(TOKEN_EXPIRY_BUFFER_SECS) {
+                        ConnectionStatus::Expired
+                    } else {
+                        ConnectionStatus::Connected
+                    }
+                }
+                _ => ConnectionStatus::NotConnected,
+            };
+            self.connection_status.set(status);
         }
     }
 
@@ -203,11 +227,21 @@ impl ClientManagementModal {
 
     #[handler]
     async fn on_env_select(&self, gx: &GlobalContext) {
+        let env_state = self.env_select.get();
+        log::debug!(
+            "[ClientManagement] Environment selected: {:?}",
+            env_state.value()
+        );
         self.update_connection_status(gx).await;
     }
 
     #[handler]
     async fn on_acc_select(&self, gx: &GlobalContext) {
+        let acc_state = self.acc_select.get();
+        log::debug!(
+            "[ClientManagement] Account selected: {:?}",
+            acc_state.value()
+        );
         self.update_connection_status(gx).await;
     }
 
@@ -217,10 +251,25 @@ impl ClientManagementModal {
 
         if let (Some(&env_id), Some(&acc_id)) = (env_state.value(), acc_state.value()) {
             let credentials = gx.data::<CredentialsProvider>();
-            let has_tokens = credentials.get_tokens(acc_id, env_id).await.is_ok();
-            self.is_connected.set(has_tokens);
+            let status = match credentials.get_tokens(acc_id, env_id).await {
+                Ok(Some(tokens)) => {
+                    if tokens.is_expired_within(TOKEN_EXPIRY_BUFFER_SECS) {
+                        ConnectionStatus::Expired
+                    } else {
+                        ConnectionStatus::Connected
+                    }
+                }
+                _ => ConnectionStatus::NotConnected,
+            };
+            log::debug!(
+                "[ClientManagement] Connection status: env_id={}, acc_id={}, status={:?}",
+                env_id,
+                acc_id,
+                status
+            );
+            self.connection_status.set(status);
         } else {
-            self.is_connected.set(false);
+            self.connection_status.set(ConnectionStatus::NotConnected);
         }
     }
 
@@ -229,6 +278,12 @@ impl ClientManagementModal {
         let env_state = self.env_select.get();
         let acc_state = self.acc_select.get();
 
+        log::debug!(
+            "[ClientManagement] Connect: env_select={:?}, acc_select={:?}",
+            env_state.value(),
+            acc_state.value()
+        );
+
         let (env_id, acc_id) = match (env_state.value(), acc_state.value()) {
             (Some(&e), Some(&a)) => (e, a),
             _ => {
@@ -236,6 +291,12 @@ impl ClientManagementModal {
                 return;
             }
         };
+
+        log::info!(
+            "[ClientManagement] Connecting env_id={}, acc_id={}",
+            env_id,
+            acc_id
+        );
 
         // Get env and account details from credentials
         let credentials = gx.data::<CredentialsProvider>();
@@ -263,43 +324,84 @@ impl ClientManagementModal {
         };
 
         // Open browser auth modal
+        log::debug!(
+            "[ClientManagement] Opening BrowserAuthModal for env_url={}, client_id={}, tenant_id={}",
+            env_url,
+            client_id,
+            tenant_id
+        );
         let token = gx
             .modal(BrowserAuthModal::new(&env_url, &client_id, &tenant_id))
             .await;
 
+        log::debug!(
+            "[ClientManagement] BrowserAuthModal returned: has_token={}",
+            token.is_some()
+        );
+
         if let Some(access_token) = token {
+            log::info!(
+                "[ClientManagement] Auth successful, saving tokens for acc_id={}, env_id={}",
+                acc_id,
+                env_id
+            );
+
             // Save tokens
             let cached = crate::credentials::CachedTokens {
                 access_token: access_token.access_token,
                 expires_at: access_token.expires_at,
-                refresh_token: access_token.refresh_token,
+                refresh_token: access_token.refresh_token.clone(),
             };
+
+            log::debug!(
+                "[ClientManagement] Saving tokens: expires_at={:?}, has_refresh={}",
+                cached.expires_at,
+                cached.refresh_token.is_some()
+            );
+
             if let Err(e) = credentials.save_tokens(acc_id, env_id, &cached).await {
+                log::error!("[ClientManagement] Failed to save tokens: {}", e);
                 gx.toast(Toast::error(format!("Failed to save tokens: {}", e)));
                 return;
             }
+
+            log::debug!("[ClientManagement] Tokens saved successfully");
 
             // Set as active session
             if let Err(e) = credentials
                 .set_active_session(Some(acc_id), Some(env_id))
                 .await
             {
+                log::error!("[ClientManagement] Failed to set session: {}", e);
                 gx.toast(Toast::error(format!("Failed to set session: {}", e)));
                 return;
             }
 
-            self.is_connected.set(true);
+            log::info!(
+                "[ClientManagement] Session set to acc_id={}, env_id={}",
+                acc_id,
+                env_id
+            );
+
+            self.connection_status.set(ConnectionStatus::Connected);
             
             // Publish session changed event
             gx.publish(SessionChanged {
                 account_id: Some(acc_id),
                 env_id: Some(env_id),
                 account_name: Some(acc_name),
-                environment_name: Some(env_name),
+                environment_name: Some(env_name.clone()),
                 environment_url: Some(env_url),
             });
+
+            log::info!(
+                "[ClientManagement] Published SessionChanged for {}",
+                env_name
+            );
             
             gx.toast(Toast::success("Connected successfully!"));
+        } else {
+            log::debug!("[ClientManagement] Auth cancelled or failed");
         }
     }
 
@@ -500,18 +602,12 @@ impl ClientManagementModal {
 
     #[page(Active)]
     fn active_page(&self) -> Element {
-        let is_connected = self.is_connected.get();
-        let connect_label = if is_connected {
-            "Re-authenticate"
-        } else {
-            "Connect"
+        let status = self.connection_status.get();
+        let (connect_label, status_text, status_color) = match status {
+            ConnectionStatus::Connected => ("Re-authenticate", "Connected", "success"),
+            ConnectionStatus::Expired => ("Re-authenticate", "Needs re-auth", "warning"),
+            ConnectionStatus::NotConnected => ("Connect", "Not connected", "error"),
         };
-        let status_text = if is_connected {
-            "Connected"
-        } else {
-            "Not connected"
-        };
-        let status_color = if is_connected { "success" } else { "error" };
         let status_indicator =
             Element::text("●").style(Style::new().foreground(Color::var(status_color)));
 
