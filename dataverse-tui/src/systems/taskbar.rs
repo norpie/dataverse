@@ -147,11 +147,11 @@ impl Taskbar {
     fn render_status_indicator(&self, status: &StatusIndicator) -> (Element, &'static str) {
         match status {
             StatusIndicator::Idle => (
-                Element::text("●").style(Style::new().foreground(Color::var("text.muted"))),
+                Element::text("●").style(Style::new().foreground(Color::var("muted"))),
                 "Idle",
             ),
             StatusIndicator::Running => (
-                Element::text("●").style(Style::new().foreground(Color::var("success"))),
+                Element::text("●").style(Style::new().foreground(Color::var("warning"))),
                 "Running",
             ),
             StatusIndicator::Paused => (
@@ -159,7 +159,7 @@ impl Taskbar {
                 "Paused",
             ),
             StatusIndicator::Done => (
-                Element::text("●").style(Style::new().foreground(Color::var("primary"))),
+                Element::text("●").style(Style::new().foreground(Color::var("success"))),
                 "Done",
             ),
             StatusIndicator::Available => (
@@ -513,22 +513,22 @@ impl Taskbar {
             )
         } else if counts.running > 0 {
             (
-                Element::text("●").style(Style::new().foreground(Color::var("success"))),
+                Element::text("●").style(Style::new().foreground(Color::var("warning"))),
                 "Running"
             )
         } else if counts.ready > 0 || counts.blocked > 0 {
             (
-                Element::text("●").style(Style::new().foreground(Color::var("warning"))),
+                Element::text("●").style(Style::new().foreground(Color::var("primary"))),
                 "Pending"
             )
         } else if counts.done > 0 {
             (
-                Element::text("●").style(Style::new().foreground(Color::var("primary"))),
+                Element::text("●").style(Style::new().foreground(Color::var("success"))),
                 "Done"
             )
         } else {
             (
-                Element::text("●").style(Style::new().foreground(Color::var("text.muted"))),
+                Element::text("●").style(Style::new().foreground(Color::var("muted"))),
                 "Idle"
             )
         };

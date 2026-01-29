@@ -114,10 +114,10 @@ fn to_list_item(status: &EnvSyncStatus) -> EnvListItem {
 fn status_indicator_display(status: &StatusIndicator) -> (&'static str, &'static str) {
     match status {
         StatusIndicator::Idle => ("●", "muted"),
-        StatusIndicator::Running => ("●", "success"),
+        StatusIndicator::Running => ("●", "warning"),
         StatusIndicator::Paused => ("●", "warning"),
         StatusIndicator::Done => ("●", "success"),
-        StatusIndicator::Available => ("●", "primary"),
+        StatusIndicator::Available => ("●", "success"),
         StatusIndicator::PartialError => ("●", "warning"),
         StatusIndicator::Error => ("●", "error"),
     }

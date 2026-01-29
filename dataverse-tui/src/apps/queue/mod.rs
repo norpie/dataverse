@@ -956,9 +956,13 @@ impl Queue {
         let (status_color, status_label) = if !is_running {
             (Color::var("warning"), "Paused")
         } else if counts.running > 0 {
-            (Color::var("success"), "Running")
-        } else {
+            (Color::var("warning"), "Running")
+        } else if counts.ready > 0 || counts.blocked > 0 {
             (Color::var("primary"), "Ready")
+        } else if counts.done > 0 {
+            (Color::var("success"), "Done")
+        } else {
+            (Color::var("muted"), "Idle")
         };
 
         let status_filter = self.status_filter.get();
