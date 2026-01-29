@@ -98,7 +98,7 @@ pub async fn execute_task(
             env_id,
             account_id,
             env_name,
-        } => execute_fetch_all_entities(*env_id, *account_id, env_name, repository, gx).await,
+        } => execute_fetch_all_entities(*env_id, *account_id, env_name, repository, gx, refresh_threshold).await,
         SyncTask::FetchEntityMetadata {
             env_id,
             account_id,
@@ -151,8 +151,14 @@ async fn execute_check_environment(
     let entries = cache.get_all().await;
     let now = Utc::now();
 
-    let mut needs_entities = true;
-    let mut needs_optionsets = true;
+    // Check if any cache entry needs refresh
+    // - all_entities list
+    // - all_global_optionsets list  
+    // - any individual entity metadata (entity_full:*, entity_core:*)
+    let mut needs_entities = false;
+    let mut needs_optionsets = false;
+    let mut has_entity_list = false;
+    let mut has_optionset_list = false;
 
     for entry in &entries {
         let elapsed_ratio = if entry.expires_at > now {
@@ -165,16 +171,35 @@ async fn execute_check_environment(
                 1.0
             }
         } else {
-            1.0
+            1.0 // Expired
         };
 
-        let needs_refresh = elapsed_ratio >= refresh_threshold;
+        let is_stale = elapsed_ratio >= refresh_threshold;
 
         if entry.key == "all_entities" {
-            needs_entities = needs_refresh;
+            has_entity_list = true;
+            if is_stale {
+                needs_entities = true;
+            }
         } else if entry.key == "all_global_optionsets" {
-            needs_optionsets = needs_refresh;
+            has_optionset_list = true;
+            if is_stale {
+                needs_optionsets = true;
+            }
+        } else if entry.key.starts_with("entity_full:") || entry.key.starts_with("entity_core:") {
+            // Any stale entity metadata triggers a full refresh
+            if is_stale {
+                needs_entities = true;
+            }
         }
+    }
+
+    // If we don't have the lists cached at all, we need to fetch them
+    if !has_entity_list {
+        needs_entities = true;
+    }
+    if !has_optionset_list {
+        needs_optionsets = true;
     }
 
     if !needs_entities && !needs_optionsets {
@@ -198,12 +223,14 @@ async fn execute_check_environment(
 }
 
 /// Fetch all entities for an environment and create follow-up tasks.
+/// Only creates tasks for entities that are missing or stale in the cache.
 async fn execute_fetch_all_entities(
     env_id: i64,
     account_id: i64,
     env_name: &str,
     repository: &IndexerRepository,
     gx: &GlobalContext,
+    refresh_threshold: f64,
 ) -> Result<Vec<SyncTask>, SyncError> {
     log::debug!("[Indexer] Fetching all entities for {}", env_name);
 
@@ -218,34 +245,86 @@ async fn execute_fetch_all_entities(
         .map_err(|e| SyncError::Request(format!("Failed to request client: {}", e)))?
         .map_err(|e| SyncError::Client(format!("Failed to get client: {}", e)))?;
 
-    let entities = client_info
-        .client
+    let client = &client_info.client;
+
+    // Use cache if available - only fetches from API if cache is stale/missing
+    let entities = client
         .metadata()
         .all_entities()
-        .bypass_cache()
         .await
         .map_err(|e| SyncError::Api(format!("Failed to fetch all entities: {}", e)))?;
 
-    let total = entities.len() as u32;
+    let total = entities.len();
     log::debug!("[Indexer] Fetched {} entities for {}", total, env_name);
 
-    // Create a task for each entity's full metadata
-    let mut tasks: Vec<SyncTask> = entities
-        .iter()
-        .map(|entity| SyncTask::FetchEntityMetadata {
+    // Check cache to find which entities need refresh
+    let cache = client.cache();
+    let cache_config = client.cache_config();
+    let now = Utc::now();
+
+    let mut stale_entities = Vec::new();
+    
+    if let Some(cache) = cache {
+        let cache_entries = cache.get_all().await;
+        
+        for entity in &entities {
+            let cache_key = format!("entity_full:{}", entity.logical_name);
+            let entry = cache_entries.iter().find(|e| e.key == cache_key);
+            
+            let needs_refresh = match entry {
+                None => true, // Not in cache
+                Some(entry) => {
+                    if entry.expires_at <= now {
+                        true // Expired
+                    } else {
+                        // Check if past threshold
+                        let ttl = cache_config.entity_metadata_ttl;
+                        let time_until_expiry = (entry.expires_at - now).num_seconds().max(0) as f64;
+                        let ttl_secs = ttl.as_secs_f64();
+                        let elapsed_ratio = if ttl_secs > 0.0 {
+                            1.0 - (time_until_expiry / ttl_secs)
+                        } else {
+                            1.0
+                        };
+                        elapsed_ratio >= refresh_threshold
+                    }
+                }
+            };
+            
+            if needs_refresh {
+                stale_entities.push(entity.logical_name.clone());
+            }
+        }
+    } else {
+        // No cache, fetch all
+        stale_entities = entities.iter().map(|e| e.logical_name.clone()).collect();
+    }
+
+    let stale_count = stale_entities.len();
+    log::info!(
+        "[Indexer] {} of {} entities need refresh for {}",
+        stale_count,
+        total,
+        env_name
+    );
+
+    // Create tasks only for stale entities
+    let mut tasks: Vec<SyncTask> = stale_entities
+        .into_iter()
+        .map(|entity_name| SyncTask::FetchEntityMetadata {
             env_id,
             account_id,
             env_name: env_name.to_string(),
-            entity_name: entity.logical_name.clone(),
+            entity_name,
         })
         .collect();
 
-    // Add the optionsets task at the end
+    // Add the optionsets task at the end (always refresh with entity list)
     tasks.push(SyncTask::FetchAllOptionSets {
         env_id,
         account_id,
         env_name: env_name.to_string(),
-        entities_count: total,
+        entities_count: total as u32,
     });
 
     Ok(tasks)

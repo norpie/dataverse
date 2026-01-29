@@ -5,6 +5,7 @@
 
 pub mod api;
 mod migrations;
+mod modal;
 pub mod repository;
 pub mod sync;
 
@@ -15,7 +16,7 @@ pub use sync::{
     DEFAULT_REFRESH_THRESHOLD_PCT,
 };
 
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -32,6 +33,7 @@ use crate::systems::taskbar::StatusIndicator;
 // Settings keys for persistence
 const SETTING_CHECK_INTERVAL: &str = "check_interval_secs";
 const SETTING_REFRESH_THRESHOLD: &str = "refresh_threshold_pct";
+const SETTING_IS_PAUSED: &str = "is_paused";
 
 /// Background metadata indexer system.
 ///
@@ -51,14 +53,8 @@ pub struct IndexerSystem {
     /// Whether the indexer is paused.
     is_paused: bool,
 
-    /// Per-environment sync status for UI/events.
-    env_statuses: Vec<EnvSyncStatus>,
-
-    /// Progress tracking: tasks completed in current run.
-    executed_tasks: u32,
-
-    /// Progress tracking: total tasks in current run.
-    total_tasks: u32,
+    /// Per-environment progress tracking.
+    env_progress: HashMap<i64, SyncProgress>,
 
     /// How often to check for near-expiry cache entries (seconds).
     check_interval_secs: u64,
@@ -98,15 +94,23 @@ impl IndexerSystem {
                     .ok()
                     .flatten()
                     .unwrap_or(DEFAULT_REFRESH_THRESHOLD_PCT);
+                let is_paused = repo
+                    .get_setting::<bool>(SETTING_IS_PAUSED)
+                    .await
+                    .ok()
+                    .flatten()
+                    .unwrap_or(false);
 
                 self.check_interval_secs.set(check_interval);
                 self.refresh_threshold_pct.set(refresh_threshold);
+                self.is_paused.set(is_paused);
                 self.repository.set(Some(repo));
 
                 log::info!(
-                    "[Indexer] Loaded settings: check_interval={}s, refresh_threshold={}%",
+                    "[Indexer] Loaded settings: check_interval={}s, refresh_threshold={}%, paused={}",
                     check_interval,
-                    refresh_threshold
+                    refresh_threshold,
+                    is_paused
                 );
             }
             Err(e) => {
@@ -115,14 +119,21 @@ impl IndexerSystem {
             }
         }
 
-        // Build initial env_statuses from authenticated environments
-        self.refresh_env_statuses(gx).await;
+        // Skip initial tasks if paused
+        if self.is_paused.get() {
+            log::info!("[Indexer] Starting in paused state");
+            let statuses = self.build_env_statuses(gx).await;
+            gx.publish(IndexerReady {
+                overall_status: self.compute_overall_status(&statuses),
+                environments: statuses,
+            });
+            return;
+        }
 
         // Add initial check tasks for all environments
         let tasks = get_check_tasks(gx).await;
-        let task_count = tasks.len() as u32;
+        let task_count = tasks.len();
         self.queue.update(|q| q.extend(tasks));
-        self.total_tasks.set(task_count);
 
         log::info!(
             "[Indexer] Queued {} initial check tasks",
@@ -134,9 +145,10 @@ impl IndexerSystem {
         self.job_id.set(Some(job_id));
 
         // Publish ready event
+        let statuses = self.build_env_statuses(gx).await;
         gx.publish(IndexerReady {
-            overall_status: self.compute_overall_status(),
-            environments: self.env_statuses.get(),
+            overall_status: self.compute_overall_status(&statuses),
+            environments: statuses,
         });
     }
 
@@ -151,8 +163,11 @@ impl IndexerSystem {
 
     #[handler]
     async fn open_dashboard(&self, gx: &GlobalContext) {
-        // TODO: Phase 6 - open IndexerDashboardModal
-        gx.toast(Toast::info("Indexer dashboard not yet implemented"));
+        let status = self.get_current_status(gx).await;
+        let settings = self.get_current_settings();
+        let _ = gx
+            .modal(modal::IndexerDashboardModal::new(status, settings))
+            .await;
     }
 
     // =========================================================================
@@ -194,6 +209,7 @@ impl IndexerSystem {
         if let Some(task) = task {
             log::debug!("[Indexer] Processing task: {:?}", task);
 
+            let env_id = task.env_id();
             let repo = self.repository.get();
             let threshold = self.refresh_threshold_pct.get() as f64 / 100.0;
 
@@ -202,19 +218,24 @@ impl IndexerSystem {
                     match execute_task(&task, &repo, gx, threshold).await {
                         Ok(follow_up_tasks) => {
                             let follow_up_count = follow_up_tasks.len() as u32;
+                            
+                            // Update per-env progress based on task type
+                            self.update_progress_on_success(&task, &follow_up_tasks);
+                            
                             if follow_up_count > 0 {
                                 log::debug!(
                                     "[Indexer] Task produced {} follow-up tasks",
                                     follow_up_count
                                 );
                                 self.queue.update(|q| q.extend(follow_up_tasks));
-                                self.total_tasks.update(|t| *t += follow_up_count);
                             }
-                            self.update_status_from_task(&task, None, gx);
+                            self.persist_task_result(&task, None, follow_up_count).await;
                         }
                         Err(e) => {
                             log::warn!("[Indexer] Task failed: {}", e);
-                            self.update_status_from_task(&task, Some(e.to_string()), gx);
+                            // Clear progress for this env on error
+                            self.env_progress.update(|p| { p.remove(&env_id); });
+                            self.persist_task_result(&task, Some(e.to_string()), 0).await;
                         }
                     }
                 }
@@ -223,22 +244,18 @@ impl IndexerSystem {
                 }
             }
 
-            // Increment executed count
-            self.executed_tasks.update(|c| *c += 1);
-
             // Publish status update
-            self.publish_status(gx);
+            self.publish_status(gx).await;
 
             // Check if we have more work
             let queue_empty = self.queue.get().is_empty();
             if queue_empty {
-                // Run complete - reset progress counters
-                log::info!(
-                    "[Indexer] Run complete: {} tasks executed",
-                    self.executed_tasks.get()
-                );
-                self.executed_tasks.set(0);
-                self.total_tasks.set(0);
+                // Run complete - clear all progress
+                let total_done: u32 = self.env_progress.get().values()
+                    .map(|p| p.entities_done + if p.optionsets_done { 1 } else { 0 })
+                    .sum();
+                log::info!("[Indexer] Run complete: {} tasks executed", total_done);
+                self.env_progress.set(HashMap::new());
             }
 
             // Schedule next: immediate if more work, interval if idle
@@ -274,12 +291,8 @@ impl IndexerSystem {
     // =========================================================================
 
     #[request_handler]
-    async fn handle_get_status(&self, _: GetIndexerStatus, _gx: &GlobalContext) -> IndexerStatusResponse {
-        IndexerStatusResponse {
-            is_paused: self.is_paused.get(),
-            overall_status: self.compute_overall_status(),
-            environments: self.env_statuses.get(),
-        }
+    async fn handle_get_status(&self, _: GetIndexerStatus, gx: &GlobalContext) -> IndexerStatusResponse {
+        self.get_current_status(gx).await
     }
 
     #[request_handler]
@@ -297,7 +310,12 @@ impl IndexerSystem {
         self.job_id.set(None);
         self.is_paused.set(true);
 
-        self.publish_status(gx);
+        // Persist paused state
+        if let Some(repo) = self.repository.get() {
+            let _ = repo.set_setting(SETTING_IS_PAUSED, true).await;
+        }
+
+        self.publish_status(gx).await;
     }
 
     #[request_handler]
@@ -310,11 +328,16 @@ impl IndexerSystem {
 
         self.is_paused.set(false);
 
+        // Persist paused state
+        if let Some(repo) = self.repository.get() {
+            let _ = repo.set_setting(SETTING_IS_PAUSED, false).await;
+        }
+
         // Schedule immediate processing
         let job_id = gx.schedule_after(Duration::ZERO, self.process_handler());
         self.job_id.set(Some(job_id));
 
-        self.publish_status(gx);
+        self.publish_status(gx).await;
     }
 
     #[request_handler]
@@ -334,15 +357,17 @@ impl IndexerSystem {
 
             if let Some(task) = task {
                 self.queue.update(|q| q.push_front(task));
-                self.total_tasks.update(|t| *t += 1);
             }
         } else {
             // Trigger sync for all environments
             self.check_all_environments(gx).await;
         }
 
-        // If not already running and not paused, schedule immediate processing
-        if self.job_id.get().is_none() && !self.is_paused.get() {
+        // Schedule immediate processing (cancel any pending idle check)
+        if !self.is_paused.get() {
+            if let Some(job_id) = self.job_id.get() {
+                gx.cancel_job(job_id);
+            }
             let job_id = gx.schedule_after(Duration::ZERO, self.process_handler());
             self.job_id.set(Some(job_id));
         }
@@ -359,10 +384,16 @@ impl IndexerSystem {
                     log::error!("[Indexer] Failed to clear env sync: {}", e);
                 }
             } else {
-                // Clear all environments
-                for status in self.env_statuses.get() {
-                    if let Err(e) = repo.clear_env_sync(status.env_id).await {
-                        log::error!("[Indexer] Failed to clear env sync for {}: {}", status.env_id, e);
+                // Clear all environments - get list from client management
+                let environments: Vec<_> = gx
+                    .request_system::<ClientManagement, GetAuthenticatedEnvironments>(
+                        GetAuthenticatedEnvironments,
+                    )
+                    .await
+                    .unwrap_or_default();
+                for env in environments {
+                    if let Err(e) = repo.clear_env_sync(env.env_id).await {
+                        log::error!("[Indexer] Failed to clear env sync for {}: {}", env.env_id, e);
                     }
                 }
             }
@@ -422,7 +453,7 @@ impl IndexerSystem {
             }
         }
 
-        self.publish_status(gx);
+        self.publish_status(gx).await;
     }
 
     // =========================================================================
@@ -431,17 +462,13 @@ impl IndexerSystem {
 
     #[event_handler]
     async fn on_session_changed(&self, _event: SessionChanged, gx: &GlobalContext) {
-        log::debug!("[Indexer] Session changed, refreshing env statuses");
-        self.refresh_env_statuses(gx).await;
-        self.publish_status(gx);
+        log::debug!("[Indexer] Session changed");
+        self.publish_status(gx).await;
     }
 
     #[event_handler]
     async fn on_environment_added(&self, event: EnvironmentAdded, gx: &GlobalContext) {
         log::info!("[Indexer] Environment added: {}", event.display_name);
-
-        // Refresh env statuses to pick up the new environment
-        self.refresh_env_statuses(gx).await;
 
         // Add a check task for the new environment
         // Note: We need account_id, but we don't have it from the event
@@ -458,7 +485,6 @@ impl IndexerSystem {
 
         if let Some(task) = new_task {
             self.queue.update(|q| q.push_front(task));
-            self.total_tasks.update(|t| *t += 1);
 
             // Schedule immediate processing if not paused
             if !self.is_paused.get() && self.job_id.get().is_none() {
@@ -467,7 +493,7 @@ impl IndexerSystem {
             }
         }
 
-        self.publish_status(gx);
+        self.publish_status(gx).await;
     }
 
     #[event_handler]
@@ -479,11 +505,6 @@ impl IndexerSystem {
             q.retain(|task| task.env_id() != event.id);
         });
 
-        // Remove from env_statuses
-        self.env_statuses.update(|statuses| {
-            statuses.retain(|s| s.env_id != event.id);
-        });
-
         // Clear repository data for this environment
         if let Some(repo) = self.repository.get() {
             if let Err(e) = repo.clear_env_sync(event.id).await {
@@ -491,7 +512,117 @@ impl IndexerSystem {
             }
         }
 
-        self.publish_status(gx);
+        self.publish_status(gx).await;
+    }
+
+    #[event_handler]
+    async fn on_pause_event(&self, _event: PauseIndexerEvent, gx: &GlobalContext) {
+        if self.is_paused.get() {
+            return;
+        }
+
+        log::info!("[Indexer] Pausing (via event)");
+
+        // Cancel current job
+        if let Some(job_id) = self.job_id.get() {
+            gx.cancel_job(job_id);
+        }
+        self.job_id.set(None);
+        self.is_paused.set(true);
+
+        // Persist paused state
+        if let Some(repo) = self.repository.get() {
+            let _ = repo.set_setting(SETTING_IS_PAUSED, true).await;
+        }
+
+        self.publish_status(gx).await;
+    }
+
+    #[event_handler]
+    async fn on_resume_event(&self, _event: ResumeIndexerEvent, gx: &GlobalContext) {
+        if !self.is_paused.get() {
+            return;
+        }
+
+        log::info!("[Indexer] Resuming (via event)");
+
+        self.is_paused.set(false);
+
+        // Persist paused state
+        if let Some(repo) = self.repository.get() {
+            let _ = repo.set_setting(SETTING_IS_PAUSED, false).await;
+        }
+
+        // Schedule immediate processing
+        let job_id = gx.schedule_after(Duration::ZERO, self.process_handler());
+        self.job_id.set(Some(job_id));
+
+        self.publish_status(gx).await;
+    }
+
+    #[event_handler]
+    async fn on_trigger_sync_event(&self, event: TriggerSyncEvent, gx: &GlobalContext) {
+        log::info!("[Indexer] Trigger sync (via event): {:?}", event.env_id);
+
+        if let Some(env_id) = event.env_id {
+            // Get all check tasks and find the one for this environment
+            let tasks = get_check_tasks(gx).await;
+            let task = tasks.into_iter().find(|t| {
+                if let SyncTask::CheckEnvironment { env_id: id, .. } = t {
+                    *id == env_id
+                } else {
+                    false
+                }
+            });
+
+            if let Some(task) = task {
+                self.queue.update(|q| q.push_front(task));
+            }
+        } else {
+            // Trigger sync for all environments
+            self.check_all_environments(gx).await;
+        }
+
+        // Schedule immediate processing (cancel any pending idle check)
+        if !self.is_paused.get() {
+            if let Some(job_id) = self.job_id.get() {
+                gx.cancel_job(job_id);
+            }
+            let job_id = gx.schedule_after(Duration::ZERO, self.process_handler());
+            self.job_id.set(Some(job_id));
+        }
+
+        self.publish_status(gx).await;
+    }
+
+    #[event_handler]
+    async fn on_update_settings_event(&self, event: UpdateIndexerSettingsEvent, gx: &GlobalContext) {
+        log::info!(
+            "[Indexer] Updating settings (via event): check_interval={}s, refresh_threshold={}%",
+            event.check_interval_secs,
+            event.refresh_threshold_pct
+        );
+
+        self.check_interval_secs.set(event.check_interval_secs);
+        self.refresh_threshold_pct.set(event.refresh_threshold_pct);
+
+        // Persist to repository
+        if let Some(repo) = self.repository.get() {
+            if let Err(e) = repo
+                .set_setting(SETTING_CHECK_INTERVAL, event.check_interval_secs)
+                .await
+            {
+                log::error!("[Indexer] Failed to persist check_interval: {}", e);
+            }
+            if let Err(e) = repo
+                .set_setting(SETTING_REFRESH_THRESHOLD, event.refresh_threshold_pct)
+                .await
+            {
+                log::error!("[Indexer] Failed to persist refresh_threshold: {}", e);
+            }
+        }
+
+        self.publish_settings(gx);
     }
 
     // =========================================================================
@@ -501,17 +632,74 @@ impl IndexerSystem {
     /// Add check tasks for all authenticated environments.
     async fn check_all_environments(&self, gx: &GlobalContext) {
         let tasks = get_check_tasks(gx).await;
-        let task_count = tasks.len() as u32;
+        let task_count = tasks.len();
 
         if task_count > 0 {
             self.queue.update(|q| q.extend(tasks));
-            self.total_tasks.update(|t| *t += task_count);
             log::debug!("[Indexer] Added {} check tasks", task_count);
         }
     }
 
-    /// Refresh env_statuses from authenticated environments.
-    async fn refresh_env_statuses(&self, gx: &GlobalContext) {
+    /// Update per-environment progress after a successful task.
+    fn update_progress_on_success(&self, task: &SyncTask, follow_up_tasks: &[SyncTask]) {
+        let env_id = task.env_id();
+
+        match task {
+            SyncTask::CheckEnvironment { .. } => {
+                // Check tasks don't contribute to progress directly
+            }
+            SyncTask::FetchAllEntities { .. } => {
+                // Initialize progress for this env based on follow-up tasks
+                let entity_count = follow_up_tasks
+                    .iter()
+                    .filter(|t| matches!(t, SyncTask::FetchEntityMetadata { .. }))
+                    .count() as u32;
+                let has_optionsets = follow_up_tasks
+                    .iter()
+                    .any(|t| matches!(t, SyncTask::FetchAllOptionSets { .. }));
+
+                self.env_progress.update(|p| {
+                    p.insert(
+                        env_id,
+                        SyncProgress {
+                            entities_total: entity_count,
+                            entities_done: 0,
+                            optionsets_pending: has_optionsets,
+                            optionsets_done: false,
+                        },
+                    );
+                });
+
+                log::debug!(
+                    "[Indexer] Initialized progress for env {}: {} entities, optionsets={}",
+                    env_id,
+                    entity_count,
+                    has_optionsets
+                );
+            }
+            SyncTask::FetchEntityMetadata { .. } => {
+                // Increment entity progress
+                self.env_progress.update(|p| {
+                    if let Some(progress) = p.get_mut(&env_id) {
+                        progress.entities_done += 1;
+                    }
+                });
+            }
+            SyncTask::FetchAllOptionSets { .. } => {
+                // Mark optionsets as done
+                self.env_progress.update(|p| {
+                    if let Some(progress) = p.get_mut(&env_id) {
+                        progress.optionsets_pending = false;
+                        progress.optionsets_done = true;
+                    }
+                });
+            }
+        }
+    }
+
+    /// Build env statuses on-demand from client management + indexer DB.
+    async fn build_env_statuses(&self, gx: &GlobalContext) -> Vec<EnvSyncStatus> {
+        // Get environments from client management (source of truth)
         let environments: Vec<_> = gx
             .request_system::<ClientManagement, GetAuthenticatedEnvironments>(
                 GetAuthenticatedEnvironments,
@@ -520,18 +708,19 @@ impl IndexerSystem {
             .unwrap_or_default();
 
         let repo = self.repository.get();
+        let queue = self.queue.get();
 
         let mut statuses = Vec::with_capacity(environments.len());
         for env in environments {
-            // Try to get existing sync state from repository
-            let (status, last_sync, error) = if let Some(ref repo) = repo {
+            // Get sync state from indexer DB
+            let (db_status, last_sync, error) = if let Some(ref repo) = repo {
                 match repo.get_env_sync(env.env_id).await {
                     Ok(Some(sync)) => {
                         let indicator = match sync.status {
                             SyncStatus::Idle => StatusIndicator::Idle,
                             SyncStatus::Syncing => StatusIndicator::Running,
                             SyncStatus::Paused => StatusIndicator::Idle,
-                            SyncStatus::Error => StatusIndicator::Error,
+                            SyncStatus::Error => StatusIndicator::PartialError,
                         };
                         (indicator, sync.last_sync_at, sync.last_error)
                     }
@@ -541,56 +730,72 @@ impl IndexerSystem {
                 (StatusIndicator::Idle, None, None)
             };
 
+            // Check if there's a task in queue for this env (means it's running)
+            let has_queued_task = queue.iter().any(|t| t.env_id() == env.env_id);
+            let status = if has_queued_task && db_status != StatusIndicator::PartialError {
+                StatusIndicator::Running
+            } else {
+                db_status
+            };
+
+            // Get per-env progress
+            let progress = self.env_progress.get().get(&env.env_id).cloned();
+
             statuses.push(EnvSyncStatus {
                 env_id: env.env_id,
                 env_name: env.environment_name,
                 status,
                 last_sync,
                 error,
-                progress: None,
+                progress,
             });
         }
 
-        self.env_statuses.set(statuses);
+        statuses
     }
 
-    /// Update env_statuses after a task completes.
-    fn update_status_from_task(&self, task: &SyncTask, error: Option<String>, _gx: &GlobalContext) {
+    /// Persist task result to indexer DB.
+    async fn persist_task_result(
+        &self,
+        task: &SyncTask,
+        error: Option<String>,
+        follow_up_count: u32,
+    ) {
         let env_id = task.env_id();
+        let Some(repo) = self.repository.get() else {
+            return;
+        };
 
-        self.env_statuses.update(|statuses| {
-            if let Some(status) = statuses.iter_mut().find(|s| s.env_id == env_id) {
-                if let Some(err) = error {
-                    status.status = StatusIndicator::PartialError;
-                    status.error = Some(err);
-                } else {
-                    // Check if this is a completion task (FetchAllOptionSets)
-                    if matches!(task, SyncTask::FetchAllOptionSets { .. }) {
-                        status.status = StatusIndicator::Idle;
-                        status.last_sync = Some(chrono::Utc::now());
-                        status.error = None;
-                        status.progress = None;
-                    } else {
-                        status.status = StatusIndicator::Running;
-                        // Update progress based on executed/total
-                        let executed = self.executed_tasks.get();
-                        let total = self.total_tasks.get();
-                        if total > 0 {
-                            status.progress = Some((executed, total));
-                        }
-                    }
+        if let Some(err) = error {
+            // Persist error status
+            if let Err(e) = repo
+                .upsert_env_sync(env_id, SyncStatus::Error, None, Some(err), 0, 0, 0)
+                .await
+            {
+                log::error!("[Indexer] Failed to persist error status: {}", e);
+            }
+        } else {
+            // Check if we should mark as complete (task succeeded)
+            let is_final = matches!(task, SyncTask::FetchAllOptionSets { .. })
+                || (matches!(task, SyncTask::CheckEnvironment { .. }) && follow_up_count == 0);
+
+            if is_final {
+                // Persist success - clear error
+                if let Err(e) = repo
+                    .upsert_env_sync(env_id, SyncStatus::Idle, Some(chrono::Utc::now()), None, 0, 0, 0)
+                    .await
+                {
+                    log::error!("[Indexer] Failed to persist success status: {}", e);
                 }
             }
-        });
+        }
     }
 
-    /// Compute overall status from env_statuses.
-    fn compute_overall_status(&self) -> StatusIndicator {
+    /// Compute overall status from env statuses.
+    fn compute_overall_status(&self, statuses: &[EnvSyncStatus]) -> StatusIndicator {
         if self.is_paused.get() {
             return StatusIndicator::Idle;
         }
-
-        let statuses = self.env_statuses.get();
 
         let has_error = statuses.iter().any(|s| s.status == StatusIndicator::Error);
         let has_partial_error = statuses
@@ -612,10 +817,43 @@ impl IndexerSystem {
     }
 
     /// Publish status changed event.
-    fn publish_status(&self, gx: &GlobalContext) {
+    async fn publish_status(&self, gx: &GlobalContext) {
+        log::debug!("[Indexer] Publishing IndexerStatusChanged event");
+        let statuses = self.build_env_statuses(gx).await;
         gx.publish(IndexerStatusChanged {
-            overall_status: self.compute_overall_status(),
-            environments: self.env_statuses.get(),
+            is_paused: self.is_paused.get(),
+            overall_status: self.compute_overall_status(&statuses),
+            environments: statuses,
         });
+    }
+
+    /// Publish settings changed event.
+    fn publish_settings(&self, gx: &GlobalContext) {
+        gx.publish(IndexerSettingsChanged {
+            settings: SyncSettings {
+                check_interval_secs: self.check_interval_secs.get(),
+                refresh_threshold_pct: self.refresh_threshold_pct.get(),
+            },
+        });
+    }
+
+    /// Get current status for modal initialization.
+    async fn get_current_status(&self, gx: &GlobalContext) -> IndexerStatusResponse {
+        let statuses = self.build_env_statuses(gx).await;
+        IndexerStatusResponse {
+            is_paused: self.is_paused.get(),
+            overall_status: self.compute_overall_status(&statuses),
+            environments: statuses,
+        }
+    }
+
+    /// Get current settings for modal initialization.
+    fn get_current_settings(&self) -> SyncSettings {
+        let interval = self.check_interval_secs.get();
+        let threshold = self.refresh_threshold_pct.get();
+        SyncSettings {
+            check_interval_secs: if interval == 0 { DEFAULT_CHECK_INTERVAL_SECS } else { interval },
+            refresh_threshold_pct: if threshold == 0 { DEFAULT_REFRESH_THRESHOLD_PCT } else { threshold },
+        }
     }
 }
