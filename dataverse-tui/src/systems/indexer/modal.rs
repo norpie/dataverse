@@ -172,6 +172,32 @@ impl IndexerDashboardModal {
     fn default_result(&self) {}
 
     // =========================================================================
+    // Derived State
+    // =========================================================================
+
+    /// Get the current status text based on pause state and overall status.
+    #[derived]
+    fn status_text(&self) -> &'static str {
+        if self.is_paused.get() {
+            "Paused"
+        } else {
+            match self.overall_status.get() {
+                StatusIndicator::Idle => "Idle",
+                StatusIndicator::Running => "Syncing",
+                StatusIndicator::Error => "Error",
+                StatusIndicator::PartialError => "Partial Error",
+                _ => "Unknown",
+            }
+        }
+    }
+
+    /// Get the pause/resume button label.
+    #[derived]
+    fn pause_button_label(&self) -> &'static str {
+        if self.is_paused.get() { "Resume" } else { "Pause" }
+    }
+
+    // =========================================================================
     // Keybinds
     // =========================================================================
 
@@ -326,23 +352,10 @@ impl IndexerDashboardModal {
 
     #[page(Status)]
     fn status_page(&self) -> Element {
-        let is_paused = self.is_paused.get();
         let overall = self.overall_status.get();
-
         let (indicator, color) = status_indicator_display(&overall);
-        let status_text = if is_paused {
-            "Paused"
-        } else {
-            match overall {
-                StatusIndicator::Idle => "Idle",
-                StatusIndicator::Running => "Syncing",
-                StatusIndicator::Error => "Error",
-                StatusIndicator::PartialError => "Partial Error",
-                _ => "Unknown",
-            }
-        };
-
-        let pause_label = if is_paused { "Resume" } else { "Pause" };
+        let status_text = self.status_text();
+        let pause_label = self.pause_button_label();
 
         let status_indicator =
             Element::text(indicator).style(Style::new().foreground(Color::var(color)));

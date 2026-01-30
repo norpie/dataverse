@@ -82,6 +82,31 @@ pub struct Taskbar {
 
 #[system_impl]
 impl Taskbar {
+    /// Compute filtered and grouped instances for rendering.
+    /// Returns sorted list of (group_name, instances_in_group).
+    #[derived]
+    fn instance_groups(&self) -> Vec<(String, Vec<InstanceInfo>)> {
+        let instances = self.instances.get();
+        
+        // Filter out Queue instance (has permanent nav in status section)
+        let filtered: Vec<InstanceInfo> = instances
+            .iter()
+            .filter(|info| info.name != "Queue")
+            .cloned()
+            .collect();
+        
+        // Group instances by app name
+        let mut groups: HashMap<String, Vec<InstanceInfo>> = HashMap::new();
+        for info in filtered {
+            groups.entry(info.name.to_string()).or_default().push(info);
+        }
+        
+        // Sort groups by name for consistent ordering
+        let mut result: Vec<_> = groups.into_iter().collect();
+        result.sort_by(|a, b| a.0.cmp(&b.0));
+        result
+    }
+
     fn overlay(&self) -> Option<Overlay> {
         let collapsed = self.collapsed.get();
         let width = if collapsed {
@@ -380,35 +405,18 @@ impl Taskbar {
     fn render_expanded(&self) -> Element {
         use rafter::page;
 
-        let instances = self.instances.get();
+        let groups = self.instance_groups();
         let expanded_group = self.expanded_group.get();
         let focused_style = Style::new().background(Color::var("list.item_focused"));
-
-        // Filter out Queue instance (has permanent nav in status section)
-        let filtered_instances: Vec<&InstanceInfo> = instances
-            .iter()
-            .filter(|info| info.name != "Queue")
-            .collect();
-
-        // Group instances by app name
-        let mut groups: HashMap<String, Vec<&InstanceInfo>> = HashMap::new();
-        for info in &filtered_instances {
-            groups.entry(info.name.to_string()).or_default().push(info);
-        }
-
-        // Sort groups by name for consistent ordering
-        let mut group_names: Vec<_> = groups.keys().cloned().collect();
-        group_names.sort();
 
         // Build list items
         let mut list_items: Vec<Element> = Vec::new();
 
-        for group_name in group_names {
-            let group_instances = &groups[&group_name];
+        for (group_name, group_instances) in groups {
 
             if group_instances.len() == 1 {
                 // Single instance: render directly
-                let info = group_instances[0];
+                let info = &group_instances[0];
                 let label = format!("{} - {}", info.name, info.title);
                 let btn_id = format!("instance-{}", info.id);
                 let text_id = format!("instance-text-{}", info.id);
@@ -440,7 +448,7 @@ impl Taskbar {
                 if is_expanded {
                     // Build overlay with instance list
                     let mut overlay_items: Vec<Element> = Vec::new();
-                    for info in group_instances {
+                    for info in &group_instances {
                         let label = format!("{} - {}", info.name, info.title);
                         let item_id = format!("{}-item-{}", group_id, info.id);
                         let text_id = format!("{}-text-{}", group_id, info.id);

@@ -37,6 +37,16 @@ use tree::{QueueTreeNode, build_tree_nodes};
 use types::ItemStatus;
 use types::StatusFilter;
 
+/// Action button visibility and labels for queue item context.
+#[derive(Clone, Debug)]
+struct ActionButtonsState {
+    show_step: bool,
+    show_pause_resume: bool,
+    pause_resume_label: &'static str,
+    show_retry: bool,
+    show_delete: bool,
+}
+
 /// Queue app for executing Dataverse operations in priority order.
 #[app(name = "Queue", singleton, on_blur = Continue, autostart, default)]
 pub struct Queue {
@@ -176,6 +186,42 @@ impl Queue {
             format!("Queue ({})", pending)
         } else {
             "Queue".to_string()
+        }
+    }
+
+    // =========================================================================
+    // Derived State
+    // =========================================================================
+
+    /// Compute action button visibility and labels based on focused item.
+    #[derived]
+    fn action_buttons(&self) -> ActionButtonsState {
+        let focused = self.focused_item();
+        let is_running = self.is_running.get();
+
+        ActionButtonsState {
+            show_step: !is_running && focused.as_ref().is_some_and(|item| {
+                matches!(item.status, ItemStatus::Ready | ItemStatus::Paused)
+            }),
+            show_pause_resume: focused.as_ref().is_some_and(|item| {
+                matches!(item.status, ItemStatus::Ready | ItemStatus::Paused)
+            }),
+            pause_resume_label: focused.as_ref().map_or("Pause", |item| {
+                if item.status == ItemStatus::Paused {
+                    "Resume"
+                } else {
+                    "Pause"
+                }
+            }),
+            show_retry: focused.as_ref().is_some_and(|item| {
+                matches!(
+                    item.status,
+                    ItemStatus::Failed | ItemStatus::PartiallyFailed | ItemStatus::Interrupted
+                )
+            }),
+            show_delete: focused.as_ref().is_some_and(|item| {
+                item.status != ItemStatus::Running
+            }),
         }
     }
 
@@ -958,30 +1004,7 @@ impl Queue {
         let has_completed = counts.done > 0;
 
         // Context-aware button logic
-        let focused_item = self.focused_item();
-        let show_step = !is_running
-            && focused_item.as_ref().is_some_and(|item| {
-                matches!(item.status, ItemStatus::Ready | ItemStatus::Paused)
-            });
-        let show_pause_resume = focused_item.as_ref().is_some_and(|item| {
-            matches!(item.status, ItemStatus::Ready | ItemStatus::Paused)
-        });
-        let pause_resume_label = focused_item.as_ref().map_or("Pause", |item| {
-            if item.status == ItemStatus::Paused {
-                "Resume"
-            } else {
-                "Pause"
-            }
-        });
-        let show_retry = focused_item.as_ref().is_some_and(|item| {
-            matches!(
-                item.status,
-                ItemStatus::Failed | ItemStatus::PartiallyFailed | ItemStatus::Interrupted
-            )
-        });
-        let show_delete = focused_item
-            .as_ref()
-            .is_some_and(|item| item.status != ItemStatus::Running);
+        let buttons = self.action_buttons();
 
         let preview = self.render_preview();
 
@@ -1043,16 +1066,16 @@ impl Queue {
                 // Footer
                 row (width: fill, justify: between) {
                     row (gap: 1) {
-                        if show_step {
+                        if buttons.show_step {
                             button (label: "Step", hint: "s", id: "step") on_activate: step_one()
                         }
-                        if show_pause_resume {
-                            button (label: {pause_resume_label}, hint: "p", id: "pause-resume") on_activate: quick_pause_resume()
+                        if buttons.show_pause_resume {
+                            button (label: {buttons.pause_resume_label}, hint: "p", id: "pause-resume") on_activate: quick_pause_resume()
                         }
-                        if show_retry {
+                        if buttons.show_retry {
                             button (label: "Retry", hint: "r", id: "retry") on_activate: quick_retry()
                         }
-                        if show_delete {
+                        if buttons.show_delete {
                             button (label: "Delete", hint: "d", id: "delete") on_activate: quick_delete()
                         }
                     }
