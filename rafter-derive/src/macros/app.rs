@@ -279,6 +279,83 @@ fn generate_clone_impl(name: &Ident, fields: &FieldsNamed, attrs: &AppAttrs) -> 
     }
 }
 
+/// Generate `new()` constructor impl.
+///
+/// Creates a constructor that takes all non-Resource fields as parameters,
+/// wraps them appropriately (State<T> or as-is), and initializes framework fields.
+/// Resource fields are always initialized with `Resource::new()` (no parameter).
+fn generate_new_impl(name: &Ident, fields: &FieldsNamed, attrs: &AppAttrs) -> TokenStream {
+    // Collect field info: (ident, type, is_resource, should_wrap_in_state)
+    let field_info: Vec<_> = fields
+        .named
+        .iter()
+        .map(|f| {
+            let ident = f.ident.as_ref().unwrap();
+            let ty = &f.ty;
+            let is_resource = is_resource_type(ty);
+            let should_wrap = !has_state_skip(&f.attrs)
+                && !is_resource
+                && !has_widget_attribute(&f.attrs);
+            (ident, ty, is_resource, should_wrap)
+        })
+        .collect();
+
+    // Generate parameters (exclude Resource fields - they're always initialized empty)
+    let params: Vec<_> = field_info
+        .iter()
+        .filter(|(_, _, is_resource, _)| !is_resource)
+        .map(|(ident, ty, _, _)| {
+            quote! { #ident: #ty }
+        })
+        .collect();
+
+    // Generate field initializations
+    let field_inits: Vec<_> = field_info
+        .iter()
+        .map(|(ident, _, is_resource, should_wrap)| {
+            if *is_resource {
+                quote! { #ident: rafter::Resource::new() }
+            } else if *should_wrap {
+                quote! { #ident: rafter::State::new(#ident) }
+            } else {
+                quote! { #ident }
+            }
+        })
+        .collect();
+
+    // Framework fields
+    let page_field = if attrs.pages {
+        quote! { __page: rafter::State::new(Page::default()), }
+    } else {
+        quote! {}
+    };
+
+    let fields_init = if field_inits.is_empty() {
+        quote! {
+            #page_field
+            __handler_registry: rafter::HandlerRegistry::new(),
+            __derived_cache: std::sync::Arc::new(std::sync::RwLock::new(std::collections::HashMap::new()))
+        }
+    } else {
+        quote! {
+            #(#field_inits),*,
+            #page_field
+            __handler_registry: rafter::HandlerRegistry::new(),
+            __derived_cache: std::sync::Arc::new(std::sync::RwLock::new(std::collections::HashMap::new()))
+        }
+    };
+
+    quote! {
+        impl #name {
+            pub fn new(#(#params),*) -> Self {
+                Self {
+                    #fields_init
+                }
+            }
+        }
+    }
+}
+
 /// Generate inventory registration (only if `autostart` is set).
 fn generate_registration(name: &Ident, attrs: &AppAttrs) -> TokenStream {
     if !attrs.autostart {
@@ -500,6 +577,7 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
     let transformed_fields: Vec<_> = fields.named.iter().map(transform_field).collect();
     let default_impl = generate_default_impl(name, fields, &attrs);
     let clone_impl = generate_clone_impl(name, fields, &attrs);
+    let new_impl = generate_new_impl(name, fields, &attrs);
     let registration = generate_registration(name, &attrs);
     let metadata = generate_metadata(name, &attrs, fields);
     let singleton_methods = generate_singleton_methods(name, &attrs);
@@ -542,6 +620,7 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
 
         #default_impl
         #clone_impl
+        #new_impl
         #registration
         #metadata
         #singleton_methods

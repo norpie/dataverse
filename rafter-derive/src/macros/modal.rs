@@ -380,6 +380,92 @@ fn generate_clone_impl(
     }
 }
 
+/// Generate `new()` constructor impl.
+///
+/// Creates a constructor that takes all non-Resource fields as parameters,
+/// wraps them appropriately (State<T> or as-is), and initializes framework fields.
+/// Resource fields are always initialized with `Resource::new()` (no parameter).
+fn generate_new_impl(
+    name: &Ident,
+    impl_generics: &syn::ImplGenerics,
+    ty_generics: &syn::TypeGenerics,
+    where_clause: &Option<&syn::WhereClause>,
+    fields: Option<&FieldsNamed>,
+    attrs: &ModalAttrs,
+) -> TokenStream {
+    let page_field = if attrs.pages {
+        quote! { __page: rafter::State::new(Page::default()), }
+    } else {
+        quote! {}
+    };
+
+    // Unit struct - new() takes no parameters
+    let Some(fields) = fields else {
+        return quote! {
+            impl #impl_generics #name #ty_generics #where_clause {
+                pub fn new() -> Self {
+                    Self {
+                        #page_field
+                        __handler_registry: rafter::HandlerRegistry::new(),
+                        __derived_cache: std::sync::Arc::new(std::sync::RwLock::new(std::collections::HashMap::new())),
+                    }
+                }
+            }
+        };
+    };
+
+    // Collect field info: (ident, type, is_resource, should_wrap_in_state)
+    let field_info: Vec<_> = fields
+        .named
+        .iter()
+        .map(|f| {
+            let ident = f.ident.as_ref().unwrap();
+            let ty = &f.ty;
+            let is_resource = is_resource_type(ty);
+            let should_wrap = !has_state_skip(&f.attrs)
+                && !is_resource
+                && !has_widget_attribute(&f.attrs);
+            (ident, ty, is_resource, should_wrap)
+        })
+        .collect();
+
+    // Generate parameters (exclude Resource fields - they're always initialized empty)
+    let params: Vec<_> = field_info
+        .iter()
+        .filter(|(_, _, is_resource, _)| !is_resource)
+        .map(|(ident, ty, _, _)| {
+            quote! { #ident: #ty }
+        })
+        .collect();
+
+    // Generate field initializations
+    let field_inits: Vec<_> = field_info
+        .iter()
+        .map(|(ident, _, is_resource, should_wrap)| {
+            if *is_resource {
+                quote! { #ident: rafter::Resource::new() }
+            } else if *should_wrap {
+                quote! { #ident: rafter::State::new(#ident) }
+            } else {
+                quote! { #ident }
+            }
+        })
+        .collect();
+
+    quote! {
+        impl #impl_generics #name #ty_generics #where_clause {
+            pub fn new(#(#params),*) -> Self {
+                Self {
+                    #(#field_inits),*,
+                    #page_field
+                    __handler_registry: rafter::HandlerRegistry::new(),
+                    __derived_cache: std::sync::Arc::new(std::sync::RwLock::new(std::collections::HashMap::new())),
+                }
+            }
+        }
+    }
+}
+
 /// Generate metadata module for #[modal_impl].
 fn generate_metadata(
     name: &Ident,
@@ -557,6 +643,14 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
         fields,
         &attrs,
     );
+    let new_impl = generate_new_impl(
+        name,
+        &impl_generics,
+        &ty_generics,
+        &where_clause,
+        fields,
+        &attrs,
+    );
     let metadata = generate_metadata(
         name,
         &impl_generics,
@@ -592,6 +686,7 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
 
             #default_impl
             #clone_impl
+            #new_impl
             #metadata
         }
     } else {
@@ -608,6 +703,7 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
 
             #default_impl
             #clone_impl
+            #new_impl
             #metadata
         }
     }
