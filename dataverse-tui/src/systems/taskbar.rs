@@ -1,12 +1,11 @@
 //! Taskbar system - right-side overlay for instance management.
 
 use std::collections::HashMap;
-use std::sync::Arc;
 
 use rafter::prelude::*;
 use rafter::widgets::{Button, Text};
 use rafter::{InstanceClosed, InstanceId, InstanceInfo, InstanceSpawned, Overlay};
-use tuidom::{Color, Edges, Overflow, Position, Size, Style};
+use tuidom::{Color, Edges, Position, Size, Style};
 
 use crate::widgets::ScrollingText;
 
@@ -440,8 +439,44 @@ impl Taskbar {
 
                 if is_expanded {
                     // Build overlay with instance list
-                    let overlay =
-                        self.render_group_overlay(&group_name, group_instances, &focused_style);
+                    let mut overlay_items: Vec<Element> = Vec::new();
+                    for info in group_instances {
+                        let label = format!("{} - {}", info.name, info.title);
+                        let item_id = format!("{}-item-{}", group_id, info.id);
+                        let text_id = format!("{}-text-{}", group_id, info.id);
+
+                        let text_elem = ScrollingText::new()
+                            .text(label)
+                            .width(GROUP_OVERLAY_WIDTH - 2)
+                            .id(text_id)
+                            .build(&Default::default(), &Default::default());
+
+                        let instance_id = info.id;
+                        let btn_style = focused_style.clone();
+                        let group_name_str = group_name.clone();
+
+                        overlay_items.push(page! {
+                            button (id: item_id, width: fill, style_focused: btn_style)
+                                on_activate: focus_instance(instance_id)
+                                on_blur: handle_group_blur(group_name_str)
+                            {
+                                { text_elem }
+                            }
+                        });
+                    }
+
+                    // Build overlay column with absolute positioning
+                    let overlay = page! {
+                        column (width: {Size::Fixed(GROUP_OVERLAY_WIDTH)}, overflow_y: auto) style (bg: surface) {
+                            ...overlay_items
+                        }
+                    };
+
+                    // Position overlay to the left of the group root
+                    let overlay = overlay
+                        .position(Position::Absolute)
+                        .left(-(GROUP_OVERLAY_WIDTH as i16 + 1))
+                        .top(0);
 
                     // Group root button wrapped with overlay as sibling
                     let group_name_clone = group_name.clone();
@@ -756,89 +791,6 @@ impl Taskbar {
                 { content_col }
             }
         }
-    }
-
-    fn render_group_overlay(
-        &self,
-        group_name: &str,
-        instances: &[&InstanceInfo],
-        focused_style: &Style,
-    ) -> Element {
-        let group_id = format!("group-{}", group_name);
-
-        // Build overlay items
-        let mut overlay_items: Vec<Element> = Vec::new();
-        for info in instances {
-            let label = format!("{} - {}", info.name, info.title);
-            let item_id = format!("{}-item-{}", group_id, info.id);
-            let text_id = format!("{}-text-{}", group_id, info.id);
-
-            let text_elem = ScrollingText::new()
-                .text(label)
-                .width(GROUP_OVERLAY_WIDTH - 2)
-                .id(text_id)
-                .build(&Default::default(), &Default::default());
-
-            let instance_id = info.id;
-            let btn_style = focused_style.clone();
-
-            // Build button element manually
-            let btn = Element::row()
-                .id(&item_id)
-                .width(Size::Fill)
-                .focusable(true)
-                .clickable(true)
-                .style(Style::new().background(Color::var("button.normal")))
-                .style_focused(btn_style)
-                .child(text_elem);
-
-            // Register handlers
-            let self_clone = self.clone();
-            self.__handler_registry.register(
-                &item_id,
-                "on_activate",
-                Arc::new(move |hx| {
-                    let self_inner = self_clone.clone();
-                    let gx = hx.gx().clone();
-                    tokio::spawn(async move {
-                        self_inner.focus_instance(instance_id, &gx).await;
-                    });
-                }),
-            );
-
-            let self_clone = self.clone();
-            let group_id_clone = group_id.clone();
-            self.__handler_registry.register(
-                &item_id,
-                "on_blur",
-                Arc::new(move |hx| {
-                    let should_close = match hx.event().blur_target() {
-                        Some(new_target) => !new_target.starts_with(&group_id_clone),
-                        None => true,
-                    };
-                    if should_close {
-                        self_clone.expanded_group.set(None);
-                    }
-                }),
-            );
-
-            overlay_items.push(btn);
-        }
-
-        let mut overlay_col = Element::col()
-            .width(Size::Fixed(GROUP_OVERLAY_WIDTH))
-            .style(Style::new().background(Color::var("surface")));
-
-        for item in overlay_items {
-            overlay_col = overlay_col.child(item);
-        }
-
-        // Position overlay to the left of the group root
-        overlay_col
-            .position(Position::Absolute)
-            .left(-(GROUP_OVERLAY_WIDTH as i16 + 1))
-            .top(0)
-            .overflow_y(Overflow::Auto)
     }
 
     #[handler]
