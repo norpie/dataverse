@@ -104,6 +104,10 @@ pub enum Error {
     /// Batch size exceeded the maximum allowed.
     #[error("Batch size exceeded: {count} operations (max {max})")]
     BatchSizeExceeded { count: usize, max: usize },
+
+    /// Operation was cancelled.
+    #[error("Operation cancelled")]
+    Cancelled,
 }
 
 impl Error {
@@ -156,6 +160,11 @@ impl Error {
     /// Checks if this error has the specified Dataverse error code.
     pub fn is_error_code(&self, code: &str) -> bool {
         self.error_code().is_some_and(|c| c == code)
+    }
+
+    /// Returns `true` if this is a cancellation error.
+    pub fn is_cancelled(&self) -> bool {
+        matches!(self, Self::Cancelled)
     }
 }
 
