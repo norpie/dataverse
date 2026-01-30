@@ -35,7 +35,7 @@ impl Launcher {
             ListEntry::with_category("import", "Import", "Tools"),
         ];
 
-        let result = gx.modal(SearchableListModal::new("Launcher", items)).await;
+        let result = gx.modal(SearchableListModal::with_entries("Launcher", items)).await;
 
         // Clear lock
         self.modal_open.set(false);
@@ -61,13 +61,13 @@ impl Launcher {
             };
             match selected.as_str() {
                 "entity-explorer" => {
-                    let _ = gx.spawn_and_focus(EntityExplorer::new(client_info));
+                    let _ = gx.spawn_and_focus(EntityExplorer::with_client(client_info));
                 }
                 "query-builder" => {
-                    let _ = gx.spawn_and_focus(QueryBuilder::new(client_info));
+                    let _ = gx.spawn_and_focus(QueryBuilder::with_client(client_info));
                 }
                 "import" => {
-                    let _ = gx.spawn_and_focus(Import::new(client_info));
+                    let _ = gx.spawn_and_focus(Import::with_client(client_info));
                 }
                 _ => {
                     gx.toast(Toast::info(format!("App not implemented: {}", selected)));

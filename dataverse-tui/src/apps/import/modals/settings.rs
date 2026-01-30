@@ -56,7 +56,7 @@ pub struct ImportSettingsModal {
 }
 
 impl ImportSettingsModal {
-    pub fn new(
+    pub fn with_config(
         client: DataverseClient,
         suggested_entity: Option<String>,
         entity_options: Vec<(String, String)>,

@@ -331,7 +331,7 @@ impl ClientManagementModal {
             tenant_id
         );
         let token = gx
-            .modal(BrowserAuthModal::new(&env_url, &client_id, &tenant_id))
+            .modal(BrowserAuthModal::for_environment(&env_url, &client_id, &tenant_id))
             .await;
 
         log::debug!(
@@ -460,7 +460,7 @@ impl ClientManagementModal {
         };
 
         let confirmed = gx
-            .modal(ConfirmModal::new("Delete this environment?").title("Delete"))
+            .modal(ConfirmModal::with_message("Delete this environment?").title("Delete"))
             .await;
         if !confirmed {
             return;
@@ -551,7 +551,7 @@ impl ClientManagementModal {
         };
 
         let confirmed = gx
-            .modal(ConfirmModal::new("Delete this account?").title("Delete"))
+            .modal(ConfirmModal::with_message("Delete this account?").title("Delete"))
             .await;
         if !confirmed {
             return;

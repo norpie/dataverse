@@ -13,7 +13,7 @@ pub struct SettingsModal {
 }
 
 impl SettingsModal {
-    pub fn new(concurrency: usize, max_failures: usize) -> Self {
+    pub fn with_settings(concurrency: usize, max_failures: usize) -> Self {
         Self {
             concurrency_input: State::new(concurrency.to_string()),
             max_failures_input: State::new(max_failures.to_string()),

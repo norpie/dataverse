@@ -138,7 +138,7 @@ pub struct IndexerDashboardModal {
 }
 
 impl IndexerDashboardModal {
-    pub fn new(status: IndexerStatusResponse, settings: SyncSettings) -> Self {
+    pub fn with_status(status: IndexerStatusResponse, settings: SyncSettings) -> Self {
         let items: Vec<EnvListItem> = status.environments.iter().map(to_list_item).collect();
 
         Self {

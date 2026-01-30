@@ -14,7 +14,7 @@ pub struct NumberEditorModal {
 }
 
 impl NumberEditorModal {
-    pub fn new(current: Option<u32>) -> Self {
+    pub fn with_value(current: Option<u32>) -> Self {
         Self {
             initial: current.unwrap_or(100) as f64,
             ..Default::default()

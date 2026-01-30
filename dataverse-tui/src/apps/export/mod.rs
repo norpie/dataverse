@@ -55,7 +55,7 @@ pub struct Export {
 }
 
 impl Export {
-    pub fn new(
+    pub fn with_query(
         query: dataverse_lib::api::query::odata::QueryBuilder,
         client_info: ActiveClientInfo,
         origin: Option<InstanceId>,
@@ -314,7 +314,7 @@ impl Export {
         let start_dir = paths::downloads_dir().unwrap_or_else(|| std::path::PathBuf::from("."));
         let file_types = vec!["csv".to_string(), "xlsx".to_string()];
 
-        let modal = FileBrowserModal::new(&start_dir, file_types).with_filename(default_filename);
+        let modal = FileBrowserModal::browse(&start_dir, file_types).with_filename(default_filename);
 
         let Some(result) = gx.modal(modal).await else {
             return;

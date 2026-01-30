@@ -406,7 +406,7 @@ impl Queue {
     #[handler]
     async fn delete_item(&self, item_id: i64, gx: &GlobalContext) {
         let confirmed = gx
-            .modal(crate::modals::ConfirmModal::new("Delete this queue item?"))
+            .modal(crate::modals::ConfirmModal::with_message("Delete this queue item?"))
             .await;
         if !confirmed {
             return;
@@ -429,7 +429,7 @@ impl Queue {
         if let Ok(executions) = repo.get_executions(item_id).await
             && let Some(exec) = executions.first()
                 && let Some(error) = &exec.error {
-                    gx.modal(crate::apps::queue::modals::ErrorDetailsModal::new(
+                    gx.modal(crate::apps::queue::modals::ErrorDetailsModal::with_error(
                         error.clone(),
                     ))
                     .await;
@@ -442,7 +442,7 @@ impl Queue {
             return;
         };
         if let Ok(executions) = repo.get_executions(item_id).await {
-            gx.modal(crate::apps::queue::modals::ExecutionDetailsModal::new(
+            gx.modal(crate::apps::queue::modals::ExecutionDetailsModal::with_executions(
                 executions,
             ))
             .await;
@@ -458,7 +458,7 @@ impl Queue {
             return;
         };
         if let Some(update) = gx
-            .modal(crate::apps::queue::modals::EditItemModal::new(&item))
+            .modal(crate::apps::queue::modals::EditItemModal::for_item(&item))
             .await
             && repo.update_item(item_id, update).await.is_ok() {
                 self.refresh_counts_and_tree(&repo, gx).await;

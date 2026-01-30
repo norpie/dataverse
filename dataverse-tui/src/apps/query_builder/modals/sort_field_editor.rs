@@ -21,7 +21,7 @@ pub struct SortFieldEditorModal {
 
 impl SortFieldEditorModal {
     /// Create with pre-fetched field options: (logical_name, display_label).
-    pub fn new(options: Vec<(String, String)>) -> Self {
+    pub fn with_options(options: Vec<(String, String)>) -> Self {
         Self {
             options,
             ..Default::default()

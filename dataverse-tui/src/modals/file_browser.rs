@@ -49,8 +49,8 @@ pub struct FileBrowserModal {
 }
 
 impl FileBrowserModal {
-    /// Create a new file browser modal with accepted file types.
-    pub fn new(initial_dir: impl AsRef<Path>, file_types: Vec<String>) -> Self {
+    /// Create a file browser modal with accepted file types.
+    pub fn browse(initial_dir: impl AsRef<Path>, file_types: Vec<String>) -> Self {
         let current_dir = initial_dir.as_ref().to_path_buf();
         let entries = Self::read_dir(&current_dir, &file_types);
 

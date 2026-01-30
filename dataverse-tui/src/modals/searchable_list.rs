@@ -210,7 +210,7 @@ fn fuzzy_filter(query: &str, entries: &[ListEntry]) -> Vec<FuzzyMatch> {
 ///     ListEntry::with_category("query-builder", "Query Builder", "Tools"),
 /// ];
 ///
-/// let result = gx.modal(SearchableListModal::new("Select App", items)).await;
+/// let result = gx.modal(SearchableListModal::with_entries("Select App", items)).await;
 /// if let Some(id) = result {
 ///     // User selected item with this ID
 /// }
@@ -228,8 +228,8 @@ pub struct SearchableListModal {
 }
 
 impl SearchableListModal {
-    /// Create a new searchable list modal.
-    pub fn new(title: impl Into<String>, entries: Vec<ListEntry>) -> Self {
+    /// Create a searchable list modal with entries.
+    pub fn with_entries(title: impl Into<String>, entries: Vec<ListEntry>) -> Self {
         Self {
             title: title.into(),
             entries,

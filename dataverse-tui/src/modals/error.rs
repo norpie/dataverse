@@ -39,8 +39,8 @@ pub struct ErrorModal {
 }
 
 impl ErrorModal {
-    /// Create a new error modal with a single error message.
-    pub fn new(title: impl Into<String>, message: impl Into<String>) -> Self {
+    /// Create an error modal with a single error message.
+    pub fn with_message(title: impl Into<String>, message: impl Into<String>) -> Self {
         Self::with_errors(title, vec![message.into()])
     }
 

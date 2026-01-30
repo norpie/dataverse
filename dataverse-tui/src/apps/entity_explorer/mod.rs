@@ -167,7 +167,7 @@ pub struct EntityExplorer {
 }
 
 impl EntityExplorer {
-    pub fn new(client_info: ActiveClientInfo) -> Self {
+    pub fn with_client(client_info: ActiveClientInfo) -> Self {
         Self {
             client_info,
             loading_message: State::default(),
@@ -270,7 +270,7 @@ impl EntityExplorer {
         let state = self.filtered_list.get();
         if let Some(key) = &state.last_activated {
             let query = self.client_info.client.query(Entity::logical(key));
-            let _ = gx.spawn_and_focus(crate::apps::RecordExplorer::new(
+            let _ = gx.spawn_and_focus(crate::apps::RecordExplorer::with_query(
                 query,
                 self.client_info.clone(),
                 None,

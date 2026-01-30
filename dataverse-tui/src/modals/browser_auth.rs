@@ -29,7 +29,7 @@ enum AuthState {
 /// # Example
 ///
 /// ```ignore
-/// let token = gx.modal(BrowserAuthModal::new(
+/// let token = gx.modal(BrowserAuthModal::for_environment(
 ///     "https://org.crm.dynamics.com",
 ///     "client-id",
 ///     "tenant-id",
@@ -55,8 +55,8 @@ pub struct BrowserAuthModal {
 }
 
 impl BrowserAuthModal {
-    /// Create a new browser auth modal.
-    pub fn new(
+    /// Create a browser auth modal for the given environment.
+    pub fn for_environment(
         env_url: impl Into<String>,
         client_id: impl Into<String>,
         tenant_id: impl Into<String>,

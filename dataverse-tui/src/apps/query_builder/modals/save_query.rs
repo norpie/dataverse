@@ -16,7 +16,7 @@ pub struct SaveQueryModal {
 
 impl SaveQueryModal {
     /// Create with an optional pre-filled name.
-    pub fn new(current_name: Option<String>) -> Self {
+    pub fn with_name(current_name: Option<String>) -> Self {
         Self {
             initial_name: current_name.unwrap_or_default(),
             ..Default::default()

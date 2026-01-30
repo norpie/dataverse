@@ -34,7 +34,7 @@ pub struct Import {
 }
 
 impl Import {
-    pub fn new(client_info: ActiveClientInfo) -> Self {
+    pub fn with_client(client_info: ActiveClientInfo) -> Self {
         Self {
             client_info,
             parsed_file: State::default(),
@@ -69,7 +69,7 @@ impl Import {
         let start_dir = paths::downloads_dir().unwrap_or_else(|| PathBuf::from("."));
         let result = gx
             .modal(
-                FileBrowserModal::new(&start_dir, vec!["csv".to_string(), "xlsx".to_string()])
+                FileBrowserModal::browse(&start_dir, vec!["csv".to_string(), "xlsx".to_string()])
                     .require_existing(),
             )
             .await;
@@ -82,7 +82,7 @@ impl Import {
         let selected_sheet = if file_result.file_type == "xlsx" {
             match list_sheets(&file_result.path) {
                 Ok(sheets) => {
-                    let selected = gx.modal(SheetSelectorModal::new(sheets)).await;
+                    let selected = gx.modal(SheetSelectorModal::with_sheets(sheets)).await;
                     if selected.is_none() {
                         // User cancelled sheet selection
                         return;
@@ -197,7 +197,7 @@ impl Import {
 
         // Show settings modal (it will fetch primary key internally)
         let settings = gx
-            .modal(ImportSettingsModal::new(
+            .modal(ImportSettingsModal::with_config(
                 self.client_info.client.clone(),
                 suggested_entity,
                 entity_options,

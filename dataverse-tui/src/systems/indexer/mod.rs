@@ -167,7 +167,7 @@ impl IndexerSystem {
         let status = self.get_current_status(gx).await;
         let settings = self.get_current_settings();
         let _ = gx
-            .modal(modal::IndexerDashboardModal::new(status, settings))
+            .modal(modal::IndexerDashboardModal::with_status(status, settings))
             .await;
     }
 
@@ -633,7 +633,7 @@ impl IndexerSystem {
             check_interval_secs: self.check_interval_secs.get(),
             refresh_threshold_pct: self.refresh_threshold_pct.get(),
         };
-        let _ = gx.modal(IndexerDashboardModal::new(status, settings)).await;
+        let _ = gx.modal(IndexerDashboardModal::with_status(status, settings)).await;
     }
 
     // =========================================================================

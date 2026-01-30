@@ -15,7 +15,7 @@ pub struct EntityPickerModal {
 
 impl EntityPickerModal {
     /// Create with pre-fetched entity options: (entity_set_name, display_label).
-    pub fn new(options: Vec<(String, String)>) -> Self {
+    pub fn with_options(options: Vec<(String, String)>) -> Self {
         Self {
             options,
             ..Default::default()

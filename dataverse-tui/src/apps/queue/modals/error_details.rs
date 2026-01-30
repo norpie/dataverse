@@ -12,7 +12,7 @@ pub struct ErrorDetailsModal {
 }
 
 impl ErrorDetailsModal {
-    pub fn new(error_text: String) -> Self {
+    pub fn with_error(error_text: String) -> Self {
         Self {
             error_text,
             ..Default::default()

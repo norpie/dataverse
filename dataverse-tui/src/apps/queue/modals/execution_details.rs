@@ -14,7 +14,7 @@ pub struct ExecutionDetailsModal {
 }
 
 impl ExecutionDetailsModal {
-    pub fn new(executions: Vec<ExecutionRecord>) -> Self {
+    pub fn with_executions(executions: Vec<ExecutionRecord>) -> Self {
         Self {
             executions,
             ..Default::default()

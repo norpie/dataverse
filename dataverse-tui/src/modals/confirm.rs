@@ -11,14 +11,14 @@ use rafter::widgets::{Button, Text};
 /// # Example
 ///
 /// ```ignore
-/// let confirmed = gx.modal(ConfirmModal::new("Delete this item?")).await;
+/// let confirmed = gx.modal(ConfirmModal::with_message("Delete this item?")).await;
 /// if confirmed {
 ///     // do the thing
 /// }
 ///
 /// // With custom title:
 /// let confirmed = gx.modal(
-///     ConfirmModal::new("Are you sure?").title("Warning")
+///     ConfirmModal::with_message("Are you sure?").title("Warning")
 /// ).await;
 /// ```
 #[modal(default)]
@@ -30,8 +30,8 @@ pub struct ConfirmModal {
 }
 
 impl ConfirmModal {
-    /// Create a new confirmation modal with the given message.
-    pub fn new(message: impl Into<String>) -> Self {
+    /// Create a confirmation modal with the given message.
+    pub fn with_message(message: impl Into<String>) -> Self {
         Self {
             title: "Confirm".into(),
             message: message.into(),

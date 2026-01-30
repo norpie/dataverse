@@ -16,7 +16,7 @@ pub struct SheetSelectorModal {
 }
 
 impl SheetSelectorModal {
-    pub fn new(sheets: Vec<String>) -> Self {
+    pub fn with_sheets(sheets: Vec<String>) -> Self {
         let options: Vec<(String, String)> = sheets
             .iter()
             .map(|name| (name.clone(), name.clone()))

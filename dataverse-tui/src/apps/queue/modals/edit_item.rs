@@ -19,7 +19,7 @@ pub struct EditItemModal {
 }
 
 impl EditItemModal {
-    pub fn new(item: &QueueItem) -> Self {
+    pub fn for_item(item: &QueueItem) -> Self {
         Self {
             env_id: item.env_id,
             priority_input: State::new(item.priority.to_string()),

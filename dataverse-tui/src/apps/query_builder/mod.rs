@@ -45,7 +45,7 @@ pub struct QueryBuilder {
 }
 
 impl QueryBuilder {
-    pub fn new(client_info: ActiveClientInfo) -> Self {
+    pub fn with_client(client_info: ActiveClientInfo) -> Self {
         Self {
             client_info,
             tree_state: State::default(),
@@ -115,7 +115,7 @@ impl QueryBuilder {
     #[handler]
     async fn close_app(&self, gx: &GlobalContext, cx: &AppContext) {
         let confirmed = gx
-            .modal(crate::modals::ConfirmModal::new("Close the query builder?"))
+            .modal(crate::modals::ConfirmModal::with_message("Close the query builder?"))
             .await;
         if confirmed {
             cx.close();
@@ -161,7 +161,7 @@ impl QueryBuilder {
                 let has_children = self.query.with_ref(|q| q.filter.group_has_children(id));
                 if has_children {
                     let confirmed = gx
-                        .modal(crate::modals::ConfirmModal::new(
+                        .modal(crate::modals::ConfirmModal::with_message(
                             "Delete this group and all its children?",
                         ))
                         .await;
@@ -454,7 +454,7 @@ impl QueryBuilder {
         };
 
         let current_name = self.saved_query_name.get();
-        let result = gx.modal(SaveQueryModal::new(current_name.clone())).await;
+        let result = gx.modal(SaveQueryModal::with_name(current_name.clone())).await;
         let Some(name) = result else { return };
 
         let data = self.query.with_ref(|q| q.clone());
@@ -508,7 +508,7 @@ impl QueryBuilder {
             })
             .collect();
 
-        let result = gx.modal(LoadQueryModal::new(options)).await;
+        let result = gx.modal(LoadQueryModal::with_queries(options)).await;
 
         let Some((to_load, to_delete)) = result else {
             return;
@@ -568,7 +568,7 @@ impl QueryBuilder {
     #[handler]
     async fn reset_query(&self, gx: &GlobalContext) {
         let confirmed = gx
-            .modal(crate::modals::ConfirmModal::new(
+            .modal(crate::modals::ConfirmModal::with_message(
                 "Reset the query? All unsaved changes will be lost.",
             ))
             .await;
@@ -599,7 +599,7 @@ impl QueryBuilder {
         ];
 
         let selected = gx
-            .modal(SearchableListModal::new("Execute Query In...", apps))
+            .modal(SearchableListModal::with_entries("Execute Query In...", apps))
             .await;
 
         let Some(app_id) = selected else {
@@ -636,10 +636,10 @@ impl QueryBuilder {
         match app_id.as_str() {
             "record-explorer" => {
                 let _ =
-                    gx.spawn_and_focus(RecordExplorer::new(query, info, Some(cx.instance_id())));
+                    gx.spawn_and_focus(RecordExplorer::with_query(query, info, Some(cx.instance_id())));
             }
             "export" => {
-                let _ = gx.spawn_and_focus(Export::new(query, info, Some(cx.instance_id())));
+                let _ = gx.spawn_and_focus(Export::with_query(query, info, Some(cx.instance_id())));
             }
             _ => {
                 gx.toast(Toast::info(format!("App not implemented: {}", app_id)));
@@ -660,7 +660,7 @@ impl QueryBuilder {
         // Confirm if changing entity will clear existing data
         if has_data {
             let confirmed = gx
-                .modal(crate::modals::ConfirmModal::new(
+                .modal(crate::modals::ConfirmModal::with_message(
                     "Changing entity will clear all fields, filters, and sorting. Continue?",
                 ))
                 .await;
@@ -697,7 +697,7 @@ impl QueryBuilder {
             None => return,
         };
 
-        let result = gx.modal(EntityPickerModal::new(entities)).await;
+        let result = gx.modal(EntityPickerModal::with_options(entities)).await;
         if let Some(entity) = result {
             self.query.update(|q| {
                 q.entity = Some(entity);
@@ -903,7 +903,7 @@ impl QueryBuilder {
 
     async fn open_top_editor(&self, gx: &GlobalContext) {
         let current = self.query.with_ref(|q| q.top);
-        let result = gx.modal(NumberEditorModal::new(current)).await;
+        let result = gx.modal(NumberEditorModal::with_value(current)).await;
         if let Some(val) = result {
             self.query.update(|q| {
                 q.top = Some(val);

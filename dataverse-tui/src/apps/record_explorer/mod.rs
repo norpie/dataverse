@@ -63,7 +63,7 @@ pub struct RecordExplorer {
 }
 
 impl RecordExplorer {
-    pub fn new(
+    pub fn with_query(
         query: ODataQueryBuilder,
         client_info: ActiveClientInfo,
         origin: Option<InstanceId>,

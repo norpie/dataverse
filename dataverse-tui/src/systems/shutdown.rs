@@ -15,7 +15,7 @@ impl Shutdown {
     #[handler]
     async fn quit(&self, gx: &GlobalContext) {
         let confirmed = gx
-            .modal(ConfirmModal::new("Are you sure you want to quit?").title("Quit?"))
+            .modal(ConfirmModal::with_message("Are you sure you want to quit?").title("Quit?"))
             .await;
         if confirmed {
             gx.shutdown();

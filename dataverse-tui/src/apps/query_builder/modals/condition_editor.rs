@@ -45,7 +45,7 @@ pub struct ConditionEditorModal {
 
 impl ConditionEditorModal {
     /// Create with pre-fetched field options and attribute metadata.
-    pub fn new(options: Vec<(String, String)>, attributes: Vec<AttributeMetadata>) -> Self {
+    pub fn with_options(options: Vec<(String, String)>, attributes: Vec<AttributeMetadata>) -> Self {
         Self {
             options,
             attributes,

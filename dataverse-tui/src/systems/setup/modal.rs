@@ -116,7 +116,7 @@ impl SetupModal {
 
         // Open browser auth modal
         let token = gx
-            .modal(BrowserAuthModal::new(
+            .modal(BrowserAuthModal::for_environment(
                 self.env_url.get(),
                 self.client_id.get(),
                 self.tenant_id.get(),

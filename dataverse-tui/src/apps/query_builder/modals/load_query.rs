@@ -38,7 +38,7 @@ pub struct LoadQueryModal {
 
 impl LoadQueryModal {
     /// Create with pre-fetched query list: (id, display_label).
-    pub fn new(options: Vec<(i64, String)>) -> Self {
+    pub fn with_queries(options: Vec<(i64, String)>) -> Self {
         let items: Vec<QueryItem> = options
             .into_iter()
             .map(|(id, label)| QueryItem { id, label })
