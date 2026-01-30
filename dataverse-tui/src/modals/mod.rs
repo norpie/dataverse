@@ -3,7 +3,6 @@ mod confirm;
 mod error;
 mod file_browser;
 mod loading;
-mod parallel_loading;
 mod searchable_list;
 mod sheet_selector;
 
