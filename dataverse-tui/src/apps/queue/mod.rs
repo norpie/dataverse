@@ -19,6 +19,7 @@ use tuidom::Color;
 
 use crate::credentials::CredentialsProvider;
 use crate::paths;
+use crate::settings::Settings;
 use crate::systems::client_management::EnvironmentAdded;
 use crate::systems::client_management::EnvironmentRemoved;
 
@@ -104,39 +105,13 @@ impl Queue {
             self.status_counts.set(counts);
         }
 
-        // Load settings from DB or use defaults
-        let max_concurrency = repo
-            .get_setting::<usize>("max_concurrency")
-            .await
-            .ok()
-            .flatten()
-            .unwrap_or(5);
-        let max_failures = repo
-            .get_setting::<usize>("max_failures")
-            .await
-            .ok()
-            .flatten()
-            .unwrap_or(10);
-
-        // Load filter preferences
-        let status_filter = repo
-            .get_setting::<StatusFilter>("status_filter")
-            .await
-            .ok()
-            .flatten()
-            .unwrap_or_default();
-        let saved_sources: Vec<String> = repo
-            .get_setting::<Vec<String>>("source_filter")
-            .await
-            .ok()
-            .flatten()
-            .unwrap_or_default();
-        let search_text = repo
-            .get_setting::<String>("search_text")
-            .await
-            .ok()
-            .flatten()
-            .unwrap_or_default();
+        // Load settings from global data
+        let settings = gx.data::<Settings>();
+        let max_concurrency = settings.queue.max_concurrency.get();
+        let max_failures = settings.queue.max_failures.get();
+        let status_filter = settings.queue.status_filter.get();
+        let saved_sources = settings.queue.source_filter.get();
+        let search_text = settings.queue.search_text.get();
 
         // Build source filter select state
         let available_sources = repo.get_sources().await.unwrap_or_default();
@@ -522,10 +497,9 @@ impl Queue {
             self.max_failures.set(max_failures);
 
             // Persist settings
-            if let Some(repo) = self.repository.get() {
-                let _ = repo.set_setting("max_concurrency", concurrency).await;
-                let _ = repo.set_setting("max_failures", max_failures).await;
-            }
+            let settings = gx.data::<Settings>();
+            let _ = settings.queue.max_concurrency.set(concurrency).await;
+            let _ = settings.queue.max_failures.set(max_failures).await;
         }
     }
 
@@ -534,13 +508,16 @@ impl Queue {
     // =========================================================================
 
     #[handler]
-    async fn cycle_status_filter(&self) {
+    async fn cycle_status_filter(&self, gx: &GlobalContext) {
         let current = self.status_filter.get();
         let next = current.next();
         self.status_filter.set(next);
 
+        // Persist setting
+        let settings = gx.data::<Settings>();
+        let _ = settings.queue.status_filter.set(next).await;
+
         if let Some(repo) = self.repository.get() {
-            let _ = repo.set_setting("status_filter", next).await;
             self.refresh_tree(&repo).await;
         }
     }
@@ -561,16 +538,20 @@ impl Queue {
     }
 
     #[handler]
-    async fn search_changed(&self) {
+    async fn search_changed(&self, gx: &GlobalContext) {
         let text = self.search_text.get();
+        
+        // Persist setting
+        let settings = gx.data::<Settings>();
+        let _ = settings.queue.search_text.set(text).await;
+        
         if let Some(repo) = self.repository.get() {
-            let _ = repo.set_setting("search_text", text.clone()).await;
             self.refresh_tree(&repo).await;
         }
     }
 
     #[handler]
-    async fn source_filter_changed(&self) {
+    async fn source_filter_changed(&self, gx: &GlobalContext) {
         let current: HashSet<String> = self
             .source_filter
             .get()
@@ -611,8 +592,12 @@ impl Queue {
 
         // Save and refresh
         let selected: Vec<String> = final_selection.into_iter().collect();
+        
+        // Persist setting
+        let settings = gx.data::<Settings>();
+        let _ = settings.queue.source_filter.set(selected).await;
+        
         if let Some(repo) = self.repository.get() {
-            let _ = repo.set_setting("source_filter", selected).await;
             self.refresh_tree(&repo).await;
         }
     }

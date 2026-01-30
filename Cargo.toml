@@ -7,6 +7,7 @@ members = [
     "dataverse-lib",
     "dataverse-cli",
     "dataverse-tui",
+    "dataverse-tui-derive",
 ]
 
 [workspace.lints.clippy]

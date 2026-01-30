@@ -25,16 +25,12 @@ use rafter::prelude::*;
 use rafter::Handler;
 
 use crate::paths;
+use crate::settings::Settings;
 use crate::systems::client_management::{
     ClientManagement, EnvironmentAdded, EnvironmentRemoved, GetAuthenticatedEnvironments,
     SessionChanged,
 };
 use crate::systems::taskbar::StatusIndicator;
-
-// Settings keys for persistence
-const SETTING_CHECK_INTERVAL: &str = "check_interval_secs";
-const SETTING_REFRESH_THRESHOLD: &str = "refresh_threshold_pct";
-const SETTING_IS_PAUSED: &str = "is_paused";
 
 /// Background metadata indexer system.
 ///
@@ -82,25 +78,11 @@ impl IndexerSystem {
 
         match IndexerRepository::new(&db_path).await {
             Ok(repo) => {
-                // Load settings from repository
-                let check_interval = repo
-                    .get_setting::<u64>(SETTING_CHECK_INTERVAL)
-                    .await
-                    .ok()
-                    .flatten()
-                    .unwrap_or(DEFAULT_CHECK_INTERVAL_SECS);
-                let refresh_threshold = repo
-                    .get_setting::<u64>(SETTING_REFRESH_THRESHOLD)
-                    .await
-                    .ok()
-                    .flatten()
-                    .unwrap_or(DEFAULT_REFRESH_THRESHOLD_PCT);
-                let is_paused = repo
-                    .get_setting::<bool>(SETTING_IS_PAUSED)
-                    .await
-                    .ok()
-                    .flatten()
-                    .unwrap_or(false);
+                // Load settings from global data
+                let settings = gx.data::<Settings>();
+                let check_interval = settings.indexer.check_interval_secs.get();
+                let refresh_threshold = settings.indexer.refresh_threshold_pct.get();
+                let is_paused = settings.indexer.is_paused.get();
 
                 self.check_interval_secs.set(check_interval);
                 self.refresh_threshold_pct.set(refresh_threshold);
@@ -312,9 +294,8 @@ impl IndexerSystem {
         self.is_paused.set(true);
 
         // Persist paused state
-        if let Some(repo) = self.repository.get() {
-            let _ = repo.set_setting(SETTING_IS_PAUSED, true).await;
-        }
+        let settings = gx.data::<Settings>();
+        let _ = settings.indexer.is_paused.set(true).await;
 
         self.publish_status(gx).await;
     }
@@ -330,9 +311,8 @@ impl IndexerSystem {
         self.is_paused.set(false);
 
         // Persist paused state
-        if let Some(repo) = self.repository.get() {
-            let _ = repo.set_setting(SETTING_IS_PAUSED, false).await;
-        }
+        let settings = gx.data::<Settings>();
+        let _ = settings.indexer.is_paused.set(false).await;
 
         // Schedule immediate processing
         let job_id = gx.schedule_after(Duration::ZERO, self.process_handler());
@@ -438,20 +418,13 @@ impl IndexerSystem {
         self.check_interval_secs.set(req.check_interval_secs);
         self.refresh_threshold_pct.set(req.refresh_threshold_pct);
 
-        // Persist to repository
-        if let Some(repo) = self.repository.get() {
-            if let Err(e) = repo
-                .set_setting(SETTING_CHECK_INTERVAL, req.check_interval_secs)
-                .await
-            {
-                log::error!("[Indexer] Failed to persist check_interval: {}", e);
-            }
-            if let Err(e) = repo
-                .set_setting(SETTING_REFRESH_THRESHOLD, req.refresh_threshold_pct)
-                .await
-            {
-                log::error!("[Indexer] Failed to persist refresh_threshold: {}", e);
-            }
+        // Persist to global settings
+        let settings = gx.data::<Settings>();
+        if let Err(e) = settings.indexer.check_interval_secs.set(req.check_interval_secs).await {
+            log::error!("[Indexer] Failed to persist check_interval: {}", e);
+        }
+        if let Err(e) = settings.indexer.refresh_threshold_pct.set(req.refresh_threshold_pct).await {
+            log::error!("[Indexer] Failed to persist refresh_threshold: {}", e);
         }
 
         self.publish_status(gx).await;
@@ -532,9 +505,8 @@ impl IndexerSystem {
         self.is_paused.set(true);
 
         // Persist paused state
-        if let Some(repo) = self.repository.get() {
-            let _ = repo.set_setting(SETTING_IS_PAUSED, true).await;
-        }
+        let settings = gx.data::<Settings>();
+        let _ = settings.indexer.is_paused.set(true).await;
 
         self.publish_status(gx).await;
     }
@@ -550,9 +522,8 @@ impl IndexerSystem {
         self.is_paused.set(false);
 
         // Persist paused state
-        if let Some(repo) = self.repository.get() {
-            let _ = repo.set_setting(SETTING_IS_PAUSED, false).await;
-        }
+        let settings = gx.data::<Settings>();
+        let _ = settings.indexer.is_paused.set(false).await;
 
         // Schedule immediate processing
         let job_id = gx.schedule_after(Duration::ZERO, self.process_handler());
@@ -607,20 +578,13 @@ impl IndexerSystem {
         self.check_interval_secs.set(event.check_interval_secs);
         self.refresh_threshold_pct.set(event.refresh_threshold_pct);
 
-        // Persist to repository
-        if let Some(repo) = self.repository.get() {
-            if let Err(e) = repo
-                .set_setting(SETTING_CHECK_INTERVAL, event.check_interval_secs)
-                .await
-            {
-                log::error!("[Indexer] Failed to persist check_interval: {}", e);
-            }
-            if let Err(e) = repo
-                .set_setting(SETTING_REFRESH_THRESHOLD, event.refresh_threshold_pct)
-                .await
-            {
-                log::error!("[Indexer] Failed to persist refresh_threshold: {}", e);
-            }
+        // Persist to global settings
+        let settings = gx.data::<Settings>();
+        if let Err(e) = settings.indexer.check_interval_secs.set(event.check_interval_secs).await {
+            log::error!("[Indexer] Failed to persist check_interval: {}", e);
+        }
+        if let Err(e) = settings.indexer.refresh_threshold_pct.set(event.refresh_threshold_pct).await {
+            log::error!("[Indexer] Failed to persist refresh_threshold: {}", e);
         }
 
         self.publish_settings(gx);

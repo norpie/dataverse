@@ -62,10 +62,11 @@ fn init_logging() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-async fn init_settings() -> Result<settings::SettingsProvider, settings::SettingsError> {
+async fn init_settings() -> Result<settings::Settings, settings::SettingsError> {
     let settings_path = paths::settings_db().unwrap_or_else(|| "settings.db".into());
     let backend = settings::SqliteBackend::new(&settings_path).await?;
-    Ok(settings::SettingsProvider::new(backend))
+    let backend = std::sync::Arc::new(backend);
+    settings::Settings::load(backend).await
 }
 
 async fn init_credentials()
