@@ -18,11 +18,9 @@ pub use sync::{
 };
 
 use std::collections::{HashMap, VecDeque};
-use std::sync::Arc;
 use std::time::Duration;
 
 use rafter::prelude::*;
-use rafter::Handler;
 
 use crate::paths;
 use crate::settings::Settings;
@@ -124,7 +122,7 @@ impl IndexerSystem {
         );
 
         // Schedule immediate processing
-        let job_id = gx.schedule_after(Duration::ZERO, self.process_handler());
+        let job_id = gx.schedule_after(Duration::ZERO, self.process_queue_handler());
         self.job_id.set(Some(job_id));
 
         // Publish ready event
@@ -157,19 +155,8 @@ impl IndexerSystem {
     // Job Processing
     // =========================================================================
 
-    /// Create a handler closure for the scheduled job.
-    fn process_handler(&self) -> Handler {
-        let system = self.clone();
-        Arc::new(move |hx| {
-            let system = system.clone();
-            let gx = hx.gx().clone();
-            tokio::spawn(async move {
-                system.process_queue(&gx).await;
-            });
-        })
-    }
-
     /// Process the task queue - called by scheduled job.
+    #[handler]
     async fn process_queue(&self, gx: &GlobalContext) {
         // Skip if paused
         if self.is_paused.get() {
@@ -258,7 +245,7 @@ impl IndexerSystem {
             Duration::ZERO
         };
 
-        let job_id = gx.schedule_after(delay, self.process_handler());
+        let job_id = gx.schedule_after(delay, self.process_queue_handler());
         self.job_id.set(Some(job_id));
 
         if idle {
@@ -315,7 +302,7 @@ impl IndexerSystem {
         let _ = settings.indexer.is_paused.set(false).await;
 
         // Schedule immediate processing
-        let job_id = gx.schedule_after(Duration::ZERO, self.process_handler());
+        let job_id = gx.schedule_after(Duration::ZERO, self.process_queue_handler());
         self.job_id.set(Some(job_id));
 
         self.publish_status(gx).await;
@@ -349,7 +336,7 @@ impl IndexerSystem {
             if let Some(job_id) = self.job_id.get() {
                 gx.cancel_job(job_id);
             }
-            let job_id = gx.schedule_after(Duration::ZERO, self.process_handler());
+            let job_id = gx.schedule_after(Duration::ZERO, self.process_queue_handler());
             self.job_id.set(Some(job_id));
         }
     }
@@ -462,7 +449,7 @@ impl IndexerSystem {
 
             // Schedule immediate processing if not paused
             if !self.is_paused.get() && self.job_id.get().is_none() {
-                let job_id = gx.schedule_after(Duration::ZERO, self.process_handler());
+                let job_id = gx.schedule_after(Duration::ZERO, self.process_queue_handler());
                 self.job_id.set(Some(job_id));
             }
         }
@@ -526,7 +513,7 @@ impl IndexerSystem {
         let _ = settings.indexer.is_paused.set(false).await;
 
         // Schedule immediate processing
-        let job_id = gx.schedule_after(Duration::ZERO, self.process_handler());
+        let job_id = gx.schedule_after(Duration::ZERO, self.process_queue_handler());
         self.job_id.set(Some(job_id));
 
         self.publish_status(gx).await;
@@ -560,7 +547,7 @@ impl IndexerSystem {
             if let Some(job_id) = self.job_id.get() {
                 gx.cancel_job(job_id);
             }
-            let job_id = gx.schedule_after(Duration::ZERO, self.process_handler());
+            let job_id = gx.schedule_after(Duration::ZERO, self.process_queue_handler());
             self.job_id.set(Some(job_id));
         }
 
