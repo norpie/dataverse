@@ -512,7 +512,7 @@ impl Queue {
         let current_max_failures = self.max_failures.get();
 
         if let Some((concurrency, max_failures)) = gx
-            .modal(modals::SettingsModal::new(
+            .modal(modals::SettingsModal::with_settings(
                 current_concurrency,
                 current_max_failures,
             ))

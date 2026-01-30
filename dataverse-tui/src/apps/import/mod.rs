@@ -5,13 +5,14 @@ mod modals;
 
 use std::path::PathBuf;
 
+use dataverse_lib::error::Error as DataverseError;
 use dataverse_lib::model::Entity;
 use rafter::page;
 use rafter::prelude::*;
 use rafter::widgets::{Button, Column, SelectionMode, Table, TableState, Text};
 
 use crate::apps::record_explorer::RecordRow;
-use crate::file_io::{ParsedFile, list_sheets, read_csv, read_excel};
+use crate::file_io::{FileIoError, ParsedFile, list_sheets, read_csv, read_excel};
 use crate::formatting::FormattedValue;
 use crate::modals::{FileBrowserModal, LoadingModal, SheetSelectorModal};
 use crate::paths;
@@ -35,13 +36,7 @@ pub struct Import {
 
 impl Import {
     pub fn with_client(client_info: ActiveClientInfo) -> Self {
-        Self {
-            client_info,
-            parsed_file: State::default(),
-            preview_table: State::default(),
-            __handler_registry: Default::default(),
-            __derived_cache: Default::default(),
-        }
+        Self::new(client_info, None, TableState::default())
     }
 }
 
@@ -102,22 +97,26 @@ impl Import {
         let path = file_result.path.clone();
         let ftype = file_result.file_type.clone();
         let parsed_result = gx
-            .modal(LoadingModal::new("Parsing file...", async move {
-                if ftype == "xlsx" {
-                    read_excel(&path, selected_sheet.as_deref())
-                } else {
-                    read_csv(&path)
-                }
-            }))
+            .modal(LoadingModal::run_with_default(
+                "Parsing file...",
+                || Err(FileIoError::Cancelled),
+                async move {
+                    if ftype == "xlsx" {
+                        read_excel(&path, selected_sheet.as_deref())
+                    } else {
+                        read_csv(&path)
+                    }
+                },
+            ))
             .await;
 
         let parsed = match parsed_result {
-            Some(Ok(p)) => p,
-            Some(Err(e)) => {
+            Ok(p) => p,
+            Err(e) if e.is_cancelled() => return,
+            Err(e) => {
                 gx.toast(Toast::error(format!("Failed to parse file: {}", e)));
                 return;
             }
-            None => return, // User cancelled
         };
 
         // Build preview table
@@ -172,18 +171,20 @@ impl Import {
         // Fetch entity list from Dataverse
         let client = self.client_info.client.clone();
         let entities_result = gx
-            .modal(LoadingModal::new("Fetching entities...", async move {
-                client.metadata().all_entities().await
-            }))
+            .modal(LoadingModal::run_with_default(
+                "Fetching entities...",
+                || Err(DataverseError::Cancelled),
+                async move { client.metadata().all_entities().await },
+            ))
             .await;
 
         let entities = match entities_result {
-            Some(Ok(e)) => e,
-            Some(Err(e)) => {
+            Ok(e) => e,
+            Err(e) if e.is_cancelled() => return,
+            Err(e) => {
                 gx.toast(Toast::error(format!("Failed to fetch entities: {}", e)));
                 return;
             }
-            None => return,
         };
 
         // Build entity options: (entity_set, display_label)
@@ -214,19 +215,20 @@ impl Import {
         let client = self.client_info.client.clone();
         let entity_set = settings.entity_set.clone();
         let attributes_result = gx
-            .modal(LoadingModal::new(
+            .modal(LoadingModal::run_with_default(
                 "Fetching attribute metadata...",
+                || Err(DataverseError::Cancelled),
                 async move { client.metadata().attributes(Entity::set(&entity_set)).await },
             ))
             .await;
 
         let attributes = match attributes_result {
-            Some(Ok(attrs)) => attrs,
-            Some(Err(e)) => {
+            Ok(attrs) => attrs,
+            Err(e) if e.is_cancelled() => return,
+            Err(e) => {
                 gx.toast(Toast::error(format!("Failed to fetch attributes: {}", e)));
                 return;
             }
-            None => return,
         };
 
         // Build attributes map
@@ -242,19 +244,23 @@ impl Import {
         let client = self.client_info.client.clone();
         let entity_set = settings.entity_set.clone();
         let primary_key_result = gx
-            .modal(LoadingModal::new("Fetching primary key...", async move {
-                let metadata = client.metadata().entity(Entity::set(&entity_set)).await?;
-                Ok::<_, dataverse_lib::error::Error>(metadata.primary_id_attribute.to_string())
-            }))
+            .modal(LoadingModal::run_with_default(
+                "Fetching primary key...",
+                || Err(DataverseError::Cancelled),
+                async move {
+                    let metadata = client.metadata().entity(Entity::set(&entity_set)).await?;
+                    Ok::<_, DataverseError>(metadata.primary_id_attribute.to_string())
+                },
+            ))
             .await;
 
         let primary_key = match primary_key_result {
-            Some(Ok(pk)) => pk,
-            Some(Err(e)) => {
+            Ok(pk) => pk,
+            Err(e) if e.is_cancelled() => return,
+            Err(e) => {
                 gx.toast(Toast::error(format!("Failed to fetch primary key: {}", e)));
                 return;
             }
-            None => return,
         };
 
         // 3. Parse headers to identify lookup columns
@@ -264,14 +270,13 @@ impl Import {
         let rows = parsed.rows.clone();
         let entity = Entity::set(settings.entity_set.clone());
         let (operations, errors) = gx
-            .modal(LoadingModal::new(
+            .modal(LoadingModal::run(
                 "Converting rows to operations...",
                 async move {
                     io::rows_to_operations(&rows, &columns, &attributes_map, entity, &primary_key)
                 },
             ))
-            .await
-            .unwrap_or_else(|| (vec![], vec![]));
+            .await;
 
         // 5. Handle errors - STOP if any exist
         if !errors.is_empty() {

@@ -2,7 +2,7 @@
 
 use std::path::Path;
 
-use calamine::{Data, Reader, Xlsx, open_workbook};
+use calamine::{open_workbook, Data, Reader, Xlsx};
 use rust_xlsxwriter::{Format, Workbook};
 
 use super::{FileIoError, FileRow, ParsedFile};
@@ -145,7 +145,11 @@ pub fn read_excel(path: &Path, sheet_name: Option<&str>) -> Result<ParsedFile, F
             .iter()
             .map(|cell| {
                 let s = cell_to_string(cell);
-                if s.is_empty() { None } else { Some(s) }
+                if s.is_empty() {
+                    None
+                } else {
+                    Some(s)
+                }
             })
             .collect();
 

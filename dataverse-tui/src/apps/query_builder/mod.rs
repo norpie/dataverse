@@ -8,6 +8,7 @@ pub mod repository;
 mod tree;
 
 use dataverse_lib::DataverseClient;
+use dataverse_lib::error::Error as DataverseError;
 use dataverse_lib::model::Entity;
 use rafter::page;
 use rafter::prelude::*;
@@ -46,16 +47,14 @@ pub struct QueryBuilder {
 
 impl QueryBuilder {
     pub fn with_client(client_info: ActiveClientInfo) -> Self {
-        Self {
+        Self::new(
             client_info,
-            tree_state: State::default(),
-            query: State::default(),
-            repo: State::default(),
-            saved_query_id: State::default(),
-            saved_query_name: State::default(),
-            __handler_registry: Default::default(),
-            __derived_cache: Default::default(),
-        }
+            TreeState::default(),
+            QueryData::default(),
+            None,
+            None,
+            None,
+        )
     }
 }
 
@@ -396,20 +395,24 @@ impl QueryBuilder {
 
         let entity_clone = entity.clone();
         let attrs = match gx
-            .modal(LoadingModal::new("Loading attributes", async move {
-                client
-                    .metadata()
-                    .attributes(Entity::set(&entity_clone))
-                    .await
-            }))
+            .modal(LoadingModal::run_with_default(
+                "Loading attributes",
+                || Err(DataverseError::Cancelled),
+                async move {
+                    client
+                        .metadata()
+                        .attributes(Entity::set(&entity_clone))
+                        .await
+                },
+            ))
             .await
         {
-            Some(Ok(a)) => a,
-            Some(Err(e)) => {
+            Ok(a) => a,
+            Err(e) if e.is_cancelled() => return,
+            Err(e) => {
                 gx.toast(Toast::error(format!("Failed to load attributes: {}", e)));
                 return;
             }
-            None => return,
         };
 
         let options: Vec<(String, String)> = attrs
@@ -674,12 +677,14 @@ impl QueryBuilder {
         };
 
         let entities = match gx
-            .modal(LoadingModal::new("Loading entities", async move {
-                client.metadata().all_entities().await
-            }))
+            .modal(LoadingModal::run_with_default(
+                "Loading entities",
+                || Err(DataverseError::Cancelled),
+                async move { client.metadata().all_entities().await },
+            ))
             .await
         {
-            Some(Ok(all)) => all
+            Ok(all) => all
                 .iter()
                 .map(|e| {
                     let display = e
@@ -690,11 +695,11 @@ impl QueryBuilder {
                     (e.entity_set_name.clone(), display)
                 })
                 .collect(),
-            Some(Err(e)) => {
+            Err(e) if e.is_cancelled() => return,
+            Err(e) => {
                 gx.toast(Toast::error(format!("Failed to load entities: {}", e)));
                 return;
             }
-            None => return,
         };
 
         let result = gx.modal(EntityPickerModal::with_options(entities)).await;
@@ -722,36 +727,35 @@ impl QueryBuilder {
 
         let entity_clone = entity.clone();
         let options = match gx
-            .modal(LoadingModal::new("Loading attributes", async move {
-                let attrs = client
-                    .metadata()
-                    .attributes(Entity::set(&entity_clone))
-                    .await
-                    .map_err(|e| format!("Failed to load attributes: {}", e))?;
-
-                Ok::<_, String>(
-                    attrs
-                        .iter()
-                        .filter(|a| a.is_valid_for_read && a.attribute_of.is_none())
-                        .map(|a| {
-                            let display = a
-                                .display_name
-                                .text()
-                                .map(|d| format!("{} ({})", d, a.logical_name))
-                                .unwrap_or_else(|| a.logical_name.clone());
-                            (a.logical_name.clone(), display)
-                        })
-                        .collect(),
-                )
-            }))
+            .modal(LoadingModal::run_with_default(
+                "Loading attributes",
+                || Err(DataverseError::Cancelled),
+                async move {
+                    client
+                        .metadata()
+                        .attributes(Entity::set(&entity_clone))
+                        .await
+                },
+            ))
             .await
         {
-            Some(Ok(opts)) => opts,
-            Some(Err(e)) => {
-                gx.toast(Toast::error(e));
+            Ok(attrs) => attrs
+                .iter()
+                .filter(|a| a.is_valid_for_read && a.attribute_of.is_none())
+                .map(|a| {
+                    let display = a
+                        .display_name
+                        .text()
+                        .map(|d| format!("{} ({})", d, a.logical_name))
+                        .unwrap_or_else(|| a.logical_name.clone());
+                    (a.logical_name.clone(), display)
+                })
+                .collect(),
+            Err(e) if e.is_cancelled() => return,
+            Err(e) => {
+                gx.toast(Toast::error(format!("Failed to load attributes: {}", e)));
                 return;
             }
-            None => return,
         };
 
         let current = self.query.with_ref(|q| q.select.clone());
@@ -776,20 +780,24 @@ impl QueryBuilder {
 
         let entity_clone = entity.clone();
         let attrs = match gx
-            .modal(LoadingModal::new("Loading attributes", async move {
-                client
-                    .metadata()
-                    .attributes(Entity::set(&entity_clone))
-                    .await
-            }))
+            .modal(LoadingModal::run_with_default(
+                "Loading attributes",
+                || Err(DataverseError::Cancelled),
+                async move {
+                    client
+                        .metadata()
+                        .attributes(Entity::set(&entity_clone))
+                        .await
+                },
+            ))
             .await
         {
-            Some(Ok(a)) => a,
-            Some(Err(e)) => {
+            Ok(a) => a,
+            Err(e) if e.is_cancelled() => return,
+            Err(e) => {
                 gx.toast(Toast::error(format!("Failed to load attributes: {}", e)));
                 return;
             }
-            None => return,
         };
 
         let options: Vec<(String, String)> = attrs
@@ -805,7 +813,7 @@ impl QueryBuilder {
             })
             .collect();
 
-        let result = gx.modal(ConditionEditorModal::new(options, attrs)).await;
+        let result = gx.modal(ConditionEditorModal::with_options(options, attrs)).await;
         if let Some(cond) = result {
             self.query.update(|q| {
                 let id = q.next_id();
@@ -856,39 +864,38 @@ impl QueryBuilder {
 
         let entity_clone = entity.clone();
         let options = match gx
-            .modal(LoadingModal::new("Loading attributes", async move {
-                let attrs = client
-                    .metadata()
-                    .attributes(Entity::set(&entity_clone))
-                    .await
-                    .map_err(|e| format!("Failed to load attributes: {}", e))?;
-
-                Ok::<_, String>(
-                    attrs
-                        .iter()
-                        .filter(|a| a.is_valid_for_read && a.attribute_of.is_none())
-                        .map(|a| {
-                            let display = a
-                                .display_name
-                                .text()
-                                .map(|d| format!("{} ({})", d, a.logical_name))
-                                .unwrap_or_else(|| a.logical_name.clone());
-                            (a.logical_name.clone(), display)
-                        })
-                        .collect(),
-                )
-            }))
+            .modal(LoadingModal::run_with_default(
+                "Loading attributes",
+                || Err(DataverseError::Cancelled),
+                async move {
+                    client
+                        .metadata()
+                        .attributes(Entity::set(&entity_clone))
+                        .await
+                },
+            ))
             .await
         {
-            Some(Ok(opts)) => opts,
-            Some(Err(e)) => {
-                gx.toast(Toast::error(e));
+            Ok(attrs) => attrs
+                .iter()
+                .filter(|a| a.is_valid_for_read && a.attribute_of.is_none())
+                .map(|a| {
+                    let display = a
+                        .display_name
+                        .text()
+                        .map(|d| format!("{} ({})", d, a.logical_name))
+                        .unwrap_or_else(|| a.logical_name.clone());
+                    (a.logical_name.clone(), display)
+                })
+                .collect(),
+            Err(e) if e.is_cancelled() => return,
+            Err(e) => {
+                gx.toast(Toast::error(format!("Failed to load attributes: {}", e)));
                 return;
             }
-            None => return,
         };
 
-        let result = gx.modal(SortFieldEditorModal::new(options)).await;
+        let result = gx.modal(SortFieldEditorModal::with_options(options)).await;
         if let Some((field, direction)) = result {
             self.query.update(|q| {
                 let id = q.next_id();

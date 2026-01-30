@@ -4,6 +4,7 @@ mod io;
 
 use std::collections::HashMap;
 
+use dataverse_lib::error::Error as DataverseError;
 use dataverse_lib::model::{Entity, Record};
 use rafter::InstanceId;
 use rafter::page;
@@ -63,19 +64,17 @@ impl Export {
         let entity = query.entity().clone();
         let selected_fields = query.selected_fields().to_vec();
 
-        Self {
+        Self::new(
             query,
             client_info,
             origin,
             entity,
             selected_fields,
-            records: State::default(),
-            columns: State::default(),
-            preview_table: State::default(),
-            total_count: State::default(),
-            __handler_registry: Default::default(),
-            __derived_cache: Default::default(),
-        }
+            Vec::new(),
+            Vec::new(),
+            TableState::default(),
+            None,
+        )
     }
 }
 
@@ -87,24 +86,25 @@ impl Export {
         let client = self.client_info.client.clone();
         let query = self.query.clone();
         let count_result = gx
-            .modal(LoadingModal::new("Counting records...", async move {
-                query.count(&client).await
-            }))
+            .modal(LoadingModal::run_with_default(
+                "Counting records...",
+                || Err(DataverseError::Cancelled),
+                async move { query.count(&client).await },
+            ))
             .await;
 
         let count = match count_result {
-            Some(Ok(count)) => {
+            Ok(count) => {
                 log::debug!("[Export] Total count: {}", count);
                 self.total_count.set(Some(count));
                 count
             }
-            Some(Err(e)) => {
-                gx.toast(Toast::error(format!("Failed to count records: {}", e)));
+            Err(e) if e.is_cancelled() => {
                 cx.close();
                 return;
             }
-            None => {
-                // User cancelled
+            Err(e) => {
+                gx.toast(Toast::error(format!("Failed to count records: {}", e)));
                 cx.close();
                 return;
             }
@@ -122,21 +122,17 @@ impl Export {
             page_num += 1;
 
             let client_clone = client.clone();
-            let fetch_result = gx
-                .modal(LoadingModal::new(
+            let pages_for_default = pages.clone();
+            let (page_result, updated_pages) = gx
+                .modal(LoadingModal::run_with_default(
                     format!("Fetching page {}/{}...", page_num, estimated_pages),
+                    move || (None, pages_for_default.clone()),
                     async move {
                         let result = pages.next(&client_clone).await;
                         (result, pages)
                     },
                 ))
                 .await;
-
-            let Some((page_result, updated_pages)) = fetch_result else {
-                // User cancelled
-                cx.close();
-                return;
-            };
 
             pages = updated_pages;
 
@@ -151,7 +147,7 @@ impl Export {
                     return;
                 }
                 None => {
-                    // No more pages
+                    // No more pages (or shutdown)
                     break;
                 }
             }
@@ -215,21 +211,23 @@ impl Export {
         let client = self.client_info.client.clone();
         let query = self.query.clone();
         let count_result = gx
-            .modal(LoadingModal::new("Counting records...", async move {
-                query.count(&client).await
-            }))
+            .modal(LoadingModal::run_with_default(
+                "Counting records...",
+                || Err(DataverseError::Cancelled),
+                async move { query.count(&client).await },
+            ))
             .await;
 
         let count = match count_result {
-            Some(Ok(count)) => {
+            Ok(count) => {
                 self.total_count.set(Some(count));
                 count
             }
-            Some(Err(e)) => {
+            Err(e) if e.is_cancelled() => return,
+            Err(e) => {
                 gx.toast(Toast::error(format!("Failed to count records: {}", e)));
                 return;
             }
-            None => return,
         };
 
         // Fetch all records page by page with progress updates
@@ -244,19 +242,17 @@ impl Export {
             page_num += 1;
 
             let client_clone = client.clone();
-            let fetch_result = gx
-                .modal(LoadingModal::new(
+            let pages_for_default = pages.clone();
+            let (page_result, updated_pages) = gx
+                .modal(LoadingModal::run_with_default(
                     format!("Fetching page {}/{}...", page_num, estimated_pages),
+                    move || (None, pages_for_default.clone()),
                     async move {
                         let result = pages.next(&client_clone).await;
                         (result, pages)
                     },
                 ))
                 .await;
-
-            let Some((page_result, updated_pages)) = fetch_result else {
-                return;
-            };
 
             pages = updated_pages;
 
@@ -329,18 +325,20 @@ impl Export {
         let cols = columns.clone();
 
         let metadata_result = gx
-            .modal(LoadingModal::new("Fetching metadata...", async move {
-                client.metadata().attributes(entity).await
-            }))
+            .modal(LoadingModal::run_with_default(
+                "Fetching metadata...",
+                || Err(DataverseError::Cancelled),
+                async move { client.metadata().attributes(entity).await },
+            ))
             .await;
 
         let attributes = match metadata_result {
-            Some(Ok(attrs)) => attrs,
-            Some(Err(e)) => {
+            Ok(attrs) => attrs,
+            Err(e) if e.is_cancelled() => return,
+            Err(e) => {
                 gx.toast(Toast::error(format!("Failed to fetch metadata: {}", e)));
                 return;
             }
-            None => return,
         };
 
         // Build lookup columns map: column_name -> target entity set name
@@ -364,24 +362,25 @@ impl Export {
             let target = target_logical_name.clone();
 
             let resolve_result = gx
-                .modal(LoadingModal::new(
+                .modal(LoadingModal::run_with_default(
                     format!("Resolving lookup {}/{}...", i + 1, total),
+                    || Err(DataverseError::Cancelled),
                     async move { client.resolve_entity_set_name(&target).await },
                 ))
                 .await;
 
             match resolve_result {
-                Some(Ok(entity_set)) => {
+                Ok(entity_set) => {
                     lookup_columns.insert(column, entity_set);
                 }
-                Some(Err(e)) => {
+                Err(e) if e.is_cancelled() => return,
+                Err(e) => {
                     gx.toast(Toast::error(format!(
                         "Failed to resolve entity set for {}: {}",
                         target_logical_name, e
                     )));
                     return;
                 }
-                None => return,
             }
         }
 
@@ -395,37 +394,37 @@ impl Export {
 
         // Write file in blocking task with loading modal
         let write_result = gx
-            .modal(LoadingModal::new("Exporting...", async move {
-                tokio::task::spawn_blocking(move || match file_type.as_str() {
-                    "csv" => write_csv(&path, &headers, &rows),
-                    "xlsx" => write_excel(&path, &headers, &rows, &sheet_name),
-                    _ => Err(FileIoError::Io(std::io::Error::new(
-                        std::io::ErrorKind::InvalidInput,
-                        format!("Unsupported file type: {}", file_type),
-                    ))),
-                })
-                .await
-                .map_err(|e| {
-                    FileIoError::Io(std::io::Error::other(
-                        format!("Task join error: {}", e),
-                    ))
-                })?
-            }))
+            .modal(LoadingModal::run_with_default(
+                "Exporting...",
+                || Err(FileIoError::Cancelled),
+                async move {
+                    tokio::task::spawn_blocking(move || match file_type.as_str() {
+                        "csv" => write_csv(&path, &headers, &rows),
+                        "xlsx" => write_excel(&path, &headers, &rows, &sheet_name),
+                        _ => Err(FileIoError::Io(std::io::Error::new(
+                            std::io::ErrorKind::InvalidInput,
+                            format!("Unsupported file type: {}", file_type),
+                        ))),
+                    })
+                    .await
+                    .map_err(|e| {
+                        FileIoError::Io(std::io::Error::other(format!("Task join error: {}", e)))
+                    })?
+                },
+            ))
             .await;
 
         match write_result {
-            Some(Ok(())) => {
+            Ok(()) => {
                 gx.toast(Toast::success(format!(
                     "Exported {} records to {}",
                     record_count,
                     result.path.display()
                 )));
             }
-            Some(Err(e)) => {
+            Err(e) if e.is_cancelled() => {}
+            Err(e) => {
                 gx.toast(Toast::error(format!("Export failed: {}", e)));
-            }
-            None => {
-                // User cancelled
             }
         }
     }

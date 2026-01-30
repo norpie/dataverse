@@ -10,6 +10,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use dataverse_lib::api::query::odata::{ODataPages, QueryBuilder as ODataQueryBuilder};
+use dataverse_lib::error::Error as DataverseError;
 use rafter::page;
 use rafter::prelude::*;
 use rafter::widgets::{Button, Column, SelectionMode, Table, TableState, Text};
@@ -76,21 +77,18 @@ impl RecordExplorer {
         // Create initial pages iterator (will be replaced in on_start)
         let pages = query_template.clone().into_async_iter(&client_info.client);
 
-        Self {
+        Self::new(
             query_template,
-            pages: State::new(pages),
+            pages,
             client_info,
             origin,
             entity,
             selected_fields,
-            advanced_mode: Arc::new(AtomicBool::new(false)),
-            entity_data: State::default(),
-            records: State::default(),
-            records_loading: Resource::default(),
-            total_count: State::default(),
-            __handler_registry: Default::default(),
-            __derived_cache: Default::default(),
-        }
+            None,
+            TableState::default(),
+            None,
+            Arc::new(AtomicBool::new(false)),
+        )
     }
 }
 
@@ -102,35 +100,38 @@ impl RecordExplorer {
         let client = self.client_info.client.clone();
         let entity = self.entity.clone();
         let logical_name = match gx
-            .modal(LoadingModal::new("Resolving entity", async move {
-                client.resolve_entity_logical_name(&entity).await
-            }))
+            .modal(LoadingModal::run_with_default(
+                "Resolving entity",
+                || Err(DataverseError::Cancelled),
+                async move { client.resolve_entity_logical_name(&entity).await },
+            ))
             .await
         {
-            Some(Ok(name)) => name,
-            Some(Err(e)) => {
+            Ok(name) => name,
+            Err(e) if e.is_cancelled() => return,
+            Err(e) => {
                 gx.toast(Toast::error(format!("Failed to resolve entity: {}", e)));
                 return;
             }
-            None => return,
         };
 
         // Fetch entity metadata
         let client = self.client_info.client.clone();
         let logical_name_clone = logical_name.clone();
         let entity_data = match gx
-            .modal(LoadingModal::new(
+            .modal(LoadingModal::run_with_default(
                 format!("Loading {}...", logical_name),
+                || Err(DataverseError::Cancelled),
                 async move { fetch_entity_data(&client, &logical_name_clone).await },
             ))
             .await
         {
-            Some(Ok(data)) => data,
-            Some(Err(e)) => {
+            Ok(data) => data,
+            Err(e) if e.is_cancelled() => return,
+            Err(e) => {
                 gx.toast(Toast::error(format!("Failed to load entity: {}", e)));
                 return;
             }
-            None => return,
         };
 
         self.entity_data.set(Some(entity_data.clone()));
@@ -146,23 +147,22 @@ impl RecordExplorer {
         let client = self.client_info.client.clone();
         let query = self.query_template.clone();
         let count_result = gx
-            .modal(LoadingModal::new("Counting records...", async move {
-                query.count(&client).await
-            }))
+            .modal(LoadingModal::run_with_default(
+                "Counting records...",
+                || Err(DataverseError::Cancelled),
+                async move { query.count(&client).await },
+            ))
             .await;
 
         match count_result {
-            Some(Ok(count)) => {
+            Ok(count) => {
                 log::debug!("[RecordExplorer] Total count: {}", count);
                 self.total_count.set(Some(count));
             }
-            Some(Err(e)) => {
+            Err(e) if e.is_cancelled() => return,
+            Err(e) => {
                 log::warn!("[RecordExplorer] Failed to get count: {}", e);
                 // Continue without count
-            }
-            None => {
-                // User cancelled
-                return;
             }
         }
 
@@ -214,23 +214,22 @@ impl RecordExplorer {
         let client = self.client_info.client.clone();
         let query = self.query_template.clone();
         let count_result = gx
-            .modal(LoadingModal::new("Counting records...", async move {
-                query.count(&client).await
-            }))
+            .modal(LoadingModal::run_with_default(
+                "Counting records...",
+                || Err(DataverseError::Cancelled),
+                async move { query.count(&client).await },
+            ))
             .await;
 
         match count_result {
-            Some(Ok(count)) => {
+            Ok(count) => {
                 log::debug!("[RecordExplorer] Total count: {}", count);
                 self.total_count.set(Some(count));
             }
-            Some(Err(e)) => {
+            Err(e) if e.is_cancelled() => return,
+            Err(e) => {
                 log::warn!("[RecordExplorer] Failed to get count: {}", e);
                 self.total_count.set(None);
-            }
-            None => {
-                // User cancelled
-                return;
             }
         }
 

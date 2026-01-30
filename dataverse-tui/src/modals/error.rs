@@ -55,13 +55,7 @@ impl ErrorModal {
             })
             .collect();
 
-        Self {
-            title: title.into(),
-            errors,
-            list: State::new(ListState::new(error_items)),
-            __handler_registry: Default::default(),
-            __derived_cache: Default::default(),
-        }
+        Self::new(title.into(), errors, ListState::new(error_items))
     }
 }
 

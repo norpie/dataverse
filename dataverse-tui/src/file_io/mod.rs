@@ -7,7 +7,7 @@ mod convert;
 mod csv;
 mod excel;
 
-pub use convert::{ConvertError, string_to_value};
+pub use convert::{string_to_value, ConvertError};
 pub use csv::{read_csv, write_csv};
 pub use excel::{list_sheets, read_excel, write_excel};
 
@@ -39,6 +39,16 @@ pub enum FileIoError {
 
     #[error("Invalid sheet name '{name}': {reason}")]
     InvalidSheetName { name: String, reason: String },
+
+    #[error("Operation cancelled")]
+    Cancelled,
+}
+
+impl FileIoError {
+    /// Returns `true` if this is a cancellation error.
+    pub fn is_cancelled(&self) -> bool {
+        matches!(self, Self::Cancelled)
+    }
 }
 
 /// A parsed row from a file (all string values).

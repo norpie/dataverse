@@ -2,6 +2,7 @@
 
 mod service;
 
+use dataverse_lib::error::Error as DataverseError;
 use dataverse_lib::model::Entity;
 use nucleo_matcher::pattern::{AtomKind, CaseMatching, Normalization, Pattern};
 use nucleo_matcher::{Config, Matcher, Utf32Str};
@@ -10,8 +11,8 @@ use rafter::prelude::*;
 use rafter::widgets::{Input, List, ListItem, ListState, SelectionMode, Text};
 use tuidom::{Element, Size, Style};
 
+use crate::modals::LoadingModal;
 use crate::systems::client_management::ActiveClientInfo;
-use crate::widgets::loading_overlay;
 
 use service::fetch_all_entities;
 
@@ -155,9 +156,6 @@ pub struct EntityExplorer {
     #[state(skip)]
     client_info: ActiveClientInfo,
 
-    /// Loading overlay
-    loading_message: Option<String>,
-
     /// Entity data
     all_entities: Vec<(String, String)>, // (logical, display)
 
@@ -167,16 +165,14 @@ pub struct EntityExplorer {
 }
 
 impl EntityExplorer {
+    /// Create a new EntityExplorer with the given client info.
     pub fn with_client(client_info: ActiveClientInfo) -> Self {
-        Self {
+        Self::new(
             client_info,
-            loading_message: State::default(),
-            all_entities: State::default(),
-            search_input: State::default(),
-            filtered_list: State::default(),
-            __handler_registry: Default::default(),
-            __derived_cache: Default::default(),
-        }
+            Vec::new(),
+            String::new(),
+            ListState::default(),
+        )
     }
 }
 
@@ -184,15 +180,20 @@ impl EntityExplorer {
 impl EntityExplorer {
     #[on_start]
     async fn on_start(&self, gx: &GlobalContext, cx: &AppContext) {
-        self.loading_message
-            .set(Some("Loading entities...".to_string()));
-
         // Fetch all entities
-        let result = match fetch_all_entities(&self.client_info.client).await {
+        let client = self.client_info.client.clone();
+        let result = match gx
+            .modal(LoadingModal::run_with_default(
+                "Loading entities...",
+                || Err(DataverseError::Cancelled),
+                async move { fetch_all_entities(&client).await },
+            ))
+            .await
+        {
             Ok(r) => r,
+            Err(e) if e.is_cancelled() => return,
             Err(e) => {
                 gx.toast(Toast::error(format!("Failed to load entities: {}", e)));
-                self.loading_message.set(None);
                 return;
             }
         };
@@ -213,7 +214,6 @@ impl EntityExplorer {
         self.filtered_list
             .set(ListState::new(items).with_selection(SelectionMode::Single));
 
-        self.loading_message.set(None);
         cx.focus("entity-search");
     }
 
@@ -279,41 +279,34 @@ impl EntityExplorer {
     }
 
     fn element(&self) -> Element {
-        let loading_message = self.loading_message.get();
         let (item_count, total_count) = self
             .filtered_list
             .with_ref(|list| (list.items.len(), self.all_entities.get().len()));
 
         page! {
-            box_ (width: fill, height: fill) {
-                column (padding: (1, 2), gap: 1, height: fill, width: fill) style (bg: background) {
-                    text (content: "Entity Explorer") style (bold, fg: interact)
+            column (padding: (1, 2), gap: 1, height: fill, width: fill) style (bg: background) {
+                text (content: "Entity Explorer") style (bold, fg: interact)
 
-                    input (
-                        state: self.search_input,
-                        id: "entity-search",
-                        placeholder: "Search entities..."
-                    )
-                        on_change: on_search_change()
-                        on_submit: on_search_submit()
+                input (
+                    state: self.search_input,
+                    id: "entity-search",
+                    placeholder: "Search entities..."
+                )
+                    on_change: on_search_change()
+                    on_submit: on_search_submit()
 
-                    box_ (id: "entity-list-container", height: fill, width: fill) style (bg: surface) {
-                        list (state: self.filtered_list, id: "entity-list")
-                            on_activate: on_activate()
-                    }
-
-                    row (width: fill, justify: between) {
-                        text (content: {format!("{} / {}", item_count, total_count)}) style (fg: muted)
-
-                        row (gap: 1) {
-                            text (content: "esc") style (fg: primary)
-                            text (content: "close") style (fg: muted)
-                        }
-                    }
+                box_ (id: "entity-list-container", height: fill, width: fill) style (bg: surface) {
+                    list (state: self.filtered_list, id: "entity-list")
+                        on_activate: on_activate()
                 }
 
-                if let Some(msg) = loading_message {
-                    { loading_overlay("loading-overlay", &msg) }
+                row (width: fill, justify: between) {
+                    text (content: {format!("{} / {}", item_count, total_count)}) style (fg: muted)
+
+                    row (gap: 1) {
+                        text (content: "esc") style (fg: primary)
+                        text (content: "close") style (fg: muted)
+                    }
                 }
             }
         }

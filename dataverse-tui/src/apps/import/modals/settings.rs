@@ -2,6 +2,7 @@
 
 
 use dataverse_lib::DataverseClient;
+use dataverse_lib::error::Error as DataverseError;
 use dataverse_lib::model::Entity;
 use rafter::page;
 use rafter::prelude::*;
@@ -65,18 +66,16 @@ impl ImportSettingsModal {
     ) -> Self {
         let parsed_columns = parse_headers(&columns);
 
-        Self {
+        Self::new(
             client,
             suggested_entity,
             entity_options,
-            columns: parsed_columns,
+            parsed_columns,
             rows,
-            primary_key_field: State::default(),
-            entity: State::default(),
-            batch_size: State::default(),
-            __handler_registry: Default::default(),
-            __derived_cache: Default::default(),
-        }
+            None,
+            AutocompleteState::default(),
+            NumberInputState::default(),
+        )
     }
 }
 
@@ -144,30 +143,29 @@ impl ImportSettingsModal {
 
         // Fetch entity metadata to get primary_id_attribute
         let entity_result = gx
-            .modal(LoadingModal::new("Fetching metadata...", async move {
-                client.metadata().entity(entity).await
-            }))
+            .modal(LoadingModal::run_with_default(
+                "Fetching metadata...",
+                || Err(DataverseError::Cancelled),
+                async move { client.metadata().entity(entity).await },
+            ))
             .await;
 
         log::debug!(
             "Metadata fetch result: {:?}",
-            entity_result
-                .as_ref()
-                .map(|r| r.as_ref().map(|e| &e.primary_id_attribute))
+            entity_result.as_ref().map(|e| &e.primary_id_attribute)
         );
 
         match entity_result {
-            Some(Ok(entity_metadata)) => {
+            Ok(entity_metadata) => {
                 let pk = entity_metadata.primary_id_attribute.clone();
                 log::debug!("Found primary key: {}", pk);
                 self.primary_key_field.set(Some(pk));
             }
-            Some(Err(e)) => {
-                gx.toast(Toast::error(format!("Failed to fetch metadata: {}", e)));
+            Err(e) if e.is_cancelled() => {
                 self.primary_key_field.set(None);
             }
-            None => {
-                // User cancelled
+            Err(e) => {
+                gx.toast(Toast::error(format!("Failed to fetch metadata: {}", e)));
                 self.primary_key_field.set(None);
             }
         }
