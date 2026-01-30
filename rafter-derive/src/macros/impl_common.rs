@@ -1928,8 +1928,103 @@ pub fn generate_handler_wrappers(handlers: &[HandlerInfo]) -> TokenStream {
         .map(generate_single_wrapper)
         .collect();
 
+    let handler_getters: Vec<TokenStream> = handlers
+        .iter()
+        .map(generate_handler_getter)
+        .collect();
+
     quote! {
         #(#wrappers)*
+        #(#handler_getters)*
+    }
+}
+
+/// Generate a handler getter method that returns a `Handler` closure.
+///
+/// For each handler, generates a `{name}_handler` method that:
+/// - Takes the handler's non-context arguments (if any)
+/// - Returns a `Handler` (Arc<dyn Fn(&HandlerContext) + Send + Sync>)
+/// - The closure calls the `__wrap_{name}` method
+///
+/// Example:
+/// ```ignore
+/// // For a handler with no extra args:
+/// #[handler]
+/// async fn refresh(&self, gx: &GlobalContext) { ... }
+///
+/// // Generates:
+/// fn refresh_handler(&self) -> rafter::Handler {
+///     let __self = self.clone();
+///     std::sync::Arc::new(move |__hx: &rafter::HandlerContext| {
+///         __self.__wrap_refresh(__hx);
+///     })
+/// }
+///
+/// // For a handler with extra args:
+/// #[handler]
+/// async fn delete(&self, id: u64, cx: &AppContext) { ... }
+///
+/// // Generates:
+/// fn delete_handler(&self, id: u64) -> rafter::Handler {
+///     let __self = self.clone();
+///     let __arg0 = id.clone();
+///     std::sync::Arc::new(move |__hx: &rafter::HandlerContext| {
+///         __self.__wrap_delete(__arg0.clone(), __hx);
+///     })
+/// }
+/// ```
+fn generate_handler_getter(handler: &HandlerInfo) -> TokenStream {
+    let handler_name = &handler.name;
+    let getter_name = format_ident!("{}_handler", handler_name);
+    let wrapper_name = format_ident!("__wrap_{}", handler_name);
+
+    // Generate getter parameters: same as handler's non-context args
+    let getter_params: Vec<TokenStream> = handler
+        .args
+        .iter()
+        .map(|arg| {
+            let pat = &arg.pattern;
+            let ty = &arg.ty;
+            quote! { #pat: #ty }
+        })
+        .collect();
+
+    // Generate argument clones for capture
+    let arg_clones: Vec<TokenStream> = handler
+        .args
+        .iter()
+        .enumerate()
+        .map(|(i, arg)| {
+            let arg_name = format_ident!("__arg{}", i);
+            let pat = &arg.pattern;
+            quote! { let #arg_name = #pat.clone(); }
+        })
+        .collect();
+
+    // Generate argument usages in the closure (need to clone again for move)
+    let call_args: Vec<TokenStream> = (0..handler.args.len())
+        .map(|i| {
+            let arg_name = format_ident!("__arg{}", i);
+            quote! { #arg_name.clone() }
+        })
+        .collect();
+
+    // Doc comment for the generated method
+    let doc = format!(
+        "Returns a [`Handler`](rafter::Handler) closure for the `{}` handler.\n\n\
+         Use this with `gx.schedule_after()` or `gx.schedule_every()` for scheduled jobs.",
+        handler_name
+    );
+
+    quote! {
+        #[doc = #doc]
+        pub fn #getter_name(&self, #(#getter_params),*) -> rafter::Handler {
+            let __self = self.clone();
+            #(#arg_clones)*
+            std::sync::Arc::new(move |__hx: &rafter::HandlerContext| {
+                __self.#wrapper_name(#(#call_args,)* __hx);
+            })
+        }
     }
 }
 

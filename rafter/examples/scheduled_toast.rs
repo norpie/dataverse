@@ -6,16 +6,14 @@
 //! Features demonstrated:
 //! - `gx.schedule_every()` for recurring jobs
 //! - `gx.cancel_job()` to stop a scheduled job
-//! - Toast notifications triggered by scheduled handlers
+//! - `#[handler]` methods used with scheduled jobs via `_handler()` suffix
 
 use std::fs::File;
-use std::sync::Arc;
 use std::time::Duration;
 
 use rafter::page;
 use rafter::prelude::*;
 use rafter::widgets::Text;
-use rafter::Handler;
 use simplelog::{Config, LevelFilter, WriteLogger};
 
 // ============================================================================
@@ -37,7 +35,7 @@ impl ScheduledToastApp {
     #[on_start]
     async fn on_start(&self, gx: &GlobalContext) {
         // Start the scheduled job immediately
-        self.start_job_impl(gx);
+        self.start_job(gx).await;
     }
 
     #[keybinds]
@@ -47,38 +45,33 @@ impl ScheduledToastApp {
         bind("q", quit);
     }
 
-    /// Create a handler closure for the scheduled job.
-    /// 
-    /// This creates a Handler (Arc<dyn Fn(&HandlerContext) + Send + Sync>)
-    /// that can be passed to schedule_every/schedule_after.
-    fn toast_handler(&self) -> Handler {
-        let app = self.clone();
-        Arc::new(move |hx| {
-            // Clone app state and spawn async task
-            let counter = app.counter.clone();
-            let gx = hx.gx().clone();
-            tokio::spawn(async move {
-                let count = counter.get() + 1;
-                counter.set(count);
-                gx.toast(Toast::success(format!("Scheduled toast #{}", count)));
-            });
-        })
+    /// The handler that runs every 5 seconds.
+    ///
+    /// To use this with `schedule_every`, call `self.show_toast_handler()`
+    /// which returns a `Handler` closure.
+    #[handler]
+    async fn show_toast(&self, gx: &GlobalContext) {
+        let count = self.counter.get() + 1;
+        self.counter.set(count);
+        gx.toast(Toast::success(format!("Scheduled toast #{}", count)));
     }
 
-    fn start_job_impl(&self, gx: &GlobalContext) {
+    #[handler]
+    async fn start_job(&self, gx: &GlobalContext) {
         if self.running.get() {
             return; // Already running
         }
 
         // Schedule a recurring job every 5 seconds
-        let handler = self.toast_handler();
-        let job_id = gx.schedule_every(Duration::from_secs(5), handler);
+        // Use the generated `show_toast_handler()` method to get a Handler closure
+        let job_id = gx.schedule_every(Duration::from_secs(5), self.show_toast_handler());
         self.job_id.set(Some(job_id));
         self.running.set(true);
         gx.toast(Toast::info("Started scheduled toasts (every 5 seconds)"));
     }
 
-    fn stop_job_impl(&self, gx: &GlobalContext) {
+    #[handler]
+    async fn stop_job(&self, gx: &GlobalContext) {
         if !self.running.get() {
             return; // Not running
         }
@@ -95,9 +88,9 @@ impl ScheduledToastApp {
     #[handler]
     async fn toggle_job(&self, gx: &GlobalContext) {
         if self.running.get() {
-            self.stop_job_impl(gx);
+            self.stop_job(gx).await;
         } else {
-            self.start_job_impl(gx);
+            self.start_job(gx).await;
         }
     }
 
