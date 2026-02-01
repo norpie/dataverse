@@ -1,4 +1,3 @@
-mod condition_editor;
 mod entity_picker;
 mod field_picker;
 mod load_query;
@@ -6,7 +5,9 @@ mod number_editor;
 mod save_query;
 mod sort_field_editor;
 
-pub use condition_editor::{ConditionData, ConditionEditorModal};
+// Re-export from shared filter builder
+pub use crate::widgets::filter_builder::{ConditionData, ConditionEditorModal};
+
 pub use entity_picker::EntityPickerModal;
 pub use field_picker::FieldPickerModal;
 pub use load_query::LoadQueryModal;

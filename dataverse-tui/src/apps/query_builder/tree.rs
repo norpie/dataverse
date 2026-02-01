@@ -6,8 +6,9 @@ use rafter::widgets::{TreeItem, TreeNode};
 use tuidom::{Color, Element, Style};
 
 use crate::formatting::format_value;
+use crate::widgets::filter_builder::{CondOp, FilterNode};
 
-use super::data::{CondOp, FilterNode, QueryData, SortField};
+use super::data::{QueryData, SortField};
 
 /// The five fixed sections of the query tree.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -254,11 +255,10 @@ pub fn build_tree(query: &QueryData) -> Vec<TreeNode<QueryTreeNode>> {
 
     // Filter section
     let filter_children = build_filter_node(&query.filter).into_iter().collect();
-    let filter_count = count_conditions(&query.filter);
     roots.push(TreeNode::branch(
         QueryTreeNode::Section {
             section: Section::Filter,
-            count: filter_count,
+            count: query.filter.count_conditions(),
         },
         filter_children,
     ));
@@ -302,10 +302,8 @@ fn build_filter_node(node: &FilterNode) -> Option<TreeNode<QueryTreeNode>> {
             is_and,
             children,
         } => {
-            let child_nodes: Vec<TreeNode<QueryTreeNode>> = children
-                .iter()
-                .filter_map(build_filter_node)
-                .collect();
+            let child_nodes: Vec<TreeNode<QueryTreeNode>> =
+                children.iter().filter_map(build_filter_node).collect();
             Some(TreeNode::branch(
                 QueryTreeNode::FilterGroup {
                     id: *id,
@@ -325,14 +323,5 @@ fn build_filter_node(node: &FilterNode) -> Option<TreeNode<QueryTreeNode>> {
             operator: *operator,
             value: value.clone(),
         })),
-    }
-}
-
-/// Count the number of leaf conditions in a filter tree.
-fn count_conditions(node: &FilterNode) -> usize {
-    match node {
-        FilterNode::Empty => 0,
-        FilterNode::Condition { .. } => 1,
-        FilterNode::Group { children, .. } => children.iter().map(count_conditions).sum(),
     }
 }

@@ -13,15 +13,7 @@ use uuid::Uuid;
 
 use crate::formatting::format_value;
 
-use super::super::data::CondOp;
-
-/// Result returned by the condition editor.
-#[derive(Clone, Debug)]
-pub struct ConditionData {
-    pub field: String,
-    pub operator: CondOp,
-    pub value: Value,
-}
+use super::types::{CondOp, ConditionData};
 
 /// Modal for creating or editing a filter condition.
 #[modal(default, size = Md)]
@@ -45,7 +37,10 @@ pub struct ConditionEditorModal {
 
 impl ConditionEditorModal {
     /// Create with pre-fetched field options and attribute metadata.
-    pub fn with_options(options: Vec<(String, String)>, attributes: Vec<AttributeMetadata>) -> Self {
+    pub fn with_options(
+        options: Vec<(String, String)>,
+        attributes: Vec<AttributeMetadata>,
+    ) -> Self {
         Self {
             options,
             attributes,
@@ -330,7 +325,7 @@ impl ConditionEditorModal {
 }
 
 /// Get available operators for a given attribute type.
-fn operators_for_type(attr_type: Option<AttributeType>) -> Vec<CondOp> {
+pub fn operators_for_type(attr_type: Option<AttributeType>) -> Vec<CondOp> {
     match attr_type {
         Some(AttributeType::String | AttributeType::Memo) => vec![
             CondOp::Eq,
@@ -391,7 +386,7 @@ fn operators_for_type(attr_type: Option<AttributeType>) -> Vec<CondOp> {
 }
 
 /// Get placeholder hint text for a given attribute type.
-fn type_hint_text(attr_type: AttributeType) -> String {
+pub fn type_hint_text(attr_type: AttributeType) -> String {
     match attr_type {
         AttributeType::String | AttributeType::Memo => "text value".to_string(),
         AttributeType::Integer | AttributeType::BigInt => "integer".to_string(),
@@ -413,7 +408,7 @@ fn type_hint_text(attr_type: AttributeType) -> String {
 }
 
 /// Parse a text value into the appropriate Value type.
-fn parse_value(text: &str, attr_type: Option<AttributeType>) -> Result<Value, String> {
+pub fn parse_value(text: &str, attr_type: Option<AttributeType>) -> Result<Value, String> {
     if text.is_empty() {
         return Err("Value is required".to_string());
     }

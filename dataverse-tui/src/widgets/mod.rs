@@ -1,4 +1,5 @@
 mod braille_spinner;
+pub mod filter_builder;
 mod scrolling_text;
 mod spinner;
 
