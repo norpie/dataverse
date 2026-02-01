@@ -5,7 +5,11 @@ use serde::Serialize;
 
 use super::AttributeMetadata;
 use super::ManyToManyRelationship;
+use super::MultiSelectPicklistAttributeMetadata;
 use super::OneToManyRelationship;
+use super::PicklistAttributeMetadata;
+use super::StateAttributeMetadata;
+use super::StatusAttributeMetadata;
 
 /// Core entity metadata needed for CRUD operations.
 ///
@@ -113,9 +117,29 @@ pub struct EntityMetadata {
     #[serde(default)]
     pub is_valid_for_advanced_find: bool,
 
-    /// All attributes of this entity.
+    /// All attributes of this entity (base metadata without option sets).
     #[serde(default)]
     pub attributes: Vec<AttributeMetadata>,
+
+    /// State attributes with their option sets.
+    /// Populated by parallel fetch, not directly from the API response.
+    #[serde(default, skip_deserializing)]
+    pub state_attributes: Vec<StateAttributeMetadata>,
+
+    /// Status attributes with their option sets.
+    /// Populated by parallel fetch, not directly from the API response.
+    #[serde(default, skip_deserializing)]
+    pub status_attributes: Vec<StatusAttributeMetadata>,
+
+    /// Picklist attributes with their option sets.
+    /// Populated by parallel fetch, not directly from the API response.
+    #[serde(default, skip_deserializing)]
+    pub picklist_attributes: Vec<PicklistAttributeMetadata>,
+
+    /// Multi-select picklist attributes with their option sets.
+    /// Populated by parallel fetch, not directly from the API response.
+    #[serde(default, skip_deserializing)]
+    pub multi_select_picklist_attributes: Vec<MultiSelectPicklistAttributeMetadata>,
 
     /// One-to-many relationships where this entity is the primary (referenced) entity.
     #[serde(default)]
@@ -166,6 +190,37 @@ impl EntityMetadata {
     /// Finds an attribute by logical name.
     pub fn attribute(&self, logical_name: &str) -> Option<&AttributeMetadata> {
         self.attributes
+            .iter()
+            .find(|a| a.logical_name == logical_name)
+    }
+
+    /// Finds a state attribute by logical name.
+    pub fn state_attribute(&self, logical_name: &str) -> Option<&StateAttributeMetadata> {
+        self.state_attributes
+            .iter()
+            .find(|a| a.logical_name == logical_name)
+    }
+
+    /// Finds a status attribute by logical name.
+    pub fn status_attribute(&self, logical_name: &str) -> Option<&StatusAttributeMetadata> {
+        self.status_attributes
+            .iter()
+            .find(|a| a.logical_name == logical_name)
+    }
+
+    /// Finds a picklist attribute by logical name.
+    pub fn picklist_attribute(&self, logical_name: &str) -> Option<&PicklistAttributeMetadata> {
+        self.picklist_attributes
+            .iter()
+            .find(|a| a.logical_name == logical_name)
+    }
+
+    /// Finds a multi-select picklist attribute by logical name.
+    pub fn multi_select_picklist_attribute(
+        &self,
+        logical_name: &str,
+    ) -> Option<&MultiSelectPicklistAttributeMetadata> {
+        self.multi_select_picklist_attributes
             .iter()
             .find(|a| a.logical_name == logical_name)
     }

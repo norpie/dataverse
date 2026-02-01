@@ -18,6 +18,10 @@ use crate::error::Error;
 use crate::error::MetadataError;
 use crate::model::metadata::EntityCore;
 use crate::model::metadata::EntityMetadata;
+use crate::model::metadata::MultiSelectPicklistAttributeMetadata;
+use crate::model::metadata::PicklistAttributeMetadata;
+use crate::model::metadata::StateAttributeMetadata;
+use crate::model::metadata::StatusAttributeMetadata;
 
 // =============================================================================
 // EntityMetadataBuilder
@@ -278,7 +282,60 @@ async fn fetch_entity_core_from_api(
 }
 
 /// Fetches full entity metadata directly from the API.
+///
+/// This makes multiple parallel requests to fetch:
+/// 1. Base entity metadata with attributes and relationships
+/// 2. State attributes with their OptionSets expanded
+/// 3. Status attributes with their OptionSets expanded
+/// 4. Picklist attributes with their OptionSets expanded
+/// 5. MultiSelect Picklist attributes with their OptionSets expanded
 async fn fetch_entity_metadata_from_api(
+    client: &DataverseClient,
+    logical_name: &str,
+) -> Result<EntityMetadata, Error> {
+    // Fetch base entity metadata and typed attributes with option sets in parallel
+    let (base_result, state_result, status_result, picklist_result, multi_picklist_result) =
+        tokio::join!(
+            fetch_base_entity_metadata(client, logical_name),
+            fetch_state_attributes(client, logical_name),
+            fetch_status_attributes(client, logical_name),
+            fetch_picklist_attributes(client, logical_name),
+            fetch_multi_select_picklist_attributes(client, logical_name),
+        );
+
+    // Base metadata is required
+    let mut metadata = base_result?;
+
+    // Populate typed attributes (errors are logged but don't fail the request)
+    match state_result {
+        Ok(attrs) => metadata.state_attributes = attrs,
+        Err(e) => log::warn!("Failed to fetch state attributes for {}: {}", logical_name, e),
+    }
+
+    match status_result {
+        Ok(attrs) => metadata.status_attributes = attrs,
+        Err(e) => log::warn!("Failed to fetch status attributes for {}: {}", logical_name, e),
+    }
+
+    match picklist_result {
+        Ok(attrs) => metadata.picklist_attributes = attrs,
+        Err(e) => log::warn!("Failed to fetch picklist attributes for {}: {}", logical_name, e),
+    }
+
+    match multi_picklist_result {
+        Ok(attrs) => metadata.multi_select_picklist_attributes = attrs,
+        Err(e) => log::warn!(
+            "Failed to fetch multi-select picklist attributes for {}: {}",
+            logical_name,
+            e
+        ),
+    }
+
+    Ok(metadata)
+}
+
+/// Fetches base entity metadata with attributes and relationships.
+async fn fetch_base_entity_metadata(
     client: &DataverseClient,
     logical_name: &str,
 ) -> Result<EntityMetadata, Error> {
@@ -317,6 +374,170 @@ async fn fetch_entity_metadata_from_api(
     })?;
 
     Ok(metadata)
+}
+
+/// Fetches state attributes with their OptionSets expanded.
+async fn fetch_state_attributes(
+    client: &DataverseClient,
+    entity_logical_name: &str,
+) -> Result<Vec<StateAttributeMetadata>, Error> {
+    let url = metadata_url(
+        client,
+        &format!(
+            "EntityDefinitions(LogicalName='{}')/Attributes/Microsoft.Dynamics.CRM.StateAttributeMetadata?$expand=OptionSet",
+            entity_logical_name
+        ),
+    );
+
+    let response = metadata_request(client, Method::GET, &url).await?;
+
+    if !response.status().is_success() {
+        let status = response.status().as_u16();
+        let body = response.text().await.unwrap_or_default();
+        return Err(Error::Api(ApiError::Http {
+            status,
+            message: body,
+            code: None,
+            inner: None,
+        }));
+    }
+
+    #[derive(serde::Deserialize)]
+    struct Response {
+        value: Vec<StateAttributeMetadata>,
+    }
+
+    let resp: Response = response.json().await.map_err(|e| {
+        Error::Api(ApiError::Parse {
+            message: format!("Failed to parse StateAttributeMetadata list: {}", e),
+            body: None,
+        })
+    })?;
+
+    Ok(resp.value)
+}
+
+/// Fetches status attributes with their OptionSets expanded.
+async fn fetch_status_attributes(
+    client: &DataverseClient,
+    entity_logical_name: &str,
+) -> Result<Vec<StatusAttributeMetadata>, Error> {
+    let url = metadata_url(
+        client,
+        &format!(
+            "EntityDefinitions(LogicalName='{}')/Attributes/Microsoft.Dynamics.CRM.StatusAttributeMetadata?$expand=OptionSet",
+            entity_logical_name
+        ),
+    );
+
+    let response = metadata_request(client, Method::GET, &url).await?;
+
+    if !response.status().is_success() {
+        let status = response.status().as_u16();
+        let body = response.text().await.unwrap_or_default();
+        return Err(Error::Api(ApiError::Http {
+            status,
+            message: body,
+            code: None,
+            inner: None,
+        }));
+    }
+
+    #[derive(serde::Deserialize)]
+    struct Response {
+        value: Vec<StatusAttributeMetadata>,
+    }
+
+    let resp: Response = response.json().await.map_err(|e| {
+        Error::Api(ApiError::Parse {
+            message: format!("Failed to parse StatusAttributeMetadata list: {}", e),
+            body: None,
+        })
+    })?;
+
+    Ok(resp.value)
+}
+
+/// Fetches picklist attributes with their OptionSets expanded.
+async fn fetch_picklist_attributes(
+    client: &DataverseClient,
+    entity_logical_name: &str,
+) -> Result<Vec<PicklistAttributeMetadata>, Error> {
+    let url = metadata_url(
+        client,
+        &format!(
+            "EntityDefinitions(LogicalName='{}')/Attributes/Microsoft.Dynamics.CRM.PicklistAttributeMetadata?$expand=OptionSet",
+            entity_logical_name
+        ),
+    );
+
+    let response = metadata_request(client, Method::GET, &url).await?;
+
+    if !response.status().is_success() {
+        let status = response.status().as_u16();
+        let body = response.text().await.unwrap_or_default();
+        return Err(Error::Api(ApiError::Http {
+            status,
+            message: body,
+            code: None,
+            inner: None,
+        }));
+    }
+
+    #[derive(serde::Deserialize)]
+    struct Response {
+        value: Vec<PicklistAttributeMetadata>,
+    }
+
+    let resp: Response = response.json().await.map_err(|e| {
+        Error::Api(ApiError::Parse {
+            message: format!("Failed to parse PicklistAttributeMetadata list: {}", e),
+            body: None,
+        })
+    })?;
+
+    Ok(resp.value)
+}
+
+/// Fetches multi-select picklist attributes with their OptionSets expanded.
+async fn fetch_multi_select_picklist_attributes(
+    client: &DataverseClient,
+    entity_logical_name: &str,
+) -> Result<Vec<MultiSelectPicklistAttributeMetadata>, Error> {
+    let url = metadata_url(
+        client,
+        &format!(
+            "EntityDefinitions(LogicalName='{}')/Attributes/Microsoft.Dynamics.CRM.MultiSelectPicklistAttributeMetadata?$expand=OptionSet",
+            entity_logical_name
+        ),
+    );
+
+    let response = metadata_request(client, Method::GET, &url).await?;
+
+    if !response.status().is_success() {
+        let status = response.status().as_u16();
+        let body = response.text().await.unwrap_or_default();
+        return Err(Error::Api(ApiError::Http {
+            status,
+            message: body,
+            code: None,
+            inner: None,
+        }));
+    }
+
+    #[derive(serde::Deserialize)]
+    struct Response {
+        value: Vec<MultiSelectPicklistAttributeMetadata>,
+    }
+
+    let resp: Response = response.json().await.map_err(|e| {
+        Error::Api(ApiError::Parse {
+            message: format!("Failed to parse MultiSelectPicklistAttributeMetadata list: {}", e),
+            body: None,
+        })
+    })?;
+
+    Ok(resp.value)
 }
 
 /// Fetches all entity metadata from the API.
