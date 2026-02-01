@@ -169,7 +169,7 @@ mod tests {
             ExpandBuilder::new("contact_customer_accounts").filter(Filter::eq("statecode", 0i32));
         assert_eq!(
             expand.to_odata(),
-            "contact_customer_accounts($filter=statecode eq 0)"
+            "contact_customer_accounts($filter=statecode%20eq%200)"
         );
     }
 
@@ -182,7 +182,7 @@ mod tests {
             .top(5);
         assert_eq!(
             expand.to_odata(),
-            "contact_customer_accounts($select=fullname;$filter=statecode eq 0;$orderby=fullname asc;$top=5)"
+            "contact_customer_accounts($select=fullname;$filter=statecode%20eq%200;$orderby=fullname%20asc;$top=5)"
         );
     }
 
