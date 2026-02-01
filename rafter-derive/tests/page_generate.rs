@@ -3,7 +3,8 @@
 //! These tests verify the generated code compiles and produces valid tuidom::Element values.
 //! Since Element's internals are private, we mainly verify compilation succeeds.
 
-use rafter_derive::page;
+use rafter::widgets::Text;
+use rafter_derive::{element, page};
 use tuidom::Element;
 
 // Basic element generation
@@ -37,7 +38,7 @@ fn test_generate_box() {
 
 #[test]
 fn test_generate_text() {
-    let _elem: Element = page! {
+    let _elem: Element = element! {
         text (content: "Hello") {}
     };
 }
@@ -45,7 +46,7 @@ fn test_generate_text() {
 #[test]
 fn test_generate_text_dynamic() {
     let msg = "Dynamic";
-    let _elem: Element = page! {
+    let _elem: Element = element! {
         text (content: {msg}) {}
     };
 }
@@ -120,7 +121,7 @@ fn test_generate_nested() {
 
 #[test]
 fn test_generate_deeply_nested() {
-    let _elem: Element = page! {
+    let _elem: Element = element! {
         column {
             row {
                 column {
@@ -136,8 +137,10 @@ fn test_generate_deeply_nested() {
 fn test_generate_if_true() {
     let show = true;
     let _elem: Element = page! {
-        if show {
-            text (content: "visible") {}
+        column {
+            if show {
+                row {}
+            }
         }
     };
 }
@@ -146,8 +149,10 @@ fn test_generate_if_true() {
 fn test_generate_if_false() {
     let show = false;
     let _elem: Element = page! {
-        if show {
-            text (content: "visible") {}
+        column {
+            if show {
+                row {}
+            }
         }
     };
 }
@@ -155,11 +160,13 @@ fn test_generate_if_false() {
 #[test]
 fn test_generate_if_else() {
     let show = false;
-    let _elem: Element = page! {
-        if show {
-            text (content: "yes") {}
-        } else {
-            text (content: "no") {}
+    let _elem: Element = element! {
+        column {
+            if show {
+                text (content: "yes") {}
+            } else {
+                text (content: "no") {}
+            }
         }
     };
 }
@@ -167,13 +174,15 @@ fn test_generate_if_else() {
 #[test]
 fn test_generate_if_else_if() {
     let value = 2;
-    let _elem: Element = page! {
-        if value == 0 {
-            text (content: "zero") {}
-        } else if value == 1 {
-            text (content: "one") {}
-        } else {
-            text (content: "other") {}
+    let _elem: Element = element! {
+        column {
+            if value == 0 {
+                text (content: "zero") {}
+            } else if value == 1 {
+                text (content: "one") {}
+            } else {
+                text (content: "other") {}
+            }
         }
     };
 }
@@ -182,8 +191,10 @@ fn test_generate_if_else_if() {
 fn test_generate_for_loop() {
     let items = vec![1, 2, 3];
     let _elem: Element = page! {
-        for _i in items {
-            row {}
+        column {
+            for _i in items {
+                row {}
+            }
         }
     };
 }
@@ -191,9 +202,11 @@ fn test_generate_for_loop() {
 #[test]
 fn test_generate_for_loop_with_value() {
     let items = vec!["a", "b", "c"];
-    let _elem: Element = page! {
-        for item in items {
-            text (content: {item}) {}
+    let _elem: Element = element! {
+        column {
+            for item in items {
+                text (content: {item}) {}
+            }
         }
     };
 }
@@ -201,10 +214,12 @@ fn test_generate_for_loop_with_value() {
 #[test]
 fn test_generate_match() {
     let opt: Option<i32> = Some(42);
-    let _elem: Element = page! {
-        match opt {
-            Some(_) => text (content: "some") {},
-            None => text (content: "none") {},
+    let _elem: Element = element! {
+        column {
+            match opt {
+                Some(_) => text (content: "some") {},
+                None => text (content: "none") {},
+            }
         }
     };
 }
@@ -212,11 +227,13 @@ fn test_generate_match() {
 #[test]
 fn test_generate_match_with_guard() {
     let value = 5;
-    let _elem: Element = page! {
-        match value {
-            n if n < 0 => text (content: "negative") {},
-            0 => text (content: "zero") {},
-            _ => text (content: "positive") {},
+    let _elem: Element = element! {
+        column {
+            match value {
+                n if n < 0 => text (content: "negative") {},
+                0 => text (content: "zero") {},
+                _ => text (content: "positive") {},
+            }
         }
     };
 }
@@ -240,14 +257,14 @@ fn test_generate_with_bg() {
 
 #[test]
 fn test_generate_with_fg() {
-    let _elem: Element = page! {
+    let _elem: Element = element! {
         text (content: "colored") style (fg: secondary) {}
     };
 }
 
 #[test]
 fn test_generate_with_bold() {
-    let _elem: Element = page! {
+    let _elem: Element = element! {
         text (content: "bold") style (bold: true) {}
     };
 }
@@ -266,7 +283,7 @@ fn test_generate_complex() {
     let items = vec!["a", "b"];
     let show_header = true;
 
-    let _elem: Element = page! {
+    let _elem: Element = element! {
         column (padding: 1, gap: 2) {
             if show_header {
                 row style (bg: primary) {
@@ -302,14 +319,14 @@ fn test_generate_interactive() {
 #[test]
 fn test_generate_merged_styles() {
     // This should generate a single .style(Style::new().background(...).foreground(...).bold())
-    let _elem: Element = page! {
+    let _elem: Element = element! {
         text (content: "styled") style (bg: primary, fg: secondary, bold: true) {}
     };
 }
 
 #[test]
 fn test_generate_all_text_styles() {
-    let _elem: Element = page! {
+    let _elem: Element = element! {
         text (content: "all styles") style (bold: true, italic: true, underline: true, dim: true) {}
     };
 }
@@ -335,7 +352,7 @@ fn test_generate_color_variants() {
 #[test]
 fn test_generate_layout_and_style_together() {
     // Layout and style attrs should both work
-    let _elem: Element = page! {
+    let _elem: Element = element! {
         column (padding: 2, gap: 1) style (bg: primary, bold: true) {
             text (content: "test") style (fg: secondary) {}
         }
@@ -345,7 +362,7 @@ fn test_generate_layout_and_style_together() {
 // Style-only element (no layout attrs)
 #[test]
 fn test_generate_style_only() {
-    let _elem: Element = page! {
+    let _elem: Element = element! {
         row style (bg: surface, fg: primary) {
             text (content: "styled") {}
         }

@@ -3,39 +3,40 @@
 //! These tests verify the parsing phase works correctly.
 
 use rafter_derive::page;
+use tuidom::Element;
 
 // Basic element parsing
 #[test]
 fn test_simple_element() {
-    let _: tuidom::Element = page! {
+    let _: Element = page! {
         column {}
     };
 }
 
 #[test]
 fn test_element_with_layout_attrs() {
-    let _: tuidom::Element = page! {
+    let _: Element = page! {
         column (padding: 1, gap: 2) {}
     };
 }
 
 #[test]
 fn test_element_with_style_attrs() {
-    let _: tuidom::Element = page! {
+    let _: Element = page! {
         column style (bg: primary, bold: true) {}
     };
 }
 
 #[test]
 fn test_element_with_layout_and_style() {
-    let _: tuidom::Element = page! {
+    let _: Element = page! {
         column (padding: 1) style (bg: primary) {}
     };
 }
 
 #[test]
 fn test_element_with_children() {
-    let _: tuidom::Element = page! {
+    let _: Element = page! {
         column {
             row {}
             row {}
@@ -45,7 +46,7 @@ fn test_element_with_children() {
 
 #[test]
 fn test_element_with_attrs_and_children() {
-    let _: tuidom::Element = page! {
+    let _: Element = page! {
         column (gap: 2) style (bg: surface) {
             row (padding: 1) {}
         }
@@ -56,19 +57,19 @@ fn test_element_with_attrs_and_children() {
 // These tests verify parsing works but generation requires widget types
 // #[test]
 // fn test_element_with_handler() {
-//     let _: tuidom::Element = page! {
+//     let _: Element = page! {
 //         button (label: "Click") on_click: handle_click() {}
 //     };
 // }
 // #[test]
 // fn test_element_with_handler_args() {
-//     let _: tuidom::Element = page! {
+//     let _: Element = page! {
 //         button (label: "Delete") on_click: delete_item(item_id, cx) {}
 //     };
 // }
 // #[test]
 // fn test_element_with_multiple_handlers() {
-//     let _: tuidom::Element = page! {
+//     let _: Element = page! {
 //         input (value: "test") on_change: handle_change(cx) on_submit: handle_submit(gx) {}
 //     };
 // }
@@ -77,9 +78,11 @@ fn test_element_with_attrs_and_children() {
 #[test]
 fn test_for_loop() {
     let _items = vec![1, 2, 3];
-    let _: tuidom::Element = page! {
-        for _item in _items {
-            row {}
+    let _: Element = page! {
+        column {
+            for _item in _items {
+                row {}
+            }
         }
     };
 }
@@ -88,9 +91,11 @@ fn test_for_loop() {
 #[test]
 fn test_if_statement() {
     let _show = true;
-    let _: tuidom::Element = page! {
-        if _show {
-            column {}
+    let _: Element = page! {
+        column {
+            if _show {
+                column {}
+            }
         }
     };
 }
@@ -98,7 +103,7 @@ fn test_if_statement() {
 #[test]
 fn test_if_else() {
     let _show = false;
-    let _: tuidom::Element = page! {
+    let _: Element = page! {
         if _show {
             column {}
         } else {
@@ -110,7 +115,7 @@ fn test_if_else() {
 #[test]
 fn test_if_else_if() {
     let _value = 1;
-    let _: tuidom::Element = page! {
+    let _: Element = page! {
         if _value == 0 {
             column {}
         } else if _value == 1 {
@@ -125,7 +130,7 @@ fn test_if_else_if() {
 #[test]
 fn test_match() {
     let _opt: Option<i32> = Some(1);
-    let _: tuidom::Element = page! {
+    let _: Element = page! {
         match _opt {
             Some(_) => column {},
             None => row {},
@@ -137,7 +142,7 @@ fn test_match() {
 #[test]
 fn test_braced_expr() {
     let _elem = tuidom::Element::col();
-    let _: tuidom::Element = page! {
+    let _: Element = page! {
         { _elem }
     };
 }
@@ -145,29 +150,29 @@ fn test_braced_expr() {
 // Attribute value types
 #[test]
 fn test_attr_ident_value() {
-    let _: tuidom::Element = page! {
+    let _: Element = page! {
         column (align: center) {}
     };
 }
 
 #[test]
 fn test_attr_lit_value() {
-    let _: tuidom::Element = page! {
+    let _: Element = page! {
         column (padding: 5) {}
     };
 }
 
 #[test]
 fn test_attr_string_value() {
-    let _: tuidom::Element = page! {
-        text (content: "hello") {}
+    let _: Element = page! {
+        column (id: "hello") {}
     };
 }
 
 #[test]
 fn test_attr_expr_value() {
     let _padding = 3;
-    let _: tuidom::Element = page! {
+    let _: Element = page! {
         column (padding: {_padding}) {}
     };
 }
@@ -177,11 +182,11 @@ fn test_attr_expr_value() {
 fn test_complex_nested() {
     let _items = vec![1, 2];
     let _show_header = true;
-    let _: tuidom::Element = page! {
+    let _: Element = page! {
         column (padding: 1, gap: 2) {
             if _show_header {
                 row style (bg: primary) {
-                    text (content: "Header") {}
+                    column (id: "header") {}
                 }
             }
             for _item in _items {
@@ -196,7 +201,7 @@ fn test_complex_nested() {
 // Style-only elements
 #[test]
 fn test_style_only_element() {
-    let _: tuidom::Element = page! {
+    let _: Element = page! {
         row style (bg: surface) {}
     };
 }
@@ -204,7 +209,7 @@ fn test_style_only_element() {
 // Layout-only elements
 #[test]
 fn test_layout_only_element() {
-    let _: tuidom::Element = page! {
+    let _: Element = page! {
         column (padding: 2, gap: 1) {}
     };
 }
@@ -212,42 +217,42 @@ fn test_layout_only_element() {
 // Transition parsing
 #[test]
 fn test_transition_single() {
-    let _: tuidom::Element = page! {
+    let _: Element = page! {
         column transition (bg: 200) {}
     };
 }
 
 #[test]
 fn test_transition_with_easing() {
-    let _: tuidom::Element = page! {
+    let _: Element = page! {
         column transition (bg: 200 ease_out) {}
     };
 }
 
 #[test]
 fn test_transition_multiple() {
-    let _: tuidom::Element = page! {
+    let _: Element = page! {
         column transition (bg: 200 ease_out, fg: 100 linear) {}
     };
 }
 
 #[test]
 fn test_transition_all() {
-    let _: tuidom::Element = page! {
+    let _: Element = page! {
         column transition (all: 300 ease_in_out) {}
     };
 }
 
 #[test]
 fn test_layout_style_transition() {
-    let _: tuidom::Element = page! {
+    let _: Element = page! {
         column (padding: 1) style (bg: primary) transition (bg: 200) {}
     };
 }
 
 #[test]
 fn test_transition_one_second() {
-    let _: tuidom::Element = page! {
+    let _: Element = page! {
         column transition (bg: 1000) {}
     };
 }
@@ -256,7 +261,7 @@ fn test_transition_one_second() {
 #[test]
 fn test_spread_basic() {
     let items: Vec<tuidom::Element> = vec![];
-    let _: tuidom::Element = page! {
+    let _: Element = page! {
         column {
             ...items
         }
@@ -266,7 +271,7 @@ fn test_spread_basic() {
 #[test]
 fn test_spread_with_other_children() {
     let items: Vec<tuidom::Element> = vec![];
-    let _: tuidom::Element = page! {
+    let _: Element = page! {
         column {
             row {}
             ...items
@@ -277,7 +282,7 @@ fn test_spread_with_other_children() {
 
 #[test]
 fn test_spread_expression() {
-    let _: tuidom::Element = page! {
+    let _: Element = page! {
         column {
             ...vec![]
         }

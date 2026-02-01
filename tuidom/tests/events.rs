@@ -240,7 +240,7 @@ fn test_collect_focusable_order() {
         )
         .child(Element::text("C").id("c").focusable(true));
 
-    let focusable = collect_focusable(&root);
+    let focusable = collect_focusable(&root, None);
     assert_eq!(focusable, vec!["root", "a", "b", "c"]);
 }
 
@@ -251,7 +251,7 @@ fn test_collect_focusable_nested() {
             .child(Element::col().child(Element::text("Deep").id("deep").focusable(true))),
     );
 
-    let focusable = collect_focusable(&root);
+    let focusable = collect_focusable(&root, None);
     assert_eq!(focusable, vec!["deep"]);
 }
 
@@ -261,6 +261,6 @@ fn test_collect_focusable_empty() {
         .child(Element::text("Not focusable"))
         .child(Element::text("Also not"));
 
-    let focusable = collect_focusable(&root);
+    let focusable = collect_focusable(&root, None);
     assert!(focusable.is_empty());
 }

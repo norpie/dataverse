@@ -87,6 +87,10 @@ struct QuitConfirmModal;
 
 #[modal_impl]
 impl QuitConfirmModal {
+    fn default_result(&self) -> bool {
+        false
+    }
+
     #[keybinds]
     fn keys() {
         bind("y", confirm);

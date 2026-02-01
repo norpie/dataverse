@@ -58,8 +58,8 @@ fn main() -> std::io::Result<()> {
                 Event::Focus { target } => {
                     last_event = Some(format!("Focus: {}", target));
                 }
-                Event::Blur { target } => {
-                    last_event = Some(format!("Blur: {}", target));
+                Event::Blur { target, new_target } => {
+                    last_event = Some(format!("Blur: {} -> {:?}", target, new_target));
                 }
                 Event::Scroll {
                     target,

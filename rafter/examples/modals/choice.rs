@@ -36,7 +36,7 @@ pub struct ChoiceModal {
 }
 
 impl ChoiceModal {
-    pub fn new(title: impl Into<String>) -> Self {
+    pub fn with_title(title: impl Into<String>) -> Self {
         Self {
             title: title.into(),
             ..Default::default()
@@ -46,6 +46,10 @@ impl ChoiceModal {
 
 #[modal_impl(Result = Option<Choice>)]
 impl ChoiceModal {
+    fn default_result(&self) -> Option<Choice> {
+        None
+    }
+
     #[keybinds]
     fn keys() {
         bind("escape", cancel);
@@ -103,7 +107,7 @@ pub struct ConfirmModal {
 }
 
 impl ConfirmModal {
-    pub fn new(message: impl Into<String>) -> Self {
+    pub fn with_message(message: impl Into<String>) -> Self {
         Self {
             message: message.into(),
             ..Default::default()
@@ -113,6 +117,10 @@ impl ConfirmModal {
 
 #[modal_impl(Result = bool)]
 impl ConfirmModal {
+    fn default_result(&self) -> bool {
+        false
+    }
+
     #[keybinds]
     fn keys() {
         bind("y", "enter", confirm);
