@@ -186,7 +186,7 @@ impl Operation {
     }
 
     /// Returns the content-id for this operation, if set.
-    pub(crate) fn content_id(&self) -> Option<&str> {
+    pub fn content_id(&self) -> Option<&str> {
         match self {
             Operation::Create { options, .. } => options.content_id.as_deref(),
             Operation::Retrieve { options, .. } => options.content_id.as_deref(),
