@@ -7,8 +7,8 @@ use rusqlite::params;
 use crate::widgets::filter_builder::FilterNode;
 
 use super::super::types::*;
-use super::helpers::*;
 use super::RepositoryError;
+use super::helpers::*;
 
 /// Input for creating a new entity mapping.
 pub struct NewEntityMapping {

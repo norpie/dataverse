@@ -315,7 +315,13 @@ impl ClientManagementModal {
         let (env_url, env_name, client_id, acc_name, tenant_id) = match (env, acc) {
             (Some(e), Some(a)) => {
                 let tenant = a.tenant_id.unwrap_or_default();
-                (e.url.clone(), e.display_name.clone(), a.client_id.clone(), a.display_name.clone(), tenant)
+                (
+                    e.url.clone(),
+                    e.display_name.clone(),
+                    a.client_id.clone(),
+                    a.display_name.clone(),
+                    tenant,
+                )
             }
             _ => {
                 gx.toast(Toast::error("Could not find environment or account"));
@@ -331,7 +337,9 @@ impl ClientManagementModal {
             tenant_id
         );
         let token = gx
-            .modal(BrowserAuthModal::for_environment(&env_url, &client_id, &tenant_id))
+            .modal(BrowserAuthModal::for_environment(
+                &env_url, &client_id, &tenant_id,
+            ))
             .await;
 
         log::debug!(
@@ -384,7 +392,7 @@ impl ClientManagementModal {
             );
 
             self.connection_status.set(ConnectionStatus::Connected);
-            
+
             // Publish session changed event
             gx.publish(SessionChanged {
                 account_id: Some(acc_id),
@@ -398,7 +406,7 @@ impl ClientManagementModal {
                 "[ClientManagement] Published SessionChanged for {}",
                 env_name
             );
-            
+
             gx.toast(Toast::success("Connected successfully!"));
         } else {
             log::debug!("[ClientManagement] Auth cancelled or failed");

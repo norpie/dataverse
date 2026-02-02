@@ -13,8 +13,8 @@ pub use api::*;
 pub use modal::IndexerDashboardModal;
 pub use repository::{IndexerRepository, SyncLogEntry, SyncStatus};
 pub use sync::{
-    execute_task, get_check_tasks, SyncTask, DEFAULT_CHECK_INTERVAL_SECS,
-    DEFAULT_REFRESH_THRESHOLD_PCT,
+    DEFAULT_CHECK_INTERVAL_SECS, DEFAULT_REFRESH_THRESHOLD_PCT, SyncTask, execute_task,
+    get_check_tasks,
 };
 
 use std::collections::{HashMap, VecDeque};
@@ -116,10 +116,7 @@ impl IndexerSystem {
         let task_count = tasks.len();
         self.queue.update(|q| q.extend(tasks));
 
-        log::info!(
-            "[Indexer] Queued {} initial check tasks",
-            task_count
-        );
+        log::info!("[Indexer] Queued {} initial check tasks", task_count);
 
         // Schedule immediate processing
         let job_id = gx.schedule_after(Duration::ZERO, self.process_queue_handler());
@@ -188,10 +185,10 @@ impl IndexerSystem {
                     match execute_task(&task, &repo, gx, threshold).await {
                         Ok(follow_up_tasks) => {
                             let follow_up_count = follow_up_tasks.len() as u32;
-                            
+
                             // Update per-env progress based on task type
                             self.update_progress_on_success(&task, &follow_up_tasks);
-                            
+
                             if follow_up_count > 0 {
                                 log::debug!(
                                     "[Indexer] Task produced {} follow-up tasks",
@@ -204,8 +201,11 @@ impl IndexerSystem {
                         Err(e) => {
                             log::warn!("[Indexer] Task failed: {}", e);
                             // Clear progress for this env on error
-                            self.env_progress.update(|p| { p.remove(&env_id); });
-                            self.persist_task_result(&task, Some(e.to_string()), 0).await;
+                            self.env_progress.update(|p| {
+                                p.remove(&env_id);
+                            });
+                            self.persist_task_result(&task, Some(e.to_string()), 0)
+                                .await;
                         }
                     }
                 }
@@ -221,7 +221,10 @@ impl IndexerSystem {
             let queue_empty = self.queue.get().is_empty();
             if queue_empty {
                 // Run complete - clear all progress
-                let total_done: u32 = self.env_progress.get().values()
+                let total_done: u32 = self
+                    .env_progress
+                    .get()
+                    .values()
                     .map(|p| p.entities_done + if p.optionsets_done { 1 } else { 0 })
                     .sum();
                 log::info!("[Indexer] Run complete: {} tasks executed", total_done);
@@ -261,7 +264,11 @@ impl IndexerSystem {
     // =========================================================================
 
     #[request_handler]
-    async fn handle_get_status(&self, _: GetIndexerStatus, gx: &GlobalContext) -> IndexerStatusResponse {
+    async fn handle_get_status(
+        &self,
+        _: GetIndexerStatus,
+        gx: &GlobalContext,
+    ) -> IndexerStatusResponse {
         self.get_current_status(gx).await
     }
 
@@ -361,18 +368,27 @@ impl IndexerSystem {
                     .unwrap_or_default();
                 for env in environments {
                     if let Err(e) = repo.clear_env_sync(env.env_id).await {
-                        log::error!("[Indexer] Failed to clear env sync for {}: {}", env.env_id, e);
+                        log::error!(
+                            "[Indexer] Failed to clear env sync for {}: {}",
+                            env.env_id,
+                            e
+                        );
                     }
                 }
             }
         }
 
         // Trigger a sync after clearing
-        self.handle_trigger_sync(TriggerSync { env_id: req.env_id }, gx).await;
+        self.handle_trigger_sync(TriggerSync { env_id: req.env_id }, gx)
+            .await;
     }
 
     #[request_handler]
-    async fn handle_get_sync_logs(&self, req: GetSyncLogs, _gx: &GlobalContext) -> Vec<SyncLogEntry> {
+    async fn handle_get_sync_logs(
+        &self,
+        req: GetSyncLogs,
+        _gx: &GlobalContext,
+    ) -> Vec<SyncLogEntry> {
         let Some(repo) = self.repository.get() else {
             return vec![];
         };
@@ -387,7 +403,11 @@ impl IndexerSystem {
     }
 
     #[request_handler]
-    async fn handle_get_settings(&self, _: GetIndexerSettings, _gx: &GlobalContext) -> SyncSettings {
+    async fn handle_get_settings(
+        &self,
+        _: GetIndexerSettings,
+        _gx: &GlobalContext,
+    ) -> SyncSettings {
         SyncSettings {
             check_interval_secs: self.check_interval_secs.get(),
             refresh_threshold_pct: self.refresh_threshold_pct.get(),
@@ -407,10 +427,20 @@ impl IndexerSystem {
 
         // Persist to global settings
         let settings = gx.data::<Settings>();
-        if let Err(e) = settings.indexer.check_interval_secs.set(req.check_interval_secs).await {
+        if let Err(e) = settings
+            .indexer
+            .check_interval_secs
+            .set(req.check_interval_secs)
+            .await
+        {
             log::error!("[Indexer] Failed to persist check_interval: {}", e);
         }
-        if let Err(e) = settings.indexer.refresh_threshold_pct.set(req.refresh_threshold_pct).await {
+        if let Err(e) = settings
+            .indexer
+            .refresh_threshold_pct
+            .set(req.refresh_threshold_pct)
+            .await
+        {
             log::error!("[Indexer] Failed to persist refresh_threshold: {}", e);
         }
 
@@ -555,7 +585,11 @@ impl IndexerSystem {
     }
 
     #[event_handler]
-    async fn on_update_settings_event(&self, event: UpdateIndexerSettingsEvent, gx: &GlobalContext) {
+    async fn on_update_settings_event(
+        &self,
+        event: UpdateIndexerSettingsEvent,
+        gx: &GlobalContext,
+    ) {
         log::info!(
             "[Indexer] Updating settings (via event): check_interval={}s, refresh_threshold={}%",
             event.check_interval_secs,
@@ -567,10 +601,20 @@ impl IndexerSystem {
 
         // Persist to global settings
         let settings = gx.data::<Settings>();
-        if let Err(e) = settings.indexer.check_interval_secs.set(event.check_interval_secs).await {
+        if let Err(e) = settings
+            .indexer
+            .check_interval_secs
+            .set(event.check_interval_secs)
+            .await
+        {
             log::error!("[Indexer] Failed to persist check_interval: {}", e);
         }
-        if let Err(e) = settings.indexer.refresh_threshold_pct.set(event.refresh_threshold_pct).await {
+        if let Err(e) = settings
+            .indexer
+            .refresh_threshold_pct
+            .set(event.refresh_threshold_pct)
+            .await
+        {
             log::error!("[Indexer] Failed to persist refresh_threshold: {}", e);
         }
 
@@ -584,7 +628,9 @@ impl IndexerSystem {
             check_interval_secs: self.check_interval_secs.get(),
             refresh_threshold_pct: self.refresh_threshold_pct.get(),
         };
-        let _ = gx.modal(IndexerDashboardModal::with_status(status, settings)).await;
+        let _ = gx
+            .modal(IndexerDashboardModal::with_status(status, settings))
+            .await;
     }
 
     // =========================================================================
@@ -748,7 +794,15 @@ impl IndexerSystem {
             if is_final {
                 // Persist success - clear error
                 if let Err(e) = repo
-                    .upsert_env_sync(env_id, SyncStatus::Idle, Some(chrono::Utc::now()), None, 0, 0, 0)
+                    .upsert_env_sync(
+                        env_id,
+                        SyncStatus::Idle,
+                        Some(chrono::Utc::now()),
+                        None,
+                        0,
+                        0,
+                        0,
+                    )
                     .await
                 {
                     log::error!("[Indexer] Failed to persist success status: {}", e);
@@ -818,8 +872,16 @@ impl IndexerSystem {
         let interval = self.check_interval_secs.get();
         let threshold = self.refresh_threshold_pct.get();
         SyncSettings {
-            check_interval_secs: if interval == 0 { DEFAULT_CHECK_INTERVAL_SECS } else { interval },
-            refresh_threshold_pct: if threshold == 0 { DEFAULT_REFRESH_THRESHOLD_PCT } else { threshold },
+            check_interval_secs: if interval == 0 {
+                DEFAULT_CHECK_INTERVAL_SECS
+            } else {
+                interval
+            },
+            refresh_threshold_pct: if threshold == 0 {
+                DEFAULT_REFRESH_THRESHOLD_PCT
+            } else {
+                threshold
+            },
         }
     }
 }

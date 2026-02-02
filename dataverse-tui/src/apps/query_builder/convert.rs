@@ -4,7 +4,7 @@ use dataverse_lib::api::query::odata::QueryBuilder as ODataQueryBuilder;
 use dataverse_lib::api::query::{Direction, OrderBy};
 use dataverse_lib::model::Entity;
 
-use crate::widgets::filter_builder::{convert_filter, ConvertError as FilterConvertError};
+use crate::widgets::filter_builder::{ConvertError as FilterConvertError, convert_filter};
 
 use super::data::{QueryData, SortField};
 

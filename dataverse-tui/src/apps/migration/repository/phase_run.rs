@@ -6,8 +6,8 @@ use chrono::Utc;
 use rusqlite::params;
 
 use super::super::types::*;
-use super::helpers::*;
 use super::RepositoryError;
+use super::helpers::*;
 
 /// Input for creating a new phase run.
 pub struct NewPhaseRun {

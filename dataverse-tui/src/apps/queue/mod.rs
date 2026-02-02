@@ -103,12 +103,13 @@ impl Queue {
 
         // Check for interrupted items (crash recovery)
         if let Ok(count) = repo.mark_running_as_interrupted().await
-            && count > 0 {
-                gx.toast(Toast::warning(format!(
-                    "{} item(s) were interrupted, please review",
-                    count
-                )));
-            }
+            && count > 0
+        {
+            gx.toast(Toast::warning(format!(
+                "{} item(s) were interrupted, please review",
+                count
+            )));
+        }
 
         // Load initial counts
         if let Ok(counts) = repo.count_by_status().await {
@@ -126,17 +127,15 @@ impl Queue {
         // Build source filter select state
         let available_sources = repo.get_sources().await.unwrap_or_default();
         let mut options = vec![("__all__".to_string(), "All sources".to_string())];
-        options.extend(
-            available_sources
-                .iter()
-                .map(|s| (s.clone(), s.clone())),
-        );
-        let mut source_state = SelectState::new(options)
-            .with_selection(SelectionMode::Forced);
-        
+        options.extend(available_sources.iter().map(|s| (s.clone(), s.clone())));
+        let mut source_state = SelectState::new(options).with_selection(SelectionMode::Forced);
+
         // Restore previously selected sources, or default to "All sources"
         if saved_sources.is_empty() {
-            source_state.selection.selected.insert("__all__".to_string());
+            source_state
+                .selection
+                .selected
+                .insert("__all__".to_string());
         } else {
             for src in &saved_sources {
                 if src == "__all__" || available_sources.contains(src) {
@@ -145,7 +144,10 @@ impl Queue {
             }
             // Ensure at least one is selected (Forced mode requirement)
             if source_state.selection.selected.is_empty() {
-                source_state.selection.selected.insert("__all__".to_string());
+                source_state
+                    .selection
+                    .selected
+                    .insert("__all__".to_string());
             }
         }
 
@@ -200,12 +202,13 @@ impl Queue {
         let is_running = self.is_running.get();
 
         ActionButtonsState {
-            show_step: !is_running && focused.as_ref().is_some_and(|item| {
-                matches!(item.status, ItemStatus::Ready | ItemStatus::Paused)
-            }),
-            show_pause_resume: focused.as_ref().is_some_and(|item| {
-                matches!(item.status, ItemStatus::Ready | ItemStatus::Paused)
-            }),
+            show_step: !is_running
+                && focused.as_ref().is_some_and(|item| {
+                    matches!(item.status, ItemStatus::Ready | ItemStatus::Paused)
+                }),
+            show_pause_resume: focused
+                .as_ref()
+                .is_some_and(|item| matches!(item.status, ItemStatus::Ready | ItemStatus::Paused)),
             pause_resume_label: focused.as_ref().map_or("Pause", |item| {
                 if item.status == ItemStatus::Paused {
                     "Resume"
@@ -219,9 +222,9 @@ impl Queue {
                     ItemStatus::Failed | ItemStatus::PartiallyFailed | ItemStatus::Interrupted
                 )
             }),
-            show_delete: focused.as_ref().is_some_and(|item| {
-                item.status != ItemStatus::Running
-            }),
+            show_delete: focused
+                .as_ref()
+                .is_some_and(|item| item.status != ItemStatus::Running),
         }
     }
 
@@ -427,7 +430,9 @@ impl Queue {
     #[handler]
     async fn delete_item(&self, item_id: i64, gx: &GlobalContext) {
         let confirmed = gx
-            .modal(crate::modals::ConfirmModal::with_message("Delete this queue item?"))
+            .modal(crate::modals::ConfirmModal::with_message(
+                "Delete this queue item?",
+            ))
             .await;
         if !confirmed {
             return;
@@ -449,12 +454,13 @@ impl Queue {
         };
         if let Ok(executions) = repo.get_executions(item_id).await
             && let Some(exec) = executions.first()
-                && let Some(error) = &exec.error {
-                    gx.modal(crate::apps::queue::modals::ErrorDetailsModal::with_error(
-                        error.clone(),
-                    ))
-                    .await;
-                }
+            && let Some(error) = &exec.error
+        {
+            gx.modal(crate::apps::queue::modals::ErrorDetailsModal::with_error(
+                error.clone(),
+            ))
+            .await;
+        }
     }
 
     #[handler]
@@ -463,9 +469,9 @@ impl Queue {
             return;
         };
         if let Ok(executions) = repo.get_executions(item_id).await {
-            gx.modal(crate::apps::queue::modals::ExecutionDetailsModal::with_executions(
-                executions,
-            ))
+            gx.modal(
+                crate::apps::queue::modals::ExecutionDetailsModal::with_executions(executions),
+            )
             .await;
         }
     }
@@ -481,9 +487,10 @@ impl Queue {
         if let Some(update) = gx
             .modal(crate::apps::queue::modals::EditItemModal::for_item(&item))
             .await
-            && repo.update_item(item_id, update).await.is_ok() {
-                self.refresh_counts_and_tree(&repo, gx).await;
-            }
+            && repo.update_item(item_id, update).await.is_ok()
+        {
+            self.refresh_counts_and_tree(&repo, gx).await;
+        }
     }
 
     // =========================================================================
@@ -586,11 +593,11 @@ impl Queue {
     #[handler]
     async fn search_changed(&self, gx: &GlobalContext) {
         let text = self.search_text.get();
-        
+
         // Persist setting
         let settings = gx.data::<Settings>();
         let _ = settings.queue.search_text.set(text).await;
-        
+
         if let Some(repo) = self.repository.get() {
             self.refresh_tree(&repo).await;
         }
@@ -612,7 +619,7 @@ impl Queue {
         // Handle mutual exclusivity between "__all__" and specific sources
         if !added.is_empty() {
             let all_sources = "__all__".to_string();
-            
+
             if added.contains(&all_sources) {
                 // "All sources" was just selected → clear specific sources
                 self.source_filter.update(|s| {
@@ -638,11 +645,11 @@ impl Queue {
 
         // Save and refresh
         let selected: Vec<String> = final_selection.into_iter().collect();
-        
+
         // Persist setting
         let settings = gx.data::<Settings>();
         let _ = settings.queue.source_filter.set(selected).await;
-        
+
         if let Some(repo) = self.repository.get() {
             self.refresh_tree(&repo).await;
         }
@@ -803,14 +810,15 @@ impl Queue {
         // Track duration for ETA
         if let Some(repo) = self.repository.get()
             && let Ok(executions) = repo.get_executions(event.item_id).await
-                && let Some(exec) = executions.first() {
-                    self.recent_durations.update(|d| {
-                        d.push_back(exec.duration_ms);
-                        if d.len() > 7 {
-                            d.pop_front();
-                        }
-                    });
+            && let Some(exec) = executions.first()
+        {
+            self.recent_durations.update(|d| {
+                d.push_back(exec.duration_ms);
+                if d.len() > 7 {
+                    d.pop_front();
                 }
+            });
+        }
 
         // Refresh counts and tree
         if let Some(repo) = self.repository.get() {
@@ -884,16 +892,18 @@ impl Queue {
 
                 // Add completed items from execution history
                 for item in &items {
-                    if item.status.is_terminal() && !timing_map.contains_key(&item.id)
+                    if item.status.is_terminal()
+                        && !timing_map.contains_key(&item.id)
                         && let Ok(executions) = repo.get_executions(item.id).await
-                            && let Some(exec) = executions.first() {
-                                timing_map.insert(
-                                    item.id,
-                                    types::ItemTiming::Completed {
-                                        duration_ms: exec.duration_ms,
-                                    },
-                                );
-                            }
+                        && let Some(exec) = executions.first()
+                    {
+                        timing_map.insert(
+                            item.id,
+                            types::ItemTiming::Completed {
+                                duration_ms: exec.duration_ms,
+                            },
+                        );
+                    }
                 }
 
                 let nodes = build_tree_nodes(&items, &timing_map);
@@ -916,16 +926,12 @@ impl Queue {
                 .filter(|v| *v == "__all__" || available.contains(v))
                 .cloned()
                 .collect();
-            
+
             // Build options with "All sources" at the top
             let mut options = vec![("__all__".to_string(), "All sources".to_string())];
-            options.extend(
-                available
-                    .iter()
-                    .map(|src| (src.clone(), src.clone())),
-            );
+            options.extend(available.iter().map(|src| (src.clone(), src.clone())));
             s.set_options(options);
-            
+
             // Restore valid selections
             for src in current_selected {
                 s.selection.selected.insert(src);

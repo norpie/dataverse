@@ -5,8 +5,8 @@ use chrono::Utc;
 use rusqlite::params;
 
 use super::super::types::*;
-use super::helpers::*;
 use super::RepositoryError;
+use super::helpers::*;
 
 /// Input for creating a new transform.
 pub struct NewTransform {
@@ -84,10 +84,7 @@ impl super::MigrationRepository {
     }
 
     /// Create a new transform.
-    pub async fn create_transform(
-        &self,
-        transform: NewTransform,
-    ) -> Result<i64, RepositoryError> {
+    pub async fn create_transform(&self, transform: NewTransform) -> Result<i64, RepositoryError> {
         let parent_type_str = transform.parent_type.as_str().to_string();
         let transform_type = transform_type_str(&transform.data);
         let data_blob = serialize_transform_data(&transform.data)?;

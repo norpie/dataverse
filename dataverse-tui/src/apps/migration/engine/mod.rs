@@ -5,7 +5,6 @@
 
 mod types;
 
-pub use types::value_type_name;
 pub use types::FindError;
 pub use types::StubTargetCache;
 pub use types::SystemVars;

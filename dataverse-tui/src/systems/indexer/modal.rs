@@ -2,7 +2,9 @@
 
 use rafter::page;
 use rafter::prelude::*;
-use rafter::widgets::{Button, List, ListItem, ListState, NumberInput, NumberInputState, SelectionMode, Text};
+use rafter::widgets::{
+    Button, List, ListItem, ListState, NumberInput, NumberInputState, SelectionMode, Text,
+};
 use tuidom::{Color, Element, Style};
 
 use super::{
@@ -74,8 +76,7 @@ impl ListItem for EnvListItem {
         // Error indicator
         if self.error.is_some() {
             row = row.child(
-                Element::text(" !")
-                    .style(Style::new().foreground(Color::var("error")).bold()),
+                Element::text(" !").style(Style::new().foreground(Color::var("error")).bold()),
             );
         }
 
@@ -144,9 +145,7 @@ impl IndexerDashboardModal {
         Self {
             is_paused: State::new(status.is_paused),
             overall_status: State::new(status.overall_status),
-            env_list: State::new(
-                ListState::new(items).with_selection(SelectionMode::Single),
-            ),
+            env_list: State::new(ListState::new(items).with_selection(SelectionMode::Single)),
             check_interval: State::new(
                 NumberInputState::new(settings.check_interval_secs as f64)
                     .with_min(1.0)
@@ -194,7 +193,11 @@ impl IndexerDashboardModal {
     /// Get the pause/resume button label.
     #[derived]
     fn pause_button_label(&self) -> &'static str {
-        if self.is_paused.get() { "Resume" } else { "Pause" }
+        if self.is_paused.get() {
+            "Resume"
+        } else {
+            "Pause"
+        }
     }
 
     // =========================================================================

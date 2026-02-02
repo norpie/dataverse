@@ -46,26 +46,26 @@ where
                 default
             }
         };
-        
+
         Ok(Self {
             value: State::new(value),
             key,
             backend,
         })
     }
-    
+
     /// Set a new value (updates in-memory state and persists to DB).
     pub async fn set(&self, new_value: T) -> Result<(), SettingsError> {
         // Update in-memory state (triggers UI reactivity)
         self.value.set(new_value.clone());
-        
+
         // Serialize and persist to DB
         let bytes = bincode::serde::encode_to_vec(&new_value, bincode::config::standard())?;
         self.backend.set_bytes(self.key, bytes).await?;
-        
+
         Ok(())
     }
-    
+
     /// Get a clone of the current value.
     pub fn get(&self) -> T {
         self.value.get()
@@ -77,7 +77,7 @@ where
     T: Clone,
 {
     type Target = State<T>;
-    
+
     fn deref(&self) -> &Self::Target {
         &self.value
     }

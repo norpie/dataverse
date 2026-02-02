@@ -1,4 +1,8 @@
-//! Centralized formatting utilities for Dataverse data display.
+//! Centralized formatting utilities for Dataverse data display and parsing.
+
+mod parse;
+
+pub use parse::{ParseError, parse_bool, parse_datetime, parse_filter_value, string_to_value};
 
 use dataverse_lib::model::Value;
 use dataverse_lib::model::metadata::AttributeType;
@@ -85,6 +89,46 @@ pub fn format_value(value: &Value) -> FormattedValue {
                 .collect::<Vec<_>>()
                 .join(", "),
         ),
-        _ => FormattedValue::same("[complex]"),
+        Value::EntityBinding(b) => {
+            FormattedValue::new(b.id.to_string(), format!("/{}({})", b.set_name, b.id))
+        }
+        Value::File(f) => FormattedValue::new(
+            f.file_name.clone().unwrap_or_else(|| "[file]".to_string()),
+            f.id.to_string(),
+        ),
+        Value::Image(i) => FormattedValue::new(
+            i.file_name.clone().unwrap_or_else(|| "[image]".to_string()),
+            i.id.to_string(),
+        ),
+        Value::Record(r) => FormattedValue::new(
+            format!("[record: {}]", r.entity_name()),
+            r.id()
+                .map(|id| id.to_string())
+                .unwrap_or_else(|| "[record]".to_string()),
+        ),
+        Value::Records(rs) => FormattedValue::same(format!("[{} records]", rs.len())),
+        Value::Json(_) => FormattedValue::same("[json]".to_string()),
+    }
+}
+
+/// Get placeholder hint text for a given attribute type.
+///
+/// Returns a short description of what value format is expected for input fields.
+pub fn type_hint_text(attr_type: AttributeType) -> &'static str {
+    match attr_type {
+        AttributeType::String | AttributeType::Memo => "text value",
+        AttributeType::Integer | AttributeType::BigInt => "integer",
+        AttributeType::Double | AttributeType::Decimal | AttributeType::Money => "number",
+        AttributeType::Boolean => "true or false",
+        AttributeType::DateTime => "YYYY-MM-DD or RFC3339",
+        AttributeType::Uniqueidentifier
+        | AttributeType::Lookup
+        | AttributeType::Customer
+        | AttributeType::Owner => "guid",
+        AttributeType::Picklist
+        | AttributeType::State
+        | AttributeType::Status
+        | AttributeType::MultiSelectPicklist => "option value (integer)",
+        _ => "value",
     }
 }

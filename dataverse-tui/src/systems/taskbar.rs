@@ -87,20 +87,20 @@ impl Taskbar {
     #[derived]
     fn instance_groups(&self) -> Vec<(String, Vec<InstanceInfo>)> {
         let instances = self.instances.get();
-        
+
         // Filter out Queue instance (has permanent nav in status section)
         let filtered: Vec<InstanceInfo> = instances
             .iter()
             .filter(|info| info.name != "Queue")
             .cloned()
             .collect();
-        
+
         // Group instances by app name
         let mut groups: HashMap<String, Vec<InstanceInfo>> = HashMap::new();
         for info in filtered {
             groups.entry(info.name.to_string()).or_default().push(info);
         }
-        
+
         // Sort groups by name for consistent ordering
         let mut result: Vec<_> = groups.into_iter().collect();
         result.sort_by(|a, b| a.0.cmp(&b.0));
@@ -205,10 +205,13 @@ impl Taskbar {
     async fn on_start(&self, gx: &GlobalContext) {
         // Queue status will be set when QueueReady event is received
         // (Queue app starts after systems)
-        
+
         // Try to get initial client session state
         use crate::systems::client_management::{ClientManagement, GetActiveSession};
-        match gx.request_system::<ClientManagement, GetActiveSession>(GetActiveSession).await {
+        match gx
+            .request_system::<ClientManagement, GetActiveSession>(GetActiveSession)
+            .await
+        {
             Ok(Some(session)) => {
                 // ClientManagement already initialized with active session
                 self.client.set(ClientStatus {
@@ -229,7 +232,7 @@ impl Taskbar {
                 });
             }
         }
-        
+
         // Indexer status will be set when IndexerReady event is received
         self.indexer.set(IndexerStatus {
             is_paused: false,
@@ -277,7 +280,10 @@ impl Taskbar {
     }
 
     #[event_handler]
-    async fn on_indexer_status_changed(&self, event: crate::systems::indexer::IndexerStatusChanged) {
+    async fn on_indexer_status_changed(
+        &self,
+        event: crate::systems::indexer::IndexerStatusChanged,
+    ) {
         self.indexer.set(Self::build_indexer_status(
             event.is_paused,
             event.overall_status,
@@ -413,7 +419,6 @@ impl Taskbar {
         let mut list_items: Vec<Element> = Vec::new();
 
         for (group_name, group_instances) in groups {
-
             if group_instances.len() == 1 {
                 // Single instance: render directly
                 let info = &group_instances[0];
@@ -542,40 +547,40 @@ impl Taskbar {
         // Queue subsection
         let queue = self.queue.get();
         let counts = &queue.counts;
-        
+
         // Determine status indicator and text based on queue state
         let (queue_indicator, queue_status_text) = if !queue.is_running {
             (
                 Element::text("●").style(Style::new().foreground(Color::var("warning"))),
-                "Paused"
+                "Paused",
             )
         } else if counts.failed > 0 || counts.partially_failed > 0 {
             (
                 Element::text("●").style(Style::new().foreground(Color::var("error"))),
-                "Errors"
+                "Errors",
             )
         } else if counts.running > 0 {
             (
                 Element::text("●").style(Style::new().foreground(Color::var("warning"))),
-                "Running"
+                "Running",
             )
         } else if counts.ready > 0 || counts.blocked > 0 {
             (
                 Element::text("●").style(Style::new().foreground(Color::var("primary"))),
-                "Pending"
+                "Pending",
             )
         } else if counts.done > 0 {
             (
                 Element::text("●").style(Style::new().foreground(Color::var("success"))),
-                "Done"
+                "Done",
             )
         } else {
             (
                 Element::text("●").style(Style::new().foreground(Color::var("muted"))),
-                "Idle"
+                "Idle",
             )
         };
-        
+
         // Calculate progress percentage
         let total = counts.total();
         let completed = counts.done + counts.failed + counts.partially_failed;
@@ -584,25 +589,32 @@ impl Taskbar {
         } else {
             "N/A%".to_string()
         };
-        
+
         // Build condensed display with colored numbers: ready/running/done/failed (progress%)
         let numbers_row = Element::row()
-            .child(Element::text(&counts.ready.to_string())
-                .style(Style::new().foreground(Color::var("primary"))))
-            .child(Element::text("/")
-                .style(Style::new().foreground(Color::var("text.muted"))))
-            .child(Element::text(&counts.running.to_string())
-                .style(Style::new().foreground(Color::var("warning"))))
-            .child(Element::text("/")
-                .style(Style::new().foreground(Color::var("text.muted"))))
-            .child(Element::text(&counts.done.to_string())
-                .style(Style::new().foreground(Color::var("success"))))
-            .child(Element::text("/")
-                .style(Style::new().foreground(Color::var("text.muted"))))
-            .child(Element::text(&(counts.failed + counts.partially_failed).to_string())
-                .style(Style::new().foreground(Color::var("error"))))
-            .child(Element::text(&format!(" ({})", progress_pct))
-                .style(Style::new().foreground(Color::var("text.muted"))));
+            .child(
+                Element::text(&counts.ready.to_string())
+                    .style(Style::new().foreground(Color::var("primary"))),
+            )
+            .child(Element::text("/").style(Style::new().foreground(Color::var("text.muted"))))
+            .child(
+                Element::text(&counts.running.to_string())
+                    .style(Style::new().foreground(Color::var("warning"))),
+            )
+            .child(Element::text("/").style(Style::new().foreground(Color::var("text.muted"))))
+            .child(
+                Element::text(&counts.done.to_string())
+                    .style(Style::new().foreground(Color::var("success"))),
+            )
+            .child(Element::text("/").style(Style::new().foreground(Color::var("text.muted"))))
+            .child(
+                Element::text(&(counts.failed + counts.partially_failed).to_string())
+                    .style(Style::new().foreground(Color::var("error"))),
+            )
+            .child(
+                Element::text(&format!(" ({})", progress_pct))
+                    .style(Style::new().foreground(Color::var("text.muted"))),
+            );
 
         let queue_content = Element::col()
             .width(Size::Fill)
@@ -617,15 +629,15 @@ impl Taskbar {
                             .gap(1)
                             .child(queue_indicator)
                             .child(Element::text(queue_status_text)),
-                    )
+                    ),
             )
             .child(
                 Element::row()
                     .width(Size::Fill)
                     .justify(tuidom::Justify::End)
-                    .child(numbers_row)
+                    .child(numbers_row),
             );
-        
+
         let queue_button = page! {
             button (id: "queue-status", width: fill, ghost)
                 on_activate: focus_queue()
@@ -636,35 +648,32 @@ impl Taskbar {
 
         // Client subsection
         let client = self.client.get();
-        
+
         let (client_indicator, client_status_text) = if client.is_connected {
             (
                 Element::text("●").style(Style::new().foreground(Color::var("success"))),
-                "Connected"
+                "Connected",
             )
         } else {
             (
                 Element::text("●").style(Style::new().foreground(Color::var("text.muted"))),
-                "Not connected"
+                "Not connected",
             )
         };
-        
-        let mut client_content = Element::col()
-            .width(Size::Fill)
-            .gap(0)
-            .child(
-                Element::row()
-                    .width(Size::Fill)
-                    .justify(tuidom::Justify::SpaceBetween)
-                    .child(Element::text("Client"))
-                    .child(
-                        Element::row()
-                            .gap(1)
-                            .child(client_indicator)
-                            .child(Element::text(client_status_text)),
-                    )
-            );
-        
+
+        let mut client_content = Element::col().width(Size::Fill).gap(0).child(
+            Element::row()
+                .width(Size::Fill)
+                .justify(tuidom::Justify::SpaceBetween)
+                .child(Element::text("Client"))
+                .child(
+                    Element::row()
+                        .gap(1)
+                        .child(client_indicator)
+                        .child(Element::text(client_status_text)),
+                ),
+        );
+
         // Add info lines if connected
         if client.is_connected {
             // Environment name + credentials
@@ -674,19 +683,23 @@ impl Taskbar {
                     Element::row()
                         .width(Size::Fill)
                         .justify(tuidom::Justify::End)
-                        .child(Element::text(&env_text)
-                            .style(Style::new().foreground(Color::var("text.muted"))))
+                        .child(
+                            Element::text(&env_text)
+                                .style(Style::new().foreground(Color::var("text.muted"))),
+                        ),
                 );
             }
-            
+
             // URL on separate line
             if let Some(url) = &client.environment_url {
                 client_content = client_content.child(
                     Element::row()
                         .width(Size::Fill)
                         .justify(tuidom::Justify::End)
-                        .child(Element::text(url)
-                            .style(Style::new().foreground(Color::var("text.muted"))))
+                        .child(
+                            Element::text(url)
+                                .style(Style::new().foreground(Color::var("text.muted"))),
+                        ),
                 );
             }
         } else {
@@ -695,11 +708,13 @@ impl Taskbar {
                 Element::row()
                     .width(Size::Fill)
                     .justify(tuidom::Justify::End)
-                    .child(Element::text("(click to connect)")
-                        .style(Style::new().foreground(Color::var("text.muted"))))
+                    .child(
+                        Element::text("(click to connect)")
+                            .style(Style::new().foreground(Color::var("text.muted"))),
+                    ),
             );
         }
-        
+
         let client_button = page! {
             button (id: "client-status", width: fill, ghost)
                 on_activate: open_client_management()
@@ -712,23 +727,20 @@ impl Taskbar {
         let indexer = self.indexer.get();
         let (indexer_indicator, indexer_status_text) =
             self.render_status_indicator(&indexer.overall_status);
-        
-        let mut indexer_content = Element::col()
-            .width(Size::Fill)
-            .gap(0)
-            .child(
-                Element::row()
-                    .width(Size::Fill)
-                    .justify(tuidom::Justify::SpaceBetween)
-                    .child(Element::text("Indexer"))
-                    .child(
-                        Element::row()
-                            .gap(1)
-                            .child(indexer_indicator)
-                            .child(Element::text(indexer_status_text)),
-                    )
-            );
-        
+
+        let mut indexer_content = Element::col().width(Size::Fill).gap(0).child(
+            Element::row()
+                .width(Size::Fill)
+                .justify(tuidom::Justify::SpaceBetween)
+                .child(Element::text("Indexer"))
+                .child(
+                    Element::row()
+                        .gap(1)
+                        .child(indexer_indicator)
+                        .child(Element::text(indexer_status_text)),
+                ),
+        );
+
         // Add detail row based on state
         if let (Some(env_name), Some((done, total))) = (&indexer.syncing_env, indexer.progress) {
             // Show progress when syncing
@@ -737,8 +749,10 @@ impl Taskbar {
                 Element::row()
                     .width(Size::Fill)
                     .justify(tuidom::Justify::End)
-                    .child(Element::text(&progress_text)
-                        .style(Style::new().foreground(Color::var("text.muted"))))
+                    .child(
+                        Element::text(&progress_text)
+                            .style(Style::new().foreground(Color::var("text.muted"))),
+                    ),
             );
         } else if indexer.envs_error > 0 {
             // Show error count when there are errors
@@ -747,8 +761,10 @@ impl Taskbar {
                 Element::row()
                     .width(Size::Fill)
                     .justify(tuidom::Justify::End)
-                    .child(Element::text(&error_text)
-                        .style(Style::new().foreground(Color::var("error"))))
+                    .child(
+                        Element::text(&error_text)
+                            .style(Style::new().foreground(Color::var("error"))),
+                    ),
             );
         } else if indexer.envs_ok > 0 {
             // Show OK count when all is well
@@ -757,11 +773,13 @@ impl Taskbar {
                 Element::row()
                     .width(Size::Fill)
                     .justify(tuidom::Justify::End)
-                    .child(Element::text(&ok_text)
-                        .style(Style::new().foreground(Color::var("text.muted"))))
+                    .child(
+                        Element::text(&ok_text)
+                            .style(Style::new().foreground(Color::var("text.muted"))),
+                    ),
             );
         }
-        
+
         let indexer_button = page! {
             button (id: "indexer-status", width: fill, ghost)
                 on_activate: open_indexer_dashboard()

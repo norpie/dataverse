@@ -61,7 +61,11 @@ impl ClientManagement {
     }
 
     #[event_handler]
-    async fn on_open_client_management_modal(&self, _event: OpenClientManagementModal, gx: &GlobalContext) {
+    async fn on_open_client_management_modal(
+        &self,
+        _event: OpenClientManagementModal,
+        gx: &GlobalContext,
+    ) {
         let _result = gx.modal(ClientManagementModal::default()).await;
     }
 
@@ -209,8 +213,8 @@ impl ClientManagement {
             env_map
                 .entry(env_id)
                 .and_modify(|existing| {
-                    let prefer_new =
-                        active_account_id == Some(account_id) && active_account_id != Some(existing.0);
+                    let prefer_new = active_account_id == Some(account_id)
+                        && active_account_id != Some(existing.0);
                     let lower_id = account_id < existing.0 && active_account_id != Some(existing.0);
                     if prefer_new || lower_id {
                         *existing = (account_id, env_id);

@@ -5,8 +5,8 @@ use chrono::Utc;
 use rusqlite::params;
 
 use super::super::types::*;
-use super::helpers::parse_datetime;
 use super::RepositoryError;
+use super::helpers::parse_datetime;
 
 /// Input for creating a new migration.
 pub struct NewMigration {
@@ -80,10 +80,7 @@ impl super::MigrationRepository {
     }
 
     /// Create a new migration.
-    pub async fn create_migration(
-        &self,
-        migration: NewMigration,
-    ) -> Result<i64, RepositoryError> {
+    pub async fn create_migration(&self, migration: NewMigration) -> Result<i64, RepositoryError> {
         let now = Utc::now().to_rfc3339();
         self.client
             .conn(move |conn| {

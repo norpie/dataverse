@@ -36,8 +36,8 @@ impl super::MigrationRepository {
                 )?;
                 let rows = stmt.query_map([migration_id], |row| {
                     let mode_str: String = row.get(4)?;
-                    let mode = Mode::from_str(&mode_str)
-                        .ok_or_else(|| rusqlite::Error::InvalidQuery)?;
+                    let mode =
+                        Mode::from_str(&mode_str).ok_or_else(|| rusqlite::Error::InvalidQuery)?;
 
                     Ok(Phase {
                         id: row.get(0)?,
@@ -65,8 +65,8 @@ impl super::MigrationRepository {
                 )?;
                 stmt.query_row([id], |row| {
                     let mode_str: String = row.get(4)?;
-                    let mode = Mode::from_str(&mode_str)
-                        .ok_or_else(|| rusqlite::Error::InvalidQuery)?;
+                    let mode =
+                        Mode::from_str(&mode_str).ok_or_else(|| rusqlite::Error::InvalidQuery)?;
 
                     Ok(Phase {
                         id: row.get(0)?,

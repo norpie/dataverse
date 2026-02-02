@@ -114,7 +114,8 @@ impl IndexerRepository {
                 let result = stmt.query_row([env_id], |row| {
                     let status_str: String = row.get(1)?;
                     let last_sync_at: Option<i64> = row.get(2)?;
-                    let last_sync_at = last_sync_at.and_then(|ts| Utc.timestamp_opt(ts, 0).single());
+                    let last_sync_at =
+                        last_sync_at.and_then(|ts| Utc.timestamp_opt(ts, 0).single());
 
                     Ok(EnvSync {
                         env_id: row.get(0)?,
@@ -150,7 +151,8 @@ impl IndexerRepository {
                 let rows = stmt.query_map([], |row| {
                     let status_str: String = row.get(1)?;
                     let last_sync_at: Option<i64> = row.get(2)?;
-                    let last_sync_at = last_sync_at.and_then(|ts| Utc.timestamp_opt(ts, 0).single());
+                    let last_sync_at =
+                        last_sync_at.and_then(|ts| Utc.timestamp_opt(ts, 0).single());
 
                     Ok(EnvSync {
                         env_id: row.get(0)?,
@@ -303,7 +305,10 @@ impl IndexerRepository {
     }
 
     /// Get recent sync logs across all environments.
-    pub async fn get_all_sync_logs(&self, limit: usize) -> Result<Vec<SyncLogEntry>, RepositoryError> {
+    pub async fn get_all_sync_logs(
+        &self,
+        limit: usize,
+    ) -> Result<Vec<SyncLogEntry>, RepositoryError> {
         self.client
             .conn(move |conn| {
                 let mut stmt = conn.prepare(
@@ -338,5 +343,4 @@ impl IndexerRepository {
     // =========================================================================
     // Settings Operations
     // =========================================================================
-
 }

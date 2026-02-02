@@ -1,6 +1,5 @@
 //! Import settings modal for configuring batch size and entity.
 
-
 use dataverse_lib::DataverseClient;
 use dataverse_lib::error::Error as DataverseError;
 use dataverse_lib::model::Entity;

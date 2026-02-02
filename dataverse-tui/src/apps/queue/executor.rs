@@ -197,7 +197,10 @@ async fn execute_batch(
                         operation_results.push(NewOperationResult {
                             execution_id: 0,
                             op_index,
-                            content_id: original_content_ids.get(op_index as usize).cloned().flatten(),
+                            content_id: original_content_ids
+                                .get(op_index as usize)
+                                .cloned()
+                                .flatten(),
                             success: true,
                             operation_type: Some(operation_type.to_string()),
                             result_data,
@@ -214,7 +217,10 @@ async fn execute_batch(
                             execution_id: 0,
                             op_index,
                             content_id: e.content_id.clone().or_else(|| {
-                                original_content_ids.get(op_index as usize).cloned().flatten()
+                                original_content_ids
+                                    .get(op_index as usize)
+                                    .cloned()
+                                    .flatten()
                             }),
                             success: false,
                             operation_type: None,
@@ -228,11 +234,15 @@ async fn execute_batch(
                     BatchItemResult::Changeset(Ok(ops)) => {
                         for op_result in ops {
                             success_count += 1;
-                            let (operation_type, result_data) = batch_operation_result_info(op_result);
+                            let (operation_type, result_data) =
+                                batch_operation_result_info(op_result);
                             operation_results.push(NewOperationResult {
                                 execution_id: 0,
                                 op_index,
-                                content_id: original_content_ids.get(op_index as usize).cloned().flatten(),
+                                content_id: original_content_ids
+                                    .get(op_index as usize)
+                                    .cloned()
+                                    .flatten(),
                                 success: true,
                                 operation_type: Some(operation_type.to_string()),
                                 result_data,
@@ -347,7 +357,11 @@ fn batch_operation_result_info(result: &BatchOperationResult) -> (&'static str, 
         BatchOperationResult::Updated { .. } => ("update", None),
         BatchOperationResult::Deleted => ("delete", None),
         BatchOperationResult::Upserted { created, id, .. } => {
-            let op_type = if *created { "upsert_create" } else { "upsert_update" };
+            let op_type = if *created {
+                "upsert_create"
+            } else {
+                "upsert_update"
+            };
             (op_type, Some(format!(r#"{{"id":"{}"}}"#, id)))
         }
         BatchOperationResult::Associated => ("associate", None),

@@ -1,6 +1,5 @@
 //! Condition editor modal for creating/editing filter conditions.
 
-use chrono::DateTime;
 use dataverse_lib::model::Value;
 use dataverse_lib::model::metadata::{AttributeMetadata, AttributeType};
 use rafter::page;
@@ -9,9 +8,8 @@ use rafter::widgets::{
     Autocomplete, AutocompleteState, Button, DatePicker, DatePickerState, Input, NumberInput,
     NumberInputState, Select, SelectState, Text,
 };
-use uuid::Uuid;
 
-use crate::formatting::format_value;
+use crate::formatting::{format_value, parse_filter_value, type_hint_text};
 
 use super::types::{CondOp, ConditionData};
 
@@ -191,10 +189,10 @@ impl ConditionEditorModal {
                 _ => {
                     // Fall back to text parsing for other types (String, GUID, etc.)
                     let text = self.value_text.get();
-                    match parse_value(&text, attr_type) {
+                    match parse_filter_value(&text, attr_type) {
                         Ok(v) => v,
-                        Err(msg) => {
-                            self.error.set(Some(msg));
+                        Err(e) => {
+                            self.error.set(Some(e.to_string()));
                             return;
                         }
                     }
@@ -270,7 +268,7 @@ impl ConditionEditorModal {
             .selected_type
             .get()
             .map(type_hint_text)
-            .unwrap_or_default();
+            .unwrap_or("value");
         let title = if self.initial.is_some() {
             "Edit Condition"
         } else {
@@ -382,86 +380,5 @@ pub fn operators_for_type(attr_type: Option<AttributeType>) -> Vec<CondOp> {
             CondOp::IsNotNull,
         ],
         _ => vec![CondOp::Eq, CondOp::Ne, CondOp::IsNull, CondOp::IsNotNull],
-    }
-}
-
-/// Get placeholder hint text for a given attribute type.
-pub fn type_hint_text(attr_type: AttributeType) -> String {
-    match attr_type {
-        AttributeType::String | AttributeType::Memo => "text value".to_string(),
-        AttributeType::Integer | AttributeType::BigInt => "integer".to_string(),
-        AttributeType::Double | AttributeType::Decimal | AttributeType::Money => {
-            "number".to_string()
-        }
-        AttributeType::Boolean => "true or false".to_string(),
-        AttributeType::DateTime => "2025-01-01T00:00:00Z".to_string(),
-        AttributeType::Uniqueidentifier
-        | AttributeType::Lookup
-        | AttributeType::Customer
-        | AttributeType::Owner => "guid".to_string(),
-        AttributeType::Picklist
-        | AttributeType::State
-        | AttributeType::Status
-        | AttributeType::MultiSelectPicklist => "option value (integer)".to_string(),
-        _ => "value".to_string(),
-    }
-}
-
-/// Parse a text value into the appropriate Value type.
-pub fn parse_value(text: &str, attr_type: Option<AttributeType>) -> Result<Value, String> {
-    if text.is_empty() {
-        return Err("Value is required".to_string());
-    }
-
-    match attr_type {
-        Some(AttributeType::String | AttributeType::Memo) => Ok(Value::String(text.to_string())),
-        Some(AttributeType::Integer) => text
-            .parse::<i32>()
-            .map(Value::Int)
-            .map_err(|_| "Invalid integer".to_string()),
-        Some(AttributeType::BigInt) => text
-            .parse::<i64>()
-            .map(Value::Long)
-            .map_err(|_| "Invalid integer".to_string()),
-        Some(AttributeType::Double | AttributeType::Decimal | AttributeType::Money) => text
-            .parse::<f64>()
-            .map(Value::Float)
-            .map_err(|_| "Invalid number".to_string()),
-        Some(AttributeType::Boolean) => match text.to_lowercase().as_str() {
-            "true" | "1" | "yes" => Ok(Value::Bool(true)),
-            "false" | "0" | "no" => Ok(Value::Bool(false)),
-            _ => Err("Enter true or false".to_string()),
-        },
-        Some(AttributeType::DateTime) => DateTime::parse_from_rfc3339(text)
-            .map(|dt| Value::DateTime(dt.with_timezone(&chrono::Utc)))
-            .or_else(|_| {
-                chrono::NaiveDate::parse_from_str(text, "%Y-%m-%d")
-                    .map(|d| Value::DateTime(d.and_hms_opt(0, 0, 0).unwrap().and_utc()))
-            })
-            .map_err(|_| "Invalid date (use YYYY-MM-DD or RFC3339)".to_string()),
-        Some(
-            AttributeType::Uniqueidentifier
-            | AttributeType::Lookup
-            | AttributeType::Customer
-            | AttributeType::Owner,
-        ) => text
-            .parse::<Uuid>()
-            .map(Value::Guid)
-            .map_err(|_| "Invalid GUID format".to_string()),
-        Some(AttributeType::Picklist | AttributeType::State | AttributeType::Status) => {
-            let val: i32 = text
-                .parse()
-                .map_err(|_| "Invalid option value (integer)".to_string())?;
-            Ok(Value::OptionSet(val.into()))
-        }
-        Some(AttributeType::MultiSelectPicklist) => {
-            let vals: Result<Vec<i32>, _> =
-                text.split(',').map(|s| s.trim().parse::<i32>()).collect();
-            let vals = vals.map_err(|_| "Invalid values (comma-separated integers)".to_string())?;
-            Ok(Value::MultiOptionSet(
-                dataverse_lib::model::types::MultiSelectOptionSetValue::new(vals),
-            ))
-        }
-        _ => Ok(Value::String(text.to_string())),
     }
 }

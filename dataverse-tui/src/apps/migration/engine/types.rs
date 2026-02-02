@@ -242,7 +242,7 @@ pub trait TargetCache: Send + Sync {
     ///
     /// Returns the matching record, or an error if not found / multiple found.
     fn find_where(&self, entity: &str, conditions: &[(String, Value)])
-        -> Result<Record, FindError>;
+    -> Result<Record, FindError>;
 
     /// Find a record using a Lua script.
     ///
@@ -290,34 +290,5 @@ impl TargetCache for StubTargetCache {
 
     fn get(&self, _entity: &str, _id: Uuid) -> Option<&Record> {
         None
-    }
-}
-
-// =============================================================================
-// Helper: Value Type Name
-// =============================================================================
-
-/// Returns a human-readable type name for a Value.
-pub fn value_type_name(value: &Value) -> &'static str {
-    match value {
-        Value::Null => "null",
-        Value::Bool(_) => "bool",
-        Value::Int(_) => "int",
-        Value::Long(_) => "long",
-        Value::Float(_) => "float",
-        Value::Decimal(_) => "decimal",
-        Value::String(_) => "string",
-        Value::Guid(_) => "guid",
-        Value::DateTime(_) => "datetime",
-        Value::Money(_) => "money",
-        Value::EntityReference(_) => "entityreference",
-        Value::EntityBinding(_) => "entitybinding",
-        Value::OptionSet(_) => "optionset",
-        Value::MultiOptionSet(_) => "multioptionset",
-        Value::File(_) => "file",
-        Value::Image(_) => "image",
-        Value::Record(_) => "record",
-        Value::Records(_) => "records",
-        Value::Json(_) => "json",
     }
 }

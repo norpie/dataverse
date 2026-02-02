@@ -114,7 +114,9 @@ impl QueryBuilder {
     #[handler]
     async fn close_app(&self, gx: &GlobalContext, cx: &AppContext) {
         let confirmed = gx
-            .modal(crate::modals::ConfirmModal::with_message("Close the query builder?"))
+            .modal(crate::modals::ConfirmModal::with_message(
+                "Close the query builder?",
+            ))
             .await;
         if confirmed {
             cx.close();
@@ -457,7 +459,9 @@ impl QueryBuilder {
         };
 
         let current_name = self.saved_query_name.get();
-        let result = gx.modal(SaveQueryModal::with_name(current_name.clone())).await;
+        let result = gx
+            .modal(SaveQueryModal::with_name(current_name.clone()))
+            .await;
         let Some(name) = result else { return };
 
         let data = self.query.with_ref(|q| q.clone());
@@ -602,7 +606,10 @@ impl QueryBuilder {
         ];
 
         let selected = gx
-            .modal(SearchableListModal::with_entries("Execute Query In...", apps))
+            .modal(SearchableListModal::with_entries(
+                "Execute Query In...",
+                apps,
+            ))
             .await;
 
         let Some(app_id) = selected else {
@@ -638,8 +645,11 @@ impl QueryBuilder {
         // Launch the selected app
         match app_id.as_str() {
             "record-explorer" => {
-                let _ =
-                    gx.spawn_and_focus(RecordExplorer::with_query(query, info, Some(cx.instance_id())));
+                let _ = gx.spawn_and_focus(RecordExplorer::with_query(
+                    query,
+                    info,
+                    Some(cx.instance_id()),
+                ));
             }
             "export" => {
                 let _ = gx.spawn_and_focus(Export::with_query(query, info, Some(cx.instance_id())));
@@ -813,7 +823,9 @@ impl QueryBuilder {
             })
             .collect();
 
-        let result = gx.modal(ConditionEditorModal::with_options(options, attrs)).await;
+        let result = gx
+            .modal(ConditionEditorModal::with_options(options, attrs))
+            .await;
         if let Some(cond) = result {
             self.query.update(|q| {
                 let id = q.next_id();

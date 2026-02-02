@@ -167,12 +167,7 @@ pub struct EntityExplorer {
 impl EntityExplorer {
     /// Create a new EntityExplorer with the given client info.
     pub fn with_client(client_info: ActiveClientInfo) -> Self {
-        Self::new(
-            client_info,
-            Vec::new(),
-            String::new(),
-            ListState::default(),
-        )
+        Self::new(client_info, Vec::new(), String::new(), ListState::default())
     }
 }
 

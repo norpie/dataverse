@@ -3,9 +3,9 @@
 use std::collections::VecDeque;
 
 use dataverse_lib::api::{BatchItem, Operation};
+use rafter::element;
 use rafter::prelude::*;
 use rafter::widgets::{Text, TreeItem};
-use rafter::element;
 use tuidom::Color;
 
 use crate::formatting::format_value;
@@ -43,9 +43,10 @@ impl Queue {
                 item_id.and_then(|id| {
                     s.roots.iter().find_map(|node| {
                         if let QueueTreeNode::Item { item, .. } = &node.value
-                            && item.id == id {
-                                return Some(item.clone());
-                            }
+                            && item.id == id
+                        {
+                            return Some(item.clone());
+                        }
                         None
                     })
                 })
@@ -91,9 +92,10 @@ impl Queue {
                 // Search roots for the matching item
                 s.roots.iter().find_map(|node| {
                     if let QueueTreeNode::Item { item, .. } = &node.value
-                        && item.id == id {
-                            return Some(item.clone());
-                        }
+                        && item.id == id
+                    {
+                        return Some(item.clone());
+                    }
                     None
                 })
             })

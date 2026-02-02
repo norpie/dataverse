@@ -72,7 +72,6 @@ impl SyncTask {
             | Self::FetchAllOptionSets { env_name, .. } => env_name,
         }
     }
-
 }
 
 // =============================================================================
@@ -91,14 +90,22 @@ pub async fn execute_task(
             env_id,
             account_id,
             env_name,
-        } => {
-            execute_check_environment(*env_id, *account_id, env_name, gx, refresh_threshold).await
-        }
+        } => execute_check_environment(*env_id, *account_id, env_name, gx, refresh_threshold).await,
         SyncTask::FetchAllEntities {
             env_id,
             account_id,
             env_name,
-        } => execute_fetch_all_entities(*env_id, *account_id, env_name, repository, gx, refresh_threshold).await,
+        } => {
+            execute_fetch_all_entities(
+                *env_id,
+                *account_id,
+                env_name,
+                repository,
+                gx,
+                refresh_threshold,
+            )
+            .await
+        }
         SyncTask::FetchEntityMetadata {
             env_id,
             account_id,
@@ -153,7 +160,7 @@ async fn execute_check_environment(
 
     // Check if any cache entry needs refresh
     // - all_entities list
-    // - all_global_optionsets list  
+    // - all_global_optionsets list
     // - any individual entity metadata (entity_full:*, entity_core:*)
     let mut needs_entities = false;
     let mut needs_optionsets = false;
@@ -263,14 +270,14 @@ async fn execute_fetch_all_entities(
     let now = Utc::now();
 
     let mut stale_entities = Vec::new();
-    
+
     if let Some(cache) = cache {
         let cache_entries = cache.get_all().await;
-        
+
         for entity in &entities {
             let cache_key = format!("entity_full:{}", entity.logical_name);
             let entry = cache_entries.iter().find(|e| e.key == cache_key);
-            
+
             let needs_refresh = match entry {
                 None => true, // Not in cache
                 Some(entry) => {
@@ -279,7 +286,8 @@ async fn execute_fetch_all_entities(
                     } else {
                         // Check if past threshold
                         let ttl = cache_config.entity_metadata_ttl;
-                        let time_until_expiry = (entry.expires_at - now).num_seconds().max(0) as f64;
+                        let time_until_expiry =
+                            (entry.expires_at - now).num_seconds().max(0) as f64;
                         let ttl_secs = ttl.as_secs_f64();
                         let elapsed_ratio = if ttl_secs > 0.0 {
                             1.0 - (time_until_expiry / ttl_secs)
@@ -290,7 +298,7 @@ async fn execute_fetch_all_entities(
                     }
                 }
             };
-            
+
             if needs_refresh {
                 stale_entities.push(entity.logical_name.clone());
             }

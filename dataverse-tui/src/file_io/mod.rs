@@ -7,7 +7,7 @@ mod convert;
 mod csv;
 mod excel;
 
-pub use convert::{string_to_value, ConvertError};
+pub use convert::{ConvertError, string_to_value};
 pub use csv::{read_csv, write_csv};
 pub use excel::{list_sheets, read_excel, write_excel};
 

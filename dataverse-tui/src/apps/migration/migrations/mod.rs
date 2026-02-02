@@ -1,7 +1,7 @@
 //! Migration database migrations.
 
-use include_dir::include_dir;
 use include_dir::Dir;
+use include_dir::include_dir;
 
 use crate::migrations::Migration;
 use crate::migrations::MigrationError;

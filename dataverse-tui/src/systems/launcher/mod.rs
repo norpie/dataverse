@@ -35,7 +35,9 @@ impl Launcher {
             ListEntry::with_category("import", "Import", "Tools"),
         ];
 
-        let result = gx.modal(SearchableListModal::with_entries("Launcher", items)).await;
+        let result = gx
+            .modal(SearchableListModal::with_entries("Launcher", items))
+            .await;
 
         // Clear lock
         self.modal_open.set(false);
