@@ -1,0 +1,221 @@
+//! Variable CRUD operations.
+
+use async_sqlite::Client;
+use chrono::Utc;
+use rusqlite::params;
+
+use super::super::types::*;
+use super::RepositoryError;
+
+/// Input for creating a new variable.
+pub struct NewVariable {
+    pub entity_mapping_id: i64,
+    pub order: i32,
+    pub name: String,
+}
+
+/// Input for updating a variable.
+pub struct UpdateVariable {
+    pub name: Option<String>,
+}
+
+impl super::MigrationRepository {
+    /// Get all variables for an entity mapping.
+    pub async fn get_variables(
+        &self,
+        entity_mapping_id: i64,
+    ) -> Result<Vec<Variable>, RepositoryError> {
+        self.client
+            .conn_mut(move |conn| {
+                let mut stmt = conn.prepare(
+                    "SELECT id, entity_mapping_id, \"order\", name
+                     FROM variables
+                     WHERE entity_mapping_id = ?1
+                     ORDER BY \"order\" ASC",
+                )?;
+                let rows = stmt.query_map([entity_mapping_id], |row| {
+                    Ok(Variable {
+                        id: row.get(0)?,
+                        entity_mapping_id: row.get(1)?,
+                        order: row.get(2)?,
+                        name: row.get(3)?,
+                    })
+                })?;
+                rows.collect::<Result<Vec<_>, _>>()
+            })
+            .await
+            .map_err(RepositoryError::Database)
+    }
+
+    /// Get a variable by ID.
+    pub async fn get_variable(&self, id: i64) -> Result<Variable, RepositoryError> {
+        self.client
+            .conn_mut(move |conn| {
+                let mut stmt = conn.prepare(
+                    "SELECT id, entity_mapping_id, \"order\", name
+                     FROM variables
+                     WHERE id = ?1",
+                )?;
+                stmt.query_row([id], |row| {
+                    Ok(Variable {
+                        id: row.get(0)?,
+                        entity_mapping_id: row.get(1)?,
+                        order: row.get(2)?,
+                        name: row.get(3)?,
+                    })
+                })
+            })
+            .await
+            .map_err(|e| match e {
+                async_sqlite::Error::Rusqlite(rusqlite::Error::QueryReturnedNoRows) => {
+                    RepositoryError::NotFound("Variable", id)
+                }
+                _ => RepositoryError::Database(e),
+            })
+    }
+
+    /// Create a new variable.
+    pub async fn create_variable(&self, variable: NewVariable) -> Result<i64, RepositoryError> {
+        let entity_mapping_id = variable.entity_mapping_id;
+        let order = variable.order;
+        let name = variable.name.clone();
+        let now = Utc::now().to_rfc3339();
+
+        self.client
+            .conn_mut(move |conn| {
+                conn.execute(
+                    "INSERT INTO variables (entity_mapping_id, \"order\", name)
+                     VALUES (?1, ?2, ?3)",
+                    params![entity_mapping_id, order, name],
+                )?;
+                let variable_id = conn.last_insert_rowid();
+
+                // Update parent migration timestamp
+                conn.execute(
+                    "UPDATE migrations SET updated_at = ?1
+                     WHERE id = (SELECT migration_id FROM phases
+                                 WHERE id = (SELECT phase_id FROM entity_mappings WHERE id = ?2))",
+                    params![now, entity_mapping_id],
+                )?;
+
+                Ok(variable_id)
+            })
+            .await
+            .map_err(RepositoryError::Database)
+    }
+
+    /// Update a variable.
+    pub async fn update_variable(
+        &self,
+        id: i64,
+        update: UpdateVariable,
+    ) -> Result<(), RepositoryError> {
+        let now = Utc::now().to_rfc3339();
+        let client = self.client.clone();
+
+        client
+            .conn_mut(move |conn| {
+                if let Some(name) = update.name {
+                    let affected = conn.execute(
+                        "UPDATE variables SET name = ?1 WHERE id = ?2",
+                        params![name, id],
+                    )?;
+
+                    if affected > 0 {
+                        // Update parent migration timestamp
+                        conn.execute(
+                            "UPDATE migrations SET updated_at = ?1
+                             WHERE id = (SELECT migration_id FROM phases
+                                         WHERE id = (SELECT phase_id FROM entity_mappings
+                                                     WHERE id = (SELECT entity_mapping_id FROM variables WHERE id = ?2)))",
+                            params![now, id],
+                        )?;
+                    }
+
+                    Ok(affected)
+                } else {
+                    Ok(0)
+                }
+            })
+            .await
+            .map_err(RepositoryError::Database)
+            .and_then(|affected| {
+                if affected == 0 {
+                    Err(RepositoryError::NotFound("Variable", id))
+                } else {
+                    Ok(())
+                }
+            })
+    }
+
+    /// Delete a variable.
+    pub async fn delete_variable(&self, id: i64) -> Result<(), RepositoryError> {
+        let now = Utc::now().to_rfc3339();
+        self.client
+            .conn_mut(move |conn| {
+                // Get entity_mapping_id before deleting
+                let entity_mapping_id: i64 = conn.query_row(
+                    "SELECT entity_mapping_id FROM variables WHERE id = ?1",
+                    [id],
+                    |row| row.get(0),
+                )?;
+
+                // Delete variable
+                let affected = conn.execute("DELETE FROM variables WHERE id = ?1", [id])?;
+
+                if affected > 0 {
+                    // Update parent migration timestamp
+                    conn.execute(
+                        "UPDATE migrations SET updated_at = ?1
+                         WHERE id = (SELECT migration_id FROM phases
+                                     WHERE id = (SELECT phase_id FROM entity_mappings WHERE id = ?2))",
+                        params![now, entity_mapping_id],
+                    )?;
+                }
+
+                Ok(affected)
+            })
+            .await
+            .map_err(RepositoryError::Database)
+            .and_then(|affected| {
+                if affected == 0 {
+                    Err(RepositoryError::NotFound("Variable", id))
+                } else {
+                    Ok(())
+                }
+            })
+    }
+
+    /// Reorder variables within an entity mapping.
+    pub async fn reorder_variables(
+        &self,
+        entity_mapping_id: i64,
+        ordered_ids: Vec<i64>,
+    ) -> Result<(), RepositoryError> {
+        let now = Utc::now().to_rfc3339();
+        self.client
+            .conn_mut(move |conn| {
+                let tx = conn.transaction()?;
+
+                for (index, variable_id) in ordered_ids.iter().enumerate() {
+                    tx.execute(
+                        "UPDATE variables SET \"order\" = ?1 WHERE id = ?2 AND entity_mapping_id = ?3",
+                        params![index as i32, variable_id, entity_mapping_id],
+                    )?;
+                }
+
+                // Update parent migration timestamp
+                tx.execute(
+                    "UPDATE migrations SET updated_at = ?1
+                     WHERE id = (SELECT migration_id FROM phases
+                                 WHERE id = (SELECT phase_id FROM entity_mappings WHERE id = ?2))",
+                    params![now, entity_mapping_id],
+                )?;
+
+                tx.commit()?;
+                Ok(())
+            })
+            .await
+            .map_err(RepositoryError::Database)
+    }
+}

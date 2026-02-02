@@ -2,6 +2,8 @@
 
 use chrono::DateTime;
 use chrono::Utc;
+use serde::Deserialize;
+use serde::Serialize;
 
 use crate::widgets::filter_builder::FilterNode;
 
@@ -78,7 +80,7 @@ pub struct EntityMapping {
 }
 
 /// Configuration for the find-based match strategy.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct FindConfig {
     /// The find expression used for matching.
     /// This will be represented by a transform chain in the DB.

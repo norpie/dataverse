@@ -2,13 +2,27 @@
 
 use async_sqlite::Client;
 use async_sqlite::ClientBuilder;
-use chrono::DateTime;
-use chrono::Utc;
 use std::path::Path;
 use thiserror::Error;
 
-use super::types::*;
-use crate::widgets::filter_builder::FilterNode;
+// Re-export input types
+pub use entity_mapping::{NewEntityMapping, UpdateEntityMapping};
+pub use field_mapping::{NewFieldMapping, UpdateFieldMapping};
+pub use migration::{NewMigration, UpdateMigration};
+pub use phase::{NewPhase, UpdatePhase};
+pub use phase_run::NewPhaseRun;
+pub use transform::{NewMatchBranch, NewTransform, UpdateMatchBranch, UpdateTransform};
+pub use variable::{NewVariable, UpdateVariable};
+
+// Internal modules
+mod entity_mapping;
+mod field_mapping;
+mod helpers;
+mod migration;
+mod phase;
+mod phase_run;
+mod transform;
+mod variable;
 
 /// Errors from repository operations.
 #[derive(Debug, Error)]
@@ -25,6 +39,8 @@ pub enum RepositoryError {
     NotFound(&'static str, i64),
     #[error("Invalid enum value: {0}")]
     InvalidEnum(String),
+    #[error("JSON error: {0}")]
+    Json(#[from] serde_json::Error),
 }
 
 impl From<bincode::error::EncodeError> for RepositoryError {
