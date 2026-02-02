@@ -100,8 +100,7 @@ pub struct QueueItem {
 }
 
 /// Filter for which statuses to show in the tree view.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[derive(Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum StatusFilter {
     /// Show all statuses.
     #[default]
@@ -154,7 +153,6 @@ impl StatusFilter {
     }
 }
 
-
 /// Status of an execution attempt.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ExecutionStatus {
@@ -196,4 +194,27 @@ pub enum ItemTiming {
     Running { started_at: DateTime<Utc> },
     /// Completed - show duration from last execution.
     Completed { duration_ms: i64 },
+}
+
+/// Result of a single operation within a batch execution.
+#[derive(Debug, Clone)]
+pub struct OperationResultRecord {
+    /// The execution this result belongs to.
+    pub execution_id: i64,
+    /// Position in the batch (0-indexed).
+    pub op_index: i32,
+    /// Content-ID set on the operation (e.g., source record GUID).
+    pub content_id: Option<String>,
+    /// Whether the operation succeeded.
+    pub success: bool,
+    /// Type of operation (create, update, delete, etc.) - only for successes.
+    pub operation_type: Option<String>,
+    /// Additional result data as JSON (e.g., created ID) - only for successes.
+    pub result_data: Option<String>,
+    /// HTTP status code - only for failures.
+    pub error_status: Option<i32>,
+    /// Dataverse error code - only for failures.
+    pub error_code: Option<String>,
+    /// Error message - only for failures.
+    pub error_message: Option<String>,
 }

@@ -10,6 +10,7 @@ use thiserror::Error;
 use super::types::ExecutionRecord;
 use super::types::ExecutionStatus;
 use super::types::ItemStatus;
+use super::types::OperationResultRecord;
 use super::types::QueueItem;
 use super::types::QueueItemId;
 use super::types::QueuePayload;
@@ -426,6 +427,94 @@ impl QueueRepository {
             .await
             .map_err(RepositoryError::Database)
     }
+
+    // =========================================================================
+    // Batch Operation Results
+    // =========================================================================
+
+    /// Insert batch operation results for an execution.
+    pub async fn insert_operation_results(
+        &self,
+        results: Vec<NewOperationResult>,
+    ) -> Result<(), RepositoryError> {
+        if results.is_empty() {
+            return Ok(());
+        }
+
+        self.client
+            .conn(move |conn| {
+                let mut stmt = conn.prepare(
+                    "INSERT INTO batch_operation_results 
+                     (execution_id, op_index, content_id, success, operation_type, result_data, error_status, error_code, error_message)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+                )?;
+
+                for r in results {
+                    stmt.execute(rusqlite::params![
+                        r.execution_id,
+                        r.op_index,
+                        r.content_id,
+                        r.success as i32,
+                        r.operation_type,
+                        r.result_data,
+                        r.error_status,
+                        r.error_code,
+                        r.error_message,
+                    ])?;
+                }
+
+                Ok(())
+            })
+            .await
+            .map_err(RepositoryError::Database)
+    }
+
+    /// Get operation results for an execution.
+    pub async fn get_operation_results(
+        &self,
+        execution_id: i64,
+    ) -> Result<Vec<OperationResultRecord>, RepositoryError> {
+        self.client
+            .conn(move |conn| {
+                let mut stmt = conn.prepare(
+                    "SELECT execution_id, op_index, content_id, success, operation_type, result_data, error_status, error_code, error_message
+                     FROM batch_operation_results
+                     WHERE execution_id = ?1
+                     ORDER BY op_index",
+                )?;
+                let records = stmt
+                    .query_map([execution_id], row_to_operation_result)?
+                    .collect::<Result<Vec<_>, _>>()?;
+                Ok(records)
+            })
+            .await
+            .map_err(RepositoryError::Database)
+    }
+
+    /// Get operation results by content_id across all executions for a queue item.
+    pub async fn get_operation_results_by_content_id(
+        &self,
+        item_id: QueueItemId,
+        content_id: &str,
+    ) -> Result<Vec<OperationResultRecord>, RepositoryError> {
+        let content_id = content_id.to_string();
+        self.client
+            .conn(move |conn| {
+                let mut stmt = conn.prepare(
+                    "SELECT r.execution_id, r.op_index, r.content_id, r.success, r.operation_type, r.result_data, r.error_status, r.error_code, r.error_message
+                     FROM batch_operation_results r
+                     JOIN execution_history e ON r.execution_id = e.id
+                     WHERE e.item_id = ?1 AND r.content_id = ?2
+                     ORDER BY e.started_at DESC, r.op_index",
+                )?;
+                let records = stmt
+                    .query_map(rusqlite::params![item_id, content_id], row_to_operation_result)?
+                    .collect::<Result<Vec<_>, _>>()?;
+                Ok(records)
+            })
+            .await
+            .map_err(RepositoryError::Database)
+    }
 }
 
 // =============================================================================
@@ -462,6 +551,19 @@ pub struct NewExecutionRecord {
     pub error: Option<String>,
     pub success_count: i32,
     pub failure_count: i32,
+}
+
+/// Data for creating a new operation result.
+pub struct NewOperationResult {
+    pub execution_id: i64,
+    pub op_index: i32,
+    pub content_id: Option<String>,
+    pub success: bool,
+    pub operation_type: Option<String>,
+    pub result_data: Option<String>,
+    pub error_status: Option<i32>,
+    pub error_code: Option<String>,
+    pub error_message: Option<String>,
 }
 
 /// Filter options for listing queue items.
@@ -609,5 +711,20 @@ fn row_to_execution(row: &rusqlite::Row) -> rusqlite::Result<ExecutionRecord> {
         error: row.get(6)?,
         success_count: row.get(7)?,
         failure_count: row.get(8)?,
+    })
+}
+
+fn row_to_operation_result(row: &rusqlite::Row) -> rusqlite::Result<OperationResultRecord> {
+    let success: i32 = row.get(3)?;
+    Ok(OperationResultRecord {
+        execution_id: row.get(0)?,
+        op_index: row.get(1)?,
+        content_id: row.get(2)?,
+        success: success != 0,
+        operation_type: row.get(4)?,
+        result_data: row.get(5)?,
+        error_status: row.get(6)?,
+        error_code: row.get(7)?,
+        error_message: row.get(8)?,
     })
 }
