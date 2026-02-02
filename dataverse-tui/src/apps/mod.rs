@@ -3,6 +3,7 @@
 mod entity_explorer;
 mod export;
 mod import;
+pub mod migration;
 mod query_builder;
 pub mod queue;
 mod record_explorer;
