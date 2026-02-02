@@ -3,6 +3,7 @@ mod client_manager;
 mod credentials;
 mod file_io;
 mod formatting;
+mod lua;
 mod migrations;
 mod modals;
 mod paths;
