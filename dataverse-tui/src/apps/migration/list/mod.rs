@@ -15,6 +15,8 @@ use rafter::widgets::Text;
 use tuidom::Element;
 
 use crate::credentials::CredentialsProvider;
+use crate::systems::client_management::ClientManagement;
+use crate::systems::client_management::GetAnyClient;
 
 use super::editor::MigrationEditor;
 use super::modals::NewMigrationModal;
@@ -206,15 +208,59 @@ impl MigrationList {
         };
 
         let repo = gx.data::<MigrationRepository>();
-        match repo.get_migration(id).await {
-            Ok(migration) => {
-                let _ = gx.spawn_and_focus(MigrationEditor::for_migration(migration));
-            }
+        let migration = match repo.get_migration(id).await {
+            Ok(m) => m,
             Err(e) => {
                 log::error!("Failed to load migration: {}", e);
                 gx.toast(Toast::error("Failed to load migration"));
+                return;
             }
-        }
+        };
+
+        // Get clients for both environments
+        let source_client = match gx
+            .request_system::<ClientManagement, GetAnyClient>(GetAnyClient {
+                env_id: migration.source_environment_id,
+            })
+            .await
+        {
+            Ok(Ok(info)) => info.client,
+            Ok(Err(e)) => {
+                log::error!("Failed to get source client: {}", e);
+                gx.toast(Toast::error("Failed to connect to source environment"));
+                return;
+            }
+            Err(e) => {
+                log::error!("Failed to request source client: {:?}", e);
+                gx.toast(Toast::error("Failed to connect to source environment"));
+                return;
+            }
+        };
+
+        let target_client = match gx
+            .request_system::<ClientManagement, GetAnyClient>(GetAnyClient {
+                env_id: migration.target_environment_id,
+            })
+            .await
+        {
+            Ok(Ok(info)) => info.client,
+            Ok(Err(e)) => {
+                log::error!("Failed to get target client: {}", e);
+                gx.toast(Toast::error("Failed to connect to target environment"));
+                return;
+            }
+            Err(e) => {
+                log::error!("Failed to request target client: {:?}", e);
+                gx.toast(Toast::error("Failed to connect to target environment"));
+                return;
+            }
+        };
+
+        let _ = gx.spawn_and_focus(MigrationEditor::new_editor(
+            migration,
+            source_client,
+            target_client,
+        ));
     }
 
 
