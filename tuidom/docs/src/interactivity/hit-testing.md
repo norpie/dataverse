@@ -40,7 +40,8 @@ Find the deepest **focusable** element at position (x, y):
 use tuidom::hit_test_focusable;
 
 if let Some(id) = hit_test_focusable(&layout, &root, mouse_x, mouse_y) {
-    focus.focus(&id);
+    let events = focus.focus(&id, &root);
+    // events contains Blur (if previous focus) and Focus events
 }
 ```
 

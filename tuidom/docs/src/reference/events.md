@@ -66,7 +66,7 @@ pub enum MouseButton {
 ```rust
 FocusState::new()
 focus.focused() -> Option<&str>
-focus.focus(id) -> bool
+focus.focus(id, root) -> Vec<Event>  // Returns Blur/Focus events, respects interaction scopes
 focus.blur() -> bool
 focus.focus_next(root) -> Option<String>
 focus.focus_prev(root) -> Option<String>

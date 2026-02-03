@@ -134,13 +134,45 @@ impl FocusState {
     }
 
     /// Programmatically focus an element by ID.
-    /// Returns true if focus changed.
-    pub fn focus(&mut self, id: &str) -> bool {
+    /// Returns blur/focus events to dispatch, or empty vec if:
+    /// - Focus didn't change (already focused)
+    /// - Target is outside the active interaction scope
+    pub fn focus(&mut self, id: &str, root: &Element) -> Vec<Event> {
+        // No change if already focused
         if self.focused.as_deref() == Some(id) {
-            return false;
+            return vec![];
         }
+
+        // Scope validation - reject if target is outside active scope
+        let active_scope = find_active_scope(root, self.focused.as_deref());
+        if let Some(scope_id) = &active_scope {
+            if !is_in_scope(root, id, scope_id) {
+                log::warn!(
+                    "Focus request rejected: '{}' is outside active scope '{}'",
+                    id,
+                    scope_id
+                );
+                return vec![];
+            }
+        }
+
+        let mut events = Vec::with_capacity(2);
+
+        // Generate blur event for old focus
+        if let Some(old) = self.focused.take() {
+            events.push(Event::Blur {
+                target: old,
+                new_target: Some(id.to_string()),
+            });
+        }
+
+        // Focus new element
         self.focused = Some(id.to_string());
-        true
+        events.push(Event::Focus {
+            target: id.to_string(),
+        });
+
+        events
     }
 
     /// Clear focus.

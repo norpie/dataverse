@@ -39,13 +39,18 @@ if let Some(id) = focus.focused() {
 }
 ```
 
-### `focus(id: &str) -> bool`
+### `focus(id: &str, root: &Element) -> Vec<Event>`
 
-Programmatically focus an element. Returns `true` if focus changed:
+Programmatically focus an element. Returns `Blur` and `Focus` events to dispatch:
 
 ```rust
-focus.focus("my-input");
+let events = focus.focus("my-input", &root);
+// events is empty if:
+// - Already focused on that element
+// - Target is outside the active interaction scope (modal trapping)
 ```
+
+The returned events should be dispatched through the normal event pipeline to trigger `on_focus`/`on_blur` handlers.
 
 ### `blur() -> bool`
 
@@ -213,7 +218,8 @@ Focus an element when the app starts:
 
 ```rust
 let mut focus = FocusState::new();
-focus.focus("first-input");
+let events = focus.focus("first-input", &root);
+// Dispatch events to trigger on_focus handlers
 ```
 
 ### Conditional Focus

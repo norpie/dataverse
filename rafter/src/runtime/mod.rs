@@ -778,48 +778,90 @@ impl Runtime {
                     // Process focus requests from widgets/app
                     if let Some(target_id) = cx.take_focus_request() {
                         log::debug!("[runtime] Processing focus request: {}", target_id);
-                        if focus.focus(&target_id) {
-                            log::debug!("[runtime] Focus changed to: {}", target_id);
-                            // Scroll the newly focused element into view
-                            if let Some(change) =
-                                scroll_to_element(&root, layout, scroll, &target_id)
-                            {
-                                focus_scroll_changes.push(change);
+                        let synthetic_events = focus.focus(&target_id, &root);
+                        for event in &synthetic_events {
+                            // Scroll focus target into view
+                            if let tuidom::Event::Focus { target } = event {
+                                log::debug!("[runtime] Focus changed to: {}", target);
+                                if let Some(change) =
+                                    scroll_to_element(&root, layout, scroll, target)
+                                {
+                                    focus_scroll_changes.push(change);
+                                }
                             }
+                            // Dispatch synthetic event
+                            dispatch::dispatch_event(
+                                event,
+                                global_modals,
+                                app_context_menu,
+                                global_context_menu,
+                                systems,
+                                registry,
+                                gx,
+                                layout,
+                            );
                         }
                     }
 
                     // Process focus requests from app modals
                     let modals = instance.modals().read().unwrap();
                     if let Some(modal) = modals.last()
-                        && let Some(target_id) = modal.take_focus_request() {
-                            log::debug!("[runtime] Processing modal focus request: {}", target_id);
-                            if focus.focus(&target_id) {
-                                log::debug!("[runtime] Modal focus changed to: {}", target_id);
+                        && let Some(target_id) = modal.take_focus_request()
+                    {
+                        log::debug!("[runtime] Processing modal focus request: {}", target_id);
+                        let synthetic_events = focus.focus(&target_id, &root);
+                        for event in &synthetic_events {
+                            if let tuidom::Event::Focus { target } = event {
+                                log::debug!("[runtime] Modal focus changed to: {}", target);
                                 if let Some(change) =
-                                    scroll_to_element(&root, layout, scroll, &target_id)
+                                    scroll_to_element(&root, layout, scroll, target)
                                 {
                                     focus_scroll_changes.push(change);
                                 }
                             }
+                            dispatch::dispatch_event(
+                                event,
+                                global_modals,
+                                app_context_menu,
+                                global_context_menu,
+                                systems,
+                                registry,
+                                gx,
+                                layout,
+                            );
                         }
+                    }
                 }
             }
 
             // 14b. Process focus requests from global modals
             if let Some(modal) = global_modals.last()
-                && let Some(target_id) = modal.take_focus_request() {
-                    log::debug!(
-                        "[runtime] Processing global modal focus request: {}",
-                        target_id
-                    );
-                    if focus.focus(&target_id) {
-                        log::debug!("[runtime] Global modal focus changed to: {}", target_id);
-                        if let Some(change) = scroll_to_element(&root, layout, scroll, &target_id) {
+                && let Some(target_id) = modal.take_focus_request()
+            {
+                log::debug!(
+                    "[runtime] Processing global modal focus request: {}",
+                    target_id
+                );
+                let synthetic_events = focus.focus(&target_id, &root);
+                for event in &synthetic_events {
+                    if let tuidom::Event::Focus { target } = event {
+                        log::debug!("[runtime] Global modal focus changed to: {}", target);
+                        if let Some(change) = scroll_to_element(&root, layout, scroll, target) {
                             focus_scroll_changes.push(change);
                         }
                     }
+                    dispatch::dispatch_event(
+                        event,
+                        global_modals,
+                        app_context_menu,
+                        global_context_menu,
+                        systems,
+                        registry,
+                        gx,
+                        layout,
+                    );
                 }
+            }
 
             // 15. Sync text input values to TextInputState
             sync_text_inputs(&root, text_inputs);
@@ -1009,8 +1051,21 @@ impl Runtime {
                             "[runtime] Processing post-dispatch focus request: {}",
                             target_id
                         );
-                        if focus.focus(&target_id) {
-                            log::debug!("[runtime] Focus changed to: {}", target_id);
+                        let synthetic_events = focus.focus(&target_id, &root);
+                        for event in &synthetic_events {
+                            if let tuidom::Event::Focus { target } = event {
+                                log::debug!("[runtime] Focus changed to: {}", target);
+                            }
+                            dispatch::dispatch_event(
+                                event,
+                                global_modals,
+                                app_context_menu,
+                                global_context_menu,
+                                systems,
+                                registry,
+                                gx,
+                                layout,
+                            );
                         }
                     }
                 }

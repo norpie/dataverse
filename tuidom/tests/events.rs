@@ -122,17 +122,25 @@ fn test_hit_test_focusable() {
 fn test_focus_state_focus_blur() {
     let mut focus = FocusState::new();
 
+    // Create a simple root with focusable elements
+    let root = Element::col()
+        .child(Element::text("Input 1").id("input1").focusable(true))
+        .child(Element::text("Input 2").id("input2").focusable(true));
+
     assert_eq!(focus.focused(), None);
 
-    // Focus an element
-    assert!(focus.focus("input1"));
+    // Focus an element - should return Focus event
+    let events = focus.focus("input1", &root);
+    assert_eq!(events.len(), 1);
     assert_eq!(focus.focused(), Some("input1"));
 
-    // Focus same element - no change
-    assert!(!focus.focus("input1"));
+    // Focus same element - no change, empty events
+    let events = focus.focus("input1", &root);
+    assert!(events.is_empty());
 
-    // Focus different element
-    assert!(focus.focus("input2"));
+    // Focus different element - should return Blur + Focus events
+    let events = focus.focus("input2", &root);
+    assert_eq!(events.len(), 2);
     assert_eq!(focus.focused(), Some("input2"));
 
     // Blur
