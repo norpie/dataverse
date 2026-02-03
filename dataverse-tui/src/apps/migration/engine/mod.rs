@@ -4,6 +4,7 @@
 //! on source records to produce target field values.
 
 mod executor;
+mod paths;
 mod transforms;
 mod types;
 
@@ -13,6 +14,8 @@ pub use executor::BranchItem;
 pub use executor::ChainChildren;
 pub use executor::ChainItem;
 pub use executor::FindConditionItem;
+pub use paths::FieldPath;
+pub use paths::Segment;
 pub use types::FindError;
 pub use types::StubTargetCache;
 pub use types::SystemVars;

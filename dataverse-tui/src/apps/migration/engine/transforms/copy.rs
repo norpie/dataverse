@@ -4,32 +4,9 @@ use dataverse_lib::model::Entity;
 use dataverse_lib::model::Record;
 use dataverse_lib::model::Value;
 
+use crate::apps::migration::engine::FieldPath;
 use crate::apps::migration::engine::TransformError;
 use crate::apps::migration::engine::TransformResult;
-
-/// A parsed path segment.
-struct Segment<'a> {
-    /// The field name (without `?` suffix).
-    name: &'a str,
-    /// Whether this segment allows null propagation (`?` suffix).
-    optional: bool,
-}
-
-impl<'a> Segment<'a> {
-    fn parse(s: &'a str) -> Self {
-        if let Some(name) = s.strip_suffix('?') {
-            Self {
-                name,
-                optional: true,
-            }
-        } else {
-            Self {
-                name: s,
-                optional: false,
-            }
-        }
-    }
-}
 
 /// Execute the copy transform.
 ///
@@ -56,32 +33,33 @@ impl<'a> Segment<'a> {
 /// - `(TransformResult::Error(PathNotFound), None)` - path doesn't exist
 /// - `(TransformResult::Error(NullInPath), None)` - null lookup without `?`
 pub fn execute_copy(path: &str, source_record: &Record) -> (TransformResult, Option<Entity>) {
-    let segments: Vec<Segment> = path.split('.').map(Segment::parse).collect();
+    let field_path = FieldPath::parse(path);
 
-    if segments.is_empty() {
+    if field_path.is_empty() {
         return (
             TransformResult::Error(TransformError::path_not_found(path)),
             None,
         );
     }
 
+    let segments = field_path.segments();
     let mut current_record = source_record;
     let mut last_entity: Option<Entity> = None;
 
-    // Traverse through all segments except the last
-    for segment in &segments[..segments.len() - 1] {
-        match current_record.get(segment.name) {
+    // Traverse through all segments except the last (the lookups)
+    for segment in field_path.lookups() {
+        match current_record.get(segment.name()) {
             Some(Value::Record(nested)) => {
                 last_entity = Some(nested.entity().clone());
                 current_record = nested;
             }
             Some(Value::Null) => {
                 // Null lookup - check if optional
-                if segment.optional {
+                if segment.is_optional() {
                     return (TransformResult::Value(Value::Null), None);
                 } else {
                     return (
-                        TransformResult::Error(TransformError::null_in_path(segment.name)),
+                        TransformResult::Error(TransformError::null_in_path(segment.name())),
                         None,
                     );
                 }
@@ -102,9 +80,9 @@ pub fn execute_copy(path: &str, source_record: &Record) -> (TransformResult, Opt
         }
     }
 
-    // Get the final value
+    // Get the final value (the leaf)
     let final_segment = &segments[segments.len() - 1];
-    match current_record.get(final_segment.name) {
+    match current_record.get(final_segment.name()) {
         Some(value) => (TransformResult::Value(value.clone()), last_entity),
         None => (
             TransformResult::Error(TransformError::path_not_found(path)),
