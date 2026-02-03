@@ -29,6 +29,9 @@ pub enum ClientManagerError {
 
     #[error("no active session")]
     NoActiveSession,
+
+    #[error("no authenticated account for environment {env_id}")]
+    NoAuthenticatedAccount { env_id: i64 },
 }
 
 /// Manages Dataverse clients with shared rate limiting and caching.

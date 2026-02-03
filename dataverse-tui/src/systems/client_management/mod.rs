@@ -183,6 +183,35 @@ impl ClientManagement {
     }
 
     #[request_handler]
+    async fn handle_get_any_client(
+        &self,
+        request: GetAnyClient,
+        gx: &GlobalContext,
+    ) -> Result<ActiveClientInfo, ClientManagerError> {
+        let credentials = gx.data::<CredentialsProvider>();
+
+        // Find any account with tokens for this environment
+        let pairs = credentials.list_authenticated_pairs().await?;
+        let account_id = pairs
+            .iter()
+            .find(|(_, env_id)| *env_id == request.env_id)
+            .map(|(account_id, _)| *account_id)
+            .ok_or(ClientManagerError::NoAuthenticatedAccount {
+                env_id: request.env_id,
+            })?;
+
+        // Delegate to GetClient handler
+        self.handle_get_client(
+            GetClient {
+                account_id,
+                env_id: request.env_id,
+            },
+            gx,
+        )
+        .await
+    }
+
+    #[request_handler]
     async fn handle_get_authenticated_environments(
         &self,
         _request: GetAuthenticatedEnvironments,

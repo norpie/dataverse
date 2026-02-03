@@ -36,6 +36,13 @@ pub struct GetClient {
     pub env_id: i64,
 }
 
+/// Request to get a client for an environment using any available account.
+#[derive(Request)]
+#[response(Result<ActiveClientInfo, ClientManagerError>)]
+pub struct GetAnyClient {
+    pub env_id: i64,
+}
+
 /// Request to get the current active session info (lightweight, no client creation).
 #[derive(Request)]
 #[response(Option<SessionInfo>)]
