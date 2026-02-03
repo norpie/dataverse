@@ -2,8 +2,10 @@
 
 mod tree;
 
+use std::fs;
+use std::path::PathBuf;
+
 use dataverse_lib::DataverseClient;
-use rafter::element;
 use rafter::page;
 use rafter::prelude::*;
 use rafter::widgets::Button;
@@ -11,12 +13,13 @@ use rafter::widgets::Text;
 use rafter::widgets::Tree;
 use rafter::widgets::TreeState;
 
+use crate::apps::migration::modals::EditPhaseModal;
 use crate::apps::migration::modals::NewEntityMappingModal;
 use crate::apps::migration::modals::NewPhaseModal;
 use crate::apps::migration::repository::MigrationRepository;
-use crate::modals::parallel_load;
 use crate::apps::migration::repository::NewEntityMapping;
 use crate::apps::migration::repository::NewPhase;
+use crate::apps::migration::repository::UpdatePhase;
 use crate::apps::migration::types::EntityMapping;
 use crate::apps::migration::types::MatchStrategy;
 use crate::apps::migration::types::Migration;
@@ -24,6 +27,9 @@ use crate::apps::migration::types::Mode;
 use crate::apps::migration::types::NoMatchFallback;
 use crate::apps::migration::types::OrphanStrategy;
 use crate::apps::migration::types::Phase;
+use crate::modals::parallel_load;
+use crate::modals::FileBrowserModal;
+use crate::paths;
 
 use tree::build_tree_nodes;
 use tree::MigrationTreeNode;
@@ -113,6 +119,8 @@ impl MigrationEditor {
         bind("escape", close_app);
         bind("a", add_item);
         bind("d", delete_item);
+        bind("l", load_script);
+        bind("x", export_script);
     }
 
     #[handler]
@@ -166,23 +174,133 @@ impl MigrationEditor {
     }
 
     #[handler]
-    async fn node_activated(&self, _gx: &GlobalContext) {
-        // TODO: Open detail editor for the selected node
-        // For now, just toggle expansion for phases
-        let Some(focused) = self.tree_state.with_ref(|s| s.focused_key.clone()) else {
+    async fn edit_item(&self, gx: &GlobalContext) {
+        let Some(focused) = self.focused_node() else {
             return;
         };
 
-        if focused.starts_with("phase-") {
-            self.tree_state.update(|s| {
-                s.toggle_expanded(&focused);
-            });
+        match focused {
+            MigrationTreeNode::Phase(phase) => {
+                self.edit_phase(&phase, gx).await;
+            }
+            MigrationTreeNode::EntityMapping(_em) => {
+                // TODO: Open entity mapping editor
+            }
+        }
+    }
+
+    #[handler]
+    async fn load_script(&self, gx: &GlobalContext) {
+        let Some(MigrationTreeNode::Phase(phase)) = self.focused_node() else {
+            return;
+        };
+
+        if phase.mode != Mode::Lua {
+            gx.toast(Toast::warning("Phase must be in Lua mode to load a script"));
+            return;
+        }
+
+        let start_dir = paths::downloads_dir().unwrap_or_else(|| PathBuf::from("."));
+        let Some(result) = gx
+            .modal(FileBrowserModal::browse(&start_dir, vec!["lua".to_string()]).require_existing())
+            .await
+        else {
+            return;
+        };
+
+        // Read the file
+        let content = match fs::read_to_string(&result.path) {
+            Ok(content) => content,
+            Err(e) => {
+                log::error!("Failed to read script file: {}", e);
+                gx.toast(Toast::error("Failed to read script file"));
+                return;
+            }
+        };
+
+        // Update the phase
+        let repo = gx.data::<MigrationRepository>();
+        let update = UpdatePhase {
+            name: None,
+            mode: None,
+            lua_script: Some(content),
+        };
+
+        match repo.update_phase(phase.id, update).await {
+            Ok(()) => {
+                gx.toast(Toast::info("Script loaded"));
+                self.refresh_data(gx).await;
+            }
+            Err(e) => {
+                log::error!("Failed to update phase: {}", e);
+                gx.toast(Toast::error("Failed to save script"));
+            }
+        }
+    }
+
+    #[handler]
+    async fn export_script(&self, gx: &GlobalContext) {
+        let Some(MigrationTreeNode::Phase(phase)) = self.focused_node() else {
+            return;
+        };
+
+        if phase.mode != Mode::Lua {
+            gx.toast(Toast::warning("Phase must be in Lua mode to export a script"));
+            return;
+        }
+
+        let Some(script) = &phase.lua_script else {
+            gx.toast(Toast::warning("No script to export"));
+            return;
+        };
+
+        let start_dir = paths::downloads_dir().unwrap_or_else(|| PathBuf::from("."));
+        let Some(result) = gx
+            .modal(FileBrowserModal::browse(&start_dir, vec!["lua".to_string()]).with_filename(&phase.name))
+            .await
+        else {
+            return;
+        };
+
+        // Write the file
+        match fs::write(&result.path, script) {
+            Ok(()) => {
+                gx.toast(Toast::info("Script exported"));
+            }
+            Err(e) => {
+                log::error!("Failed to write script file: {}", e);
+                gx.toast(Toast::error("Failed to export script"));
+            }
         }
     }
 
     // =========================================================================
     // Phase Operations
     // =========================================================================
+
+    async fn edit_phase(&self, phase: &Phase, gx: &GlobalContext) {
+        let Some(result) = gx.modal(EditPhaseModal::for_phase(phase)).await else {
+            return;
+        };
+
+        let repo = gx.data::<MigrationRepository>();
+        let update = UpdatePhase {
+            name: Some(result.name),
+            mode: Some(result.mode),
+            lua_script: None,
+        };
+
+        match repo.update_phase(phase.id, update).await {
+            Ok(()) => {
+                gx.toast(Toast::info("Phase updated"));
+                self.refresh_data(gx).await;
+            }
+            Err(e) => {
+                log::error!("Failed to update phase: {}", e);
+                gx.toast(Toast::error("Failed to update phase"));
+            }
+        }
+    }
 
     async fn add_phase(&self, gx: &GlobalContext) {
         let Some(result) = gx.modal(NewPhaseModal::new_modal()).await else {
@@ -479,7 +597,7 @@ impl MigrationEditor {
                 row (width: fill, height: fill, gap: 1) {
                     box_ (id: "migration-tree-container", height: fill, width: fill) style (bg: surface) {
                         tree (state: self.tree_state, id: "migration-tree", width: fill, height: fill)
-                            on_activate: node_activated()
+                            on_activate: edit_item()
                     }
 
                     column (padding: (1, 2), gap: 1, width: fill, height: fill) style (bg: surface) {
@@ -490,48 +608,70 @@ impl MigrationEditor {
                                 }
                             }
                             Some(MigrationTreeNode::Phase(phase)) => {
-                                text (content: "Phase") style (bold, fg: interact)
-                                column {
-                                    row (gap: 1) {
-                                        text (content: "Name") style (fg: muted)
-                                        text (content: {phase.name.clone()})
+                                column (gap: 1) {
+                                    text (content: "Phase") style (bold, fg: interact)
+                                    column {
+                                        row (gap: 1) {
+                                            text (content: "Name") style (fg: muted)
+                                            text (content: {phase.name.clone()})
+                                        }
+                                        row (gap: 1) {
+                                            text (content: "Mode") style (fg: muted)
+                                            text (content: {if phase.mode == Mode::Lua { "Lua" } else { "Declarative" }})
+                                        }
+                                        row (gap: 1) {
+                                            text (content: "Entities") style (fg: muted)
+                                            text (content: {format!("{}", self.entity_count_for_phase(phase.id))})
+                                        }
                                     }
-                                    row (gap: 1) {
-                                        text (content: "Mode") style (fg: muted)
-                                        text (content: {if phase.mode == Mode::Lua { "Lua" } else { "Declarative" }})
-                                    }
-                                    row (gap: 1) {
-                                        text (content: "Entities") style (fg: muted)
-                                        text (content: {format!("{}", self.entity_count_for_phase(phase.id))})
+                                    if phase.mode == Mode::Lua {
+                                        column {
+                                            text (content: "Script") style (fg: muted)
+                                            box_ (width: fill, height: 10) style (bg: background) {
+                                                text (content: {script_preview(&phase.lua_script)}) style (fg: muted)
+                                            }
+                                            row (gap: 2) {
+                                                row (gap: 1) {
+                                                    text (content: "l") style (fg: primary)
+                                                    text (content: "load") style (fg: muted)
+                                                }
+                                                row (gap: 1) {
+                                                    text (content: "x") style (fg: primary)
+                                                    text (content: "export") style (fg: muted)
+                                                }
+                                            }
+                                        }
                                     }
                                 }
                             }
                             Some(MigrationTreeNode::EntityMapping(em)) => {
-                                text (content: "Entity Mapping") style (bold, fg: interact)
-                                column {
-                                    row (gap: 1) {
-                                        text (content: "Source") style (fg: muted)
-                                        text (content: {em.source_entity.clone()})
-                                    }
-                                    row (gap: 1) {
-                                        text (content: "Target") style (fg: muted)
-                                        text (content: {em.target_entity.clone()})
-                                    }
-                                    row (gap: 1) {
-                                        text (content: "Mode") style (fg: muted)
-                                        text (content: {if em.mode == Mode::Lua { "Lua" } else { "Declarative" }})
-                                    }
-                                    row (gap: 1) {
-                                        text (content: "Match") style (fg: muted)
-                                        text (content: {if em.match_strategy == MatchStrategy::Find { "Find" } else { "Same ID" }})
-                                    }
-                                    row (gap: 1) {
-                                        text (content: "Create") style (fg: muted)
-                                        text (content: {if em.create_pass_enabled { "Yes" } else { "No" }})
-                                    }
-                                    row (gap: 1) {
-                                        text (content: "Update") style (fg: muted)
-                                        text (content: {if em.update_pass_enabled { "Yes" } else { "No" }})
+                                column (gap: 1) {
+                                    text (content: "Entity Mapping") style (bold, fg: interact)
+                                    column {
+                                        row (gap: 1) {
+                                            text (content: "Source") style (fg: muted)
+                                            text (content: {em.source_entity.clone()})
+                                        }
+                                        row (gap: 1) {
+                                            text (content: "Target") style (fg: muted)
+                                            text (content: {em.target_entity.clone()})
+                                        }
+                                        row (gap: 1) {
+                                            text (content: "Mode") style (fg: muted)
+                                            text (content: {if em.mode == Mode::Lua { "Lua" } else { "Declarative" }})
+                                        }
+                                        row (gap: 1) {
+                                            text (content: "Match") style (fg: muted)
+                                            text (content: {if em.match_strategy == MatchStrategy::Find { "Find" } else { "Same ID" }})
+                                        }
+                                        row (gap: 1) {
+                                            text (content: "Create") style (fg: muted)
+                                            text (content: {if em.create_pass_enabled { "Yes" } else { "No" }})
+                                        }
+                                        row (gap: 1) {
+                                            text (content: "Update") style (fg: muted)
+                                            text (content: {if em.update_pass_enabled { "Yes" } else { "No" }})
+                                        }
                                     }
                                 }
                             }
@@ -544,10 +684,30 @@ impl MigrationEditor {
                     row (gap: 1) {
                         button (label: {add_label}, hint: "a", id: "add-btn") on_activate: add_item()
                         if has_selection {
+                            button (label: "Edit", hint: "enter", id: "edit-btn") on_activate: edit_item()
+                        }
+                        if has_selection {
                             button (label: "Delete", hint: "d", id: "delete-btn") on_activate: delete_item()
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+/// Format a Lua script for preview display (first 10 lines).
+fn script_preview(script: &Option<String>) -> String {
+    match script {
+        None => "No script defined".to_string(),
+        Some(s) if s.is_empty() => "No script defined".to_string(),
+        Some(s) => {
+            let lines: Vec<&str> = s.lines().take(10).collect();
+            let preview = lines.join("\n");
+            if s.lines().count() > 10 {
+                format!("{}\n...", preview)
+            } else {
+                preview
             }
         }
     }
