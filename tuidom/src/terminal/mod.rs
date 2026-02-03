@@ -191,6 +191,10 @@ impl Terminal {
             .iter_rects()
             .map(|(id, _)| id.clone())
             .collect();
+        log::trace!(
+            "[render] Layout contains {} IDs for cleanup check",
+            current_ids.len()
+        );
         self.animation.cleanup(&current_ids);
         let t_cleanup = Instant::now();
 

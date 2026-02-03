@@ -423,6 +423,7 @@ impl AnimationState {
             return;
         }
 
+        let is_new = !self.frame_states.contains_key(id);
         let state = self
             .frame_states
             .entry(id.to_string())
@@ -433,14 +434,31 @@ impl AnimationState {
                 count,
             });
 
+        if is_new {
+            log::debug!(
+                "[anim] New frame animation registered: {} ({} frames, {:?})",
+                id,
+                count,
+                interval
+            );
+        }
+
         state.interval = interval;
         state.count = count;
 
         let elapsed = now.duration_since(state.started);
         if elapsed >= interval {
             let frames_to_advance = (elapsed.as_millis() / interval.as_millis()) as usize;
+            let old_index = state.index;
             state.index = (state.index + frames_to_advance) % count;
             state.started = now;
+            log::trace!(
+                "[anim] Frame animation {} advanced: {} -> {} (elapsed {:?})",
+                id,
+                old_index,
+                state.index,
+                elapsed
+            );
         }
     }
 
@@ -597,6 +615,18 @@ impl AnimationState {
     pub fn cleanup(&mut self, current_ids: &HashSet<String>) {
         self.snapshots.retain(|id, _| current_ids.contains(id));
         self.active.retain(|(id, _), _| current_ids.contains(id));
+
+        // Log frame states being removed
+        let removed_frames: Vec<_> = self
+            .frame_states
+            .keys()
+            .filter(|id| !current_ids.contains(*id))
+            .cloned()
+            .collect();
+        if !removed_frames.is_empty() {
+            log::debug!("[anim] Cleanup removing frame states: {:?}", removed_frames);
+        }
+
         self.frame_states.retain(|id, _| current_ids.contains(id));
         self.positions.retain(|id, _| current_ids.contains(id));
         self.position_transitions
