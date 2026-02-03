@@ -2,10 +2,10 @@
 
 mod parse;
 
-pub use parse::{ParseError, parse_bool, parse_datetime, parse_filter_value, string_to_value};
+pub use parse::{parse_bool, parse_datetime, parse_filter_value, string_to_value, ParseError};
 
-use dataverse_lib::model::Value;
 use dataverse_lib::model::metadata::AttributeType;
+use dataverse_lib::model::Value;
 
 /// Returns the default column width for a given attribute type.
 pub fn default_column_width(attr_type: &AttributeType) -> u16 {
@@ -101,7 +101,7 @@ pub fn format_value(value: &Value) -> FormattedValue {
             i.id.to_string(),
         ),
         Value::Record(r) => FormattedValue::new(
-            format!("[record: {}]", r.entity_name()),
+            format!("[record: {}]", r.entity()),
             r.id()
                 .map(|id| id.to_string())
                 .unwrap_or_else(|| "[record]".to_string()),

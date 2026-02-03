@@ -2,6 +2,7 @@
 
 use std::collections::HashMap;
 
+use dataverse_lib::model::Entity;
 use dataverse_lib::model::Record;
 use dataverse_lib::model::Value;
 use thiserror::Error;
@@ -30,18 +31,18 @@ pub struct SystemVars {
     pub value: Value,
     /// Type annotation of current lookup field (`#type`).
     /// Set by `copy` when extracting from a lookup field.
-    pub value_type: Option<String>,
+    pub value_type: Option<Entity>,
     /// Record index in the current batch (`#index`).
     pub index: usize,
-    /// Logical name of source entity (`#source_entity`).
-    pub source_entity: String,
-    /// Logical name of target entity (`#target_entity`).
-    pub target_entity: String,
+    /// Source entity (`#source_entity`).
+    pub source_entity: Entity,
+    /// Target entity (`#target_entity`).
+    pub target_entity: Entity,
 }
 
 impl SystemVars {
     /// Creates new system variables for starting a transform chain.
-    pub fn new(source_entity: String, target_entity: String, index: usize) -> Self {
+    pub fn new(source_entity: Entity, target_entity: Entity, index: usize) -> Self {
         Self {
             value: Value::Null,
             value_type: None,
@@ -58,7 +59,7 @@ impl SystemVars {
     }
 
     /// Updates the value type annotation.
-    pub fn with_value_type(mut self, value_type: Option<String>) -> Self {
+    pub fn with_value_type(mut self, value_type: Option<Entity>) -> Self {
         self.value_type = value_type;
         self
     }

@@ -233,6 +233,7 @@ fn not_implemented(name: &str) -> TransformResult {
 mod tests {
     use std::collections::HashMap;
 
+    use dataverse_lib::model::Entity;
     use dataverse_lib::model::Record;
     use dataverse_lib::model::Value;
 
@@ -251,8 +252,8 @@ mod tests {
             source_record: source,
             variables,
             system_vars: SystemVars::new(
-                "source_entity".to_string(),
-                "target_entity".to_string(),
+                Entity::logical("source_entity"),
+                Entity::logical("target_entity"),
                 0,
             ),
             target_cache: cache,

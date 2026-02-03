@@ -1,5 +1,6 @@
 //! Copy transform - copies a value from the source record.
 
+use dataverse_lib::model::Entity;
 use dataverse_lib::model::Record;
 use dataverse_lib::model::Value;
 
@@ -15,15 +16,15 @@ use crate::apps::migration::engine::TransformResult;
 /// # Type Annotation
 ///
 /// When traversing through a lookup (nested Record), sets `#type` to the
-/// entity name of the last traversed Record. This allows downstream transforms
+/// entity of the last traversed Record. This allows downstream transforms
 /// to know what entity type the value came from.
 ///
 /// # Returns
 ///
-/// - `(TransformResult::Value, Some(entity_name))` - value with type from traversed lookup
+/// - `(TransformResult::Value, Some(entity))` - value with type from traversed lookup
 /// - `(TransformResult::Value, None)` - value from top-level field (no lookup traversal)
 /// - `(TransformResult::Error(PathNotFound), None)` - path doesn't exist
-pub fn execute_copy(path: &str, source_record: &Record) -> (TransformResult, Option<String>) {
+pub fn execute_copy(path: &str, source_record: &Record) -> (TransformResult, Option<Entity>) {
     let segments: Vec<&str> = path.split('.').collect();
 
     if segments.is_empty() {
@@ -34,13 +35,13 @@ pub fn execute_copy(path: &str, source_record: &Record) -> (TransformResult, Opt
     }
 
     let mut current_record = source_record;
-    let mut last_entity_name: Option<String> = None;
+    let mut last_entity: Option<Entity> = None;
 
     // Traverse through all segments except the last
     for &segment in &segments[..segments.len() - 1] {
         match current_record.get(segment) {
             Some(Value::Record(nested)) => {
-                last_entity_name = Some(nested.entity_name().to_string());
+                last_entity = Some(nested.entity().clone());
                 current_record = nested;
             }
             Some(_) => {
@@ -62,7 +63,7 @@ pub fn execute_copy(path: &str, source_record: &Record) -> (TransformResult, Opt
     // Get the final value
     let final_segment = segments[segments.len() - 1];
     match current_record.get(final_segment) {
-        Some(value) => (TransformResult::Value(value.clone()), last_entity_name),
+        Some(value) => (TransformResult::Value(value.clone()), last_entity),
         None => (
             TransformResult::Error(TransformError::path_not_found(path)),
             None,
@@ -105,7 +106,7 @@ mod tests {
         let (result, value_type) = execute_copy("primarycontactid.fullname", &record);
 
         assert!(matches!(result, TransformResult::Value(Value::String(s)) if s == "John Smith"));
-        assert_eq!(value_type, Some("contact".to_string()));
+        assert_eq!(value_type, Some(Entity::logical("contact")));
     }
 
     #[test]
@@ -114,7 +115,7 @@ mod tests {
         let (result, value_type) = execute_copy("primarycontactid.parentcustomerid.name", &record);
 
         assert!(matches!(result, TransformResult::Value(Value::String(s)) if s == "Parent Corp"));
-        assert_eq!(value_type, Some("account".to_string()));
+        assert_eq!(value_type, Some(Entity::logical("account")));
     }
 
     #[test]
