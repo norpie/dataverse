@@ -450,163 +450,95 @@ impl MigrationEditor {
         });
     }
 
-    fn render_detail(&self) -> Element {
-        let focused = self.tree_state.with_ref(|s| s.focused_key.clone());
-
-        let Some(key) = focused else {
-            return element! {
-                column (padding: (1, 2), width: fill, height: fill) style (bg: surface) {
-                    text (content: "Select a phase or entity mapping") style (fg: muted)
-                }
-            };
-        };
-
-        if let Some(phase_id) = key.strip_prefix("phase-").and_then(|s| s.parse::<i64>().ok()) {
-            self.render_phase_detail(phase_id)
-        } else if let Some(entity_id) = key.strip_prefix("entity-").and_then(|s| s.parse::<i64>().ok()) {
-            self.render_entity_mapping_detail(entity_id)
-        } else {
-            element! {
-                column (padding: (1, 2), width: fill, height: fill) style (bg: surface)
-            }
-        }
+    fn focused_node(&self) -> Option<MigrationTreeNode> {
+        self.tree_state.with_ref(|s| {
+            s.focused_key
+                .as_ref()
+                .and_then(|key| s.find_node(key))
+                .map(|node| node.value.clone())
+        })
     }
 
-    fn render_phase_detail(&self, phase_id: i64) -> Element {
-        let phase = self.phases.get().into_iter().find(|p| p.id == phase_id);
-
-        let Some(phase) = phase else {
-            return element! {
-                column (padding: (1, 2), width: fill, height: fill) style (bg: surface) {
-                    text (content: "Phase not found") style (fg: error)
-                }
-            };
-        };
-
-        let mode_str = match phase.mode {
-            Mode::Declarative => "Declarative",
-            Mode::Lua => "Lua",
-        };
-
-        let entity_count = self
-            .entity_mappings
+    fn entity_count_for_phase(&self, phase_id: i64) -> usize {
+        self.entity_mappings
             .get()
             .iter()
             .filter(|em| em.phase_id == phase_id)
-            .count();
-
-        element! {
-            column (padding: (1, 2), gap: 1, width: fill, height: fill) style (bg: surface) {
-                text (content: "Phase") style (bold, fg: interact)
-
-                row (gap: 1) {
-                    text (content: "name") style (fg: muted)
-                    text (content: {phase.name.clone()})
-                }
-                row (gap: 1) {
-                    text (content: "mode") style (fg: muted)
-                    text (content: {mode_str})
-                }
-                row (gap: 1) {
-                    text (content: "entities") style (fg: muted)
-                    text (content: {format!("{}", entity_count)})
-                }
-                row (gap: 1) {
-                    text (content: "order") style (fg: muted)
-                    text (content: {format!("{}", phase.order)})
-                }
-            }
-        }
+            .count()
     }
-
-    fn render_entity_mapping_detail(&self, entity_id: i64) -> Element {
-        let em = self
-            .entity_mappings
-            .get()
-            .into_iter()
-            .find(|e| e.id == entity_id);
-
-        let Some(em) = em else {
-            return element! {
-                column (padding: (1, 2), width: fill, height: fill) style (bg: surface) {
-                    text (content: "Entity mapping not found") style (fg: error)
-                }
-            };
-        };
-
-        let mode_str = match em.mode {
-            Mode::Declarative => "Declarative",
-            Mode::Lua => "Lua",
-        };
-
-        let match_strategy_str = match em.match_strategy {
-            MatchStrategy::SameId => "Same ID",
-            MatchStrategy::Find => "Find",
-        };
-
-        element! {
-            column (padding: (1, 2), gap: 1, width: fill, height: fill) style (bg: surface) {
-                text (content: "Entity Mapping") style (bold, fg: interact)
-
-                row (gap: 1) {
-                    text (content: "source") style (fg: muted)
-                    text (content: {em.source_entity.clone()})
-                }
-                row (gap: 1) {
-                    text (content: "target") style (fg: muted)
-                    text (content: {em.target_entity.clone()})
-                }
-                row (gap: 1) {
-                    text (content: "mode") style (fg: muted)
-                    text (content: {mode_str})
-                }
-                row (gap: 1) {
-                    text (content: "match") style (fg: muted)
-                    text (content: {match_strategy_str})
-                }
-                row (gap: 1) {
-                    text (content: "create") style (fg: muted)
-                    text (content: {if em.create_pass_enabled { "enabled" } else { "disabled" }})
-                }
-                row (gap: 1) {
-                    text (content: "update") style (fg: muted)
-                    text (content: {if em.update_pass_enabled { "enabled" } else { "disabled" }})
-                }
-            }
-        }
-    }
-
-    // =========================================================================
-    // UI
-    // =========================================================================
 
     fn element(&self) -> Element {
-        let detail = self.render_detail();
-        let has_selection = self.tree_state.with_ref(|s| s.focused_key.is_some());
-
-        let add_label = if has_selection {
-            "Add Entity"
-        } else {
-            "Add Phase"
-        };
+        let focused = self.focused_node();
+        let has_selection = focused.is_some();
+        let add_label = if has_selection { "Add Entity" } else { "Add Phase" };
 
         page! {
             column (padding: (1, 2), gap: 1, width: fill, height: fill) style (bg: background) {
-                // Header
                 text (content: {self.title()}) style (bold, fg: interact)
 
-                // Main content: tree + detail panel
                 row (width: fill, height: fill, gap: 1) {
                     box_ (id: "migration-tree-container", height: fill, width: fill) style (bg: surface) {
                         tree (state: self.tree_state, id: "migration-tree", width: fill, height: fill)
                             on_activate: node_activated()
                     }
-                    column (width: fill, height: fill) {
-                        { detail }
+
+                    column (padding: (1, 2), gap: 1, width: fill, height: fill) style (bg: surface) {
+                        match focused {
+                            None => {
+                                column (width: fill, height: fill, justify: center, align: center) {
+                                    text (content: "Select a phase or entity mapping") style (fg: muted)
+                                }
+                            }
+                            Some(MigrationTreeNode::Phase(phase)) => {
+                                text (content: "Phase") style (bold, fg: interact)
+                                column {
+                                    row (gap: 1) {
+                                        text (content: "Name") style (fg: muted)
+                                        text (content: {phase.name.clone()})
+                                    }
+                                    row (gap: 1) {
+                                        text (content: "Mode") style (fg: muted)
+                                        text (content: {if phase.mode == Mode::Lua { "Lua" } else { "Declarative" }})
+                                    }
+                                    row (gap: 1) {
+                                        text (content: "Entities") style (fg: muted)
+                                        text (content: {format!("{}", self.entity_count_for_phase(phase.id))})
+                                    }
+                                }
+                            }
+                            Some(MigrationTreeNode::EntityMapping(em)) => {
+                                text (content: "Entity Mapping") style (bold, fg: interact)
+                                column {
+                                    row (gap: 1) {
+                                        text (content: "Source") style (fg: muted)
+                                        text (content: {em.source_entity.clone()})
+                                    }
+                                    row (gap: 1) {
+                                        text (content: "Target") style (fg: muted)
+                                        text (content: {em.target_entity.clone()})
+                                    }
+                                    row (gap: 1) {
+                                        text (content: "Mode") style (fg: muted)
+                                        text (content: {if em.mode == Mode::Lua { "Lua" } else { "Declarative" }})
+                                    }
+                                    row (gap: 1) {
+                                        text (content: "Match") style (fg: muted)
+                                        text (content: {if em.match_strategy == MatchStrategy::Find { "Find" } else { "Same ID" }})
+                                    }
+                                    row (gap: 1) {
+                                        text (content: "Create") style (fg: muted)
+                                        text (content: {if em.create_pass_enabled { "Yes" } else { "No" }})
+                                    }
+                                    row (gap: 1) {
+                                        text (content: "Update") style (fg: muted)
+                                        text (content: {if em.update_pass_enabled { "Yes" } else { "No" }})
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
 
-                // Footer
                 row (width: fill, justify: between) {
                     button (label: "Close", hint: "esc", id: "close-btn") on_activate: close_app()
                     row (gap: 1) {
