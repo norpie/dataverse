@@ -8,7 +8,7 @@ Use the default rafter theme. Key colors:
 - `interact` - Titles, highlights
 - `primary` - Primary text, keybind hints
 - `muted` - Secondary text, descriptions
-- `surface` - Modal backgrounds
+- `surface` - Modal backgrounds and elements which need to pop out from the background (tables, trees, lists, panels)
 - `background` - App background
 
 ## Density
@@ -18,7 +18,7 @@ Compact - minimize whitespace while maintaining readability.
 ## Spacing
 
 - **Padding**: `(1, 2)` - vertical 1, horizontal 2 (matches visual spacing due to character aspect ratio)
-- **Gap**: `1` between elements
+- **Gap**: `1` between header, content, and footer in containers. NOT between every element, we prioritize vertical compactness and info density.
 - **Borders**: None
 
 ## Typography
@@ -124,7 +124,8 @@ Spinner::new()
 
 ## Empty States
 
-Show nothing - no "Empty" placeholders. If loading, show a spinner.
+If loading, show a spinner.
+If static empty state, show a horitontally and vertically centered message.
 
 ## Feedback
 
