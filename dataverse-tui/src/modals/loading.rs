@@ -9,7 +9,7 @@ use rafter::prelude::*;
 use rafter::widgets::Text;
 use tuidom::Element;
 
-use crate::widgets::BrailleSpinner;
+use crate::widgets::Spinner;
 
 type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 type DefaultFn<T> = Arc<dyn Fn() -> T + Send + Sync>;
@@ -105,10 +105,8 @@ impl<T: Send + Sync + 'static> LoadingModal::<T> {
     fn element(&self) -> Element {
         page! {
             column (padding: (1, 2), gap: 1, width: fill, height: fill) style (bg: surface) {
-                row (gap: 1) {
-                    BrailleSpinner {}
-                    text (content: self.message.clone()) style (fg: primary)
-                }
+                text (content: self.message.clone()) style (fg: primary)
+                spinner (id: "loading-spinner")
             }
         }
     }

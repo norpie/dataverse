@@ -15,6 +15,9 @@ use rafter::{HandlerRegistry, WidgetHandlers};
 /// When text fits within the specified width, renders as static text.
 /// When text overflows, animates by scrolling left, pausing at edges.
 ///
+/// **Note**: For multiple scrolling texts visible simultaneously, set unique IDs
+/// via `.id()` or DSL `(id: "...")` to avoid shared animation state.
+///
 /// # Example
 ///
 /// ```ignore
@@ -25,7 +28,8 @@ use rafter::{HandlerRegistry, WidgetHandlers};
 pub struct ScrollingText {
     text: String,
     width: u16,
-    id: Option<String>,
+    /// Element ID for stable animation state.
+    id: String,
     speed_ms: u64,
     pause_start_ms: u64,
     pause_end_ms: u64,
@@ -37,7 +41,7 @@ impl Default for ScrollingText {
         Self {
             text: String::new(),
             width: 20,
-            id: None,
+            id: "scrolling-text".to_string(),
             speed_ms: 150,
             pause_start_ms: 1000,
             pause_end_ms: 1000,
@@ -66,7 +70,7 @@ impl ScrollingText {
 
     /// Set the element ID for stable animation state.
     pub fn id(mut self, id: impl Into<String>) -> Self {
-        self.id = Some(id.into());
+        self.id = id.into();
         self
     }
 
@@ -107,10 +111,7 @@ impl ScrollingText {
 
         // If text fits, return simple text element
         if text_width <= available_width {
-            let mut elem = Element::text(&self.text);
-            if let Some(id) = &self.id {
-                elem = elem.id(id);
-            }
+            let mut elem = Element::text(&self.text).id(&self.id);
             if let Some(style) = self.style {
                 elem = elem.style(style);
             }
@@ -119,11 +120,8 @@ impl ScrollingText {
 
         // Text overflows - create scrolling animation
         let frames = self.generate_frames(text_width, available_width);
-        let mut elem = Element::frames(frames, Duration::from_millis(self.speed_ms));
+        let mut elem = Element::frames(frames, Duration::from_millis(self.speed_ms)).id(&self.id);
 
-        if let Some(id) = &self.id {
-            elem = elem.id(id);
-        }
         if let Some(style) = self.style {
             elem = elem.style(style);
         }

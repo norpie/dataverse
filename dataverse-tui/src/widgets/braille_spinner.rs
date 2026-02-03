@@ -13,6 +13,9 @@ use tuidom::Element;
 /// Cycles through braille patterns to create a spinning animation.
 /// Takes exactly 1 character of space, making it perfect for inline indicators.
 ///
+/// **Note**: For multiple spinners visible simultaneously, set unique IDs
+/// via `.id()` or DSL `(id: "...")` to avoid shared animation state.
+///
 /// # Example
 ///
 /// ```ignore
@@ -26,7 +29,7 @@ use tuidom::Element;
 #[derive(Clone, Debug)]
 pub struct BrailleSpinner {
     /// Element ID for stable animation state.
-    id: Option<String>,
+    id: String,
     /// Frame duration in milliseconds.
     frame_ms: u64,
 }
@@ -34,7 +37,7 @@ pub struct BrailleSpinner {
 impl Default for BrailleSpinner {
     fn default() -> Self {
         Self {
-            id: None,
+            id: "braille-spinner".to_string(),
             frame_ms: 80,
         }
     }
@@ -48,7 +51,7 @@ impl BrailleSpinner {
 
     /// Set the element ID for stable animation state.
     pub fn id(mut self, id: impl Into<String>) -> Self {
-        self.id = Some(id.into());
+        self.id = id.into();
         self
     }
 
@@ -84,10 +87,6 @@ impl BrailleSpinner {
             Element::text("⠏"), // dots 1,2,3,4
         ];
 
-        let mut elem = Element::frames(frames, Duration::from_millis(self.frame_ms));
-        if let Some(id) = &self.id {
-            elem = elem.id(id);
-        }
-        elem
+        Element::frames(frames, Duration::from_millis(self.frame_ms)).id(&self.id)
     }
 }

@@ -226,7 +226,8 @@ impl ParallelLoadingModal {
 
         let task_rows: Vec<Element> = infos
             .iter()
-            .map(|info| {
+            .enumerate()
+            .map(|(idx, info)| {
                 let label = info.label.clone();
                 let (indicator, label_elem): (Element, Element) = match info.status {
                     TaskStatus::Pending => (
@@ -234,7 +235,7 @@ impl ParallelLoadingModal {
                         element! { text (content: {label}) style (fg: muted) },
                     ),
                     TaskStatus::Running => (
-                        BrailleSpinner::new().build_standalone(),
+                        BrailleSpinner::new().id(format!("task-spinner-{}", idx)).build_standalone(),
                         element! { text (content: {label}) style (fg: primary) },
                     ),
                     TaskStatus::Completed => (

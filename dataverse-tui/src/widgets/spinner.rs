@@ -9,10 +9,13 @@ use rafter::{HandlerRegistry, WidgetHandlers};
 use tuidom::{Color, Element, Style};
 
 /// Configuration for the spinner.
+///
+/// **Note**: For multiple spinners visible simultaneously, set unique IDs
+/// via `.id()` or DSL `(id: "...")` to avoid shared animation state.
 #[derive(Clone, Debug)]
 pub struct Spinner {
     /// Element ID for stable animation state.
-    id: Option<String>,
+    id: String,
     /// Width of the track in characters.
     track_width: u16,
     /// Length of the snake/bar.
@@ -28,7 +31,7 @@ pub struct Spinner {
 impl Default for Spinner {
     fn default() -> Self {
         Self {
-            id: None,
+            id: "spinner".to_string(),
             track_width: 8,
             snake_len: 6,
             right_pause: 1,
@@ -46,7 +49,7 @@ impl Spinner {
 
     /// Set the element ID for stable animation state.
     pub fn id(mut self, id: impl Into<String>) -> Self {
-        self.id = Some(id.into());
+        self.id = id.into();
         self
     }
 
@@ -92,12 +95,7 @@ impl Spinner {
     ///
     /// Use this when building the spinner outside of the page! macro context.
     pub fn build_standalone(self) -> Element {
-        let mut elem =
-            Element::frames(self.generate_frames(), Duration::from_millis(self.frame_ms));
-        if let Some(id) = &self.id {
-            elem = elem.id(id);
-        }
-        elem
+        Element::frames(self.generate_frames(), Duration::from_millis(self.frame_ms)).id(&self.id)
     }
 
     fn generate_frames(&self) -> Vec<Element> {
