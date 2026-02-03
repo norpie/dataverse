@@ -11,6 +11,8 @@ mod settings;
 mod systems;
 mod widgets;
 
+use apps::migration::repository::MigrationRepository;
+
 use std::fs::File;
 
 use rafter::prelude::*;
@@ -32,10 +34,12 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
 
     let settings = init_settings().await?;
     let credentials = init_credentials().await?;
+    let migrations = init_migrations().await?;
 
     Runtime::new()?
         .data(settings)
         .data(credentials)
+        .data(migrations)
         .run(Welcome::default())
         .await?;
 
@@ -75,4 +79,10 @@ async fn init_credentials()
     let creds_path = paths::credentials_db().unwrap_or_else(|| "credentials.db".into());
     let backend = credentials::SqliteCredentialsBackend::new(&creds_path).await?;
     Ok(credentials::CredentialsProvider::new(backend))
+}
+
+async fn init_migrations()
+-> Result<MigrationRepository, apps::migration::repository::RepositoryError> {
+    let migrations_path = paths::migrations_db().unwrap_or_else(|| "migrations.db".into());
+    MigrationRepository::new(&migrations_path).await
 }

@@ -70,6 +70,11 @@ pub fn indexer_db() -> Option<PathBuf> {
     data_dir().map(|dir| dir.join("indexer.db"))
 }
 
+/// Get the path to the migrations database.
+pub fn migrations_db() -> Option<PathBuf> {
+    data_dir().map(|dir| dir.join("migrations.db"))
+}
+
 /// Get the logs directory.
 ///
 /// - Linux: `$XDG_CACHE_HOME/dataverse/logs` or `~/.cache/dataverse/logs`

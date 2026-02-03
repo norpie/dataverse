@@ -12,6 +12,7 @@ mod welcome;
 pub use entity_explorer::EntityExplorer;
 pub use export::Export;
 pub use import::Import;
+pub use migration::MigrationList;
 pub use query_builder::QueryBuilder;
 pub use record_explorer::RecordExplorer;
 pub use welcome::Welcome;

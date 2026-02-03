@@ -2,7 +2,7 @@
 
 use rafter::prelude::*;
 
-use crate::apps::{EntityExplorer, Import, QueryBuilder};
+use crate::apps::{EntityExplorer, Import, MigrationList, QueryBuilder};
 use crate::modals::{ListEntry, SearchableListModal};
 use crate::systems::client_management::{ClientManagement, GetActiveClient};
 
@@ -31,6 +31,7 @@ impl Launcher {
 
         let items = vec![
             ListEntry::with_category("entity-explorer", "Entity Explorer", "Data"),
+            ListEntry::with_category("migrations", "Migrations", "Data"),
             ListEntry::with_category("query-builder", "Query Builder", "Tools"),
             ListEntry::with_category("import", "Import", "Tools"),
         ];
@@ -43,36 +44,44 @@ impl Launcher {
         self.modal_open.set(false);
 
         if let Some(selected) = result {
-            // Get active client
-            let client_info = match gx
-                .request_system::<ClientManagement, GetActiveClient>(GetActiveClient)
-                .await
-            {
-                Ok(Ok(info)) => info,
-                Ok(Err(e)) => {
-                    gx.toast(Toast::error(format!("Client error: {}", e)));
-                    return;
-                }
-                Err(e) => {
-                    gx.toast(Toast::error(format!(
-                        "No active client. Please configure a connection first. ({:?})",
-                        e
-                    )));
-                    return;
-                }
-            };
             match selected.as_str() {
-                "entity-explorer" => {
-                    let _ = gx.spawn_and_focus(EntityExplorer::with_client(client_info));
+                // Apps that don't need a client
+                "migrations" => {
+                    let _ = gx.spawn_and_focus(MigrationList::create());
                 }
-                "query-builder" => {
-                    let _ = gx.spawn_and_focus(QueryBuilder::with_client(client_info));
-                }
-                "import" => {
-                    let _ = gx.spawn_and_focus(Import::with_client(client_info));
-                }
-                _ => {
-                    gx.toast(Toast::info(format!("App not implemented: {}", selected)));
+                // Apps that need a client
+                app => {
+                    let client_info = match gx
+                        .request_system::<ClientManagement, GetActiveClient>(GetActiveClient)
+                        .await
+                    {
+                        Ok(Ok(info)) => info,
+                        Ok(Err(e)) => {
+                            gx.toast(Toast::error(format!("Client error: {}", e)));
+                            return;
+                        }
+                        Err(e) => {
+                            gx.toast(Toast::error(format!(
+                                "No active client. Please configure a connection first. ({:?})",
+                                e
+                            )));
+                            return;
+                        }
+                    };
+                    match app {
+                        "entity-explorer" => {
+                            let _ = gx.spawn_and_focus(EntityExplorer::with_client(client_info));
+                        }
+                        "query-builder" => {
+                            let _ = gx.spawn_and_focus(QueryBuilder::with_client(client_info));
+                        }
+                        "import" => {
+                            let _ = gx.spawn_and_focus(Import::with_client(client_info));
+                        }
+                        _ => {
+                            gx.toast(Toast::info(format!("App not implemented: {}", app)));
+                        }
+                    }
                 }
             }
         }
