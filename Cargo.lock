@@ -555,6 +555,7 @@ dependencies = [
  "nucleo-matcher",
  "open",
  "rafter",
+ "regex",
  "rusqlite",
  "rust_decimal",
  "rust_xlsxwriter",
