@@ -3,8 +3,15 @@
 //! This module contains the core execution logic for running transforms
 //! on source records to produce target field values.
 
+mod executor;
 mod types;
 
+pub use executor::execute_chain;
+pub use executor::execute_scoped_chain;
+pub use executor::BranchItem;
+pub use executor::ChainChildren;
+pub use executor::ChainItem;
+pub use executor::FindConditionItem;
 pub use types::FindError;
 pub use types::StubTargetCache;
 pub use types::SystemVars;
