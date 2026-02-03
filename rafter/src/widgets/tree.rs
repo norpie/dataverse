@@ -1047,6 +1047,22 @@ impl<'a, T: TreeItem> Tree<HasTreeState<'a, T>> {
                     }
                 }),
             );
+
+            // on_blur: clear focused_key
+            let state_clone = state.clone();
+            let key_clone = key.clone();
+            registry.register(
+                &row_id,
+                "on_blur",
+                Arc::new(move |_hx| {
+                    state_clone.update(|s| {
+                        // Only clear if this row was the focused one
+                        if s.focused_key.as_ref() == Some(&key_clone) {
+                            s.focused_key = None;
+                        }
+                    });
+                }),
+            );
         }
 
         row
