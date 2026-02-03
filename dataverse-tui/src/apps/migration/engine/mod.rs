@@ -4,6 +4,7 @@
 //! on source records to produce target field values.
 
 mod executor;
+mod transforms;
 mod types;
 
 pub use executor::execute_chain;

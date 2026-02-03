@@ -6,6 +6,9 @@
 use crate::apps::migration::types::Condition;
 use crate::apps::migration::types::TransformData;
 
+use super::transforms::execute_constant;
+use super::transforms::execute_copy;
+use super::transforms::execute_guid;
 use super::types::TransformContext;
 use super::types::TransformError;
 use super::types::TransformResult;
@@ -179,9 +182,16 @@ pub fn execute_scoped_chain(
 fn execute_transform(item: &ChainItem, ctx: &mut TransformContext<'_>) -> TransformResult {
     match &item.data {
         // Simple transforms (Step 4)
-        TransformData::Copy { .. } => not_implemented("copy"),
-        TransformData::Constant { .. } => not_implemented("constant"),
-        TransformData::Guid => not_implemented("guid"),
+        TransformData::Copy { path } => {
+            let (result, value_type) = execute_copy(path, ctx.source_record);
+            // Update type annotation if copy extracted from a lookup
+            if value_type.is_some() {
+                ctx.system_vars.value_type = value_type;
+            }
+            result
+        }
+        TransformData::Constant { value } => execute_constant(value),
+        TransformData::Guid => execute_guid(),
 
         // String transforms (Step 6)
         TransformData::Format { .. } => not_implemented("format"),
