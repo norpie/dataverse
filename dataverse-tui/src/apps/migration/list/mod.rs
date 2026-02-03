@@ -16,6 +16,7 @@ use tuidom::Element;
 
 use crate::credentials::CredentialsProvider;
 
+use super::editor::MigrationEditor;
 use super::modals::NewMigrationModal;
 use super::repository::MigrationRepository;
 use super::repository::NewMigration;
@@ -204,11 +205,16 @@ impl MigrationList {
             return;
         };
 
-        // TODO: Open migration editor
-        gx.toast(Toast::info(format!(
-            "Open migration {} not yet implemented",
-            id
-        )));
+        let repo = gx.data::<MigrationRepository>();
+        match repo.get_migration(id).await {
+            Ok(migration) => {
+                let _ = gx.spawn_and_focus(MigrationEditor::for_migration(migration));
+            }
+            Err(e) => {
+                log::error!("Failed to load migration: {}", e);
+                gx.toast(Toast::error("Failed to load migration"));
+            }
+        }
     }
 
 
