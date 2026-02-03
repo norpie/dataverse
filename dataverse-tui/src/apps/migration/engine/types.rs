@@ -130,6 +130,10 @@ pub enum TransformError {
     #[error("Path not found: {path}")]
     PathNotFound { path: String },
 
+    /// Null encountered in path traversal without `?` operator.
+    #[error("Null in path at '{segment}' (use '{segment}?' for null propagation)")]
+    NullInPath { segment: String },
+
     /// Variable not found.
     #[error("Variable not found: ${name}")]
     VariableNotFound { name: String },
@@ -191,6 +195,13 @@ impl TransformError {
     /// Creates a path not found error.
     pub fn path_not_found(path: impl Into<String>) -> Self {
         Self::PathNotFound { path: path.into() }
+    }
+
+    /// Creates a null in path error.
+    pub fn null_in_path(segment: impl Into<String>) -> Self {
+        Self::NullInPath {
+            segment: segment.into(),
+        }
     }
 
     /// Creates a variable not found error.
