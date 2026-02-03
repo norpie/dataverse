@@ -7,7 +7,6 @@ use chrono::Utc;
 use rust_decimal::Decimal;
 use uuid::Uuid;
 
-use super::Value;
 use super::types::EntityBinding;
 use super::types::EntityReference;
 use super::types::FileReference;
@@ -15,6 +14,8 @@ use super::types::ImageReference;
 use super::types::Money;
 use super::types::MultiSelectOptionSetValue;
 use super::types::OptionSetValue;
+use super::Entity;
+use super::Value;
 use crate::api::ContentIdRef;
 use crate::error::FieldError;
 
@@ -39,8 +40,8 @@ use crate::error::FieldError;
 /// ```
 #[derive(Debug, Clone, PartialEq)]
 pub struct Record {
-    /// The logical name of the entity.
-    pub(crate) entity_name: String,
+    /// The entity type.
+    pub(crate) entity: Entity,
 
     /// The unique identifier of the record.
     pub(crate) id: Option<Uuid>,
@@ -57,9 +58,9 @@ pub struct Record {
 
 impl Record {
     /// Creates a new empty record for the given entity.
-    pub fn new(entity_name: impl Into<String>) -> Self {
+    pub fn new(entity: impl Into<Entity>) -> Self {
         Self {
-            entity_name: entity_name.into(),
+            entity: entity.into(),
             id: None,
             fields: HashMap::new(),
             formatted_values: HashMap::new(),
@@ -68,9 +69,9 @@ impl Record {
     }
 
     /// Creates a new record with the given ID.
-    pub fn with_id(entity_name: impl Into<String>, id: Uuid) -> Self {
+    pub fn with_id(entity: impl Into<Entity>, id: Uuid) -> Self {
         Self {
-            entity_name: entity_name.into(),
+            entity: entity.into(),
             id: Some(id),
             fields: HashMap::new(),
             formatted_values: HashMap::new(),
@@ -82,9 +83,9 @@ impl Record {
     // Metadata accessors
     // =========================================================================
 
-    /// Returns the entity logical name.
-    pub fn entity_name(&self) -> &str {
-        &self.entity_name
+    /// Returns the entity type.
+    pub fn entity(&self) -> &Entity {
+        &self.entity
     }
 
     /// Returns the record ID, if set.
@@ -97,9 +98,9 @@ impl Record {
         self.etag.as_deref()
     }
 
-    /// Sets the entity name.
-    pub fn set_entity_name(&mut self, name: impl Into<String>) {
-        self.entity_name = name.into();
+    /// Sets the entity.
+    pub fn set_entity(&mut self, entity: impl Into<Entity>) {
+        self.entity = entity.into();
     }
 
     /// Sets the record ID.

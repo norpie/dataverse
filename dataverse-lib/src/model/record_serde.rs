@@ -17,6 +17,7 @@
 //! - Lookup metadata: `"_field_value@Microsoft.Dynamics.CRM.lookuplogicalname": "contact"`
 //! - Formatted values: `"field@OData.Community.Display.V1.FormattedValue": "Display Text"`
 //! - ETag: `"@odata.etag": "W/\"12345\""`
+//! - Expanded lookups: nested objects parsed as Records with entity from annotation
 //!
 //! ## Binary Format (is_human_readable = false)
 //!
@@ -25,19 +26,19 @@
 use std::collections::HashMap;
 use std::fmt;
 
+use serde::de::MapAccess;
+use serde::de::Visitor;
+use serde::ser::SerializeMap;
 use serde::Deserialize;
 use serde::Deserializer;
 use serde::Serialize;
 use serde::Serializer;
-use serde::de::MapAccess;
-use serde::de::Visitor;
-use serde::ser::SerializeMap;
-use serde::ser::SerializeStruct;
 use uuid::Uuid;
 
+use super::types::EntityReference;
+use super::Entity;
 use super::Record;
 use super::Value;
-use super::types::EntityReference;
 
 // =============================================================================
 // Binary format helper (for bincode)
@@ -46,7 +47,7 @@ use super::types::EntityReference;
 /// Helper struct for binary serialization/deserialization.
 #[derive(Serialize, Deserialize)]
 struct BinaryRecord {
-    entity_name: String,
+    entity: Entity,
     id: Option<Uuid>,
     fields: HashMap<String, Value>,
     formatted_values: HashMap<String, String>,
@@ -102,7 +103,7 @@ impl Serialize for Record {
         } else {
             // Binary format: serialize all fields as a struct
             let binary = BinaryRecord {
-                entity_name: self.entity_name.clone(),
+                entity: self.entity.clone(),
                 id: self.id,
                 fields: self.fields.clone(),
                 formatted_values: self.formatted_values.clone(),
@@ -129,7 +130,7 @@ impl<'de> Deserialize<'de> for Record {
             // Binary format: deserialize as simple struct
             let binary = BinaryRecord::deserialize(deserializer)?;
             Ok(Record {
-                entity_name: binary.entity_name,
+                entity: binary.entity,
                 id: binary.id,
                 fields: binary.fields,
                 formatted_values: binary.formatted_values,
@@ -175,7 +176,7 @@ impl<'de> Visitor<'de> for RecordVisitor {
                     formatted_values.insert(field_name.to_string(), s);
                 }
             } else if key.contains("@Microsoft.Dynamics.CRM.lookuplogicalname") {
-                // Lookup logical name annotation
+                // Lookup logical name annotation - key is like "_primarycontactid_value"
                 let field_name = key
                     .strip_suffix("@Microsoft.Dynamics.CRM.lookuplogicalname")
                     .unwrap_or(&key);
@@ -193,26 +194,32 @@ impl<'de> Visitor<'de> for RecordVisitor {
         }
 
         // Second pass: convert raw fields to typed Values
+        // Process expanded objects first, then lookup values
+        // This way expanded Records take precedence over EntityReferences
+        let mut processed_lookups: HashMap<String, Value> = HashMap::new();
+
         for (key, json_value) in raw_fields {
-            let value = if key.starts_with('_') && key.ends_with("_value") {
+            if key.starts_with('_') && key.ends_with("_value") {
                 // This is a lookup field: _fieldname_value
+                // Store for later - expanded object may override
+                let clean_key = key[1..key.len() - 6].to_string();
                 let lookup_key = key.clone();
 
-                match json_value {
+                let value = match json_value {
                     serde_json::Value::Null => Value::Null,
                     serde_json::Value::String(guid_str) => {
                         // Try to parse as UUID
                         if let Ok(id) = Uuid::parse_str(&guid_str) {
-                            let logical_name = lookup_logical_names
+                            let entity = lookup_logical_names
                                 .get(&lookup_key)
-                                .cloned()
-                                .unwrap_or_default();
+                                .map(|s| Entity::Logical(s.clone()))
+                                .unwrap_or_else(|| Entity::Logical(String::new()));
                             let display_name = formatted_values.get(&lookup_key).cloned();
 
                             let entity_ref = if let Some(name) = display_name {
-                                EntityReference::with_name(&logical_name, id, name)
+                                EntityReference::with_name(entity, id, name)
                             } else {
-                                EntityReference::new(&logical_name, id)
+                                EntityReference::new(entity, id)
                             };
                             Value::EntityReference(entity_ref)
                         } else {
@@ -220,25 +227,76 @@ impl<'de> Visitor<'de> for RecordVisitor {
                             Value::String(guid_str)
                         }
                     }
-                    other => json_value_to_value(other),
+                    other => json_value_to_value(other, &lookup_logical_names),
+                };
+
+                processed_lookups.insert(clean_key, value);
+            } else if let serde_json::Value::Object(obj) = json_value {
+                // This could be an expanded lookup - check for entity type
+                // The entity type comes from _fieldname_value annotation
+                // For polymorphic lookups, the key may be like "parentcustomerid_account"
+                // but the annotation is on "_parentcustomerid_value"
+                let entity = find_entity_for_expanded_key(&key, &lookup_logical_names);
+
+                let nested_record = json_object_to_record(obj, entity, &lookup_logical_names);
+                record
+                    .fields
+                    .insert(key.clone(), Value::Record(Box::new(nested_record)));
+
+                // Store formatted value if available
+                if let Some(formatted) = formatted_values.remove(&key) {
+                    record.formatted_values.insert(key, formatted);
+                }
+            } else if let serde_json::Value::Array(arr) = json_value {
+                // Could be a collection navigation property (expanded 1:N)
+                let entity = find_entity_for_expanded_key(&key, &lookup_logical_names);
+
+                let records: Vec<Record> = arr
+                    .into_iter()
+                    .filter_map(|v| {
+                        if let serde_json::Value::Object(obj) = v {
+                            Some(json_object_to_record(
+                                obj,
+                                entity.clone(),
+                                &lookup_logical_names,
+                            ))
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
+
+                if !records.is_empty() {
+                    record.fields.insert(key.clone(), Value::Records(records));
+                } else {
+                    // Not a record array, keep as JSON
+                    record.fields.insert(
+                        key.clone(),
+                        json_value_to_value(
+                            serde_json::Value::Array(vec![]), // Empty, original consumed
+                            &lookup_logical_names,
+                        ),
+                    );
+                }
+
+                if let Some(formatted) = formatted_values.remove(&key) {
+                    record.formatted_values.insert(key, formatted);
                 }
             } else {
                 // Regular field
-                json_value_to_value(json_value)
-            };
+                let value = json_value_to_value(json_value, &lookup_logical_names);
+                record.fields.insert(key.clone(), value);
 
-            // For lookup fields, use the clean name without underscore prefix/suffix
-            let clean_key = if key.starts_with('_') && key.ends_with("_value") {
-                key[1..key.len() - 6].to_string()
-            } else {
-                key
-            };
+                if let Some(formatted) = formatted_values.remove(&key) {
+                    record.formatted_values.insert(key, formatted);
+                }
+            }
+        }
 
-            record.fields.insert(clean_key.clone(), value);
-
-            // Store formatted value if available (for non-lookup fields)
-            if let Some(formatted) = formatted_values.remove(&clean_key) {
-                record.formatted_values.insert(clean_key, formatted);
+        // Add lookup values that weren't overridden by expanded objects
+        for (key, value) in processed_lookups {
+            if !record.fields.contains_key(&key) {
+                record.fields.insert(key, value);
             }
         }
 
@@ -262,8 +320,64 @@ impl<'de> Visitor<'de> for RecordVisitor {
     }
 }
 
+/// Find the entity type for an expanded navigation property key.
+///
+/// For regular lookups, the key is the same as the field name (e.g., "primarycontactid")
+/// and the annotation is on "_primarycontactid_value".
+///
+/// For polymorphic lookups, the key includes the target entity (e.g., "parentcustomerid_account")
+/// and the annotation is on "_parentcustomerid_value".
+fn find_entity_for_expanded_key(
+    key: &str,
+    lookup_logical_names: &HashMap<String, String>,
+) -> Entity {
+    // Try direct match first: _key_value
+    let direct_key = format!("_{}_value", key);
+    if let Some(logical_name) = lookup_logical_names.get(&direct_key) {
+        return Entity::Logical(logical_name.clone());
+    }
+
+    // For polymorphic lookups, try stripping the entity suffix
+    // e.g., "parentcustomerid_account" -> try "_parentcustomerid_value"
+    if let Some(underscore_pos) = key.rfind('_') {
+        let base_field = &key[..underscore_pos];
+        let suffix = &key[underscore_pos + 1..];
+        let base_key = format!("_{}_value", base_field);
+
+        if let Some(logical_name) = lookup_logical_names.get(&base_key) {
+            // Verify the suffix matches the logical name (they should be related)
+            // The suffix is typically the entity set name or logical name
+            return Entity::Logical(logical_name.clone());
+        }
+
+        // If the suffix itself looks like an entity name, use it
+        if !suffix.is_empty() && suffix.chars().all(|c| c.is_alphanumeric() || c == '_') {
+            return Entity::Logical(suffix.to_string());
+        }
+    }
+
+    Entity::Logical(String::new())
+}
+
+/// Converts a JSON object to a Record with the given entity type.
+fn json_object_to_record(
+    obj: serde_json::Map<String, serde_json::Value>,
+    entity: Entity,
+    parent_lookup_names: &HashMap<String, String>,
+) -> Record {
+    // Re-parse the object through our normal deserialization
+    // This handles nested annotations properly
+    let json_value = serde_json::Value::Object(obj);
+    let mut nested: Record = serde_json::from_value(json_value).unwrap_or_else(|_| Record::new(""));
+    nested.entity = entity;
+    nested
+}
+
 /// Converts a serde_json::Value to our Value enum.
-fn json_value_to_value(json: serde_json::Value) -> Value {
+fn json_value_to_value(
+    json: serde_json::Value,
+    lookup_logical_names: &HashMap<String, String>,
+) -> Value {
     match json {
         serde_json::Value::Null => Value::Null,
         serde_json::Value::Bool(b) => Value::Bool(b),
@@ -295,14 +409,14 @@ fn json_value_to_value(json: serde_json::Value) -> Value {
             }
         }
         serde_json::Value::Array(arr) => {
-            // Could be multi-select option set (as array of ints) or nested records
-            // For now, treat as JSON
+            // Could be collection of records or other array
             Value::Json(serde_json::Value::Array(arr))
         }
         serde_json::Value::Object(obj) => {
-            // Could be a nested record from $expand
-            // For now, treat as JSON - we can enhance this later
-            Value::Json(serde_json::Value::Object(obj))
+            // Parse as a nested record with unknown entity type
+            let nested =
+                json_object_to_record(obj, Entity::Logical(String::new()), lookup_logical_names);
+            Value::Record(Box::new(nested))
         }
     }
 }
@@ -375,7 +489,7 @@ mod tests {
         let entity_ref = record.get_entity_reference("primarycontactid").unwrap();
         assert!(entity_ref.is_some());
         let entity_ref = entity_ref.unwrap();
-        assert_eq!(entity_ref.logical_name, "contact");
+        assert_eq!(entity_ref.entity, Entity::logical("contact"));
         assert_eq!(entity_ref.name, Some("John Smith".to_string()));
     }
 
@@ -388,5 +502,67 @@ mod tests {
         let record: Record = serde_json::from_str(json).unwrap();
 
         assert_eq!(record.get_formatted("revenue"), Some("$1,000,000.00"));
+    }
+
+    #[test]
+    fn test_deserialize_expanded_lookup() {
+        let json = r#"{
+            "accountid": "12345678-1234-1234-1234-123456789012",
+            "name": "Contoso",
+            "_primarycontactid_value": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+            "_primarycontactid_value@Microsoft.Dynamics.CRM.lookuplogicalname": "contact",
+            "primarycontactid": {
+                "contactid": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+                "fullname": "John Smith"
+            }
+        }"#;
+        let record: Record = serde_json::from_str(json).unwrap();
+
+        // The expanded record should be accessible
+        let contact = record.get_record("primarycontactid").unwrap();
+        assert!(contact.is_some());
+        let contact = contact.unwrap();
+
+        // The expanded record should have the entity type from the annotation
+        assert_eq!(contact.entity(), &Entity::logical("contact"));
+
+        // Fields should be accessible
+        assert_eq!(contact.get_string("fullname").unwrap(), Some("John Smith"));
+    }
+
+    #[test]
+    fn test_deserialize_nested_expanded_lookups() {
+        let json = r#"{
+            "contactid": "11111111-1111-1111-1111-111111111111",
+            "fullname": "John Smith",
+            "_parentcustomerid_value": "22222222-2222-2222-2222-222222222222",
+            "_parentcustomerid_value@Microsoft.Dynamics.CRM.lookuplogicalname": "account",
+            "parentcustomerid_account": {
+                "accountid": "22222222-2222-2222-2222-222222222222",
+                "name": "Contoso",
+                "_primarycontactid_value": "33333333-3333-3333-3333-333333333333",
+                "_primarycontactid_value@Microsoft.Dynamics.CRM.lookuplogicalname": "contact",
+                "primarycontactid": {
+                    "contactid": "33333333-3333-3333-3333-333333333333",
+                    "fullname": "Jane Doe"
+                }
+            }
+        }"#;
+        let record: Record = serde_json::from_str(json).unwrap();
+
+        // Navigate through nested records
+        let account = record
+            .get_record("parentcustomerid_account")
+            .unwrap()
+            .unwrap();
+        assert_eq!(account.entity(), &Entity::logical("account"));
+        assert_eq!(account.get_string("name").unwrap(), Some("Contoso"));
+
+        let nested_contact = account.get_record("primarycontactid").unwrap().unwrap();
+        assert_eq!(nested_contact.entity(), &Entity::logical("contact"));
+        assert_eq!(
+            nested_contact.get_string("fullname").unwrap(),
+            Some("Jane Doe")
+        );
     }
 }

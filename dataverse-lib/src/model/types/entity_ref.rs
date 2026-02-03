@@ -4,10 +4,12 @@ use serde::Deserialize;
 use serde::Serialize;
 use uuid::Uuid;
 
+use super::super::Entity;
+
 /// An entity reference from a read operation.
 ///
 /// Contains metadata returned by Dataverse when reading lookup fields,
-/// including the logical name and display name of the referenced record.
+/// including the entity type and display name of the referenced record.
 ///
 /// To use this reference in a write operation, convert it to an [`EntityBinding`]
 /// using the [`bind`](Self::bind) method.
@@ -15,44 +17,45 @@ use uuid::Uuid;
 /// # Example
 ///
 /// ```
+/// use dataverse_lib::model::Entity;
 /// use dataverse_lib::model::types::EntityReference;
 /// use uuid::Uuid;
 ///
 /// // Typically from a Dataverse response, not constructed manually
 /// let contact_ref = EntityReference {
 ///     id: Uuid::new_v4(),
-///     logical_name: "contact".to_string(),
+///     entity: Entity::logical("contact"),
 ///     name: Some("John Smith".to_string()),
 /// };
 ///
-/// // Convert to binding for writes
+/// // Convert to binding for writes (requires set name)
 /// let binding = contact_ref.bind("contacts");
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct EntityReference {
     /// The unique identifier of the referenced record.
     pub id: Uuid,
-    /// The logical name of the entity (e.g., "contact").
-    pub logical_name: String,
+    /// The entity type (logical or set name).
+    pub entity: Entity,
     /// The display name of the referenced record, if available.
     pub name: Option<String>,
 }
 
 impl EntityReference {
     /// Creates a new entity reference.
-    pub fn new(logical_name: impl Into<String>, id: Uuid) -> Self {
+    pub fn new(entity: impl Into<Entity>, id: Uuid) -> Self {
         Self {
             id,
-            logical_name: logical_name.into(),
+            entity: entity.into(),
             name: None,
         }
     }
 
     /// Creates a new entity reference with a display name.
-    pub fn with_name(logical_name: impl Into<String>, id: Uuid, name: impl Into<String>) -> Self {
+    pub fn with_name(entity: impl Into<Entity>, id: Uuid, name: impl Into<String>) -> Self {
         Self {
             id,
-            logical_name: logical_name.into(),
+            entity: entity.into(),
             name: Some(name.into()),
         }
     }
