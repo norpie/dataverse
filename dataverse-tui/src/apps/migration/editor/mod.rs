@@ -124,8 +124,16 @@ impl MigrationEditor {
     }
 
     #[handler]
-    async fn close_app(&self, cx: &AppContext) {
-        cx.close();
+    async fn close_app(&self, cx: &AppContext, gx: &GlobalContext) {
+        let confirmed = gx
+            .modal(crate::modals::ConfirmModal::with_message(
+                "Close the migration editor?",
+            ))
+            .await;
+
+        if confirmed {
+            cx.close();
+        }
     }
 
     #[handler]
