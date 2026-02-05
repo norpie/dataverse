@@ -163,14 +163,14 @@ impl<T: Clone + Eq + Hash> AutocompleteState<T> {
         self
     }
 
-    /// Set the initial selected value (also sets text to matching label in single-select mode).
+    /// Set the initial selected value (also sets text to value in single-select mode).
     pub fn with_value(mut self, value: T) -> Self
     where
-        T: PartialEq,
+        T: PartialEq + ToString,
     {
         if self.selection.mode == SelectionMode::Single
-            && let Some((_, label)) = self.options.iter().find(|(v, _)| v == &value) {
-                self.text = label.clone();
+            && self.options.iter().any(|(v, _)| v == &value) {
+                self.text = value.to_string();
             }
         self.selection.selected.insert(value);
         self
@@ -402,7 +402,7 @@ impl<S> Autocomplete<S> {
     }
 }
 
-impl<'a, T: Clone + Eq + Hash + PartialEq + Send + Sync + 'static> Autocomplete<HasState<'a, T>> {
+impl<'a, T: Clone + Eq + Hash + PartialEq + Send + Sync + ToString + 'static> Autocomplete<HasState<'a, T>> {
     /// Build the autocomplete element.
     ///
     /// Registers handlers for text input, option selection, and blur.
@@ -530,14 +530,14 @@ impl<'a, T: Clone + Eq + Hash + PartialEq + Send + Sync + 'static> Autocomplete<
                         let cursor = current.cursor;
                         let is_multi = current.selection.mode == SelectionMode::Multi;
                         if let Some(filter_match) = current.filtered.get(cursor)
-                            && let Some((value, label)) = current.options.get(filter_match.index) {
+                            && let Some((value, _label)) = current.options.get(filter_match.index) {
                                 let value = value.clone();
-                                let label = label.clone();
+                                let text_value = value.to_string();
                                 state_clone.update(|s| {
                                     s.selection.toggle(value);
                                     // In single-select mode, update text and close dropdown
                                     if !is_multi {
-                                        s.text = label;
+                                        s.text = text_value;
                                         s.open = false;
                                         s.refilter();
                                     }
@@ -618,7 +618,7 @@ impl<'a, T: Clone + Eq + Hash + PartialEq + Send + Sync + 'static> Autocomplete<
                         // Register option activate handler
                         let state_clone = state.clone();
                         let value_clone = value.clone();
-                        let label_clone = label.clone();
+                        let text_value = value.to_string();
                         let on_select = handlers.get("on_select").cloned();
                         registry.register(
                             &opt_id,
@@ -626,10 +626,11 @@ impl<'a, T: Clone + Eq + Hash + PartialEq + Send + Sync + 'static> Autocomplete<
                             Arc::new(move |hx| {
                                 let is_multi =
                                     state_clone.get().selection.mode == SelectionMode::Multi;
+                                let text_value = text_value.clone();
                                 state_clone.update(|s| {
                                     s.selection.toggle(value_clone.clone());
                                     if !is_multi {
-                                        s.text = label_clone.clone();
+                                        s.text = text_value;
                                         s.open = false;
                                         s.refilter();
                                     }
