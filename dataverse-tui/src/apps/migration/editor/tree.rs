@@ -7,8 +7,10 @@ use tuidom::Element;
 use tuidom::Style;
 
 use crate::apps::migration::types::EntityMapping;
+use crate::apps::migration::types::FieldMapping;
 use crate::apps::migration::types::Mode;
 use crate::apps::migration::types::Phase;
+use crate::apps::migration::types::Variable;
 
 /// A node in the migration editor tree.
 #[derive(Clone, Debug)]
@@ -29,6 +31,14 @@ pub enum MigrationTreeNode {
     Passes { entity_mapping_id: i64 },
     /// Test GUIDs (child of entity mapping, both modes).
     TestGuids { entity_mapping_id: i64 },
+    /// Variables section header (child of entity mapping, Declarative only).
+    Variables { entity_mapping_id: i64 },
+    /// An individual variable (child of Variables section).
+    Variable(Variable),
+    /// Field mappings section header (child of entity mapping, Declarative only).
+    FieldMappings { entity_mapping_id: i64 },
+    /// An individual field mapping (child of FieldMappings section).
+    FieldMapping(FieldMapping),
 }
 
 impl MigrationTreeNode {
@@ -42,7 +52,11 @@ impl MigrationTreeNode {
             | Self::TargetFilter { entity_mapping_id }
             | Self::UnmatchedHandling { entity_mapping_id }
             | Self::Passes { entity_mapping_id }
-            | Self::TestGuids { entity_mapping_id } => Some(*entity_mapping_id),
+            | Self::TestGuids { entity_mapping_id }
+            | Self::Variables { entity_mapping_id }
+            | Self::FieldMappings { entity_mapping_id } => Some(*entity_mapping_id),
+            Self::Variable(v) => Some(v.entity_mapping_id),
+            Self::FieldMapping(fm) => Some(fm.entity_mapping_id),
         }
     }
 
@@ -66,6 +80,10 @@ impl MigrationTreeNode {
                 | Self::UnmatchedHandling { .. }
                 | Self::Passes { .. }
                 | Self::TestGuids { .. }
+                | Self::Variables { .. }
+                | Self::Variable(_)
+                | Self::FieldMappings { .. }
+                | Self::FieldMapping(_)
         )
     }
 
@@ -107,6 +125,12 @@ impl TreeItem for MigrationTreeNode {
             }
             Self::Passes { entity_mapping_id } => format!("passes-{}", entity_mapping_id),
             Self::TestGuids { entity_mapping_id } => format!("test-guids-{}", entity_mapping_id),
+            Self::Variables { entity_mapping_id } => format!("variables-{}", entity_mapping_id),
+            Self::Variable(v) => format!("variable-{}", v.id),
+            Self::FieldMappings { entity_mapping_id } => {
+                format!("field-mappings-{}", entity_mapping_id)
+            }
+            Self::FieldMapping(fm) => format!("field-mapping-{}", fm.id),
         }
     }
 
@@ -154,6 +178,20 @@ impl TreeItem for MigrationTreeNode {
             Self::TestGuids { .. } => Element::row().gap(1).child(
                 Element::text("Test GUIDs").style(Style::new().foreground(Color::var("muted"))),
             ),
+            Self::Variables { .. } => Element::row().gap(1).child(
+                Element::text("Variables").style(Style::new().foreground(Color::var("muted"))),
+            ),
+            Self::Variable(v) => Element::row().gap(1).child(
+                Element::text(format!("${}", v.name))
+                    .style(Style::new().foreground(Color::var("primary"))),
+            ),
+            Self::FieldMappings { .. } => Element::row().gap(1).child(
+                Element::text("Field Mappings").style(Style::new().foreground(Color::var("muted"))),
+            ),
+            Self::FieldMapping(fm) => Element::row().gap(1).child(
+                Element::text(&fm.target_field)
+                    .style(Style::new().foreground(Color::var("primary"))),
+            ),
         }
     }
 }
@@ -162,6 +200,8 @@ impl TreeItem for MigrationTreeNode {
 pub fn build_tree_nodes(
     phases: Vec<Phase>,
     entity_mappings: Vec<EntityMapping>,
+    variables: Vec<Variable>,
+    field_mappings: Vec<FieldMapping>,
 ) -> Vec<TreeNode<MigrationTreeNode>> {
     phases
         .into_iter()
@@ -178,7 +218,7 @@ pub fn build_tree_nodes(
                 .iter()
                 .filter(|em| em.phase_id == phase_id)
                 .cloned()
-                .map(|em| build_entity_mapping_node(em))
+                .map(|em| build_entity_mapping_node(em, &variables, &field_mappings))
                 .collect();
 
             if children.is_empty() {
@@ -191,7 +231,11 @@ pub fn build_tree_nodes(
 }
 
 /// Build a tree node for an entity mapping with its child config nodes.
-fn build_entity_mapping_node(em: EntityMapping) -> TreeNode<MigrationTreeNode> {
+fn build_entity_mapping_node(
+    em: EntityMapping,
+    variables: &[Variable],
+    field_mappings: &[FieldMapping],
+) -> TreeNode<MigrationTreeNode> {
     let em_id = em.id;
     let is_lua = em.mode == Mode::Lua;
 
@@ -222,6 +266,48 @@ fn build_entity_mapping_node(em: EntityMapping) -> TreeNode<MigrationTreeNode> {
         children.push(TreeNode::leaf(MigrationTreeNode::TestGuids {
             entity_mapping_id: em_id,
         }));
+
+        // Variables section
+        let var_children: Vec<TreeNode<MigrationTreeNode>> = variables
+            .iter()
+            .filter(|v| v.entity_mapping_id == em_id)
+            .cloned()
+            .map(|v| TreeNode::leaf(MigrationTreeNode::Variable(v)))
+            .collect();
+
+        if var_children.is_empty() {
+            children.push(TreeNode::leaf(MigrationTreeNode::Variables {
+                entity_mapping_id: em_id,
+            }));
+        } else {
+            children.push(TreeNode::branch(
+                MigrationTreeNode::Variables {
+                    entity_mapping_id: em_id,
+                },
+                var_children,
+            ));
+        }
+
+        // Field mappings section
+        let fm_children: Vec<TreeNode<MigrationTreeNode>> = field_mappings
+            .iter()
+            .filter(|fm| fm.entity_mapping_id == em_id)
+            .cloned()
+            .map(|fm| TreeNode::leaf(MigrationTreeNode::FieldMapping(fm)))
+            .collect();
+
+        if fm_children.is_empty() {
+            children.push(TreeNode::leaf(MigrationTreeNode::FieldMappings {
+                entity_mapping_id: em_id,
+            }));
+        } else {
+            children.push(TreeNode::branch(
+                MigrationTreeNode::FieldMappings {
+                    entity_mapping_id: em_id,
+                },
+                fm_children,
+            ));
+        }
     }
 
     TreeNode::branch(MigrationTreeNode::EntityMapping(em), children)

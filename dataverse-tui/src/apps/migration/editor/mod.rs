@@ -28,12 +28,14 @@ use crate::apps::migration::repository::NewPhase;
 use crate::apps::migration::repository::UpdateEntityMapping;
 use crate::apps::migration::repository::UpdatePhase;
 use crate::apps::migration::types::EntityMapping;
+use crate::apps::migration::types::FieldMapping;
 use crate::apps::migration::types::MatchStrategy;
 use crate::apps::migration::types::Migration;
 use crate::apps::migration::types::Mode;
 use crate::apps::migration::types::NoMatchFallback;
 use crate::apps::migration::types::OrphanStrategy;
 use crate::apps::migration::types::Phase;
+use crate::apps::migration::types::Variable;
 use crate::modals::parallel_load;
 
 use tree::build_tree_nodes;
@@ -54,6 +56,10 @@ pub struct MigrationEditor {
     phases: Vec<Phase>,
     /// All entity mappings (for tree building).
     entity_mappings: Vec<EntityMapping>,
+    /// All variables (for tree building).
+    variables: Vec<Variable>,
+    /// All field mappings (for tree building).
+    field_mappings: Vec<FieldMapping>,
 }
 
 impl MigrationEditor {
@@ -68,6 +74,8 @@ impl MigrationEditor {
             source_client,
             target_client,
             TreeState::default(),
+            Vec::new(),
+            Vec::new(),
             Vec::new(),
             Vec::new(),
         )
@@ -106,6 +114,31 @@ impl MigrationEditor {
             }
         }
         self.entity_mappings.set(all_mappings);
+
+        // Load variables and field mappings for all entity mappings
+        let entity_mappings = self.entity_mappings.get();
+        let mut all_variables = Vec::new();
+        let mut all_field_mappings = Vec::new();
+        for em in &entity_mappings {
+            match repo.get_variables(em.id).await {
+                Ok(vars) => all_variables.extend(vars),
+                Err(e) => {
+                    log::error!("Failed to load variables for entity mapping {}: {}", em.id, e);
+                }
+            }
+            match repo.get_field_mappings(em.id).await {
+                Ok(fms) => all_field_mappings.extend(fms),
+                Err(e) => {
+                    log::error!(
+                        "Failed to load field mappings for entity mapping {}: {}",
+                        em.id,
+                        e
+                    );
+                }
+            }
+        }
+        self.variables.set(all_variables);
+        self.field_mappings.set(all_field_mappings);
 
         // Build tree
         self.rebuild_tree();
@@ -218,6 +251,26 @@ impl MigrationEditor {
             }
             MigrationTreeNode::TestGuids { entity_mapping_id } => {
                 self.edit_test_guids(entity_mapping_id, gx).await;
+            }
+            MigrationTreeNode::Variables { .. } => {
+                // Section header - no action, use 'a' to add
+            }
+            MigrationTreeNode::Variable(v) => {
+                // TODO: Open transform chain editor
+                gx.toast(Toast::info(format!(
+                    "Transform editor for ${} not yet implemented",
+                    v.name
+                )));
+            }
+            MigrationTreeNode::FieldMappings { .. } => {
+                // Section header - no action, use 'a' to add
+            }
+            MigrationTreeNode::FieldMapping(fm) => {
+                // TODO: Open transform chain editor
+                gx.toast(Toast::info(format!(
+                    "Transform editor for '{}' not yet implemented",
+                    fm.target_field
+                )));
             }
         }
     }
@@ -1038,14 +1091,31 @@ impl MigrationEditor {
         }
         self.entity_mappings.set(all_mappings);
 
+        // Reload variables and field mappings
+        let entity_mappings = self.entity_mappings.get();
+        let mut all_variables = Vec::new();
+        let mut all_field_mappings = Vec::new();
+        for em in &entity_mappings {
+            if let Ok(vars) = repo.get_variables(em.id).await {
+                all_variables.extend(vars);
+            }
+            if let Ok(fms) = repo.get_field_mappings(em.id).await {
+                all_field_mappings.extend(fms);
+            }
+        }
+        self.variables.set(all_variables);
+        self.field_mappings.set(all_field_mappings);
+
         self.rebuild_tree();
     }
 
     fn rebuild_tree(&self) {
         let phases = self.phases.get();
         let entity_mappings = self.entity_mappings.get();
+        let variables = self.variables.get();
+        let field_mappings = self.field_mappings.get();
 
-        let nodes = build_tree_nodes(phases, entity_mappings);
+        let nodes = build_tree_nodes(phases, entity_mappings, variables, field_mappings);
         self.tree_state.update(|s| {
             s.set_roots(nodes);
         });
@@ -1091,6 +1161,192 @@ impl MigrationEditor {
                     )
                     .child(
                         Element::text(description).style(Style::new().foreground(Color::var("muted"))),
+                    ),
+            )
+    }
+
+    fn render_variables_detail(&self, entity_mapping_id: i64) -> Element {
+        let em = self
+            .entity_mappings
+            .get()
+            .iter()
+            .find(|em| em.id == entity_mapping_id)
+            .cloned();
+
+        let parent_name = em.map(|e| e.name).unwrap_or_else(|| "Unknown".to_string());
+
+        let var_count = self
+            .variables
+            .get()
+            .iter()
+            .filter(|v| v.entity_mapping_id == entity_mapping_id)
+            .count();
+
+        Element::col()
+            .gap(1)
+            .child(
+                Element::text("Variables")
+                    .style(Style::new().bold().foreground(Color::var("interact"))),
+            )
+            .child(
+                Element::col()
+                    .child(
+                        Element::row()
+                            .gap(1)
+                            .child(
+                                Element::text("Parent")
+                                    .style(Style::new().foreground(Color::var("muted"))),
+                            )
+                            .child(Element::text(&parent_name)),
+                    )
+                    .child(
+                        Element::row()
+                            .gap(1)
+                            .child(
+                                Element::text("Count")
+                                    .style(Style::new().foreground(Color::var("muted"))),
+                            )
+                            .child(Element::text(format!("{}", var_count))),
+                    )
+                    .child(
+                        Element::text("Computed values available in field mapping transforms")
+                            .style(Style::new().foreground(Color::var("muted"))),
+                    ),
+            )
+    }
+
+    fn render_variable_detail(&self, variable: &Variable) -> Element {
+        let em = self
+            .entity_mappings
+            .get()
+            .iter()
+            .find(|em| em.id == variable.entity_mapping_id)
+            .cloned();
+
+        let parent_name = em.map(|e| e.name).unwrap_or_else(|| "Unknown".to_string());
+
+        Element::col()
+            .gap(1)
+            .child(
+                Element::text("Variable")
+                    .style(Style::new().bold().foreground(Color::var("interact"))),
+            )
+            .child(
+                Element::col()
+                    .child(
+                        Element::row()
+                            .gap(1)
+                            .child(
+                                Element::text("Name")
+                                    .style(Style::new().foreground(Color::var("muted"))),
+                            )
+                            .child(Element::text(format!("${}", variable.name))),
+                    )
+                    .child(
+                        Element::row()
+                            .gap(1)
+                            .child(
+                                Element::text("Parent")
+                                    .style(Style::new().foreground(Color::var("muted"))),
+                            )
+                            .child(Element::text(&parent_name)),
+                    )
+                    .child(
+                        Element::text("Press Enter to edit transform chain")
+                            .style(Style::new().foreground(Color::var("muted"))),
+                    ),
+            )
+    }
+
+    fn render_field_mappings_detail(&self, entity_mapping_id: i64) -> Element {
+        let em = self
+            .entity_mappings
+            .get()
+            .iter()
+            .find(|em| em.id == entity_mapping_id)
+            .cloned();
+
+        let parent_name = em.map(|e| e.name).unwrap_or_else(|| "Unknown".to_string());
+
+        let fm_count = self
+            .field_mappings
+            .get()
+            .iter()
+            .filter(|fm| fm.entity_mapping_id == entity_mapping_id)
+            .count();
+
+        Element::col()
+            .gap(1)
+            .child(
+                Element::text("Field Mappings")
+                    .style(Style::new().bold().foreground(Color::var("interact"))),
+            )
+            .child(
+                Element::col()
+                    .child(
+                        Element::row()
+                            .gap(1)
+                            .child(
+                                Element::text("Parent")
+                                    .style(Style::new().foreground(Color::var("muted"))),
+                            )
+                            .child(Element::text(&parent_name)),
+                    )
+                    .child(
+                        Element::row()
+                            .gap(1)
+                            .child(
+                                Element::text("Count")
+                                    .style(Style::new().foreground(Color::var("muted"))),
+                            )
+                            .child(Element::text(format!("{}", fm_count))),
+                    )
+                    .child(
+                        Element::text("Mappings from source fields to target fields")
+                            .style(Style::new().foreground(Color::var("muted"))),
+                    ),
+            )
+    }
+
+    fn render_field_mapping_detail(&self, field_mapping: &FieldMapping) -> Element {
+        let em = self
+            .entity_mappings
+            .get()
+            .iter()
+            .find(|em| em.id == field_mapping.entity_mapping_id)
+            .cloned();
+
+        let parent_name = em.map(|e| e.name).unwrap_or_else(|| "Unknown".to_string());
+
+        Element::col()
+            .gap(1)
+            .child(
+                Element::text("Field Mapping")
+                    .style(Style::new().bold().foreground(Color::var("interact"))),
+            )
+            .child(
+                Element::col()
+                    .child(
+                        Element::row()
+                            .gap(1)
+                            .child(
+                                Element::text("Target Field")
+                                    .style(Style::new().foreground(Color::var("muted"))),
+                            )
+                            .child(Element::text(&field_mapping.target_field)),
+                    )
+                    .child(
+                        Element::row()
+                            .gap(1)
+                            .child(
+                                Element::text("Parent")
+                                    .style(Style::new().foreground(Color::var("muted"))),
+                            )
+                            .child(Element::text(&parent_name)),
+                    )
+                    .child(
+                        Element::text("Press Enter to edit transform chain")
+                            .style(Style::new().foreground(Color::var("muted"))),
                     ),
             )
     }
@@ -1179,6 +1435,18 @@ impl MigrationEditor {
                             }
                             Some(MigrationTreeNode::TestGuids { entity_mapping_id }) => {
                                 { self.render_config_detail("Test GUIDs", entity_mapping_id, "Specify record GUIDs to test the migration with") }
+                            }
+                            Some(MigrationTreeNode::Variables { entity_mapping_id }) => {
+                                { self.render_variables_detail(entity_mapping_id) }
+                            }
+                            Some(MigrationTreeNode::Variable(v)) => {
+                                { self.render_variable_detail(&v) }
+                            }
+                            Some(MigrationTreeNode::FieldMappings { entity_mapping_id }) => {
+                                { self.render_field_mappings_detail(entity_mapping_id) }
+                            }
+                            Some(MigrationTreeNode::FieldMapping(fm)) => {
+                                { self.render_field_mapping_detail(&fm) }
                             }
                         }
                     }
