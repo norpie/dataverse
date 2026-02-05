@@ -161,6 +161,8 @@ impl MigrationEditor {
         bind("escape", close_app);
         bind("a", add_item);
         bind("d", delete_item);
+        bind("J", move_item_down);
+        bind("K", move_item_up);
     }
 
     #[handler]
@@ -244,6 +246,39 @@ impl MigrationEditor {
             }
             // Other config nodes can't be deleted
             Some(_) | None => {}
+        }
+    }
+
+    #[handler]
+    async fn move_item_up(&self, gx: &GlobalContext) {
+        log::debug!("move_item_up called");
+        self.move_item(-1, gx).await;
+    }
+
+    #[handler]
+    async fn move_item_down(&self, gx: &GlobalContext) {
+        log::debug!("move_item_down called");
+        self.move_item(1, gx).await;
+    }
+
+    async fn move_item(&self, direction: i32, gx: &GlobalContext) {
+        let Some(focused) = self.focused_node() else {
+            log::debug!("move_item: no focused node");
+            return;
+        };
+        log::debug!("move_item: focused node = {:?}", focused);
+
+        match focused {
+            MigrationTreeNode::Variable(v) => {
+                self.reorder_variable(v.id, v.entity_mapping_id, direction, gx)
+                    .await;
+            }
+            MigrationTreeNode::FieldMapping(fm) => {
+                self.reorder_field_mapping(fm.id, fm.entity_mapping_id, direction, gx)
+                    .await;
+            }
+            // Other nodes don't support reordering (yet)
+            _ => {}
         }
     }
 
@@ -1182,6 +1217,46 @@ impl MigrationEditor {
         }
     }
 
+    async fn reorder_variable(
+        &self,
+        variable_id: i64,
+        entity_mapping_id: i64,
+        direction: i32,
+        gx: &GlobalContext,
+    ) {
+        let variables = self.variables.get();
+        let mut siblings: Vec<_> = variables
+            .iter()
+            .filter(|v| v.entity_mapping_id == entity_mapping_id)
+            .collect();
+        siblings.sort_by_key(|v| v.order);
+
+        let Some(current_idx) = siblings.iter().position(|v| v.id == variable_id) else {
+            return;
+        };
+
+        let new_idx = (current_idx as i32 + direction).max(0) as usize;
+        if new_idx >= siblings.len() || new_idx == current_idx {
+            return;
+        }
+
+        // Build new order
+        let mut ordered_ids: Vec<i64> = siblings.iter().map(|v| v.id).collect();
+        ordered_ids.remove(current_idx);
+        ordered_ids.insert(new_idx, variable_id);
+
+        let repo = gx.data::<MigrationRepository>();
+        match repo.reorder_variables(entity_mapping_id, ordered_ids).await {
+            Ok(()) => {
+                self.refresh_data(gx).await;
+            }
+            Err(e) => {
+                log::error!("Failed to reorder variables: {}", e);
+                gx.toast(Toast::error("Failed to reorder variables"));
+            }
+        }
+    }
+
     // =========================================================================
     // Field Mapping Operations
     // =========================================================================
@@ -1219,11 +1294,16 @@ impl MigrationEditor {
             }
         };
 
-        // Build options for autocomplete
+        // Build options for autocomplete: logical_name (Display Name)
         let options: Vec<(String, String)> = attributes
             .iter()
             .map(|a| {
-                let display = a.display_name.text_or(&a.logical_name).to_string();
+                let display_name = a.display_name.text_or(&a.logical_name);
+                let display = if display_name == &a.logical_name {
+                    a.logical_name.clone()
+                } else {
+                    format!("{} ({})", a.logical_name, display_name)
+                };
                 (a.logical_name.clone(), display)
             })
             .collect();
@@ -1310,6 +1390,46 @@ impl MigrationEditor {
             Err(e) => {
                 log::error!("Failed to delete field mapping: {}", e);
                 gx.toast(Toast::error("Failed to delete field mapping"));
+            }
+        }
+    }
+
+    async fn reorder_field_mapping(
+        &self,
+        field_mapping_id: i64,
+        entity_mapping_id: i64,
+        direction: i32,
+        gx: &GlobalContext,
+    ) {
+        let field_mappings = self.field_mappings.get();
+        let mut siblings: Vec<_> = field_mappings
+            .iter()
+            .filter(|fm| fm.entity_mapping_id == entity_mapping_id)
+            .collect();
+        siblings.sort_by_key(|fm| fm.order);
+
+        let Some(current_idx) = siblings.iter().position(|fm| fm.id == field_mapping_id) else {
+            return;
+        };
+
+        let new_idx = (current_idx as i32 + direction).max(0) as usize;
+        if new_idx >= siblings.len() || new_idx == current_idx {
+            return;
+        }
+
+        // Build new order
+        let mut ordered_ids: Vec<i64> = siblings.iter().map(|fm| fm.id).collect();
+        ordered_ids.remove(current_idx);
+        ordered_ids.insert(new_idx, field_mapping_id);
+
+        let repo = gx.data::<MigrationRepository>();
+        match repo.reorder_field_mappings(entity_mapping_id, ordered_ids).await {
+            Ok(()) => {
+                self.refresh_data(gx).await;
+            }
+            Err(e) => {
+                log::error!("Failed to reorder field mappings: {}", e);
+                gx.toast(Toast::error("Failed to reorder field mappings"));
             }
         }
     }
@@ -1600,7 +1720,16 @@ impl MigrationEditor {
     fn element(&self) -> Element {
         let focused = self.focused_node();
         let has_selection = focused.is_some();
-        let add_label = if has_selection { "Add Entity" } else { "Add Phase" };
+        let add_label = match &focused {
+            None => "Add Phase",
+            Some(MigrationTreeNode::Phase(_)) => "Add Entity",
+            Some(MigrationTreeNode::EntityMapping(_)) => "Add Entity",
+            Some(MigrationTreeNode::Variables { .. }) => "Add Variable",
+            Some(MigrationTreeNode::Variable(_)) => "Add Variable",
+            Some(MigrationTreeNode::FieldMappings { .. }) => "Add Field",
+            Some(MigrationTreeNode::FieldMapping(_)) => "Add Field",
+            Some(_) => "Add", // Other config nodes
+        };
 
         page! {
             column (padding: (1, 2), gap: 1, width: fill, height: fill) style (bg: background) {
