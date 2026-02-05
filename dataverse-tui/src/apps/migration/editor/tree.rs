@@ -365,18 +365,15 @@ pub fn transform_display_text(data: &TransformData) -> String {
             let prefix = if *regex { "r" } else { "" };
             format!("replace ({}\"{}\" → \"{}\")", prefix, from, to)
         }
-        TransformData::StringOps { ops } => {
-            let op_names: Vec<&str> = ops
-                .iter()
-                .map(|op| match op {
-                    crate::apps::migration::types::StringOp::Uppercase => "uppercase",
-                    crate::apps::migration::types::StringOp::Lowercase => "lowercase",
-                    crate::apps::migration::types::StringOp::Trim => "trim",
-                    crate::apps::migration::types::StringOp::TrimStart => "trim_start",
-                    crate::apps::migration::types::StringOp::TrimEnd => "trim_end",
-                })
-                .collect();
-            format!("string_ops ({})", op_names.join(", "))
+        TransformData::StringOps { op } => {
+            let op_name = match op {
+                crate::apps::migration::types::StringOp::Uppercase => "uppercase",
+                crate::apps::migration::types::StringOp::Lowercase => "lowercase",
+                crate::apps::migration::types::StringOp::Trim => "trim",
+                crate::apps::migration::types::StringOp::TrimStart => "trim_start",
+                crate::apps::migration::types::StringOp::TrimEnd => "trim_end",
+            };
+            format!("string_ops ({})", op_name)
         }
         TransformData::Convert { target_type } => {
             format!("convert ({})", target_type)

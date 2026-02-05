@@ -6,6 +6,7 @@ use rafter::prelude::*;
 use crate::apps::migration::modals::ConstantTransformModal;
 use crate::apps::migration::modals::CopyTransformModal;
 use crate::apps::migration::modals::SelectTransformModal;
+use crate::apps::migration::modals::StringOpsTransformModal;
 use crate::apps::migration::modals::TransformType;
 use crate::apps::migration::repository::MigrationRepository;
 use crate::apps::migration::repository::NewTransform;
@@ -19,6 +20,7 @@ use crate::apps::migration::types::FindMode;
 use crate::apps::migration::types::MatchBranch;
 use crate::apps::migration::types::MathOp;
 use crate::apps::migration::types::ParentType;
+use crate::apps::migration::types::StringOp;
 use crate::apps::migration::types::SystemVar;
 use crate::apps::migration::types::Transform;
 use crate::apps::migration::types::TransformData;
@@ -477,6 +479,18 @@ impl MigrationEditor {
                 // GUID has no configuration - it just generates a random UUID
                 gx.toast(Toast::info("GUID generates a random UUID - no configuration needed"));
             }
+            TransformData::StringOps { op } => {
+                let modal = StringOpsTransformModal::new_modal(op.clone());
+
+                if let Some(new_op) = gx.modal(modal).await {
+                    self.update_transform_data(
+                        transform.id,
+                        TransformData::StringOps { op: new_op },
+                        gx,
+                    )
+                    .await;
+                }
+            }
             // Other transform types - show toast for now
             _ => {
                 gx.toast(Toast::info("Editor for this transform type not yet implemented"));
@@ -509,7 +523,7 @@ fn default_transform_data(transform_type: TransformType) -> TransformData {
         },
         TransformType::Constant => TransformData::Constant { value: Value::Null },
         TransformType::Guid => TransformData::Guid,
-        TransformType::StringOps => TransformData::StringOps { ops: Vec::new() },
+        TransformType::StringOps => TransformData::StringOps { op: StringOp::Trim },
         TransformType::Format => TransformData::Format {
             template: String::new(),
         },

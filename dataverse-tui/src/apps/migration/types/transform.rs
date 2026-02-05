@@ -33,8 +33,8 @@ pub enum TransformData {
         to: String,
         regex: bool,
     },
-    /// String operations in sequence.
-    StringOps { ops: Vec<StringOp> },
+    /// String operation (chain multiple for sequence).
+    StringOps { op: StringOp },
     /// Value mapping lookup table.
     ValueMap { mappings: Vec<(Value, Value)> },
     /// Mathematical operation.
