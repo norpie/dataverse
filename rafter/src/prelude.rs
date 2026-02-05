@@ -28,4 +28,4 @@ pub use rafter_derive::{
 pub use tuidom::Element;
 
 // Built-in widgets
-pub use crate::widgets::button;
+pub use crate::widgets::*;
