@@ -6,6 +6,7 @@ mod entity_operations;
 mod helpers;
 mod item_operations;
 mod phase_operations;
+mod transform_operations;
 mod tree;
 
 use dataverse_lib::DataverseClient;
@@ -218,17 +219,37 @@ impl MigrationEditor {
                 // Variables section -> add new variable
                 self.add_variable_impl(entity_mapping_id, gx).await;
             }
-            Some(MigrationTreeNode::Variable(v)) => {
-                // Variable selected -> add sibling variable
-                self.add_variable_impl(v.entity_mapping_id, gx).await;
+            Some(MigrationTreeNode::Variable(_)) => {
+                // Variable selected -> add transform to its chain
+                self.add_transform_impl(gx).await;
             }
             Some(MigrationTreeNode::FieldMappings { entity_mapping_id }) => {
                 // Field mappings section -> add new field mapping
                 self.add_field_mapping_impl(entity_mapping_id, gx).await;
             }
-            Some(MigrationTreeNode::FieldMapping(fm)) => {
-                // Field mapping selected -> add sibling field mapping
-                self.add_field_mapping_impl(fm.entity_mapping_id, gx).await;
+            Some(MigrationTreeNode::FieldMapping(_)) => {
+                // Field mapping selected -> add transform to its chain
+                self.add_transform_impl(gx).await;
+            }
+            Some(MigrationTreeNode::Transform(_)) => {
+                // Transform selected -> add transform after it in the chain
+                self.add_transform_impl(gx).await;
+            }
+            Some(MigrationTreeNode::MatchBranch(_)) => {
+                // Match branch selected -> add transform to the branch
+                self.add_transform_impl(gx).await;
+            }
+            Some(MigrationTreeNode::CoalesceChain(_)) => {
+                // Coalesce chain selected -> add transform to the chain
+                self.add_transform_impl(gx).await;
+            }
+            Some(MigrationTreeNode::FindCondition(_)) => {
+                // Find condition selected -> add transform to the condition
+                self.add_transform_impl(gx).await;
+            }
+            Some(MigrationTreeNode::Chain { .. }) => {
+                // Chain wrapper selected -> add transform to the chain
+                self.add_transform_impl(gx).await;
             }
             // Other config nodes don't support adding children
             Some(_) => {}
@@ -379,9 +400,14 @@ impl MigrationEditor {
             Some(MigrationTreeNode::Phase(_)) => (true, "Add Entity"),
             Some(MigrationTreeNode::EntityMapping(_)) => (true, "Add Entity"),
             Some(MigrationTreeNode::Variables { .. }) => (true, "Add Variable"),
-            Some(MigrationTreeNode::Variable(_)) => (true, "Add Variable"),
+            Some(MigrationTreeNode::Variable(_)) => (true, "Add Transform"),
             Some(MigrationTreeNode::FieldMappings { .. }) => (true, "Add Field"),
-            Some(MigrationTreeNode::FieldMapping(_)) => (true, "Add Field"),
+            Some(MigrationTreeNode::FieldMapping(_)) => (true, "Add Transform"),
+            Some(MigrationTreeNode::Transform(_)) => (true, "Add Transform"),
+            Some(MigrationTreeNode::MatchBranch(_)) => (true, "Add Transform"),
+            Some(MigrationTreeNode::CoalesceChain(_)) => (true, "Add Transform"),
+            Some(MigrationTreeNode::FindCondition(_)) => (true, "Add Transform"),
+            Some(MigrationTreeNode::Chain { .. }) => (true, "Add Transform"),
             Some(_) => (false, "Add"), // Other config nodes - can't add
         };
 
