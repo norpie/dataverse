@@ -3,6 +3,7 @@
 use dataverse_lib::model::Value;
 use rafter::prelude::*;
 
+use crate::apps::migration::modals::ConstantTransformModal;
 use crate::apps::migration::modals::CopyTransformModal;
 use crate::apps::migration::modals::SelectTransformModal;
 use crate::apps::migration::modals::TransformType;
@@ -455,6 +456,18 @@ impl MigrationEditor {
                     self.update_transform_data(
                         transform.id,
                         TransformData::Copy { path: new_path },
+                        gx,
+                    )
+                    .await;
+                }
+            }
+            TransformData::Constant { value } => {
+                let modal = ConstantTransformModal::new_modal(value.clone());
+
+                if let Some(new_value) = gx.modal(modal).await {
+                    self.update_transform_data(
+                        transform.id,
+                        TransformData::Constant { value: new_value },
                         gx,
                     )
                     .await;
