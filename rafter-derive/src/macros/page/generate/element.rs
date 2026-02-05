@@ -5,13 +5,13 @@ use quote::{format_ident, quote};
 
 use crate::macros::page::ast::{Attr, AttrValue, ElementNode, HandlerArg, HandlerAttr};
 
-use super::CodegenMode;
 use super::generate_conditional_attr_value;
 use super::generate_view_node;
 use super::handler;
 use super::is_conditional;
 use super::style;
 use super::transition;
+use super::CodegenMode;
 
 /// Generate code for an element node
 pub fn generate(elem: &ElementNode, mode: CodegenMode) -> TokenStream {
@@ -497,6 +497,7 @@ fn generate_attr_value(value: &AttrValue) -> TokenStream {
 /// Supports:
 /// - Single value: `padding: 2` -> `Edges::all(2)`
 /// - Tuple (vertical, horizontal): `padding: (1, 2)` -> `Edges::symmetric(1, 2)`
+/// - Tuple (top, right, bottom, left): `padding: (1, 2, 3, 4)` -> `Edges::new(1, 2, 3, 4)`
 fn generate_edges_call(method: &str, value: &AttrValue) -> TokenStream {
     let method_ident = syn::Ident::new(method, proc_macro2::Span::call_site());
 
@@ -512,13 +513,23 @@ fn generate_edges_call(method: &str, value: &AttrValue) -> TokenStream {
             quote! { .#method_ident(tuidom::Edges::all(#val)) }
         }
         AttrValue::Expr(expr) => {
-            // Check if it's a tuple expression (vertical, horizontal)
-            if let syn::Expr::Tuple(tuple) = expr
-                && tuple.elems.len() == 2 {
-                    let vertical = &tuple.elems[0];
-                    let horizontal = &tuple.elems[1];
-                    return quote! { .#method_ident(tuidom::Edges::symmetric(#vertical as u16, #horizontal as u16)) };
+            if let syn::Expr::Tuple(tuple) = expr {
+                match tuple.elems.len() {
+                    2 => {
+                        let vertical = &tuple.elems[0];
+                        let horizontal = &tuple.elems[1];
+                        return quote! { .#method_ident(tuidom::Edges::symmetric(#vertical as u16, #horizontal as u16)) };
+                    }
+                    4 => {
+                        let top = &tuple.elems[0];
+                        let right = &tuple.elems[1];
+                        let bottom = &tuple.elems[2];
+                        let left = &tuple.elems[3];
+                        return quote! { .#method_ident(tuidom::Edges::new(#top as u16, #right as u16, #bottom as u16, #left as u16)) };
+                    }
+                    _ => {}
                 }
+            }
             quote! { .#method_ident(tuidom::Edges::all(#expr as u16)) }
         }
         _ => {
@@ -536,13 +547,23 @@ fn generate_edges_value_leaf(value: &AttrValue) -> TokenStream {
             quote! { tuidom::Edges::all(#val) }
         }
         AttrValue::Expr(expr) => {
-            // Check if it's a tuple expression (vertical, horizontal)
-            if let syn::Expr::Tuple(tuple) = expr
-                && tuple.elems.len() == 2 {
-                    let vertical = &tuple.elems[0];
-                    let horizontal = &tuple.elems[1];
-                    return quote! { tuidom::Edges::symmetric(#vertical as u16, #horizontal as u16) };
+            if let syn::Expr::Tuple(tuple) = expr {
+                match tuple.elems.len() {
+                    2 => {
+                        let vertical = &tuple.elems[0];
+                        let horizontal = &tuple.elems[1];
+                        return quote! { tuidom::Edges::symmetric(#vertical as u16, #horizontal as u16) };
+                    }
+                    4 => {
+                        let top = &tuple.elems[0];
+                        let right = &tuple.elems[1];
+                        let bottom = &tuple.elems[2];
+                        let left = &tuple.elems[3];
+                        return quote! { tuidom::Edges::new(#top as u16, #right as u16, #bottom as u16, #left as u16) };
+                    }
+                    _ => {}
                 }
+            }
             quote! { tuidom::Edges::all(#expr as u16) }
         }
         AttrValue::Ident(ident) => quote! { #ident },
