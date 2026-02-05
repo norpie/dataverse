@@ -1,10 +1,10 @@
 //! Tree item implementation for the migration editor.
 
+use rafter::element;
+use rafter::widgets::Text;
 use rafter::widgets::TreeItem;
 use rafter::widgets::TreeNode;
-use tuidom::Color;
 use tuidom::Element;
-use tuidom::Style;
 
 use crate::apps::migration::types::CoalesceChain;
 use crate::apps::migration::types::EntityMapping;
@@ -235,7 +235,9 @@ impl TreeItem for MigrationTreeNode {
                 };
                 let label = format!("{}{}", phase.name, mode_indicator);
 
-                Element::row().gap(1).child(Element::text(&label))
+                element! {
+                    text (content: {label})
+                }
             }
             Self::EntityMapping(em) => {
                 let mode_indicator = match em.mode {
@@ -247,48 +249,51 @@ impl TreeItem for MigrationTreeNode {
                     em.name, em.source_entity, em.target_entity, mode_indicator
                 );
 
-                Element::row().gap(1).child(
-                    Element::text(&label).style(Style::new().foreground(Color::var("muted"))),
-                )
+                element! {
+                    text (content: {label}) style (fg: muted)
+                }
             }
-            Self::MatchConfig { .. } => Element::row().gap(1).child(
-                Element::text("Match Config").style(Style::new().foreground(Color::var("muted"))),
-            ),
-            Self::SourceFilter { .. } => Element::row().gap(1).child(
-                Element::text("Source Filter").style(Style::new().foreground(Color::var("muted"))),
-            ),
-            Self::TargetFilter { .. } => Element::row().gap(1).child(
-                Element::text("Target Filter").style(Style::new().foreground(Color::var("muted"))),
-            ),
-            Self::UnmatchedHandling { .. } => Element::row().gap(1).child(
-                Element::text("Unmatched Handling")
-                    .style(Style::new().foreground(Color::var("muted"))),
-            ),
-            Self::Passes { .. } => Element::row()
-                .gap(1)
-                .child(Element::text("Passes").style(Style::new().foreground(Color::var("muted")))),
-            Self::TestGuids { .. } => Element::row().gap(1).child(
-                Element::text("Test GUIDs").style(Style::new().foreground(Color::var("muted"))),
-            ),
-            Self::Variables { .. } => Element::row().gap(1).child(
-                Element::text("Variables").style(Style::new().foreground(Color::var("muted"))),
-            ),
-            Self::Variable(v) => Element::row().gap(1).child(
-                Element::text(format!("${}", v.name))
-                    .style(Style::new().foreground(Color::var("primary"))),
-            ),
-            Self::FieldMappings { .. } => Element::row().gap(1).child(
-                Element::text("Field Mappings").style(Style::new().foreground(Color::var("muted"))),
-            ),
-            Self::FieldMapping(fm) => Element::row().gap(1).child(
-                Element::text(&fm.target_field)
-                    .style(Style::new().foreground(Color::var("primary"))),
-            ),
+            Self::MatchConfig { .. } => element! {
+                text (content: "Match Config") style (fg: muted)
+            },
+            Self::SourceFilter { .. } => element! {
+                text (content: "Source Filter") style (fg: muted)
+            },
+            Self::TargetFilter { .. } => element! {
+                text (content: "Target Filter") style (fg: muted)
+            },
+            Self::UnmatchedHandling { .. } => element! {
+                text (content: "Unmatched Handling") style (fg: muted)
+            },
+            Self::Passes { .. } => element! {
+                text (content: "Passes") style (fg: muted)
+            },
+            Self::TestGuids { .. } => element! {
+                text (content: "Test GUIDs") style (fg: muted)
+            },
+            Self::Variables { .. } => element! {
+                text (content: "Variables") style (fg: muted)
+            },
+            Self::Variable(v) => {
+                let label = format!("${}", v.name);
+                element! {
+                    text (content: {label}) style (fg: primary)
+                }
+            }
+            Self::FieldMappings { .. } => element! {
+                text (content: "Field Mappings") style (fg: muted)
+            },
+            Self::FieldMapping(fm) => {
+                let label = fm.target_field.clone();
+                element! {
+                    text (content: {label}) style (fg: primary)
+                }
+            }
             Self::Transform(t) => {
                 let label = transform_display_text(&t.data);
-                Element::row().gap(1).child(
-                    Element::text(&label).style(Style::new().foreground(Color::var("primary"))),
-                )
+                element! {
+                    text (content: {label}) style (fg: primary)
+                }
             }
             Self::MatchBranch(mb) => {
                 let label = if mb.is_default {
@@ -297,25 +302,25 @@ impl TreeItem for MigrationTreeNode {
                     // TODO: Show condition summary when condition display is implemented
                     format!("Branch {}", mb.order + 1)
                 };
-                Element::row().gap(1).child(
-                    Element::text(&label).style(Style::new().foreground(Color::var("muted"))),
-                )
+                element! {
+                    text (content: {label}) style (fg: muted)
+                }
             }
             Self::CoalesceChain(cc) => {
                 let label = format!("Fallback {}", cc.order + 1);
-                Element::row().gap(1).child(
-                    Element::text(&label).style(Style::new().foreground(Color::var("muted"))),
-                )
+                element! {
+                    text (content: {label}) style (fg: muted)
+                }
             }
             Self::FindCondition(fc) => {
                 let label = format!("Condition: {}", fc.target_field);
-                Element::row().gap(1).child(
-                    Element::text(&label).style(Style::new().foreground(Color::var("muted"))),
-                )
+                element! {
+                    text (content: {label}) style (fg: muted)
+                }
             }
-            Self::Chain { .. } => Element::row()
-                .gap(1)
-                .child(Element::text("Chain").style(Style::new().foreground(Color::var("muted")))),
+            Self::Chain { .. } => element! {
+                text (content: "Chain") style (fg: muted)
+            },
         }
     }
 }
