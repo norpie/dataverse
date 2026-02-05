@@ -808,3 +808,91 @@ impl<'a, T: ListItem> List<HasListState<'a, T>> {
         row
     }
 }
+
+// =============================================================================
+// Default ListItem Implementations
+// =============================================================================
+
+impl ListItem for String {
+    type Key = String;
+
+    fn key(&self) -> Self::Key {
+        self.clone()
+    }
+
+    fn render(&self) -> Element {
+        Element::text(self)
+    }
+}
+
+impl ListItem for i32 {
+    type Key = i32;
+
+    fn key(&self) -> Self::Key {
+        *self
+    }
+
+    fn render(&self) -> Element {
+        Element::text(&self.to_string())
+    }
+}
+
+impl ListItem for u32 {
+    type Key = u32;
+
+    fn key(&self) -> Self::Key {
+        *self
+    }
+
+    fn render(&self) -> Element {
+        Element::text(&self.to_string())
+    }
+}
+
+impl ListItem for i64 {
+    type Key = i64;
+
+    fn key(&self) -> Self::Key {
+        *self
+    }
+
+    fn render(&self) -> Element {
+        Element::text(&self.to_string())
+    }
+}
+
+impl ListItem for u64 {
+    type Key = u64;
+
+    fn key(&self) -> Self::Key {
+        *self
+    }
+
+    fn render(&self) -> Element {
+        Element::text(&self.to_string())
+    }
+}
+
+impl ListItem for isize {
+    type Key = isize;
+
+    fn key(&self) -> Self::Key {
+        *self
+    }
+
+    fn render(&self) -> Element {
+        Element::text(&self.to_string())
+    }
+}
+
+impl ListItem for usize {
+    type Key = usize;
+
+    fn key(&self) -> Self::Key {
+        *self
+    }
+
+    fn render(&self) -> Element {
+        Element::text(&self.to_string())
+    }
+}
