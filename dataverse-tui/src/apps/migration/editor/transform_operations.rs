@@ -4,8 +4,10 @@ use dataverse_lib::model::Value;
 use rafter::prelude::*;
 
 use crate::apps::migration::modals::ConstantTransformModal;
+use crate::apps::migration::modals::ConvertTransformModal;
 use crate::apps::migration::modals::CopyTransformModal;
 use crate::apps::migration::modals::FormatTransformModal;
+use crate::apps::migration::modals::ParseDateTransformModal;
 use crate::apps::migration::modals::ReplaceTransformModal;
 use crate::apps::migration::modals::SelectTransformModal;
 use crate::apps::migration::modals::StringOpsTransformModal;
@@ -477,10 +479,6 @@ impl MigrationEditor {
                     .await;
                 }
             }
-            TransformData::Guid => {
-                // GUID has no configuration - it just generates a random UUID
-                gx.toast(Toast::info("GUID generates a random UUID - no configuration needed"));
-            }
             TransformData::StringOps { op } => {
                 let modal = StringOpsTransformModal::new_modal(op.clone());
 
@@ -496,8 +494,8 @@ impl MigrationEditor {
             TransformData::Format { template } => {
                 let modal = FormatTransformModal::new_modal(
                     self.source_client.get().clone(),
-                    source_entity,
-                    variables,
+                    source_entity.clone(),
+                    variables.clone(),
                     template.clone(),
                 );
 
@@ -523,6 +521,42 @@ impl MigrationEditor {
                             to: result.to,
                             regex: result.regex,
                         },
+                        gx,
+                    )
+                    .await;
+                }
+            }
+            TransformData::Convert { target_type } => {
+                let modal = ConvertTransformModal::new_modal(target_type);
+
+                if let Some(new_type) = gx.modal(modal).await {
+                    self.update_transform_data(
+                        transform.id,
+                        TransformData::Convert {
+                            target_type: new_type,
+                        },
+                        gx,
+                    )
+                    .await;
+                }
+            }
+            TransformData::Guid => {
+                // GUID has no configuration - it just generates a random UUID
+                gx.toast(Toast::info("GUID generates a random UUID - no configuration needed"));
+            }
+            TransformData::ParseInt => {
+                gx.toast(Toast::info("Parse Int converts string to integer - no configuration needed"));
+            }
+            TransformData::ParseDecimal => {
+                gx.toast(Toast::info("Parse Decimal converts string to decimal - no configuration needed"));
+            }
+            TransformData::ParseDate { format } => {
+                let modal = ParseDateTransformModal::new_modal(format.clone());
+
+                if let Some(new_format) = gx.modal(modal).await {
+                    self.update_transform_data(
+                        transform.id,
+                        TransformData::ParseDate { format: new_format },
                         gx,
                     )
                     .await;
