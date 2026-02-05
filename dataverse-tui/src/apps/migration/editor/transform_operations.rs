@@ -6,6 +6,7 @@ use rafter::prelude::*;
 use crate::apps::migration::modals::ConstantTransformModal;
 use crate::apps::migration::modals::CopyTransformModal;
 use crate::apps::migration::modals::FormatTransformModal;
+use crate::apps::migration::modals::ReplaceTransformModal;
 use crate::apps::migration::modals::SelectTransformModal;
 use crate::apps::migration::modals::StringOpsTransformModal;
 use crate::apps::migration::modals::TransformType;
@@ -505,6 +506,22 @@ impl MigrationEditor {
                         transform.id,
                         TransformData::Format {
                             template: new_template,
+                        },
+                        gx,
+                    )
+                    .await;
+                }
+            }
+            TransformData::Replace { from, to, regex } => {
+                let modal = ReplaceTransformModal::new_modal(from.clone(), to.clone(), *regex);
+
+                if let Some(result) = gx.modal(modal).await {
+                    self.update_transform_data(
+                        transform.id,
+                        TransformData::Replace {
+                            from: result.from,
+                            to: result.to,
+                            regex: result.regex,
                         },
                         gx,
                     )
