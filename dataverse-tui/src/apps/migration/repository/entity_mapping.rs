@@ -327,6 +327,27 @@ impl super::MigrationRepository {
             })
     }
 
+    /// Delete all entity mappings for a phase.
+    pub async fn delete_entity_mappings_for_phase(&self, phase_id: i64) -> Result<(), RepositoryError> {
+        let now = Utc::now().to_rfc3339();
+        self.client
+            .conn(move |conn| {
+                // Delete all entity mappings for this phase
+                conn.execute("DELETE FROM entity_mappings WHERE phase_id = ?1", [phase_id])?;
+
+                // Update parent migration timestamp
+                conn.execute(
+                    "UPDATE migrations SET updated_at = ?1
+                     WHERE id = (SELECT migration_id FROM phases WHERE id = ?2)",
+                    params![now, phase_id],
+                )?;
+
+                Ok(())
+            })
+            .await
+            .map_err(RepositoryError::Database)
+    }
+
     /// Reorder entity mappings within a phase.
     pub async fn reorder_entity_mappings(
         &self,

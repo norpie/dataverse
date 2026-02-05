@@ -20,7 +20,7 @@ pub struct NewPhase {
 pub struct UpdatePhase {
     pub name: Option<String>,
     pub mode: Option<Mode>,
-    pub lua_script: Option<String>,
+    pub lua_script: super::Update<String>,
 }
 
 impl super::MigrationRepository {
@@ -136,9 +136,16 @@ impl super::MigrationRepository {
                     updates.push("mode = ?");
                     param_vals.push(Box::new(mode.as_str().to_string()));
                 }
-                if update.lua_script.is_some() {
-                    updates.push("lua_script = ?");
-                    param_vals.push(Box::new(update.lua_script));
+                match &update.lua_script {
+                    super::Update::Keep => {}
+                    super::Update::Set(script) => {
+                        updates.push("lua_script = ?");
+                        param_vals.push(Box::new(Some(script.clone())));
+                    }
+                    super::Update::Clear => {
+                        updates.push("lua_script = ?");
+                        param_vals.push(Box::new(None::<String>));
+                    }
                 }
 
                 if updates.is_empty() {

@@ -14,6 +14,17 @@ pub use phase_run::NewPhaseRun;
 pub use transform::{NewMatchBranch, NewTransform, UpdateMatchBranch, UpdateTransform};
 pub use variable::{NewVariable, UpdateVariable};
 
+/// Semantic update type for nullable fields.
+#[derive(Debug, Clone)]
+pub enum Update<T> {
+    /// Don't change the field.
+    Keep,
+    /// Set the field to a new value.
+    Set(T),
+    /// Clear the field (set to NULL).
+    Clear,
+}
+
 // Internal modules
 mod entity_mapping;
 mod field_mapping;
