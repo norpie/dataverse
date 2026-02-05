@@ -1,5 +1,7 @@
 //! Modals for the migration app.
 
+mod add_field_mapping;
+mod add_variable;
 mod edit_entity_mapping;
 mod edit_phase;
 mod new_migration;
@@ -8,6 +10,10 @@ mod passes;
 mod test_guids;
 mod unmatched_handling;
 
+pub use add_field_mapping::AddFieldMappingModal;
+pub use add_field_mapping::AddFieldMappingResult;
+pub use add_variable::AddVariableModal;
+pub use add_variable::AddVariableResult;
 pub use edit_entity_mapping::EditEntityMappingModal;
 pub use edit_entity_mapping::EntityMappingResult;
 pub use edit_phase::EditPhaseModal;

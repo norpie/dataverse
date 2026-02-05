@@ -13,20 +13,24 @@ use rafter::widgets::TreeState;
 use tuidom::Color;
 use tuidom::Style;
 
+use crate::apps::migration::modals::AddFieldMappingModal;
+use crate::apps::migration::modals::AddVariableModal;
 use crate::apps::migration::modals::EditEntityMappingModal;
 use crate::apps::migration::modals::EditPhaseModal;
 use crate::apps::migration::modals::NewPhaseModal;
 use crate::apps::migration::modals::PassesModal;
 use crate::apps::migration::modals::TestGuidsModal;
 use crate::apps::migration::modals::UnmatchedHandlingModal;
+use crate::apps::migration::repository::MigrationRepository;
+use crate::apps::migration::repository::NewEntityMapping;
+use crate::apps::migration::repository::NewFieldMapping;
+use crate::apps::migration::repository::NewPhase;
+use crate::apps::migration::repository::NewVariable;
+use crate::apps::migration::repository::UpdateEntityMapping;
+use crate::apps::migration::repository::UpdatePhase;
 use crate::modals::FilterBuilderModal;
 use crate::modals::LoadingModal;
 use crate::widgets::filter_builder::FilterNode;
-use crate::apps::migration::repository::MigrationRepository;
-use crate::apps::migration::repository::NewEntityMapping;
-use crate::apps::migration::repository::NewPhase;
-use crate::apps::migration::repository::UpdateEntityMapping;
-use crate::apps::migration::repository::UpdatePhase;
 use crate::apps::migration::types::EntityMapping;
 use crate::apps::migration::types::FieldMapping;
 use crate::apps::migration::types::MatchStrategy;
@@ -194,7 +198,23 @@ impl MigrationEditor {
                 // Entity mapping selected -> add sibling entity mapping
                 self.add_entity_mapping_to_phase(em.phase_id, gx).await;
             }
-            // Config nodes don't support adding children
+            Some(MigrationTreeNode::Variables { entity_mapping_id }) => {
+                // Variables section -> add new variable
+                self.add_variable(entity_mapping_id, gx).await;
+            }
+            Some(MigrationTreeNode::Variable(v)) => {
+                // Variable selected -> add sibling variable
+                self.add_variable(v.entity_mapping_id, gx).await;
+            }
+            Some(MigrationTreeNode::FieldMappings { entity_mapping_id }) => {
+                // Field mappings section -> add new field mapping
+                self.add_field_mapping(entity_mapping_id, gx).await;
+            }
+            Some(MigrationTreeNode::FieldMapping(fm)) => {
+                // Field mapping selected -> add sibling field mapping
+                self.add_field_mapping(fm.entity_mapping_id, gx).await;
+            }
+            // Other config nodes don't support adding children
             Some(_) => {}
         }
     }
@@ -215,7 +235,14 @@ impl MigrationEditor {
             Some(MigrationTreeNode::EntityMapping(em)) => {
                 self.delete_entity_mapping(em.id, cx, gx).await;
             }
-            // Config nodes can't be deleted
+            Some(MigrationTreeNode::Variable(v)) => {
+                self.delete_variable(v.id, v.entity_mapping_id, cx, gx).await;
+            }
+            Some(MigrationTreeNode::FieldMapping(fm)) => {
+                self.delete_field_mapping(fm.id, fm.entity_mapping_id, cx, gx)
+                    .await;
+            }
+            // Other config nodes can't be deleted
             Some(_) | None => {}
         }
     }
@@ -1064,6 +1091,225 @@ impl MigrationEditor {
             Err(e) => {
                 log::error!("Failed to update target filter: {}", e);
                 gx.toast(Toast::error("Failed to update target filter"));
+            }
+        }
+    }
+
+    // =========================================================================
+    // Variable Operations
+    // =========================================================================
+
+    async fn add_variable(&self, entity_mapping_id: i64, gx: &GlobalContext) {
+        let Some(result) = gx.modal(AddVariableModal::new_modal()).await else {
+            return;
+        };
+
+        let repo = gx.data::<MigrationRepository>();
+        let order = self
+            .variables
+            .get()
+            .iter()
+            .filter(|v| v.entity_mapping_id == entity_mapping_id)
+            .count() as i32;
+
+        let new_variable = NewVariable {
+            entity_mapping_id,
+            order,
+            name: result.name,
+        };
+
+        match repo.create_variable(new_variable).await {
+            Ok(_id) => {
+                gx.toast(Toast::info("Variable created"));
+                self.refresh_data(gx).await;
+            }
+            Err(e) => {
+                log::error!("Failed to create variable: {}", e);
+                gx.toast(Toast::error("Failed to create variable"));
+            }
+        }
+    }
+
+    async fn delete_variable(
+        &self,
+        variable_id: i64,
+        entity_mapping_id: i64,
+        cx: &AppContext,
+        gx: &GlobalContext,
+    ) {
+        // Compute next focus before deletion
+        let variables = self.variables.get();
+        let siblings: Vec<_> = variables
+            .iter()
+            .filter(|v| v.entity_mapping_id == entity_mapping_id)
+            .collect();
+        let current_idx = siblings.iter().position(|v| v.id == variable_id);
+
+        let next_focus = current_idx.and_then(|idx| {
+            if idx > 0 {
+                siblings.get(idx - 1).map(|v| format!("variable-{}", v.id))
+            } else if idx + 1 < siblings.len() {
+                siblings.get(idx + 1).map(|v| format!("variable-{}", v.id))
+            } else {
+                Some(format!("variables-{}", entity_mapping_id))
+            }
+        });
+
+        let confirmed = gx
+            .modal(crate::modals::ConfirmModal::with_message(
+                "Delete this variable?",
+            ))
+            .await;
+
+        if !confirmed {
+            return;
+        }
+
+        let repo = gx.data::<MigrationRepository>();
+        match repo.delete_variable(variable_id).await {
+            Ok(()) => {
+                gx.toast(Toast::info("Variable deleted"));
+                self.refresh_data(gx).await;
+
+                if let Some(key) = next_focus {
+                    cx.focus(&format!("migration-tree-node-{}", key));
+                }
+            }
+            Err(e) => {
+                log::error!("Failed to delete variable: {}", e);
+                gx.toast(Toast::error("Failed to delete variable"));
+            }
+        }
+    }
+
+    // =========================================================================
+    // Field Mapping Operations
+    // =========================================================================
+
+    async fn add_field_mapping(&self, entity_mapping_id: i64, gx: &GlobalContext) {
+        // Find the entity mapping to get target entity
+        let entity_mappings = self.entity_mappings.get();
+        let Some(em) = entity_mappings
+            .iter()
+            .find(|em| em.id == entity_mapping_id)
+        else {
+            return;
+        };
+
+        let target_entity = em.target_entity.clone();
+
+        // Fetch attributes for the target entity
+        let client = self.target_client.get();
+        let target_entity_clone = target_entity.clone();
+        let attributes = gx
+            .modal(LoadingModal::run_with_default(
+                "Loading target entity attributes...",
+                || Err(DataverseError::Cancelled),
+                async move { client.metadata().attributes(target_entity_clone).await },
+            ))
+            .await;
+
+        let attributes = match attributes {
+            Ok(attrs) => attrs,
+            Err(e) if e.is_cancelled() => return,
+            Err(e) => {
+                log::error!("Failed to fetch attributes for {}: {}", target_entity, e);
+                gx.toast(Toast::error("Failed to fetch entity attributes"));
+                return;
+            }
+        };
+
+        // Build options for autocomplete
+        let options: Vec<(String, String)> = attributes
+            .iter()
+            .map(|a| {
+                let display = a.display_name.text_or(&a.logical_name).to_string();
+                (a.logical_name.clone(), display)
+            })
+            .collect();
+
+        let Some(result) = gx.modal(AddFieldMappingModal::new_modal(options)).await else {
+            return;
+        };
+
+        let repo = gx.data::<MigrationRepository>();
+        let order = self
+            .field_mappings
+            .get()
+            .iter()
+            .filter(|fm| fm.entity_mapping_id == entity_mapping_id)
+            .count() as i32;
+
+        let new_field_mapping = NewFieldMapping {
+            entity_mapping_id,
+            order,
+            target_field: result.target_field,
+        };
+
+        match repo.create_field_mapping(new_field_mapping).await {
+            Ok(_id) => {
+                gx.toast(Toast::info("Field mapping created"));
+                self.refresh_data(gx).await;
+            }
+            Err(e) => {
+                log::error!("Failed to create field mapping: {}", e);
+                gx.toast(Toast::error("Failed to create field mapping"));
+            }
+        }
+    }
+
+    async fn delete_field_mapping(
+        &self,
+        field_mapping_id: i64,
+        entity_mapping_id: i64,
+        cx: &AppContext,
+        gx: &GlobalContext,
+    ) {
+        // Compute next focus before deletion
+        let field_mappings = self.field_mappings.get();
+        let siblings: Vec<_> = field_mappings
+            .iter()
+            .filter(|fm| fm.entity_mapping_id == entity_mapping_id)
+            .collect();
+        let current_idx = siblings.iter().position(|fm| fm.id == field_mapping_id);
+
+        let next_focus = current_idx.and_then(|idx| {
+            if idx > 0 {
+                siblings
+                    .get(idx - 1)
+                    .map(|fm| format!("field-mapping-{}", fm.id))
+            } else if idx + 1 < siblings.len() {
+                siblings
+                    .get(idx + 1)
+                    .map(|fm| format!("field-mapping-{}", fm.id))
+            } else {
+                Some(format!("field-mappings-{}", entity_mapping_id))
+            }
+        });
+
+        let confirmed = gx
+            .modal(crate::modals::ConfirmModal::with_message(
+                "Delete this field mapping?",
+            ))
+            .await;
+
+        if !confirmed {
+            return;
+        }
+
+        let repo = gx.data::<MigrationRepository>();
+        match repo.delete_field_mapping(field_mapping_id).await {
+            Ok(()) => {
+                gx.toast(Toast::info("Field mapping deleted"));
+                self.refresh_data(gx).await;
+
+                if let Some(key) = next_focus {
+                    cx.focus(&format!("migration-tree-node-{}", key));
+                }
+            }
+            Err(e) => {
+                log::error!("Failed to delete field mapping: {}", e);
+                gx.toast(Toast::error("Failed to delete field mapping"));
             }
         }
     }
