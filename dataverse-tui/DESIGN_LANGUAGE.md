@@ -8,7 +8,7 @@ Use the default rafter theme. Key colors:
 - `interact` - Titles, highlights
 - `primary` - Primary text, keybind hints
 - `muted` - Secondary text, descriptions
-- `surface` - Modal backgrounds and elements which need to pop out from the background (tables, trees, lists, panels)
+- `surface` - Modal backgrounds and elements which need to pop out from the background (tables, trees, lists, panels) [in modals use surface2 for tables/lists to create layering]
 - `background` - App background
 
 ## Density
