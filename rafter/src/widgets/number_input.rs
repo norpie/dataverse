@@ -354,8 +354,8 @@ impl<S> NumberInput<S> {
     }
 
     /// Mark the input as disabled.
-    pub fn disabled(mut self) -> Self {
-        self.disabled = true;
+    pub fn disabled(mut self, disabled: bool) -> Self {
+        self.disabled = disabled;
         self
     }
 

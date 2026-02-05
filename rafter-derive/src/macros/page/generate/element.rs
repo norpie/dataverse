@@ -455,8 +455,8 @@ fn generate_widget_attr_calls(attrs: &[&Attr]) -> Vec<TokenStream> {
             let name_str = name.to_string();
             match &attr.value {
                 AttrValue::BareFlag => {
-                    // Bare flag: generate `.flag()` with no arguments
-                    quote! { .#name() }
+                    // Bare flag: generate `.flag(true)` with implicit true
+                    quote! { .#name(true) }
                 }
                 _ => {
                     let value = generate_attr_value(&attr.value);

@@ -65,16 +65,16 @@ impl Button {
     /// Mark the button as disabled.
     ///
     /// Disabled buttons are not focusable, not clickable, and don't register handlers.
-    pub fn disabled(mut self) -> Self {
-        self.disabled = true;
+    pub fn disabled(mut self, disabled: bool) -> Self {
+        self.disabled = disabled;
         self
     }
 
     /// Make this a ghost button.
     ///
     /// Ghost buttons are transparent (no background) and don't change style on hover/focus.
-    pub fn ghost(mut self) -> Self {
-        self.ghost = true;
+    pub fn ghost(mut self, ghost: bool) -> Self {
+        self.ghost = ghost;
         self
     }
 

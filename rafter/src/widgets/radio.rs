@@ -137,8 +137,8 @@ impl<S> RadioGroup<S> {
     }
 
     /// Mark the radio group as disabled.
-    pub fn disabled(mut self) -> Self {
-        self.disabled = true;
+    pub fn disabled(mut self, disabled: bool) -> Self {
+        self.disabled = disabled;
         self
     }
 
