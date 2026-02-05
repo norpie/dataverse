@@ -17,7 +17,9 @@ use crate::apps::migration::types::MatchBranch;
 use crate::apps::migration::types::MathOp;
 use crate::apps::migration::types::ParentType;
 use crate::apps::migration::types::SystemVar;
+use crate::apps::migration::types::Transform;
 use crate::apps::migration::types::TransformData;
+use crate::modals::ConfirmModal;
 
 use super::tree::MigrationTreeNode;
 use super::MigrationEditor;
@@ -276,6 +278,133 @@ impl MigrationEditor {
                     .iter()
                     .find(|t| t.id == parent_id)
                     .map(|t| t.entity_mapping_id)
+            }
+        }
+    }
+
+    // =========================================================================
+    // Delete Transform
+    // =========================================================================
+
+    /// Delete a transform and all its nested children.
+    pub(super) async fn delete_transform_impl(
+        &self,
+        transform: &Transform,
+        cx: &AppContext,
+        gx: &GlobalContext,
+    ) {
+        // Compute next focus before deletion
+        let transforms = self.transforms.get();
+        let siblings: Vec<_> = transforms
+            .iter()
+            .filter(|t| t.parent_type == transform.parent_type && t.parent_id == transform.parent_id)
+            .collect();
+        let current_idx = siblings.iter().position(|t| t.id == transform.id);
+
+        let next_focus = current_idx.and_then(|idx| {
+            if idx > 0 {
+                // Focus previous sibling
+                siblings.get(idx - 1).map(|t| format!("transform-{}", t.id))
+            } else if idx + 1 < siblings.len() {
+                // Focus next sibling
+                siblings.get(idx + 1).map(|t| format!("transform-{}", t.id))
+            } else {
+                // No siblings left, focus parent
+                self.parent_focus_key(transform.parent_type, transform.parent_id)
+            }
+        });
+
+        // Confirm deletion
+        let confirmed = gx
+            .modal(ConfirmModal::with_message("Delete this transform?"))
+            .await;
+
+        if !confirmed {
+            return;
+        }
+
+        let repo = gx.data::<MigrationRepository>();
+        let transform_id = transform.id;
+        let parent_type = transform.parent_type;
+        let parent_id = transform.parent_id;
+
+        match repo.delete_transform(transform_id).await {
+            Ok(()) => {
+                // Reorder remaining siblings
+                if let Ok(remaining) = repo.get_transforms(parent_type, parent_id).await {
+                    let ordered_ids: Vec<i64> = remaining.iter().map(|t| t.id).collect();
+                    let _ = repo.reorder_transforms(parent_type, parent_id, ordered_ids).await;
+                }
+
+                gx.toast(Toast::info("Transform deleted"));
+                self.refresh_data(gx).await;
+
+                if let Some(key) = next_focus {
+                    cx.focus(&format!("migration-tree-node-{}", key));
+                }
+            }
+            Err(e) => {
+                log::error!("Failed to delete transform: {}", e);
+                gx.toast(Toast::error("Failed to delete transform"));
+            }
+        }
+    }
+
+    /// Get focus key for the parent of a transform.
+    fn parent_focus_key(&self, parent_type: ParentType, parent_id: i64) -> Option<String> {
+        match parent_type {
+            ParentType::Variable => Some(format!("variable-{}", parent_id)),
+            ParentType::FieldMapping => Some(format!("field-mapping-{}", parent_id)),
+            ParentType::MatchBranch => Some(format!("match-branch-{}", parent_id)),
+            ParentType::CoalesceChain => Some(format!("coalesce-chain-{}", parent_id)),
+            ParentType::FindCondition => Some(format!("find-condition-{}", parent_id)),
+            ParentType::GuardFallback => Some(format!("transform-{}", parent_id)),
+        }
+    }
+
+    // =========================================================================
+    // Reorder Transform
+    // =========================================================================
+
+    /// Reorder a transform within its chain.
+    pub(super) async fn reorder_transform_impl(
+        &self,
+        transform: &Transform,
+        direction: i32,
+        gx: &GlobalContext,
+    ) {
+        let transforms = self.transforms.get();
+        let mut siblings: Vec<_> = transforms
+            .iter()
+            .filter(|t| t.parent_type == transform.parent_type && t.parent_id == transform.parent_id)
+            .collect();
+        siblings.sort_by_key(|t| t.order);
+
+        let Some(current_idx) = siblings.iter().position(|t| t.id == transform.id) else {
+            return;
+        };
+
+        let new_idx = (current_idx as i32 + direction).max(0) as usize;
+        if new_idx >= siblings.len() || new_idx == current_idx {
+            return;
+        }
+
+        // Build new order
+        let mut ordered_ids: Vec<i64> = siblings.iter().map(|t| t.id).collect();
+        ordered_ids.remove(current_idx);
+        ordered_ids.insert(new_idx, transform.id);
+
+        let repo = gx.data::<MigrationRepository>();
+        match repo
+            .reorder_transforms(transform.parent_type, transform.parent_id, ordered_ids)
+            .await
+        {
+            Ok(()) => {
+                self.refresh_data(gx).await;
+            }
+            Err(e) => {
+                log::error!("Failed to reorder transforms: {}", e);
+                gx.toast(Toast::error("Failed to reorder transforms"));
             }
         }
     }

@@ -280,6 +280,9 @@ impl MigrationEditor {
                 self.delete_field_mapping_impl(fm.id, fm.entity_mapping_id, cx, gx)
                     .await;
             }
+            Some(MigrationTreeNode::Transform(t)) => {
+                self.delete_transform_impl(&t, cx, gx).await;
+            }
             // Other config nodes can't be deleted
             Some(_) | None => {}
         }
@@ -312,6 +315,9 @@ impl MigrationEditor {
             MigrationTreeNode::FieldMapping(fm) => {
                 self.reorder_field_mapping_impl(fm.id, fm.entity_mapping_id, direction, gx)
                     .await;
+            }
+            MigrationTreeNode::Transform(t) => {
+                self.reorder_transform_impl(&t, direction, gx).await;
             }
             // Other nodes don't support reordering (yet)
             _ => {}

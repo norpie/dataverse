@@ -426,36 +426,48 @@ struct TreeBuildContext<'a> {
 }
 
 impl<'a> TreeBuildContext<'a> {
-    /// Get transforms for a specific parent.
+    /// Get transforms for a specific parent, sorted by order.
     fn get_transforms(&self, parent_type: ParentType, parent_id: i64) -> Vec<&Transform> {
-        self.transforms
+        let mut transforms: Vec<_> = self
+            .transforms
             .iter()
             .filter(|t| t.parent_type == parent_type && t.parent_id == parent_id)
-            .collect()
+            .collect();
+        transforms.sort_by_key(|t| t.order);
+        transforms
     }
 
-    /// Get match branches for a transform.
+    /// Get match branches for a transform, sorted by order.
     fn get_match_branches(&self, transform_id: i64) -> Vec<&MatchBranch> {
-        self.match_branches
+        let mut branches: Vec<_> = self
+            .match_branches
             .iter()
             .filter(|mb| mb.transform_id == transform_id)
-            .collect()
+            .collect();
+        branches.sort_by_key(|mb| mb.order);
+        branches
     }
 
-    /// Get coalesce chains for a transform.
+    /// Get coalesce chains for a transform, sorted by order.
     fn get_coalesce_chains(&self, transform_id: i64) -> Vec<&CoalesceChain> {
-        self.coalesce_chains
+        let mut chains: Vec<_> = self
+            .coalesce_chains
             .iter()
             .filter(|cc| cc.transform_id == transform_id)
-            .collect()
+            .collect();
+        chains.sort_by_key(|cc| cc.order);
+        chains
     }
 
-    /// Get find conditions for a transform.
+    /// Get find conditions for a transform, sorted by order.
     fn get_find_conditions(&self, transform_id: i64) -> Vec<&FindCondition> {
-        self.find_conditions
+        let mut conditions: Vec<_> = self
+            .find_conditions
             .iter()
             .filter(|fc| fc.transform_id == transform_id)
-            .collect()
+            .collect();
+        conditions.sort_by_key(|fc| fc.order);
+        conditions
     }
 }
 
