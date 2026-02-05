@@ -6,6 +6,7 @@ mod new_migration;
 mod new_phase;
 mod passes;
 mod test_guids;
+mod unmatched_handling;
 
 pub use edit_entity_mapping::EditEntityMappingModal;
 pub use edit_entity_mapping::EntityMappingResult;
@@ -18,3 +19,5 @@ pub use new_phase::NewPhaseResult;
 pub use passes::PassesModal;
 pub use passes::PassesResult;
 pub use test_guids::TestGuidsModal;
+pub use unmatched_handling::UnmatchedHandlingModal;
+pub use unmatched_handling::UnmatchedHandlingResult;

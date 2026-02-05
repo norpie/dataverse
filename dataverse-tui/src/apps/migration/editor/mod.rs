@@ -17,6 +17,7 @@ use crate::apps::migration::modals::EditPhaseModal;
 use crate::apps::migration::modals::NewPhaseModal;
 use crate::apps::migration::modals::PassesModal;
 use crate::apps::migration::modals::TestGuidsModal;
+use crate::apps::migration::modals::UnmatchedHandlingModal;
 use crate::apps::migration::repository::MigrationRepository;
 use crate::apps::migration::repository::NewEntityMapping;
 use crate::apps::migration::repository::NewPhase;
@@ -208,8 +209,7 @@ impl MigrationEditor {
                 let _ = entity_mapping_id;
             }
             MigrationTreeNode::UnmatchedHandling { entity_mapping_id } => {
-                // TODO: Open unmatched handling editor
-                let _ = entity_mapping_id;
+                self.edit_unmatched_handling(entity_mapping_id, gx).await;
             }
             MigrationTreeNode::Passes { entity_mapping_id } => {
                 self.edit_passes(entity_mapping_id, gx).await;
@@ -538,7 +538,7 @@ impl MigrationEditor {
                 lua_script: None,
                 match_strategy: MatchStrategy::SameId,
                 match_find_config: None,
-                no_match_fallback: NoMatchFallback::Error,
+                no_match_fallback: NoMatchFallback::Create,
                 orphan_strategy: OrphanStrategy::Ignore,
                 create_pass_enabled: true,
                 update_pass_enabled: true,
@@ -561,7 +561,7 @@ impl MigrationEditor {
                     lua_script: Some(lua_script),
                     match_strategy: MatchStrategy::SameId,
                     match_find_config: None,
-                    no_match_fallback: NoMatchFallback::Error,
+                    no_match_fallback: NoMatchFallback::Create,
                     orphan_strategy: OrphanStrategy::Ignore,
                     create_pass_enabled: true,
                     update_pass_enabled: true,
@@ -762,6 +762,63 @@ impl MigrationEditor {
             Err(e) => {
                 log::error!("Failed to update passes: {}", e);
                 gx.toast(Toast::error("Failed to update passes"));
+            }
+        }
+    }
+
+    async fn edit_unmatched_handling(&self, entity_mapping_id: i64, gx: &GlobalContext) {
+        // Find the entity mapping
+        let entity_mappings = self.entity_mappings.get();
+        let Some(em) = entity_mappings
+            .iter()
+            .find(|em| em.id == entity_mapping_id)
+        else {
+            return;
+        };
+
+        // Show modal
+        let Some(result) = gx
+            .modal(UnmatchedHandlingModal::new_modal(
+                entity_mapping_id,
+                em.no_match_fallback,
+                em.orphan_strategy,
+            ))
+            .await
+        else {
+            return;
+        };
+
+        // Update entity mapping
+        let repo = gx.data::<MigrationRepository>();
+        let update = UpdateEntityMapping {
+            name: None,
+            source_entity: None,
+            target_entity: None,
+            mode: None,
+            lua_script: crate::apps::migration::repository::Update::Keep,
+            match_strategy: None,
+            match_find_config: None,
+            no_match_fallback: Some(result.no_match_fallback),
+            orphan_strategy: Some(result.orphan_strategy),
+            create_pass_enabled: None,
+            update_pass_enabled: None,
+            delete_pass_enabled: None,
+            deactivate_pass_enabled: None,
+            associate_pass_enabled: None,
+            disassociate_pass_enabled: None,
+            source_filter: None,
+            target_filter: None,
+            test_guids: None,
+        };
+
+        match repo.update_entity_mapping(entity_mapping_id, update).await {
+            Ok(()) => {
+                gx.toast(Toast::info("Unmatched handling updated"));
+                self.refresh_data(gx).await;
+            }
+            Err(e) => {
+                log::error!("Failed to update unmatched handling: {}", e);
+                gx.toast(Toast::error("Failed to update unmatched handling"));
             }
         }
     }
