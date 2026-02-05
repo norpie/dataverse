@@ -1720,15 +1720,15 @@ impl MigrationEditor {
     fn element(&self) -> Element {
         let focused = self.focused_node();
         let has_selection = focused.is_some();
-        let add_label = match &focused {
-            None => "Add Phase",
-            Some(MigrationTreeNode::Phase(_)) => "Add Entity",
-            Some(MigrationTreeNode::EntityMapping(_)) => "Add Entity",
-            Some(MigrationTreeNode::Variables { .. }) => "Add Variable",
-            Some(MigrationTreeNode::Variable(_)) => "Add Variable",
-            Some(MigrationTreeNode::FieldMappings { .. }) => "Add Field",
-            Some(MigrationTreeNode::FieldMapping(_)) => "Add Field",
-            Some(_) => "Add", // Other config nodes
+        let (can_add, add_label) = match &focused {
+            None => (true, "Add Phase"),
+            Some(MigrationTreeNode::Phase(_)) => (true, "Add Entity"),
+            Some(MigrationTreeNode::EntityMapping(_)) => (true, "Add Entity"),
+            Some(MigrationTreeNode::Variables { .. }) => (true, "Add Variable"),
+            Some(MigrationTreeNode::Variable(_)) => (true, "Add Variable"),
+            Some(MigrationTreeNode::FieldMappings { .. }) => (true, "Add Field"),
+            Some(MigrationTreeNode::FieldMapping(_)) => (true, "Add Field"),
+            Some(_) => (false, "Add"), // Other config nodes - can't add
         };
 
         page! {
@@ -1830,7 +1830,7 @@ impl MigrationEditor {
                 row (width: fill, justify: between) {
                     button (label: "Close", hint: "esc", id: "close-btn") on_activate: close_app()
                     row (gap: 1) {
-                        button (label: {add_label}, hint: "a", id: "add-btn") on_activate: add_item()
+                        button (label: {add_label}, hint: "a", id: "add-btn", disabled: {!can_add}) on_activate: add_item()
                         if has_selection {
                             button (label: "Edit", hint: "enter", id: "edit-btn") on_activate: edit_item()
                         }
