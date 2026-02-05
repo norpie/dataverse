@@ -14,7 +14,6 @@ use rafter::widgets::Input;
 use rafter::widgets::Text;
 
 use crate::apps::migration::repository::MigrationRepository;
-use crate::apps::migration::repository::Update;
 use crate::apps::migration::types::Mode;
 use crate::apps::migration::types::Phase;
 use crate::modals::ConfirmModal;
@@ -31,10 +30,11 @@ pub enum Page {
 
 /// Result of the edit phase modal.
 #[derive(Debug, Clone)]
-pub struct EditPhaseResult {
-    pub name: String,
-    pub mode: Mode,
-    pub lua_script: Update<String>,
+pub enum EditPhaseResult {
+    /// Declarative mode with entity mappings.
+    Declarative { name: String },
+    /// Lua mode with a script.
+    Lua { name: String, lua_script: String },
 }
 
 /// Modal for editing a phase.
@@ -157,28 +157,18 @@ impl EditPhaseModal {
             return;
         }
 
-        let mode = match self.page() {
-            Page::Declarative => Mode::Declarative,
-            Page::Lua => Mode::Lua,
+        let result = match self.page() {
+            Page::Declarative => EditPhaseResult::Declarative { name },
+            Page::Lua => {
+                let Some(lua_script) = self.lua_script.get() else {
+                    self.error.set(Some("Lua mode requires a script".to_string()));
+                    return;
+                };
+                EditPhaseResult::Lua { name, lua_script }
+            }
         };
 
-        // Lua mode requires a script
-        if mode == Mode::Lua && self.lua_script.get().is_none() {
-            self.error.set(Some("Lua mode requires a script".to_string()));
-            return;
-        }
-
-        let lua_script = match (mode, self.lua_script.get()) {
-            (Mode::Declarative, _) => Update::Clear,
-            (Mode::Lua, Some(script)) => Update::Set(script),
-            (Mode::Lua, None) => unreachable!(), // validated above
-        };
-
-        mx.close(Some(EditPhaseResult {
-            name,
-            mode,
-            lua_script,
-        }));
+        mx.close(Some(result));
     }
 
     // =========================================================================

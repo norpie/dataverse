@@ -16,7 +16,6 @@ use rafter::widgets::Input;
 use rafter::widgets::Text;
 
 use crate::apps::migration::repository::MigrationRepository;
-use crate::apps::migration::repository::Update;
 use crate::apps::migration::types::EntityMapping;
 use crate::apps::migration::types::Mode;
 use crate::modals::ConfirmModal;
@@ -33,12 +32,15 @@ pub enum Page {
 
 /// Result of the entity mapping modal.
 #[derive(Debug, Clone)]
-pub struct EntityMappingResult {
-    pub name: String,
-    pub mode: Mode,
-    pub source_entity: String,
-    pub target_entity: String,
-    pub lua_script: Update<String>,
+pub enum EntityMappingResult {
+    /// Declarative mode with source and target entities.
+    Declarative {
+        name: String,
+        source_entity: String,
+        target_entity: String,
+    },
+    /// Lua mode with a script.
+    Lua { name: String, lua_script: String },
 }
 
 /// Modal for creating/editing an entity mapping.
@@ -199,46 +201,33 @@ impl EditEntityMappingModal {
             return;
         }
 
-        let mode = match self.page() {
-            Page::Declarative => Mode::Declarative,
-            Page::Lua => Mode::Lua,
+        let result = match self.page() {
+            Page::Declarative => {
+                let source = self.source_entity.with_ref(|s| s.value().cloned());
+                let target = self.target_entity.with_ref(|s| s.value().cloned());
+
+                let (Some(source_entity), Some(target_entity)) = (source, target) else {
+                    self.error
+                        .set(Some("Please select both source and target entities".to_string()));
+                    return;
+                };
+
+                EntityMappingResult::Declarative {
+                    name,
+                    source_entity,
+                    target_entity,
+                }
+            }
+            Page::Lua => {
+                let Some(lua_script) = self.lua_script.get() else {
+                    self.error.set(Some("Lua mode requires a script".to_string()));
+                    return;
+                };
+                EntityMappingResult::Lua { name, lua_script }
+            }
         };
 
-        let (source_entity, target_entity) = if mode == Mode::Declarative {
-            let source = self.source_entity.with_ref(|s| s.value().cloned());
-            let target = self.target_entity.with_ref(|s| s.value().cloned());
-
-            let (Some(source), Some(target)) = (source, target) else {
-                self.error
-                    .set(Some("Please select both source and target entities".to_string()));
-                return;
-            };
-
-            (source, target)
-        } else {
-            // Lua mode: no entity selection, use empty strings
-            (String::new(), String::new())
-        };
-
-        // Lua mode requires a script
-        if mode == Mode::Lua && self.lua_script.get().is_none() {
-            self.error.set(Some("Lua mode requires a script".to_string()));
-            return;
-        }
-
-        let lua_script = match (mode, self.lua_script.get()) {
-            (Mode::Declarative, _) => Update::Clear,
-            (Mode::Lua, Some(script)) => Update::Set(script),
-            (Mode::Lua, None) => unreachable!(), // validated above
-        };
-
-        mx.close(Some(EntityMappingResult {
-            name,
-            mode,
-            source_entity,
-            target_entity,
-            lua_script,
-        }));
+        mx.close(Some(result));
     }
 
     // =========================================================================

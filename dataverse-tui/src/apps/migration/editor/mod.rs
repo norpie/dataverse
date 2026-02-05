@@ -230,10 +230,21 @@ impl MigrationEditor {
         };
 
         let repo = gx.data::<MigrationRepository>();
-        let update = UpdatePhase {
-            name: Some(result.name),
-            mode: Some(result.mode),
-            lua_script: result.lua_script,
+        let update = match result {
+            crate::apps::migration::modals::EditPhaseResult::Declarative { name } => {
+                UpdatePhase {
+                    name: Some(name),
+                    mode: Some(Mode::Declarative),
+                    lua_script: crate::apps::migration::repository::Update::Clear,
+                }
+            }
+            crate::apps::migration::modals::EditPhaseResult::Lua { name, lua_script } => {
+                UpdatePhase {
+                    name: Some(name),
+                    mode: Some(Mode::Lua),
+                    lua_script: crate::apps::migration::repository::Update::Set(lua_script),
+                }
+            }
         };
 
         match repo.update_phase(phase.id, update).await {
@@ -309,21 +320,45 @@ impl MigrationEditor {
         };
 
         let repo = gx.data::<MigrationRepository>();
-        let update = UpdateEntityMapping {
-            name: Some(result.name),
-            source_entity: Some(result.source_entity),
-            target_entity: Some(result.target_entity),
-            mode: Some(result.mode),
-            lua_script: result.lua_script,
-            match_strategy: None,
-            match_find_config: None,
-            no_match_fallback: None,
-            orphan_strategy: None,
-            create_pass_enabled: None,
-            update_pass_enabled: None,
-            source_filter: None,
-            target_filter: None,
-            test_guids: None,
+        let update = match result {
+            crate::apps::migration::modals::EntityMappingResult::Declarative {
+                name,
+                source_entity,
+                target_entity,
+            } => UpdateEntityMapping {
+                name: Some(name),
+                source_entity: Some(source_entity),
+                target_entity: Some(target_entity),
+                mode: Some(Mode::Declarative),
+                lua_script: crate::apps::migration::repository::Update::Clear,
+                match_strategy: None,
+                match_find_config: None,
+                no_match_fallback: None,
+                orphan_strategy: None,
+                create_pass_enabled: None,
+                update_pass_enabled: None,
+                source_filter: None,
+                target_filter: None,
+                test_guids: None,
+            },
+            crate::apps::migration::modals::EntityMappingResult::Lua { name, lua_script } => {
+                UpdateEntityMapping {
+                    name: Some(name),
+                    source_entity: Some(String::new()),
+                    target_entity: Some(String::new()),
+                    mode: Some(Mode::Lua),
+                    lua_script: crate::apps::migration::repository::Update::Set(lua_script),
+                    match_strategy: None,
+                    match_find_config: None,
+                    no_match_fallback: None,
+                    orphan_strategy: None,
+                    create_pass_enabled: None,
+                    update_pass_enabled: None,
+                    source_filter: None,
+                    target_filter: None,
+                    test_guids: None,
+                }
+            }
         };
 
         match repo.update_entity_mapping(em.id, update).await {
@@ -480,29 +515,49 @@ impl MigrationEditor {
             .filter(|em| em.phase_id == phase_id)
             .count() as i32;
 
-        let lua_script = match result.lua_script {
-            crate::apps::migration::repository::Update::Keep => None,
-            crate::apps::migration::repository::Update::Set(s) => Some(s),
-            crate::apps::migration::repository::Update::Clear => None,
-        };
-
-        let new_mapping = NewEntityMapping {
-            phase_id,
-            order,
-            name: result.name,
-            source_entity: result.source_entity,
-            target_entity: result.target_entity,
-            mode: result.mode,
-            lua_script,
-            match_strategy: MatchStrategy::SameId,
-            match_find_config: None,
-            no_match_fallback: NoMatchFallback::Error,
-            orphan_strategy: OrphanStrategy::Ignore,
-            create_pass_enabled: true,
-            update_pass_enabled: true,
-            source_filter: None,
-            target_filter: None,
-            test_guids: None,
+        let new_mapping = match result {
+            crate::apps::migration::modals::EntityMappingResult::Declarative {
+                name,
+                source_entity,
+                target_entity,
+            } => NewEntityMapping {
+                phase_id,
+                order,
+                name,
+                source_entity,
+                target_entity,
+                mode: Mode::Declarative,
+                lua_script: None,
+                match_strategy: MatchStrategy::SameId,
+                match_find_config: None,
+                no_match_fallback: NoMatchFallback::Error,
+                orphan_strategy: OrphanStrategy::Ignore,
+                create_pass_enabled: true,
+                update_pass_enabled: true,
+                source_filter: None,
+                target_filter: None,
+                test_guids: None,
+            },
+            crate::apps::migration::modals::EntityMappingResult::Lua { name, lua_script } => {
+                NewEntityMapping {
+                    phase_id,
+                    order,
+                    name,
+                    source_entity: String::new(),
+                    target_entity: String::new(),
+                    mode: Mode::Lua,
+                    lua_script: Some(lua_script),
+                    match_strategy: MatchStrategy::SameId,
+                    match_find_config: None,
+                    no_match_fallback: NoMatchFallback::Error,
+                    orphan_strategy: OrphanStrategy::Ignore,
+                    create_pass_enabled: true,
+                    update_pass_enabled: true,
+                    source_filter: None,
+                    target_filter: None,
+                    test_guids: None,
+                }
+            }
         };
 
         match repo.create_entity_mapping(new_mapping).await {
