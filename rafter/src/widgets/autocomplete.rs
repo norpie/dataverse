@@ -517,6 +517,7 @@ impl<'a, T: Clone + Eq + Hash + PartialEq + Send + Sync + ToString + 'static> Au
             // on_submit: open dropdown if closed, select item at cursor if open
             let state_clone = state.clone();
             let on_select = handlers.get("on_select").cloned();
+            let on_change = handlers.get("on_change").cloned();
             registry.register(
                 &id,
                 "on_submit",
@@ -545,6 +546,12 @@ impl<'a, T: Clone + Eq + Hash + PartialEq + Send + Sync + ToString + 'static> Au
                                 });
                                 if let Some(ref handler) = on_select {
                                     handler(hx);
+                                }
+                                // Also trigger on_change since text was updated
+                                if !is_multi {
+                                    if let Some(ref handler) = on_change {
+                                        handler(hx);
+                                    }
                                 }
                             }
                     }
@@ -620,6 +627,7 @@ impl<'a, T: Clone + Eq + Hash + PartialEq + Send + Sync + ToString + 'static> Au
                         let value_clone = value.clone();
                         let text_value = value.to_string();
                         let on_select = handlers.get("on_select").cloned();
+                        let on_change = handlers.get("on_change").cloned();
                         registry.register(
                             &opt_id,
                             "on_activate",
@@ -637,6 +645,12 @@ impl<'a, T: Clone + Eq + Hash + PartialEq + Send + Sync + ToString + 'static> Au
                                 });
                                 if let Some(ref handler) = on_select {
                                     handler(hx);
+                                }
+                                // Also trigger on_change since text was updated
+                                if !is_multi {
+                                    if let Some(ref handler) = on_change {
+                                        handler(hx);
+                                    }
                                 }
                             }),
                         );
