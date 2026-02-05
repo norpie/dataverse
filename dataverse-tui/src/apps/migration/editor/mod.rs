@@ -15,6 +15,7 @@ use tuidom::Style;
 use crate::apps::migration::modals::EditEntityMappingModal;
 use crate::apps::migration::modals::EditPhaseModal;
 use crate::apps::migration::modals::NewPhaseModal;
+use crate::apps::migration::modals::PassesModal;
 use crate::apps::migration::modals::TestGuidsModal;
 use crate::apps::migration::repository::MigrationRepository;
 use crate::apps::migration::repository::NewEntityMapping;
@@ -211,8 +212,7 @@ impl MigrationEditor {
                 let _ = entity_mapping_id;
             }
             MigrationTreeNode::Passes { entity_mapping_id } => {
-                // TODO: Open passes editor
-                let _ = entity_mapping_id;
+                self.edit_passes(entity_mapping_id, gx).await;
             }
             MigrationTreeNode::TestGuids { entity_mapping_id } => {
                 self.edit_test_guids(entity_mapping_id, gx).await;
@@ -337,6 +337,10 @@ impl MigrationEditor {
                 orphan_strategy: None,
                 create_pass_enabled: None,
                 update_pass_enabled: None,
+                delete_pass_enabled: None,
+                deactivate_pass_enabled: None,
+                associate_pass_enabled: None,
+                disassociate_pass_enabled: None,
                 source_filter: None,
                 target_filter: None,
                 test_guids: None,
@@ -354,6 +358,10 @@ impl MigrationEditor {
                     orphan_strategy: None,
                     create_pass_enabled: None,
                     update_pass_enabled: None,
+                    delete_pass_enabled: None,
+                    deactivate_pass_enabled: None,
+                    associate_pass_enabled: None,
+                    disassociate_pass_enabled: None,
                     source_filter: None,
                     target_filter: None,
                     test_guids: None,
@@ -534,6 +542,10 @@ impl MigrationEditor {
                 orphan_strategy: OrphanStrategy::Ignore,
                 create_pass_enabled: true,
                 update_pass_enabled: true,
+                delete_pass_enabled: true,
+                deactivate_pass_enabled: true,
+                associate_pass_enabled: true,
+                disassociate_pass_enabled: true,
                 source_filter: None,
                 target_filter: None,
                 test_guids: None,
@@ -553,6 +565,10 @@ impl MigrationEditor {
                     orphan_strategy: OrphanStrategy::Ignore,
                     create_pass_enabled: true,
                     update_pass_enabled: true,
+                    delete_pass_enabled: true,
+                    deactivate_pass_enabled: true,
+                    associate_pass_enabled: true,
+                    disassociate_pass_enabled: true,
                     source_filter: None,
                     target_filter: None,
                     test_guids: None,
@@ -668,6 +684,10 @@ impl MigrationEditor {
             orphan_strategy: None,
             create_pass_enabled: None,
             update_pass_enabled: None,
+            delete_pass_enabled: None,
+            deactivate_pass_enabled: None,
+            associate_pass_enabled: None,
+            disassociate_pass_enabled: None,
             source_filter: None,
             target_filter: None,
             test_guids: Some(result),
@@ -681,6 +701,67 @@ impl MigrationEditor {
             Err(e) => {
                 log::error!("Failed to update test GUIDs: {}", e);
                 gx.toast(Toast::error("Failed to update test GUIDs"));
+            }
+        }
+    }
+
+    async fn edit_passes(&self, entity_mapping_id: i64, gx: &GlobalContext) {
+        // Find the entity mapping
+        let entity_mappings = self.entity_mappings.get();
+        let Some(em) = entity_mappings
+            .iter()
+            .find(|em| em.id == entity_mapping_id)
+        else {
+            return;
+        };
+
+        // Show modal
+        let Some(result) = gx
+            .modal(PassesModal::new_modal(
+                entity_mapping_id,
+                em.create_pass_enabled,
+                em.update_pass_enabled,
+                em.delete_pass_enabled,
+                em.deactivate_pass_enabled,
+                em.associate_pass_enabled,
+                em.disassociate_pass_enabled,
+            ))
+            .await
+        else {
+            return;
+        };
+
+        // Update entity mapping
+        let repo = gx.data::<MigrationRepository>();
+        let update = UpdateEntityMapping {
+            name: None,
+            source_entity: None,
+            target_entity: None,
+            mode: None,
+            lua_script: crate::apps::migration::repository::Update::Keep,
+            match_strategy: None,
+            match_find_config: None,
+            no_match_fallback: None,
+            orphan_strategy: None,
+            create_pass_enabled: Some(result.create_pass),
+            update_pass_enabled: Some(result.update_pass),
+            delete_pass_enabled: Some(result.delete_pass),
+            deactivate_pass_enabled: Some(result.deactivate_pass),
+            associate_pass_enabled: Some(result.associate_pass),
+            disassociate_pass_enabled: Some(result.disassociate_pass),
+            source_filter: None,
+            target_filter: None,
+            test_guids: None,
+        };
+
+        match repo.update_entity_mapping(entity_mapping_id, update).await {
+            Ok(()) => {
+                gx.toast(Toast::info("Passes updated"));
+                self.refresh_data(gx).await;
+            }
+            Err(e) => {
+                log::error!("Failed to update passes: {}", e);
+                gx.toast(Toast::error("Failed to update passes"));
             }
         }
     }

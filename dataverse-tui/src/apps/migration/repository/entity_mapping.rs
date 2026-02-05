@@ -25,6 +25,10 @@ pub struct NewEntityMapping {
     pub orphan_strategy: OrphanStrategy,
     pub create_pass_enabled: bool,
     pub update_pass_enabled: bool,
+    pub delete_pass_enabled: bool,
+    pub deactivate_pass_enabled: bool,
+    pub associate_pass_enabled: bool,
+    pub disassociate_pass_enabled: bool,
     pub source_filter: Option<FilterNode>,
     pub target_filter: Option<FilterNode>,
     pub test_guids: Option<Vec<String>>,
@@ -43,6 +47,10 @@ pub struct UpdateEntityMapping {
     pub orphan_strategy: Option<OrphanStrategy>,
     pub create_pass_enabled: Option<bool>,
     pub update_pass_enabled: Option<bool>,
+    pub delete_pass_enabled: Option<bool>,
+    pub deactivate_pass_enabled: Option<bool>,
+    pub associate_pass_enabled: Option<bool>,
+    pub disassociate_pass_enabled: Option<bool>,
     pub source_filter: Option<FilterNode>,
     pub target_filter: Option<FilterNode>,
     pub test_guids: Option<Vec<String>>,
@@ -59,7 +67,8 @@ impl super::MigrationRepository {
                 let mut stmt = conn.prepare(
                     "SELECT id, phase_id, \"order\", name, source_entity, target_entity, mode, lua_script,
                             match_strategy, match_find_config, no_match_fallback, orphan_strategy,
-                            create_pass_enabled, update_pass_enabled, source_filter, target_filter, test_guids
+                            create_pass_enabled, update_pass_enabled, delete_pass_enabled, deactivate_pass_enabled,
+                            associate_pass_enabled, disassociate_pass_enabled, source_filter, target_filter, test_guids
                      FROM entity_mappings
                      WHERE phase_id = ?1
                      ORDER BY \"order\" ASC",
@@ -78,7 +87,8 @@ impl super::MigrationRepository {
                 let mut stmt = conn.prepare(
                     "SELECT id, phase_id, \"order\", name, source_entity, target_entity, mode, lua_script,
                             match_strategy, match_find_config, no_match_fallback, orphan_strategy,
-                            create_pass_enabled, update_pass_enabled, source_filter, target_filter, test_guids
+                            create_pass_enabled, update_pass_enabled, delete_pass_enabled, deactivate_pass_enabled,
+                            associate_pass_enabled, disassociate_pass_enabled, source_filter, target_filter, test_guids
                      FROM entity_mappings
                      WHERE id = ?1",
                 )?;
@@ -126,6 +136,10 @@ impl super::MigrationRepository {
         let lua_script = mapping.lua_script.clone();
         let create_pass_enabled = mapping.create_pass_enabled;
         let update_pass_enabled = mapping.update_pass_enabled;
+        let delete_pass_enabled = mapping.delete_pass_enabled;
+        let deactivate_pass_enabled = mapping.deactivate_pass_enabled;
+        let associate_pass_enabled = mapping.associate_pass_enabled;
+        let disassociate_pass_enabled = mapping.disassociate_pass_enabled;
         let now = Utc::now().to_rfc3339();
 
         self.client
@@ -134,8 +148,9 @@ impl super::MigrationRepository {
                     "INSERT INTO entity_mappings (
                         phase_id, \"order\", name, source_entity, target_entity, mode, lua_script,
                         match_strategy, match_find_config, no_match_fallback, orphan_strategy,
-                        create_pass_enabled, update_pass_enabled, source_filter, target_filter, test_guids
-                    ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)",
+                        create_pass_enabled, update_pass_enabled, delete_pass_enabled, deactivate_pass_enabled,
+                        associate_pass_enabled, disassociate_pass_enabled, source_filter, target_filter, test_guids
+                    ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20)",
                     params![
                         phase_id,
                         order,
@@ -150,6 +165,10 @@ impl super::MigrationRepository {
                         orphan_strategy_str,
                         create_pass_enabled as i32,
                         update_pass_enabled as i32,
+                        delete_pass_enabled as i32,
+                        deactivate_pass_enabled as i32,
+                        associate_pass_enabled as i32,
+                        disassociate_pass_enabled as i32,
                         source_filter_blob,
                         target_filter_blob,
                         test_guids_csv,
@@ -260,6 +279,22 @@ impl super::MigrationRepository {
                 if let Some(update_pass_enabled) = update.update_pass_enabled {
                     updates.push("update_pass_enabled = ?");
                     param_vals.push(Box::new(update_pass_enabled as i32));
+                }
+                if let Some(delete_pass_enabled) = update.delete_pass_enabled {
+                    updates.push("delete_pass_enabled = ?");
+                    param_vals.push(Box::new(delete_pass_enabled as i32));
+                }
+                if let Some(deactivate_pass_enabled) = update.deactivate_pass_enabled {
+                    updates.push("deactivate_pass_enabled = ?");
+                    param_vals.push(Box::new(deactivate_pass_enabled as i32));
+                }
+                if let Some(associate_pass_enabled) = update.associate_pass_enabled {
+                    updates.push("associate_pass_enabled = ?");
+                    param_vals.push(Box::new(associate_pass_enabled as i32));
+                }
+                if let Some(disassociate_pass_enabled) = update.disassociate_pass_enabled {
+                    updates.push("disassociate_pass_enabled = ?");
+                    param_vals.push(Box::new(disassociate_pass_enabled as i32));
                 }
                 if let Some(blob) = source_filter_blob {
                     updates.push("source_filter = ?");

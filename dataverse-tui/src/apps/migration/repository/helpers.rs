@@ -141,7 +141,8 @@ pub fn transform_type_str(data: &TransformData) -> String {
 /// Convert database row to EntityMapping.
 /// Column order: id, phase_id, order, name, source_entity, target_entity, mode, lua_script,
 ///               match_strategy, match_find_config, no_match_fallback, orphan_strategy,
-///               create_pass_enabled, update_pass_enabled, source_filter, target_filter, test_guids
+///               create_pass_enabled, update_pass_enabled, delete_pass_enabled, deactivate_pass_enabled,
+///               associate_pass_enabled, disassociate_pass_enabled, source_filter, target_filter, test_guids
 pub fn row_to_entity_mapping(row: &Row) -> Result<EntityMapping, rusqlite::Error> {
     let mode_str: String = row.get(6)?;
     let mode = Mode::from_str(&mode_str).ok_or(rusqlite::Error::InvalidQuery)?;
@@ -164,19 +165,19 @@ pub fn row_to_entity_mapping(row: &Row) -> Result<EntityMapping, rusqlite::Error
         .transpose()
         .map_err(|_| rusqlite::Error::InvalidQuery)?;
 
-    let source_filter_blob: Option<Vec<u8>> = row.get(14)?;
+    let source_filter_blob: Option<Vec<u8>> = row.get(18)?;
     let source_filter = source_filter_blob
         .map(|b| deserialize_filter_node(&b))
         .transpose()
         .map_err(|_| rusqlite::Error::InvalidQuery)?;
 
-    let target_filter_blob: Option<Vec<u8>> = row.get(15)?;
+    let target_filter_blob: Option<Vec<u8>> = row.get(19)?;
     let target_filter = target_filter_blob
         .map(|b| deserialize_filter_node(&b))
         .transpose()
         .map_err(|_| rusqlite::Error::InvalidQuery)?;
 
-    let test_guids_json: Option<String> = row.get(16)?;
+    let test_guids_json: Option<String> = row.get(20)?;
     let test_guids = test_guids_json
         .map(|j| deserialize_test_guids(&j))
         .transpose()
@@ -197,6 +198,10 @@ pub fn row_to_entity_mapping(row: &Row) -> Result<EntityMapping, rusqlite::Error
         orphan_strategy,
         create_pass_enabled: row.get::<_, i32>(12)? != 0,
         update_pass_enabled: row.get::<_, i32>(13)? != 0,
+        delete_pass_enabled: row.get::<_, i32>(14)? != 0,
+        deactivate_pass_enabled: row.get::<_, i32>(15)? != 0,
+        associate_pass_enabled: row.get::<_, i32>(16)? != 0,
+        disassociate_pass_enabled: row.get::<_, i32>(17)? != 0,
         source_filter,
         target_filter,
         test_guids,
