@@ -110,11 +110,13 @@ impl super::MigrationRepository {
             .transpose()?;
         let source_filter_blob = serialize_filter_node(&mapping.source_filter)?;
         let target_filter_blob = serialize_filter_node(&mapping.target_filter)?;
-        let test_guids_json = mapping
-            .test_guids
-            .as_ref()
-            .map(|g| serialize_test_guids(g))
-            .transpose()?;
+        let test_guids_csv = mapping.test_guids.as_ref().map(|g| {
+            if g.is_empty() {
+                Ok(String::new())
+            } else {
+                serialize_test_guids(g)
+            }
+        }).transpose()?;
 
         let phase_id = mapping.phase_id;
         let order = mapping.order;
@@ -150,7 +152,7 @@ impl super::MigrationRepository {
                         update_pass_enabled as i32,
                         source_filter_blob,
                         target_filter_blob,
-                        test_guids_json,
+                        test_guids_csv,
                     ],
                 )?;
                 let mapping_id = conn.last_insert_rowid();
@@ -192,11 +194,13 @@ impl super::MigrationRepository {
             .map(|f| serialize_filter_node(&Some(f.clone())))
             .transpose()?
             .flatten();
-        let test_guids_json = update
-            .test_guids
-            .as_ref()
-            .map(|g| serialize_test_guids(g))
-            .transpose()?;
+        let test_guids_csv = update.test_guids.as_ref().map(|g| {
+            if g.is_empty() {
+                Ok(String::new())
+            } else {
+                serialize_test_guids(g)
+            }
+        }).transpose()?;
 
         let now = Utc::now().to_rfc3339();
         let client = self.client.clone();
@@ -265,9 +269,9 @@ impl super::MigrationRepository {
                     updates.push("target_filter = ?");
                     param_vals.push(Box::new(blob));
                 }
-                if let Some(json) = test_guids_json {
+                if let Some(csv) = test_guids_csv {
                     updates.push("test_guids = ?");
-                    param_vals.push(Box::new(json));
+                    param_vals.push(Box::new(csv));
                 }
 
                 if updates.is_empty() {

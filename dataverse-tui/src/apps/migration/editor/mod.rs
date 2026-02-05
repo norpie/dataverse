@@ -12,9 +12,10 @@ use rafter::widgets::TreeState;
 use tuidom::Color;
 use tuidom::Style;
 
-use crate::apps::migration::modals::EditPhaseModal;
 use crate::apps::migration::modals::EditEntityMappingModal;
+use crate::apps::migration::modals::EditPhaseModal;
 use crate::apps::migration::modals::NewPhaseModal;
+use crate::apps::migration::modals::TestGuidsModal;
 use crate::apps::migration::repository::MigrationRepository;
 use crate::apps::migration::repository::NewEntityMapping;
 use crate::apps::migration::repository::NewPhase;
@@ -214,8 +215,7 @@ impl MigrationEditor {
                 let _ = entity_mapping_id;
             }
             MigrationTreeNode::TestGuids { entity_mapping_id } => {
-                // TODO: Open test guids editor
-                let _ = entity_mapping_id;
+                self.edit_test_guids(entity_mapping_id, gx).await;
             }
         }
     }
@@ -625,6 +625,62 @@ impl MigrationEditor {
             Err(e) => {
                 log::error!("Failed to delete entity mapping: {}", e);
                 gx.toast(Toast::error("Failed to delete entity mapping"));
+            }
+        }
+    }
+
+    // =========================================================================
+    // Config Node Operations
+    // =========================================================================
+
+    async fn edit_test_guids(&self, entity_mapping_id: i64, gx: &GlobalContext) {
+        // Find the entity mapping
+        let entity_mappings = self.entity_mappings.get();
+        let Some(em) = entity_mappings
+            .iter()
+            .find(|em| em.id == entity_mapping_id)
+        else {
+            return;
+        };
+
+        // Get current test GUIDs
+        let initial_guids = em.test_guids.clone().unwrap_or_default();
+
+        // Show modal
+        let Some(result) = gx
+            .modal(TestGuidsModal::new_modal(entity_mapping_id, initial_guids))
+            .await
+        else {
+            return;
+        };
+
+        // Update entity mapping
+        let repo = gx.data::<MigrationRepository>();
+        let update = UpdateEntityMapping {
+            name: None,
+            source_entity: None,
+            target_entity: None,
+            mode: None,
+            lua_script: crate::apps::migration::repository::Update::Keep,
+            match_strategy: None,
+            match_find_config: None,
+            no_match_fallback: None,
+            orphan_strategy: None,
+            create_pass_enabled: None,
+            update_pass_enabled: None,
+            source_filter: None,
+            target_filter: None,
+            test_guids: Some(result),
+        };
+
+        match repo.update_entity_mapping(entity_mapping_id, update).await {
+            Ok(()) => {
+                gx.toast(Toast::info("Test GUIDs updated"));
+                self.refresh_data(gx).await;
+            }
+            Err(e) => {
+                log::error!("Failed to update test GUIDs: {}", e);
+                gx.toast(Toast::error("Failed to update test GUIDs"));
             }
         }
     }

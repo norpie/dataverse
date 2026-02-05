@@ -84,14 +84,17 @@ pub fn deserialize_find_config(bytes: &[u8]) -> Result<FindConfig, RepositoryErr
 // JSON Serialization
 // =============================================================================
 
-/// Serialize test GUIDs to JSON.
+/// Serialize test GUIDs to comma-delimited string.
 pub fn serialize_test_guids(guids: &[String]) -> Result<String, RepositoryError> {
-    serde_json::to_string(guids).map_err(RepositoryError::Json)
+    Ok(guids.join(","))
 }
 
-/// Deserialize test GUIDs from JSON.
-pub fn deserialize_test_guids(json: &str) -> Result<Vec<String>, RepositoryError> {
-    serde_json::from_str(json).map_err(RepositoryError::Json)
+/// Deserialize test GUIDs from comma-delimited string.
+pub fn deserialize_test_guids(csv: &str) -> Result<Vec<String>, RepositoryError> {
+    if csv.trim().is_empty() {
+        return Ok(Vec::new());
+    }
+    Ok(csv.split(',').map(|s| s.trim().to_string()).collect())
 }
 
 /// Serialize queue item IDs to JSON.
