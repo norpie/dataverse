@@ -5,12 +5,14 @@ use rafter::prelude::*;
 use rafter::widgets::Autocomplete;
 use rafter::widgets::AutocompleteState;
 use rafter::widgets::Button;
+use rafter::widgets::Input;
 use rafter::widgets::Text;
 use tuidom::Element;
 
 /// Result of the new entity mapping modal.
 #[derive(Debug, Clone)]
 pub struct NewEntityMappingResult {
+    pub name: String,
     pub source_entity: String,
     pub target_entity: String,
 }
@@ -18,6 +20,7 @@ pub struct NewEntityMappingResult {
 /// Modal for creating a new entity mapping.
 #[modal(size = Md)]
 pub struct NewEntityMappingModal {
+    name: String,
     source_entity: AutocompleteState<String>,
     target_entity: AutocompleteState<String>,
     error: Option<String>,
@@ -37,6 +40,7 @@ impl NewEntityMappingModal {
             .collect();
 
         Self::new(
+            String::new(),
             AutocompleteState::new(source_options),
             AutocompleteState::new(target_options),
             None,
@@ -52,7 +56,7 @@ impl NewEntityMappingModal {
 
     #[on_start]
     async fn on_start(&self, mx: &ModalContext<Option<NewEntityMappingResult>>) {
-        mx.focus("source-entity");
+        mx.focus("mapping-name");
     }
 
     #[keybinds]
@@ -67,6 +71,12 @@ impl NewEntityMappingModal {
 
     #[handler]
     async fn submit(&self, mx: &ModalContext<Option<NewEntityMappingResult>>) {
+        let name = self.name.get().trim().to_string();
+        if name.is_empty() {
+            self.error.set(Some("Name is required".to_string()));
+            return;
+        }
+
         let source = self.source_entity.with_ref(|s| s.value().cloned());
         let target = self.target_entity.with_ref(|s| s.value().cloned());
 
@@ -77,6 +87,7 @@ impl NewEntityMappingModal {
         };
 
         mx.close(Some(NewEntityMappingResult {
+            name,
             source_entity: source,
             target_entity: target,
         }));
@@ -94,6 +105,8 @@ impl NewEntityMappingModal {
                 }
 
                 column (gap: 1, width: fill, height: fill) {
+                    input (state: self.name, id: "mapping-name", label: "Name", placeholder: "e.g., Account Sync")
+
                     text (content: "Source Entity") style (fg: muted)
                     autocomplete (state: self.source_entity, id: "source-entity", placeholder: "Select source entity...")
 

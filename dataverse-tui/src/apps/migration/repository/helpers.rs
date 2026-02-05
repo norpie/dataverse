@@ -136,41 +136,44 @@ pub fn transform_type_str(data: &TransformData) -> String {
 // =============================================================================
 
 /// Convert database row to EntityMapping.
+/// Column order: id, phase_id, order, name, source_entity, target_entity, mode, lua_script,
+///               match_strategy, match_find_config, no_match_fallback, orphan_strategy,
+///               create_pass_enabled, update_pass_enabled, source_filter, target_filter, test_guids
 pub fn row_to_entity_mapping(row: &Row) -> Result<EntityMapping, rusqlite::Error> {
-    let mode_str: String = row.get(5)?;
+    let mode_str: String = row.get(6)?;
     let mode = Mode::from_str(&mode_str).ok_or(rusqlite::Error::InvalidQuery)?;
 
-    let match_strategy_str: String = row.get(7)?;
+    let match_strategy_str: String = row.get(8)?;
     let match_strategy =
         MatchStrategy::from_str(&match_strategy_str).ok_or(rusqlite::Error::InvalidQuery)?;
 
-    let no_match_fallback_str: String = row.get(9)?;
+    let no_match_fallback_str: String = row.get(10)?;
     let no_match_fallback =
         NoMatchFallback::from_str(&no_match_fallback_str).ok_or(rusqlite::Error::InvalidQuery)?;
 
-    let orphan_strategy_str: String = row.get(10)?;
+    let orphan_strategy_str: String = row.get(11)?;
     let orphan_strategy =
         OrphanStrategy::from_str(&orphan_strategy_str).ok_or(rusqlite::Error::InvalidQuery)?;
 
-    let match_find_config_blob: Option<Vec<u8>> = row.get(8)?;
+    let match_find_config_blob: Option<Vec<u8>> = row.get(9)?;
     let match_find_config = match_find_config_blob
         .map(|b| deserialize_find_config(&b))
         .transpose()
         .map_err(|_| rusqlite::Error::InvalidQuery)?;
 
-    let source_filter_blob: Option<Vec<u8>> = row.get(13)?;
+    let source_filter_blob: Option<Vec<u8>> = row.get(14)?;
     let source_filter = source_filter_blob
         .map(|b| deserialize_filter_node(&b))
         .transpose()
         .map_err(|_| rusqlite::Error::InvalidQuery)?;
 
-    let target_filter_blob: Option<Vec<u8>> = row.get(14)?;
+    let target_filter_blob: Option<Vec<u8>> = row.get(15)?;
     let target_filter = target_filter_blob
         .map(|b| deserialize_filter_node(&b))
         .transpose()
         .map_err(|_| rusqlite::Error::InvalidQuery)?;
 
-    let test_guids_json: Option<String> = row.get(15)?;
+    let test_guids_json: Option<String> = row.get(16)?;
     let test_guids = test_guids_json
         .map(|j| deserialize_test_guids(&j))
         .transpose()
@@ -180,16 +183,17 @@ pub fn row_to_entity_mapping(row: &Row) -> Result<EntityMapping, rusqlite::Error
         id: row.get(0)?,
         phase_id: row.get(1)?,
         order: row.get(2)?,
-        source_entity: row.get(3)?,
-        target_entity: row.get(4)?,
+        name: row.get(3)?,
+        source_entity: row.get(4)?,
+        target_entity: row.get(5)?,
         mode,
-        lua_script: row.get(6)?,
+        lua_script: row.get(7)?,
         match_strategy,
         match_find_config,
         no_match_fallback,
         orphan_strategy,
-        create_pass_enabled: row.get::<_, i32>(11)? != 0,
-        update_pass_enabled: row.get::<_, i32>(12)? != 0,
+        create_pass_enabled: row.get::<_, i32>(12)? != 0,
+        update_pass_enabled: row.get::<_, i32>(13)? != 0,
         source_filter,
         target_filter,
         test_guids,

@@ -9,6 +9,8 @@ use rafter::widgets::Button;
 use rafter::widgets::Text;
 use rafter::widgets::Tree;
 use rafter::widgets::TreeState;
+use tuidom::Color;
+use tuidom::Style;
 
 use crate::apps::migration::modals::EditPhaseModal;
 use crate::apps::migration::modals::NewEntityMappingModal;
@@ -151,6 +153,8 @@ impl MigrationEditor {
                 // Entity mapping selected -> add sibling entity mapping
                 self.add_entity_mapping_to_phase(em.phase_id, gx).await;
             }
+            // Config nodes don't support adding children
+            Some(_) => {}
         }
     }
 
@@ -170,7 +174,8 @@ impl MigrationEditor {
             Some(MigrationTreeNode::EntityMapping(em)) => {
                 self.delete_entity_mapping(em.id, cx, gx).await;
             }
-            None => {}
+            // Config nodes can't be deleted
+            Some(_) | None => {}
         }
     }
 
@@ -186,6 +191,30 @@ impl MigrationEditor {
             }
             MigrationTreeNode::EntityMapping(_em) => {
                 // TODO: Open entity mapping editor
+            }
+            MigrationTreeNode::MatchConfig { entity_mapping_id } => {
+                // TODO: Open match config editor
+                let _ = entity_mapping_id;
+            }
+            MigrationTreeNode::SourceFilter { entity_mapping_id } => {
+                // TODO: Open source filter editor
+                let _ = entity_mapping_id;
+            }
+            MigrationTreeNode::TargetFilter { entity_mapping_id } => {
+                // TODO: Open target filter editor
+                let _ = entity_mapping_id;
+            }
+            MigrationTreeNode::UnmatchedHandling { entity_mapping_id } => {
+                // TODO: Open unmatched handling editor
+                let _ = entity_mapping_id;
+            }
+            MigrationTreeNode::Passes { entity_mapping_id } => {
+                // TODO: Open passes editor
+                let _ = entity_mapping_id;
+            }
+            MigrationTreeNode::TestGuids { entity_mapping_id } => {
+                // TODO: Open test guids editor
+                let _ = entity_mapping_id;
             }
         }
     }
@@ -363,6 +392,7 @@ impl MigrationEditor {
         let new_mapping = NewEntityMapping {
             phase_id,
             order,
+            name: result.name,
             source_entity: result.source_entity,
             target_entity: result.target_entity,
             mode: Mode::Declarative,
@@ -500,6 +530,33 @@ impl MigrationEditor {
             .count()
     }
 
+    fn render_config_detail(&self, title: &str, entity_mapping_id: i64, description: &str) -> Element {
+        let em = self
+            .entity_mappings
+            .get()
+            .iter()
+            .find(|em| em.id == entity_mapping_id)
+            .cloned();
+
+        let parent_name = em.map(|e| e.name).unwrap_or_else(|| "Unknown".to_string());
+
+        Element::col()
+            .gap(1)
+            .child(Element::text(title).style(Style::new().bold().foreground(Color::var("interact"))))
+            .child(
+                Element::col()
+                    .child(
+                        Element::row()
+                            .gap(1)
+                            .child(Element::text("Parent").style(Style::new().foreground(Color::var("muted"))))
+                            .child(Element::text(&parent_name)),
+                    )
+                    .child(
+                        Element::text(description).style(Style::new().foreground(Color::var("muted"))),
+                    ),
+            )
+    }
+
     fn element(&self) -> Element {
         let focused = self.focused_node();
         let has_selection = focused.is_some();
@@ -549,6 +606,10 @@ impl MigrationEditor {
                                     text (content: "Entity Mapping") style (bold, fg: interact)
                                     column {
                                         row (gap: 1) {
+                                            text (content: "Name") style (fg: muted)
+                                            text (content: {em.name.clone()})
+                                        }
+                                        row (gap: 1) {
                                             text (content: "Source") style (fg: muted)
                                             text (content: {em.source_entity.clone()})
                                         }
@@ -560,20 +621,26 @@ impl MigrationEditor {
                                             text (content: "Mode") style (fg: muted)
                                             text (content: {if em.mode == Mode::Lua { "Lua" } else { "Declarative" }})
                                         }
-                                        row (gap: 1) {
-                                            text (content: "Match") style (fg: muted)
-                                            text (content: {if em.match_strategy == MatchStrategy::Find { "Find" } else { "Same ID" }})
-                                        }
-                                        row (gap: 1) {
-                                            text (content: "Create") style (fg: muted)
-                                            text (content: {if em.create_pass_enabled { "Yes" } else { "No" }})
-                                        }
-                                        row (gap: 1) {
-                                            text (content: "Update") style (fg: muted)
-                                            text (content: {if em.update_pass_enabled { "Yes" } else { "No" }})
-                                        }
                                     }
                                 }
+                            }
+                            Some(MigrationTreeNode::MatchConfig { entity_mapping_id }) => {
+                                { self.render_config_detail("Match Config", entity_mapping_id, "Configure how source records are matched to target records") }
+                            }
+                            Some(MigrationTreeNode::SourceFilter { entity_mapping_id }) => {
+                                { self.render_config_detail("Source Filter", entity_mapping_id, "Filter which source records to process") }
+                            }
+                            Some(MigrationTreeNode::TargetFilter { entity_mapping_id }) => {
+                                { self.render_config_detail("Target Filter", entity_mapping_id, "Filter which target records to consider for matching") }
+                            }
+                            Some(MigrationTreeNode::UnmatchedHandling { entity_mapping_id }) => {
+                                { self.render_config_detail("Unmatched Handling", entity_mapping_id, "Configure behavior for unmatched source and target records") }
+                            }
+                            Some(MigrationTreeNode::Passes { entity_mapping_id }) => {
+                                { self.render_config_detail("Passes", entity_mapping_id, "Enable or disable migration passes (create, update, delete, etc.)") }
+                            }
+                            Some(MigrationTreeNode::TestGuids { entity_mapping_id }) => {
+                                { self.render_config_detail("Test GUIDs", entity_mapping_id, "Specify record GUIDs to test the migration with") }
                             }
                         }
                     }

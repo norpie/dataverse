@@ -14,6 +14,7 @@ use super::helpers::*;
 pub struct NewEntityMapping {
     pub phase_id: i64,
     pub order: i32,
+    pub name: String,
     pub source_entity: String,
     pub target_entity: String,
     pub mode: Mode,
@@ -31,6 +32,7 @@ pub struct NewEntityMapping {
 
 /// Input for updating an entity mapping.
 pub struct UpdateEntityMapping {
+    pub name: Option<String>,
     pub source_entity: Option<String>,
     pub target_entity: Option<String>,
     pub mode: Option<Mode>,
@@ -55,7 +57,7 @@ impl super::MigrationRepository {
         self.client
             .conn(move |conn| {
                 let mut stmt = conn.prepare(
-                    "SELECT id, phase_id, \"order\", source_entity, target_entity, mode, lua_script,
+                    "SELECT id, phase_id, \"order\", name, source_entity, target_entity, mode, lua_script,
                             match_strategy, match_find_config, no_match_fallback, orphan_strategy,
                             create_pass_enabled, update_pass_enabled, source_filter, target_filter, test_guids
                      FROM entity_mappings
@@ -74,7 +76,7 @@ impl super::MigrationRepository {
         self.client
             .conn(move |conn| {
                 let mut stmt = conn.prepare(
-                    "SELECT id, phase_id, \"order\", source_entity, target_entity, mode, lua_script,
+                    "SELECT id, phase_id, \"order\", name, source_entity, target_entity, mode, lua_script,
                             match_strategy, match_find_config, no_match_fallback, orphan_strategy,
                             create_pass_enabled, update_pass_enabled, source_filter, target_filter, test_guids
                      FROM entity_mappings
@@ -116,6 +118,7 @@ impl super::MigrationRepository {
 
         let phase_id = mapping.phase_id;
         let order = mapping.order;
+        let name = mapping.name.clone();
         let source_entity = mapping.source_entity.clone();
         let target_entity = mapping.target_entity.clone();
         let lua_script = mapping.lua_script.clone();
@@ -127,13 +130,14 @@ impl super::MigrationRepository {
             .conn(move |conn| {
                 conn.execute(
                     "INSERT INTO entity_mappings (
-                        phase_id, \"order\", source_entity, target_entity, mode, lua_script,
+                        phase_id, \"order\", name, source_entity, target_entity, mode, lua_script,
                         match_strategy, match_find_config, no_match_fallback, orphan_strategy,
                         create_pass_enabled, update_pass_enabled, source_filter, target_filter, test_guids
-                    ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
+                    ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)",
                     params![
                         phase_id,
                         order,
+                        name,
                         source_entity,
                         target_entity,
                         mode_str,
@@ -202,6 +206,10 @@ impl super::MigrationRepository {
                 let mut updates = Vec::new();
                 let mut param_vals: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
 
+                if let Some(name) = update.name {
+                    updates.push("name = ?");
+                    param_vals.push(Box::new(name));
+                }
                 if let Some(source_entity) = update.source_entity {
                     updates.push("source_entity = ?");
                     param_vals.push(Box::new(source_entity));

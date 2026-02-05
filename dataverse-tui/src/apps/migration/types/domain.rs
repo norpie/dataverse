@@ -64,6 +64,7 @@ pub struct EntityMapping {
     pub id: i64,
     pub phase_id: i64,
     pub order: i32,
+    pub name: String,
     pub source_entity: String,
     pub target_entity: String,
     pub mode: Mode,
