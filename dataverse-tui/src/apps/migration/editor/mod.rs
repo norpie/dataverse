@@ -13,11 +13,12 @@ use tuidom::Color;
 use tuidom::Style;
 
 use crate::apps::migration::modals::EditPhaseModal;
-use crate::apps::migration::modals::NewEntityMappingModal;
+use crate::apps::migration::modals::EditEntityMappingModal;
 use crate::apps::migration::modals::NewPhaseModal;
 use crate::apps::migration::repository::MigrationRepository;
 use crate::apps::migration::repository::NewEntityMapping;
 use crate::apps::migration::repository::NewPhase;
+use crate::apps::migration::repository::UpdateEntityMapping;
 use crate::apps::migration::repository::UpdatePhase;
 use crate::apps::migration::types::EntityMapping;
 use crate::apps::migration::types::MatchStrategy;
@@ -189,8 +190,8 @@ impl MigrationEditor {
             MigrationTreeNode::Phase(phase) => {
                 self.edit_phase(&phase, gx).await;
             }
-            MigrationTreeNode::EntityMapping(_em) => {
-                // TODO: Open entity mapping editor
+            MigrationTreeNode::EntityMapping(em) => {
+                self.edit_entity_mapping(&em, gx).await;
             }
             MigrationTreeNode::MatchConfig { entity_mapping_id } => {
                 // TODO: Open match config editor
@@ -242,6 +243,96 @@ impl MigrationEditor {
             Err(e) => {
                 log::error!("Failed to update phase: {}", e);
                 gx.toast(Toast::error("Failed to update phase"));
+            }
+        }
+    }
+
+    async fn edit_entity_mapping(&self, em: &EntityMapping, gx: &GlobalContext) {
+        // Fetch entity lists from both environments in parallel
+        let source_client = self.source_client.get();
+        let target_client = self.target_client.get();
+
+        let (source_result, target_result) = parallel_load!(gx, {
+            "Loading source entities" => async move {
+                source_client
+                    .metadata()
+                    .all_entities()
+                    .await
+                    .map(|entities| {
+                        entities.into_iter().map(|e| e.logical_name).collect::<Vec<_>>()
+                    })
+            },
+            "Loading target entities" => async move {
+                target_client
+                    .metadata()
+                    .all_entities()
+                    .await
+                    .map(|entities| {
+                        entities.into_iter().map(|e| e.logical_name).collect::<Vec<_>>()
+                    })
+            },
+        });
+
+        let source_entities = match source_result {
+            Some(Ok(entities)) => entities,
+            Some(Err(e)) => {
+                log::error!("Failed to fetch source entities: {}", e);
+                gx.toast(Toast::error("Failed to fetch source entities"));
+                return;
+            }
+            None => {
+                return;
+            }
+        };
+
+        let target_entities = match target_result {
+            Some(Ok(entities)) => entities,
+            Some(Err(e)) => {
+                log::error!("Failed to fetch target entities: {}", e);
+                gx.toast(Toast::error("Failed to fetch target entities"));
+                return;
+            }
+            None => {
+                return;
+            }
+        };
+
+        let Some(result) = gx
+            .modal(EditEntityMappingModal::edit_mapping(
+                em,
+                source_entities,
+                target_entities,
+            ))
+            .await
+        else {
+            return;
+        };
+
+        let repo = gx.data::<MigrationRepository>();
+        let update = UpdateEntityMapping {
+            name: Some(result.name),
+            source_entity: Some(result.source_entity),
+            target_entity: Some(result.target_entity),
+            mode: Some(result.mode),
+            lua_script: result.lua_script,
+            match_strategy: None,
+            match_find_config: None,
+            no_match_fallback: None,
+            orphan_strategy: None,
+            create_pass_enabled: None,
+            update_pass_enabled: None,
+            source_filter: None,
+            target_filter: None,
+            test_guids: None,
+        };
+
+        match repo.update_entity_mapping(em.id, update).await {
+            Ok(()) => {
+                self.refresh_data(gx).await;
+            }
+            Err(e) => {
+                log::error!("Failed to update entity mapping: {}", e);
+                gx.toast(Toast::error("Failed to update entity mapping"));
             }
         }
     }
@@ -371,7 +462,7 @@ impl MigrationEditor {
 
         // Show modal
         let Some(result) = gx
-            .modal(NewEntityMappingModal::with_entities(
+            .modal(EditEntityMappingModal::new_mapping(
                 source_entities,
                 target_entities,
             ))
@@ -389,14 +480,20 @@ impl MigrationEditor {
             .filter(|em| em.phase_id == phase_id)
             .count() as i32;
 
+        let lua_script = match result.lua_script {
+            crate::apps::migration::repository::Update::Keep => None,
+            crate::apps::migration::repository::Update::Set(s) => Some(s),
+            crate::apps::migration::repository::Update::Clear => None,
+        };
+
         let new_mapping = NewEntityMapping {
             phase_id,
             order,
             name: result.name,
             source_entity: result.source_entity,
             target_entity: result.target_entity,
-            mode: Mode::Declarative,
-            lua_script: None,
+            mode: result.mode,
+            lua_script,
             match_strategy: MatchStrategy::SameId,
             match_find_config: None,
             no_match_fallback: NoMatchFallback::Error,
