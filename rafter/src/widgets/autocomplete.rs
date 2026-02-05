@@ -780,8 +780,8 @@ impl<'a, T: Clone + Eq + Hash + PartialEq + Send + Sync + 'static> Autocomplete<
                 .id(&dropdown_id)
                 .position(Position::Absolute)
                 .top(1)
-                .left(-1)
-                .padding(tuidom::Edges::left(1))
+                .left(0)
+                .padding(Edges::symmetric(0, 1))
                 .z_index(2)
                 .interaction_scope(true)
                 .style(Style::new().background(Color::var("autocomplete.dropdown_bg")));
