@@ -6,8 +6,10 @@ use std::path::Path;
 use thiserror::Error;
 
 // Re-export input types
+pub use coalesce_chain::NewCoalesceChain;
 pub use entity_mapping::{NewEntityMapping, UpdateEntityMapping};
 pub use field_mapping::{NewFieldMapping, UpdateFieldMapping};
+pub use find_condition::{NewFindCondition, UpdateFindCondition};
 pub use migration::{NewMigration, UpdateMigration};
 pub use phase::{NewPhase, UpdatePhase};
 pub use phase_run::NewPhaseRun;
@@ -26,8 +28,10 @@ pub enum Update<T> {
 }
 
 // Internal modules
+mod coalesce_chain;
 mod entity_mapping;
 mod field_mapping;
+mod find_condition;
 mod helpers;
 mod migration;
 mod phase;

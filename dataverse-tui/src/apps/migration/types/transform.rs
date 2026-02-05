@@ -57,19 +57,10 @@ pub enum TransformData {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum FindMode {
     /// Declarative where-clause.
-    Where { conditions: Vec<FindCondition> },
+    /// Conditions are stored in the find_conditions table, not inline.
+    Where,
     /// Lua script for complex matching.
     Lua { script: String },
-}
-
-/// A single condition in a find where-clause.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct FindCondition {
-    /// Target field path (left side).
-    pub target_field: String,
-    /// Transform chain producing the value to match (right side).
-    /// Stored as serialized chain IDs that will be loaded separately.
-    pub source_transform_chain_id: Option<i64>,
 }
 
 /// Fallback behavior when find() doesn't match.

@@ -69,6 +69,10 @@ pub enum ParentType {
     MatchBranch,
     /// Transform belongs to a guard fallback.
     GuardFallback,
+    /// Transform belongs to a coalesce chain (one of multiple fallback chains).
+    CoalesceChain,
+    /// Transform belongs to a find condition (where-clause mode).
+    FindCondition,
 }
 
 /// String operation type.
@@ -223,6 +227,8 @@ impl ParentType {
             ParentType::Variable => "variable",
             ParentType::MatchBranch => "match_branch",
             ParentType::GuardFallback => "guard_fallback",
+            ParentType::CoalesceChain => "coalesce_chain",
+            ParentType::FindCondition => "find_condition",
         }
     }
 
@@ -232,6 +238,8 @@ impl ParentType {
             "variable" => Some(ParentType::Variable),
             "match_branch" => Some(ParentType::MatchBranch),
             "guard_fallback" => Some(ParentType::GuardFallback),
+            "coalesce_chain" => Some(ParentType::CoalesceChain),
+            "find_condition" => Some(ParentType::FindCondition),
             _ => None,
         }
     }

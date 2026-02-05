@@ -148,6 +148,31 @@ pub struct MatchBranch {
 }
 
 // =============================================================================
+// Coalesce Chain
+// =============================================================================
+
+/// A fallback chain within a coalesce transform.
+#[derive(Debug, Clone)]
+pub struct CoalesceChain {
+    pub id: i64,
+    pub transform_id: i64,
+    pub order: i32,
+}
+
+// =============================================================================
+// Find Condition
+// =============================================================================
+
+/// A condition within a find transform (where-clause mode).
+#[derive(Debug, Clone)]
+pub struct FindCondition {
+    pub id: i64,
+    pub transform_id: i64,
+    pub target_field: String,
+    pub order: i32,
+}
+
+// =============================================================================
 // Phase Run
 // =============================================================================
 
