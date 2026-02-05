@@ -1,8 +1,8 @@
 //! Detail panel rendering functions for the migration editor.
 
-use tuidom::Color;
+use rafter::element;
+use rafter::widgets::Text;
 use tuidom::Element;
-use tuidom::Style;
 
 use crate::apps::migration::types::CoalesceChain;
 use crate::apps::migration::types::FieldMapping;
@@ -31,28 +31,21 @@ impl MigrationEditor {
             .cloned();
 
         let parent_name = em.map(|e| e.name).unwrap_or_else(|| "Unknown".to_string());
+        let title = title.to_string();
+        let description = description.to_string();
 
-        Element::col()
-            .gap(1)
-            .child(
-                Element::text(title).style(Style::new().bold().foreground(Color::var("interact"))),
-            )
-            .child(
-                Element::col()
-                    .child(
-                        Element::row()
-                            .gap(1)
-                            .child(
-                                Element::text("Parent")
-                                    .style(Style::new().foreground(Color::var("muted"))),
-                            )
-                            .child(Element::text(&parent_name)),
-                    )
-                    .child(
-                        Element::text(description)
-                            .style(Style::new().foreground(Color::var("muted"))),
-                    ),
-            )
+        element! {
+            column (gap: 1) {
+                text (content: {title}) style (bold, fg: interact)
+                column {
+                    row (gap: 1) {
+                        text (content: "Parent") style (fg: muted)
+                        text (content: {parent_name})
+                    }
+                    text (content: {description}) style (fg: muted)
+                }
+            }
+        }
     }
 
     /// Render the Variables section detail view.
@@ -72,38 +65,24 @@ impl MigrationEditor {
             .iter()
             .filter(|v| v.entity_mapping_id == entity_mapping_id)
             .count();
+        let var_count_str = format!("{}", var_count);
 
-        Element::col()
-            .gap(1)
-            .child(
-                Element::text("Variables")
-                    .style(Style::new().bold().foreground(Color::var("interact"))),
-            )
-            .child(
-                Element::col()
-                    .child(
-                        Element::row()
-                            .gap(1)
-                            .child(
-                                Element::text("Parent")
-                                    .style(Style::new().foreground(Color::var("muted"))),
-                            )
-                            .child(Element::text(&parent_name)),
-                    )
-                    .child(
-                        Element::row()
-                            .gap(1)
-                            .child(
-                                Element::text("Count")
-                                    .style(Style::new().foreground(Color::var("muted"))),
-                            )
-                            .child(Element::text(format!("{}", var_count))),
-                    )
-                    .child(
-                        Element::text("Computed values available in field mapping transforms")
-                            .style(Style::new().foreground(Color::var("muted"))),
-                    ),
-            )
+        element! {
+            column (gap: 1) {
+                text (content: "Variables") style (bold, fg: interact)
+                column {
+                    row (gap: 1) {
+                        text (content: "Parent") style (fg: muted)
+                        text (content: {parent_name})
+                    }
+                    row (gap: 1) {
+                        text (content: "Count") style (fg: muted)
+                        text (content: {var_count_str})
+                    }
+                    text (content: "Computed values available in field mapping transforms") style (fg: muted)
+                }
+            }
+        }
     }
 
     /// Render a single Variable detail view.
@@ -116,38 +95,24 @@ impl MigrationEditor {
             .cloned();
 
         let parent_name = em.map(|e| e.name).unwrap_or_else(|| "Unknown".to_string());
+        let var_name = format!("${}", variable.name);
 
-        Element::col()
-            .gap(1)
-            .child(
-                Element::text("Variable")
-                    .style(Style::new().bold().foreground(Color::var("interact"))),
-            )
-            .child(
-                Element::col()
-                    .child(
-                        Element::row()
-                            .gap(1)
-                            .child(
-                                Element::text("Name")
-                                    .style(Style::new().foreground(Color::var("muted"))),
-                            )
-                            .child(Element::text(format!("${}", variable.name))),
-                    )
-                    .child(
-                        Element::row()
-                            .gap(1)
-                            .child(
-                                Element::text("Parent")
-                                    .style(Style::new().foreground(Color::var("muted"))),
-                            )
-                            .child(Element::text(&parent_name)),
-                    )
-                    .child(
-                        Element::text("Press Enter to edit transform chain")
-                            .style(Style::new().foreground(Color::var("muted"))),
-                    ),
-            )
+        element! {
+            column (gap: 1) {
+                text (content: "Variable") style (bold, fg: interact)
+                column {
+                    row (gap: 1) {
+                        text (content: "Name") style (fg: muted)
+                        text (content: {var_name})
+                    }
+                    row (gap: 1) {
+                        text (content: "Parent") style (fg: muted)
+                        text (content: {parent_name})
+                    }
+                    text (content: "Press Enter to edit transform chain") style (fg: muted)
+                }
+            }
+        }
     }
 
     /// Render the Field Mappings section detail view.
@@ -167,38 +132,24 @@ impl MigrationEditor {
             .iter()
             .filter(|fm| fm.entity_mapping_id == entity_mapping_id)
             .count();
+        let fm_count_str = format!("{}", fm_count);
 
-        Element::col()
-            .gap(1)
-            .child(
-                Element::text("Field Mappings")
-                    .style(Style::new().bold().foreground(Color::var("interact"))),
-            )
-            .child(
-                Element::col()
-                    .child(
-                        Element::row()
-                            .gap(1)
-                            .child(
-                                Element::text("Parent")
-                                    .style(Style::new().foreground(Color::var("muted"))),
-                            )
-                            .child(Element::text(&parent_name)),
-                    )
-                    .child(
-                        Element::row()
-                            .gap(1)
-                            .child(
-                                Element::text("Count")
-                                    .style(Style::new().foreground(Color::var("muted"))),
-                            )
-                            .child(Element::text(format!("{}", fm_count))),
-                    )
-                    .child(
-                        Element::text("Mappings from source fields to target fields")
-                            .style(Style::new().foreground(Color::var("muted"))),
-                    ),
-            )
+        element! {
+            column (gap: 1) {
+                text (content: "Field Mappings") style (bold, fg: interact)
+                column {
+                    row (gap: 1) {
+                        text (content: "Parent") style (fg: muted)
+                        text (content: {parent_name})
+                    }
+                    row (gap: 1) {
+                        text (content: "Count") style (fg: muted)
+                        text (content: {fm_count_str})
+                    }
+                    text (content: "Mappings from source fields to target fields") style (fg: muted)
+                }
+            }
+        }
     }
 
     /// Render a single Field Mapping detail view.
@@ -211,38 +162,24 @@ impl MigrationEditor {
             .cloned();
 
         let parent_name = em.map(|e| e.name).unwrap_or_else(|| "Unknown".to_string());
+        let target_field = field_mapping.target_field.clone();
 
-        Element::col()
-            .gap(1)
-            .child(
-                Element::text("Field Mapping")
-                    .style(Style::new().bold().foreground(Color::var("interact"))),
-            )
-            .child(
-                Element::col()
-                    .child(
-                        Element::row()
-                            .gap(1)
-                            .child(
-                                Element::text("Target Field")
-                                    .style(Style::new().foreground(Color::var("muted"))),
-                            )
-                            .child(Element::text(&field_mapping.target_field)),
-                    )
-                    .child(
-                        Element::row()
-                            .gap(1)
-                            .child(
-                                Element::text("Parent")
-                                    .style(Style::new().foreground(Color::var("muted"))),
-                            )
-                            .child(Element::text(&parent_name)),
-                    )
-                    .child(
-                        Element::text("Press Enter to edit transform chain")
-                            .style(Style::new().foreground(Color::var("muted"))),
-                    ),
-            )
+        element! {
+            column (gap: 1) {
+                text (content: "Field Mapping") style (bold, fg: interact)
+                column {
+                    row (gap: 1) {
+                        text (content: "Target Field") style (fg: muted)
+                        text (content: {target_field})
+                    }
+                    row (gap: 1) {
+                        text (content: "Parent") style (fg: muted)
+                        text (content: {parent_name})
+                    }
+                    text (content: "Press Enter to edit transform chain") style (fg: muted)
+                }
+            }
+        }
     }
 
     /// Render a Transform detail view.
@@ -256,47 +193,28 @@ impl MigrationEditor {
             ParentType::CoalesceChain => "Coalesce Chain",
             ParentType::FindCondition => "Find Condition",
         };
+        let order_str = format!("{}", transform.order + 1);
 
-        Element::col()
-            .gap(1)
-            .child(
-                Element::text("Transform")
-                    .style(Style::new().bold().foreground(Color::var("interact"))),
-            )
-            .child(
-                Element::col()
-                    .child(
-                        Element::row()
-                            .gap(1)
-                            .child(
-                                Element::text("Type")
-                                    .style(Style::new().foreground(Color::var("muted"))),
-                            )
-                            .child(Element::text(&display_text)),
-                    )
-                    .child(
-                        Element::row()
-                            .gap(1)
-                            .child(
-                                Element::text("Order")
-                                    .style(Style::new().foreground(Color::var("muted"))),
-                            )
-                            .child(Element::text(format!("{}", transform.order + 1))),
-                    )
-                    .child(
-                        Element::row()
-                            .gap(1)
-                            .child(
-                                Element::text("Parent")
-                                    .style(Style::new().foreground(Color::var("muted"))),
-                            )
-                            .child(Element::text(parent_desc)),
-                    )
-                    .child(
-                        Element::text("Press Enter to edit transform parameters")
-                            .style(Style::new().foreground(Color::var("muted"))),
-                    ),
-            )
+        element! {
+            column (gap: 1) {
+                text (content: "Transform") style (bold, fg: interact)
+                column {
+                    row (gap: 1) {
+                        text (content: "Type") style (fg: muted)
+                        text (content: {display_text})
+                    }
+                    row (gap: 1) {
+                        text (content: "Order") style (fg: muted)
+                        text (content: {order_str})
+                    }
+                    row (gap: 1) {
+                        text (content: "Parent") style (fg: muted)
+                        text (content: {parent_desc})
+                    }
+                    text (content: "Press Enter to edit transform parameters") style (fg: muted)
+                }
+            }
+        }
     }
 
     /// Render a Match Branch detail view.
@@ -306,99 +224,65 @@ impl MigrationEditor {
         } else {
             format!("Branch {}", branch.order + 1)
         };
+        let is_default_str = if branch.is_default { "Yes" } else { "No" };
 
-        Element::col()
-            .gap(1)
-            .child(
-                Element::text("Match Branch")
-                    .style(Style::new().bold().foreground(Color::var("interact"))),
-            )
-            .child(
-                Element::col()
-                    .child(
-                        Element::row()
-                            .gap(1)
-                            .child(
-                                Element::text("Branch")
-                                    .style(Style::new().foreground(Color::var("muted"))),
-                            )
-                            .child(Element::text(&branch_label)),
-                    )
-                    .child(
-                        Element::row()
-                            .gap(1)
-                            .child(
-                                Element::text("Default")
-                                    .style(Style::new().foreground(Color::var("muted"))),
-                            )
-                            .child(Element::text(if branch.is_default { "Yes" } else { "No" })),
-                    )
-                    .child(
-                        Element::text("Press Enter to edit branch condition")
-                            .style(Style::new().foreground(Color::var("muted"))),
-                    ),
-            )
+        element! {
+            column (gap: 1) {
+                text (content: "Match Branch") style (bold, fg: interact)
+                column {
+                    row (gap: 1) {
+                        text (content: "Branch") style (fg: muted)
+                        text (content: {branch_label})
+                    }
+                    row (gap: 1) {
+                        text (content: "Default") style (fg: muted)
+                        text (content: {is_default_str})
+                    }
+                    text (content: "Press Enter to edit branch condition") style (fg: muted)
+                }
+            }
+        }
     }
 
     /// Render a Coalesce Chain detail view.
     pub(super) fn render_coalesce_chain_detail(&self, chain: &CoalesceChain) -> Element {
-        Element::col()
-            .gap(1)
-            .child(
-                Element::text("Coalesce Fallback")
-                    .style(Style::new().bold().foreground(Color::var("interact"))),
-            )
-            .child(
-                Element::col()
-                    .child(
-                        Element::row()
-                            .gap(1)
-                            .child(
-                                Element::text("Fallback")
-                                    .style(Style::new().foreground(Color::var("muted"))),
-                            )
-                            .child(Element::text(format!("{}", chain.order + 1))),
-                    )
-                    .child(
-                        Element::text("Add transforms to this fallback chain")
-                            .style(Style::new().foreground(Color::var("muted"))),
-                    ),
-            )
+        let fallback_str = format!("{}", chain.order + 1);
+
+        element! {
+            column (gap: 1) {
+                text (content: "Coalesce Fallback") style (bold, fg: interact)
+                column {
+                    row (gap: 1) {
+                        text (content: "Fallback") style (fg: muted)
+                        text (content: {fallback_str})
+                    }
+                    text (content: "Add transforms to this fallback chain") style (fg: muted)
+                }
+            }
+        }
     }
 
     /// Render a Find Condition detail view.
     pub(super) fn render_find_condition_detail(&self, condition: &FindCondition) -> Element {
-        Element::col()
-            .gap(1)
-            .child(
-                Element::text("Find Condition")
-                    .style(Style::new().bold().foreground(Color::var("interact"))),
-            )
-            .child(
-                Element::col()
-                    .child(
-                        Element::row()
-                            .gap(1)
-                            .child(
-                                Element::text("Target Field")
-                                    .style(Style::new().foreground(Color::var("muted"))),
-                            )
-                            .child(Element::text(&condition.target_field)),
-                    )
-                    .child(
-                        Element::row()
-                            .gap(1)
-                            .child(
-                                Element::text("Order")
-                                    .style(Style::new().foreground(Color::var("muted"))),
-                            )
-                            .child(Element::text(format!("{}", condition.order + 1))),
-                    )
-                    .child(
-                        Element::text("Press Enter to edit target field, add transforms to define the match value")
-                            .style(Style::new().foreground(Color::var("muted"))),
-                    ),
-            )
+        let target_field = condition.target_field.clone();
+        let order_str = format!("{}", condition.order + 1);
+
+        element! {
+            column (gap: 1) {
+                text (content: "Find Condition") style (bold, fg: interact)
+                column {
+                    row (gap: 1) {
+                        text (content: "Target Field") style (fg: muted)
+                        text (content: {target_field})
+                    }
+                    row (gap: 1) {
+                        text (content: "Order") style (fg: muted)
+                        text (content: {order_str})
+                    }
+                    text (content: "Press Enter to edit target field, add transforms to define the match value") style (fg: muted)
+                }
+            }
+        }
     }
 
     /// Render a Chain wrapper detail view.
@@ -411,27 +295,17 @@ impl MigrationEditor {
             _ => "Parent",
         };
 
-        Element::col()
-            .gap(1)
-            .child(
-                Element::text("Transform Chain")
-                    .style(Style::new().bold().foreground(Color::var("interact"))),
-            )
-            .child(
-                Element::col()
-                    .child(
-                        Element::row()
-                            .gap(1)
-                            .child(
-                                Element::text("Parent")
-                                    .style(Style::new().foreground(Color::var("muted"))),
-                            )
-                            .child(Element::text(parent_desc)),
-                    )
-                    .child(
-                        Element::text("Multi-transform chain within a nested scope")
-                            .style(Style::new().foreground(Color::var("muted"))),
-                    ),
-            )
+        element! {
+            column (gap: 1) {
+                text (content: "Transform Chain") style (bold, fg: interact)
+                column {
+                    row (gap: 1) {
+                        text (content: "Parent") style (fg: muted)
+                        text (content: {parent_desc})
+                    }
+                    text (content: "Multi-transform chain within a nested scope") style (fg: muted)
+                }
+            }
+        }
     }
 }
