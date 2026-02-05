@@ -1,0 +1,556 @@
+//! Path expression parsing and validation for transforms.
+//!
+//! Supports three types of paths:
+//! - Field paths: `name`, `parentaccountid.name`, `ownerid[systemuser].fullname`
+//! - Variables: `$my_var`
+//! - System variables: `#value`, `#type`, `#index`
+
+use dataverse_lib::model::metadata::AttributeType;
+use dataverse_lib::DataverseClient;
+
+use crate::apps::migration::types::SystemVar;
+
+// =============================================================================
+// Path AST
+// =============================================================================
+
+/// A parsed path expression.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PathExpr {
+    /// Field path: `name`, `parentaccountid.name`, `ownerid[systemuser].fullname`
+    Field(FieldPath),
+    /// Variable reference: `$my_var`
+    Variable(String),
+    /// System variable: `#value`, `#type`, `#index`
+    SystemVar(SystemVar),
+}
+
+/// A field path with dot-separated segments.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FieldPath {
+    pub segments: Vec<FieldSegment>,
+}
+
+/// A single segment in a field path.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FieldSegment {
+    /// The field name (e.g., "parentcustomerid").
+    pub field: String,
+    /// For polymorphic lookups, the target entity (e.g., "account").
+    pub target: Option<String>,
+    /// Whether this segment allows null propagation (`?` suffix).
+    pub optional: bool,
+}
+
+// =============================================================================
+// Parse Errors
+// =============================================================================
+
+/// Error from parsing a path expression.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ParseError {
+    /// Empty path.
+    Empty,
+    /// Invalid variable name (empty after `$`).
+    EmptyVariable,
+    /// Invalid system variable name (empty after `#`).
+    EmptySystemVar,
+    /// Unknown system variable.
+    UnknownSystemVar(String),
+    /// Empty field name in path.
+    EmptyFieldName,
+    /// Unclosed bracket in polymorphic target.
+    UnclosedBracket,
+    /// Empty target in brackets.
+    EmptyTarget,
+}
+
+impl std::fmt::Display for ParseError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ParseError::Empty => write!(f, "Path cannot be empty"),
+            ParseError::EmptyVariable => write!(f, "Variable name cannot be empty"),
+            ParseError::EmptySystemVar => write!(f, "System variable name cannot be empty"),
+            ParseError::UnknownSystemVar(name) => {
+                write!(f, "Unknown system variable '#{}'", name)
+            }
+            ParseError::EmptyFieldName => write!(f, "Field name cannot be empty"),
+            ParseError::UnclosedBracket => write!(f, "Unclosed bracket in target specifier"),
+            ParseError::EmptyTarget => write!(f, "Target entity in brackets cannot be empty"),
+        }
+    }
+}
+
+impl std::error::Error for ParseError {}
+
+// =============================================================================
+// Parser
+// =============================================================================
+
+/// Parse a path string into a PathExpr.
+///
+/// # Examples
+///
+/// ```ignore
+/// parse_path("name")                         // Field path, single segment
+/// parse_path("parentaccountid.name")         // Field path, lookup navigation
+/// parse_path("ownerid[systemuser].fullname") // Field path, polymorphic lookup
+/// parse_path("lookup?.field")                // Field path, optional lookup
+/// parse_path("$my_var")                      // Variable
+/// parse_path("#value")                       // System variable
+/// ```
+pub fn parse_path(input: &str) -> Result<PathExpr, ParseError> {
+    let input = input.trim();
+
+    if input.is_empty() {
+        return Err(ParseError::Empty);
+    }
+
+    // Variable: $name
+    if let Some(rest) = input.strip_prefix('$') {
+        let name = rest.trim();
+        if name.is_empty() {
+            return Err(ParseError::EmptyVariable);
+        }
+        return Ok(PathExpr::Variable(name.to_string()));
+    }
+
+    // System variable: #name
+    if let Some(rest) = input.strip_prefix('#') {
+        let name = rest.trim();
+        if name.is_empty() {
+            return Err(ParseError::EmptySystemVar);
+        }
+        let sys_var = parse_system_var(name)?;
+        return Ok(PathExpr::SystemVar(sys_var));
+    }
+
+    // Field path: field.field.field
+    let segments = parse_field_path(input)?;
+    Ok(PathExpr::Field(FieldPath { segments }))
+}
+
+/// Parse a system variable name.
+fn parse_system_var(name: &str) -> Result<SystemVar, ParseError> {
+    match name.to_lowercase().as_str() {
+        "value" => Ok(SystemVar::Value),
+        "type" => Ok(SystemVar::Type),
+        "index" => Ok(SystemVar::Index),
+        "source_entity" | "sourceentity" => Ok(SystemVar::SourceEntity),
+        "target_entity" | "targetentity" => Ok(SystemVar::TargetEntity),
+        _ => Err(ParseError::UnknownSystemVar(name.to_string())),
+    }
+}
+
+/// Parse a dot-separated field path.
+fn parse_field_path(input: &str) -> Result<Vec<FieldSegment>, ParseError> {
+    let mut segments = Vec::new();
+
+    for part in input.split('.') {
+        let segment = parse_field_segment(part)?;
+        segments.push(segment);
+    }
+
+    if segments.is_empty() {
+        return Err(ParseError::EmptyFieldName);
+    }
+
+    Ok(segments)
+}
+
+/// Parse a single field segment.
+///
+/// Formats:
+/// - `field` - simple field
+/// - `field?` - optional field
+/// - `field[target]` - polymorphic with target
+/// - `field[target]?` - polymorphic with target, optional
+fn parse_field_segment(input: &str) -> Result<FieldSegment, ParseError> {
+    let input = input.trim();
+
+    if input.is_empty() {
+        return Err(ParseError::EmptyFieldName);
+    }
+
+    // Check for optional suffix
+    let (input, optional) = if let Some(rest) = input.strip_suffix('?') {
+        (rest, true)
+    } else {
+        (input, false)
+    };
+
+    // Check for bracket target
+    if let Some(bracket_start) = input.find('[') {
+        let field = &input[..bracket_start];
+        if field.is_empty() {
+            return Err(ParseError::EmptyFieldName);
+        }
+
+        let rest = &input[bracket_start + 1..];
+        let bracket_end = rest.find(']').ok_or(ParseError::UnclosedBracket)?;
+        let target = &rest[..bracket_end];
+
+        if target.is_empty() {
+            return Err(ParseError::EmptyTarget);
+        }
+
+        Ok(FieldSegment {
+            field: field.to_string(),
+            target: Some(target.to_string()),
+            optional,
+        })
+    } else {
+        Ok(FieldSegment {
+            field: input.to_string(),
+            target: None,
+            optional,
+        })
+    }
+}
+
+// =============================================================================
+// Validation
+// =============================================================================
+
+/// Context for path validation.
+pub struct ValidationContext {
+    /// The source entity logical name.
+    pub source_entity: String,
+    /// Available variable names (without `$` prefix).
+    pub variables: Vec<String>,
+}
+
+/// Result of path validation.
+#[derive(Debug, Clone)]
+pub enum ValidationResult {
+    /// Path is valid.
+    Valid(ValidPath),
+    /// Path is invalid.
+    Invalid(String),
+    /// Validation is in progress.
+    Loading,
+}
+
+/// Information about a valid path.
+#[derive(Debug, Clone)]
+pub struct ValidPath {
+    /// Human-readable description of the path.
+    /// e.g., "contact → parentcustomerid (account) → name (String)"
+    pub description: String,
+    /// The final value type, if known.
+    pub value_type: Option<AttributeType>,
+}
+
+/// Validator for path expressions.
+pub struct PathValidator {
+    client: DataverseClient,
+}
+
+impl PathValidator {
+    /// Create a new path validator.
+    pub fn new(client: DataverseClient) -> Self {
+        Self { client }
+    }
+
+    /// Validate a path expression.
+    pub async fn validate(&self, path: &str, ctx: &ValidationContext) -> ValidationResult {
+        // Parse the path
+        let parsed = match parse_path(path) {
+            Ok(p) => p,
+            Err(e) => return ValidationResult::Invalid(e.to_string()),
+        };
+
+        match parsed {
+            PathExpr::Variable(name) => self.validate_variable(&name, ctx),
+            PathExpr::SystemVar(var) => self.validate_system_var(var),
+            PathExpr::Field(field_path) => self.validate_field_path(&field_path, ctx).await,
+        }
+    }
+
+    /// Validate a variable reference.
+    fn validate_variable(&self, name: &str, ctx: &ValidationContext) -> ValidationResult {
+        if ctx.variables.iter().any(|v| v == name) {
+            ValidationResult::Valid(ValidPath {
+                description: format!("Variable: ${}", name),
+                value_type: None, // Variables don't have a known type at validation time
+            })
+        } else {
+            ValidationResult::Invalid(format!("Variable '{}' is not defined", name))
+        }
+    }
+
+    /// Validate a system variable.
+    fn validate_system_var(&self, var: SystemVar) -> ValidationResult {
+        let description = match var {
+            SystemVar::Value => "System: #value (current pipeline value)",
+            SystemVar::Type => "System: #type (value type)",
+            SystemVar::Index => "System: #index (record index)",
+            SystemVar::SourceEntity => "System: #source_entity",
+            SystemVar::TargetEntity => "System: #target_entity",
+        };
+        ValidationResult::Valid(ValidPath {
+            description: description.to_string(),
+            value_type: None,
+        })
+    }
+
+    /// Validate a field path.
+    async fn validate_field_path(
+        &self,
+        field_path: &FieldPath,
+        ctx: &ValidationContext,
+    ) -> ValidationResult {
+        let mut current_entity = ctx.source_entity.clone();
+        let mut path_parts: Vec<String> = vec![current_entity.clone()];
+
+        for (i, segment) in field_path.segments.iter().enumerate() {
+            let is_last = i == field_path.segments.len() - 1;
+
+            // Fetch entity metadata
+            let metadata = match self.client.metadata().entity(current_entity.as_str()).await {
+                Ok(m) => m,
+                Err(e) => {
+                    return ValidationResult::Invalid(format!(
+                        "Failed to fetch metadata for '{}': {}",
+                        current_entity, e
+                    ));
+                }
+            };
+
+            // Find the attribute
+            let attr = match metadata.attribute(&segment.field) {
+                Some(a) => a,
+                None => {
+                    return ValidationResult::Invalid(format!(
+                        "Field '{}' not found on entity '{}'",
+                        segment.field, current_entity
+                    ));
+                }
+            };
+
+            if is_last {
+                // Last segment - this is the leaf field
+                let type_str = format!("{:?}", attr.attribute_type);
+                path_parts.push(format!("{} ({})", segment.field, type_str));
+
+                return ValidationResult::Valid(ValidPath {
+                    description: path_parts.join(" → "),
+                    value_type: Some(attr.attribute_type),
+                });
+            } else {
+                // Not the last segment - must be a lookup
+                if !is_lookup_type(attr.attribute_type) {
+                    return ValidationResult::Invalid(format!(
+                        "Field '{}' on '{}' is not a lookup (type: {:?})",
+                        segment.field, current_entity, attr.attribute_type
+                    ));
+                }
+
+                let targets = &attr.targets;
+                if targets.is_empty() {
+                    return ValidationResult::Invalid(format!(
+                        "Lookup '{}' has no target entities defined",
+                        segment.field
+                    ));
+                }
+
+                // Determine the target entity
+                let target_entity = if targets.len() > 1 {
+                    // Polymorphic lookup - need target specifier
+                    match &segment.target {
+                        Some(specified) => {
+                            if targets.contains(specified) {
+                                specified.clone()
+                            } else {
+                                return ValidationResult::Invalid(format!(
+                                    "'{}' is not a valid target for '{}'. Valid targets: {}",
+                                    specified,
+                                    segment.field,
+                                    targets.join(", ")
+                                ));
+                            }
+                        }
+                        None => {
+                            return ValidationResult::Invalid(format!(
+                                "Lookup '{}' is polymorphic. Specify target with [{}]",
+                                segment.field,
+                                targets.join("|")
+                            ));
+                        }
+                    }
+                } else {
+                    // Single target
+                    targets[0].clone()
+                };
+
+                path_parts.push(format!("{} ({})", segment.field, target_entity));
+                current_entity = target_entity;
+            }
+        }
+
+        // Should not reach here, but just in case
+        ValidationResult::Invalid("Empty field path".to_string())
+    }
+}
+
+/// Check if an attribute type is a lookup type.
+fn is_lookup_type(attr_type: AttributeType) -> bool {
+    matches!(
+        attr_type,
+        AttributeType::Lookup | AttributeType::Customer | AttributeType::Owner
+    )
+}
+
+// =============================================================================
+// Tests
+// =============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_simple_field() {
+        let result = parse_path("name").unwrap();
+        assert_eq!(
+            result,
+            PathExpr::Field(FieldPath {
+                segments: vec![FieldSegment {
+                    field: "name".to_string(),
+                    target: None,
+                    optional: false,
+                }]
+            })
+        );
+    }
+
+    #[test]
+    fn parse_dotted_field() {
+        let result = parse_path("parentaccountid.name").unwrap();
+        assert_eq!(
+            result,
+            PathExpr::Field(FieldPath {
+                segments: vec![
+                    FieldSegment {
+                        field: "parentaccountid".to_string(),
+                        target: None,
+                        optional: false,
+                    },
+                    FieldSegment {
+                        field: "name".to_string(),
+                        target: None,
+                        optional: false,
+                    }
+                ]
+            })
+        );
+    }
+
+    #[test]
+    fn parse_polymorphic_lookup() {
+        let result = parse_path("ownerid[systemuser].fullname").unwrap();
+        assert_eq!(
+            result,
+            PathExpr::Field(FieldPath {
+                segments: vec![
+                    FieldSegment {
+                        field: "ownerid".to_string(),
+                        target: Some("systemuser".to_string()),
+                        optional: false,
+                    },
+                    FieldSegment {
+                        field: "fullname".to_string(),
+                        target: None,
+                        optional: false,
+                    }
+                ]
+            })
+        );
+    }
+
+    #[test]
+    fn parse_optional_field() {
+        let result = parse_path("parentaccountid?.name").unwrap();
+        assert_eq!(
+            result,
+            PathExpr::Field(FieldPath {
+                segments: vec![
+                    FieldSegment {
+                        field: "parentaccountid".to_string(),
+                        target: None,
+                        optional: true,
+                    },
+                    FieldSegment {
+                        field: "name".to_string(),
+                        target: None,
+                        optional: false,
+                    }
+                ]
+            })
+        );
+    }
+
+    #[test]
+    fn parse_polymorphic_optional() {
+        let result = parse_path("ownerid[team]?.name").unwrap();
+        assert_eq!(
+            result,
+            PathExpr::Field(FieldPath {
+                segments: vec![
+                    FieldSegment {
+                        field: "ownerid".to_string(),
+                        target: Some("team".to_string()),
+                        optional: true,
+                    },
+                    FieldSegment {
+                        field: "name".to_string(),
+                        target: None,
+                        optional: false,
+                    }
+                ]
+            })
+        );
+    }
+
+    #[test]
+    fn parse_variable() {
+        let result = parse_path("$my_var").unwrap();
+        assert_eq!(result, PathExpr::Variable("my_var".to_string()));
+    }
+
+    #[test]
+    fn parse_system_var_value() {
+        let result = parse_path("#value").unwrap();
+        assert_eq!(result, PathExpr::SystemVar(SystemVar::Value));
+    }
+
+    #[test]
+    fn parse_system_var_index() {
+        let result = parse_path("#index").unwrap();
+        assert_eq!(result, PathExpr::SystemVar(SystemVar::Index));
+    }
+
+    #[test]
+    fn parse_empty_error() {
+        let result = parse_path("");
+        assert_eq!(result, Err(ParseError::Empty));
+    }
+
+    #[test]
+    fn parse_empty_variable_error() {
+        let result = parse_path("$");
+        assert_eq!(result, Err(ParseError::EmptyVariable));
+    }
+
+    #[test]
+    fn parse_unclosed_bracket_error() {
+        let result = parse_path("field[target");
+        assert_eq!(result, Err(ParseError::UnclosedBracket));
+    }
+
+    #[test]
+    fn parse_empty_target_error() {
+        let result = parse_path("field[].name");
+        assert_eq!(result, Err(ParseError::EmptyTarget));
+    }
+}

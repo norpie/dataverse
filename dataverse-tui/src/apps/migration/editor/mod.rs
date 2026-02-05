@@ -377,9 +377,8 @@ impl MigrationEditor {
                     fm.target_field
                 )));
             }
-            MigrationTreeNode::Transform(_t) => {
-                // TODO: Open transform edit modal based on transform type
-                gx.toast(Toast::info("Transform editor not yet implemented"));
+            MigrationTreeNode::Transform(t) => {
+                self.edit_transform_impl(&t, gx).await;
             }
             MigrationTreeNode::MatchBranch(_mb) => {
                 // TODO: Open match branch editor (condition editor)

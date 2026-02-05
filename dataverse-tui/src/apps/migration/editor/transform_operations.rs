@@ -3,10 +3,12 @@
 use dataverse_lib::model::Value;
 use rafter::prelude::*;
 
+use crate::apps::migration::modals::CopyTransformModal;
 use crate::apps::migration::modals::SelectTransformModal;
 use crate::apps::migration::modals::TransformType;
 use crate::apps::migration::repository::MigrationRepository;
 use crate::apps::migration::repository::NewTransform;
+use crate::apps::migration::repository::UpdateTransform;
 use crate::apps::migration::types::CoalesceChain;
 use crate::apps::migration::types::Condition;
 use crate::apps::migration::types::Expr;
@@ -405,6 +407,78 @@ impl MigrationEditor {
             Err(e) => {
                 log::error!("Failed to reorder transforms: {}", e);
                 gx.toast(Toast::error("Failed to reorder transforms"));
+            }
+        }
+    }
+
+    // =========================================================================
+    // Edit Transform
+    // =========================================================================
+
+    /// Edit a transform by showing the appropriate modal based on its type.
+    pub(super) async fn edit_transform_impl(&self, transform: &Transform, gx: &GlobalContext) {
+        // Get the entity mapping for this transform
+        let entity_mapping = self
+            .entity_mappings
+            .get()
+            .iter()
+            .find(|em| em.id == transform.entity_mapping_id)
+            .cloned();
+
+        let Some(entity_mapping) = entity_mapping else {
+            log::error!("Entity mapping not found for transform");
+            return;
+        };
+
+        let source_entity = entity_mapping.source_entity;
+
+        // Get variable names for this entity mapping
+        let variables: Vec<String> = self
+            .variables
+            .get()
+            .iter()
+            .filter(|v| v.entity_mapping_id == entity_mapping.id)
+            .map(|v| v.name.clone())
+            .collect();
+
+        // Dispatch based on transform type
+        match &transform.data {
+            TransformData::Copy { path } => {
+                let modal = CopyTransformModal::new_modal(
+                    self.source_client.get().clone(),
+                    source_entity,
+                    variables,
+                    path.clone(),
+                );
+
+                if let Some(new_path) = gx.modal(modal).await {
+                    self.update_transform_data(
+                        transform.id,
+                        TransformData::Copy { path: new_path },
+                        gx,
+                    )
+                    .await;
+                }
+            }
+            // Other transform types - show toast for now
+            _ => {
+                gx.toast(Toast::info("Editor for this transform type not yet implemented"));
+            }
+        }
+    }
+
+    /// Update a transform's data in the database.
+    async fn update_transform_data(&self, transform_id: i64, data: TransformData, gx: &GlobalContext) {
+        let repo = gx.data::<MigrationRepository>();
+        
+        match repo.update_transform(transform_id, UpdateTransform { data }).await {
+            Ok(()) => {
+                gx.toast(Toast::info("Transform updated"));
+                self.refresh_data(gx).await;
+            }
+            Err(e) => {
+                log::error!("Failed to update transform: {}", e);
+                gx.toast(Toast::error("Failed to update transform"));
             }
         }
     }
