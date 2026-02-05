@@ -473,6 +473,10 @@ impl MigrationEditor {
                     .await;
                 }
             }
+            TransformData::Guid => {
+                // GUID has no configuration - it just generates a random UUID
+                gx.toast(Toast::info("GUID generates a random UUID - no configuration needed"));
+            }
             // Other transform types - show toast for now
             _ => {
                 gx.toast(Toast::info("Editor for this transform type not yet implemented"));
