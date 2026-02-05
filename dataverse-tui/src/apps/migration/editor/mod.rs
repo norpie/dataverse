@@ -1484,6 +1484,7 @@ impl MigrationEditor {
         let nodes = build_tree_nodes(phases, entity_mappings, variables, field_mappings);
         self.tree_state.update(|s| {
             s.set_roots(nodes);
+            s.expand_all();
         });
     }
 
