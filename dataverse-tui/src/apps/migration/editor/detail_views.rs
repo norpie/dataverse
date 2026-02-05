@@ -4,9 +4,15 @@ use tuidom::Color;
 use tuidom::Element;
 use tuidom::Style;
 
+use crate::apps::migration::types::CoalesceChain;
 use crate::apps::migration::types::FieldMapping;
+use crate::apps::migration::types::FindCondition;
+use crate::apps::migration::types::MatchBranch;
+use crate::apps::migration::types::ParentType;
+use crate::apps::migration::types::Transform;
 use crate::apps::migration::types::Variable;
 
+use super::tree::transform_display_text;
 use super::MigrationEditor;
 
 impl MigrationEditor {
@@ -234,6 +240,196 @@ impl MigrationEditor {
                     )
                     .child(
                         Element::text("Press Enter to edit transform chain")
+                            .style(Style::new().foreground(Color::var("muted"))),
+                    ),
+            )
+    }
+
+    /// Render a Transform detail view.
+    pub(super) fn render_transform_detail(&self, transform: &Transform) -> Element {
+        let display_text = transform_display_text(&transform.data);
+        let parent_desc = match transform.parent_type {
+            ParentType::FieldMapping => "Field Mapping",
+            ParentType::Variable => "Variable",
+            ParentType::MatchBranch => "Match Branch",
+            ParentType::GuardFallback => "Guard Fallback",
+            ParentType::CoalesceChain => "Coalesce Chain",
+            ParentType::FindCondition => "Find Condition",
+        };
+
+        Element::col()
+            .gap(1)
+            .child(
+                Element::text("Transform")
+                    .style(Style::new().bold().foreground(Color::var("interact"))),
+            )
+            .child(
+                Element::col()
+                    .child(
+                        Element::row()
+                            .gap(1)
+                            .child(
+                                Element::text("Type")
+                                    .style(Style::new().foreground(Color::var("muted"))),
+                            )
+                            .child(Element::text(&display_text)),
+                    )
+                    .child(
+                        Element::row()
+                            .gap(1)
+                            .child(
+                                Element::text("Order")
+                                    .style(Style::new().foreground(Color::var("muted"))),
+                            )
+                            .child(Element::text(format!("{}", transform.order + 1))),
+                    )
+                    .child(
+                        Element::row()
+                            .gap(1)
+                            .child(
+                                Element::text("Parent")
+                                    .style(Style::new().foreground(Color::var("muted"))),
+                            )
+                            .child(Element::text(parent_desc)),
+                    )
+                    .child(
+                        Element::text("Press Enter to edit transform parameters")
+                            .style(Style::new().foreground(Color::var("muted"))),
+                    ),
+            )
+    }
+
+    /// Render a Match Branch detail view.
+    pub(super) fn render_match_branch_detail(&self, branch: &MatchBranch) -> Element {
+        let branch_label = if branch.is_default {
+            "Default".to_string()
+        } else {
+            format!("Branch {}", branch.order + 1)
+        };
+
+        Element::col()
+            .gap(1)
+            .child(
+                Element::text("Match Branch")
+                    .style(Style::new().bold().foreground(Color::var("interact"))),
+            )
+            .child(
+                Element::col()
+                    .child(
+                        Element::row()
+                            .gap(1)
+                            .child(
+                                Element::text("Branch")
+                                    .style(Style::new().foreground(Color::var("muted"))),
+                            )
+                            .child(Element::text(&branch_label)),
+                    )
+                    .child(
+                        Element::row()
+                            .gap(1)
+                            .child(
+                                Element::text("Default")
+                                    .style(Style::new().foreground(Color::var("muted"))),
+                            )
+                            .child(Element::text(if branch.is_default { "Yes" } else { "No" })),
+                    )
+                    .child(
+                        Element::text("Press Enter to edit branch condition")
+                            .style(Style::new().foreground(Color::var("muted"))),
+                    ),
+            )
+    }
+
+    /// Render a Coalesce Chain detail view.
+    pub(super) fn render_coalesce_chain_detail(&self, chain: &CoalesceChain) -> Element {
+        Element::col()
+            .gap(1)
+            .child(
+                Element::text("Coalesce Fallback")
+                    .style(Style::new().bold().foreground(Color::var("interact"))),
+            )
+            .child(
+                Element::col()
+                    .child(
+                        Element::row()
+                            .gap(1)
+                            .child(
+                                Element::text("Fallback")
+                                    .style(Style::new().foreground(Color::var("muted"))),
+                            )
+                            .child(Element::text(format!("{}", chain.order + 1))),
+                    )
+                    .child(
+                        Element::text("Add transforms to this fallback chain")
+                            .style(Style::new().foreground(Color::var("muted"))),
+                    ),
+            )
+    }
+
+    /// Render a Find Condition detail view.
+    pub(super) fn render_find_condition_detail(&self, condition: &FindCondition) -> Element {
+        Element::col()
+            .gap(1)
+            .child(
+                Element::text("Find Condition")
+                    .style(Style::new().bold().foreground(Color::var("interact"))),
+            )
+            .child(
+                Element::col()
+                    .child(
+                        Element::row()
+                            .gap(1)
+                            .child(
+                                Element::text("Target Field")
+                                    .style(Style::new().foreground(Color::var("muted"))),
+                            )
+                            .child(Element::text(&condition.target_field)),
+                    )
+                    .child(
+                        Element::row()
+                            .gap(1)
+                            .child(
+                                Element::text("Order")
+                                    .style(Style::new().foreground(Color::var("muted"))),
+                            )
+                            .child(Element::text(format!("{}", condition.order + 1))),
+                    )
+                    .child(
+                        Element::text("Press Enter to edit target field, add transforms to define the match value")
+                            .style(Style::new().foreground(Color::var("muted"))),
+                    ),
+            )
+    }
+
+    /// Render a Chain wrapper detail view.
+    pub(super) fn render_chain_detail(&self, parent_type: ParentType, _parent_id: i64) -> Element {
+        let parent_desc = match parent_type {
+            ParentType::MatchBranch => "Match Branch",
+            ParentType::GuardFallback => "Guard Fallback",
+            ParentType::CoalesceChain => "Coalesce Fallback",
+            ParentType::FindCondition => "Find Condition",
+            _ => "Parent",
+        };
+
+        Element::col()
+            .gap(1)
+            .child(
+                Element::text("Transform Chain")
+                    .style(Style::new().bold().foreground(Color::var("interact"))),
+            )
+            .child(
+                Element::col()
+                    .child(
+                        Element::row()
+                            .gap(1)
+                            .child(
+                                Element::text("Parent")
+                                    .style(Style::new().foreground(Color::var("muted"))),
+                            )
+                            .child(Element::text(parent_desc)),
+                    )
+                    .child(
+                        Element::text("Multi-transform chain within a nested scope")
                             .style(Style::new().foreground(Color::var("muted"))),
                     ),
             )

@@ -6,10 +6,16 @@ use tuidom::Color;
 use tuidom::Element;
 use tuidom::Style;
 
+use crate::apps::migration::types::CoalesceChain;
 use crate::apps::migration::types::EntityMapping;
 use crate::apps::migration::types::FieldMapping;
+use crate::apps::migration::types::FindCondition;
+use crate::apps::migration::types::MatchBranch;
 use crate::apps::migration::types::Mode;
+use crate::apps::migration::types::ParentType;
 use crate::apps::migration::types::Phase;
+use crate::apps::migration::types::Transform;
+use crate::apps::migration::types::TransformData;
 use crate::apps::migration::types::Variable;
 
 /// A node in the migration editor tree.
@@ -39,6 +45,21 @@ pub enum MigrationTreeNode {
     FieldMappings { entity_mapping_id: i64 },
     /// An individual field mapping (child of FieldMappings section).
     FieldMapping(FieldMapping),
+    /// A transform operation (child of Variable, FieldMapping, or nested chain).
+    Transform(Transform),
+    /// A branch within a match transform.
+    MatchBranch(MatchBranch),
+    /// A fallback chain within a coalesce transform.
+    CoalesceChain(CoalesceChain),
+    /// A condition within a find transform (where-clause mode).
+    FindCondition(FindCondition),
+    /// A wrapper for multi-transform nested chains.
+    /// Used when a nested chain (guard fallback, coalesce chain, match branch, find condition)
+    /// has more than one transform.
+    Chain {
+        parent_type: ParentType,
+        parent_id: i64,
+    },
 }
 
 impl MigrationTreeNode {
@@ -57,6 +78,11 @@ impl MigrationTreeNode {
             | Self::FieldMappings { entity_mapping_id } => Some(*entity_mapping_id),
             Self::Variable(v) => Some(v.entity_mapping_id),
             Self::FieldMapping(fm) => Some(fm.entity_mapping_id),
+            Self::Transform(t) => Some(t.entity_mapping_id),
+            Self::MatchBranch(_) => None,   // Get via transform
+            Self::CoalesceChain(_) => None, // Get via transform
+            Self::FindCondition(_) => None, // Get via transform
+            Self::Chain { .. } => None,     // Get via parent
         }
     }
 
@@ -84,7 +110,65 @@ impl MigrationTreeNode {
                 | Self::Variable(_)
                 | Self::FieldMappings { .. }
                 | Self::FieldMapping(_)
+                | Self::Transform(_)
+                | Self::MatchBranch(_)
+                | Self::CoalesceChain(_)
+                | Self::FindCondition(_)
+                | Self::Chain { .. }
         )
+    }
+
+    /// Check if this is a transform node.
+    pub fn is_transform(&self) -> bool {
+        matches!(self, Self::Transform(_))
+    }
+
+    /// Get the transform if this is a transform node.
+    pub fn as_transform(&self) -> Option<&Transform> {
+        match self {
+            Self::Transform(t) => Some(t),
+            _ => None,
+        }
+    }
+
+    /// Get the variable if this is a variable node.
+    pub fn as_variable(&self) -> Option<&Variable> {
+        match self {
+            Self::Variable(v) => Some(v),
+            _ => None,
+        }
+    }
+
+    /// Get the field mapping if this is a field mapping node.
+    pub fn as_field_mapping(&self) -> Option<&FieldMapping> {
+        match self {
+            Self::FieldMapping(fm) => Some(fm),
+            _ => None,
+        }
+    }
+
+    /// Get the match branch if this is a match branch node.
+    pub fn as_match_branch(&self) -> Option<&MatchBranch> {
+        match self {
+            Self::MatchBranch(mb) => Some(mb),
+            _ => None,
+        }
+    }
+
+    /// Get the coalesce chain if this is a coalesce chain node.
+    pub fn as_coalesce_chain(&self) -> Option<&CoalesceChain> {
+        match self {
+            Self::CoalesceChain(cc) => Some(cc),
+            _ => None,
+        }
+    }
+
+    /// Get the find condition if this is a find condition node.
+    pub fn as_find_condition(&self) -> Option<&FindCondition> {
+        match self {
+            Self::FindCondition(fc) => Some(fc),
+            _ => None,
+        }
     }
 
     /// Get the phase if this is a phase node.
@@ -131,6 +215,14 @@ impl TreeItem for MigrationTreeNode {
                 format!("field-mappings-{}", entity_mapping_id)
             }
             Self::FieldMapping(fm) => format!("field-mapping-{}", fm.id),
+            Self::Transform(t) => format!("transform-{}", t.id),
+            Self::MatchBranch(mb) => format!("match-branch-{}", mb.id),
+            Self::CoalesceChain(cc) => format!("coalesce-chain-{}", cc.id),
+            Self::FindCondition(fc) => format!("find-condition-{}", fc.id),
+            Self::Chain {
+                parent_type,
+                parent_id,
+            } => format!("chain-{}-{}", parent_type.as_str(), parent_id),
         }
     }
 
@@ -192,6 +284,130 @@ impl TreeItem for MigrationTreeNode {
                 Element::text(&fm.target_field)
                     .style(Style::new().foreground(Color::var("primary"))),
             ),
+            Self::Transform(t) => {
+                let label = transform_display_text(&t.data);
+                Element::row().gap(1).child(
+                    Element::text(&label).style(Style::new().foreground(Color::var("primary"))),
+                )
+            }
+            Self::MatchBranch(mb) => {
+                let label = if mb.is_default {
+                    "Default".to_string()
+                } else {
+                    // TODO: Show condition summary when condition display is implemented
+                    format!("Branch {}", mb.order + 1)
+                };
+                Element::row().gap(1).child(
+                    Element::text(&label).style(Style::new().foreground(Color::var("muted"))),
+                )
+            }
+            Self::CoalesceChain(cc) => {
+                let label = format!("Fallback {}", cc.order + 1);
+                Element::row().gap(1).child(
+                    Element::text(&label).style(Style::new().foreground(Color::var("muted"))),
+                )
+            }
+            Self::FindCondition(fc) => {
+                let label = format!("Condition: {}", fc.target_field);
+                Element::row().gap(1).child(
+                    Element::text(&label).style(Style::new().foreground(Color::var("muted"))),
+                )
+            }
+            Self::Chain { .. } => Element::row()
+                .gap(1)
+                .child(Element::text("Chain").style(Style::new().foreground(Color::var("muted")))),
+        }
+    }
+}
+
+/// Generate display text for a transform.
+/// Format: `type (summary)` where summary is type-specific.
+pub fn transform_display_text(data: &TransformData) -> String {
+    match data {
+        TransformData::Copy { path } => {
+            format!("copy ({})", path)
+        }
+        TransformData::Constant { value } => {
+            let summary = match value {
+                dataverse_lib::model::Value::Null => "null".to_string(),
+                dataverse_lib::model::Value::Bool(b) => b.to_string(),
+                dataverse_lib::model::Value::Int(i) => i.to_string(),
+                dataverse_lib::model::Value::Float(f) => f.to_string(),
+                dataverse_lib::model::Value::Decimal(d) => d.to_string(),
+                dataverse_lib::model::Value::String(s) => {
+                    if s.len() > 20 {
+                        format!("\"{}...\"", &s[..17])
+                    } else {
+                        format!("\"{}\"", s)
+                    }
+                }
+                dataverse_lib::model::Value::DateTime(_) => "[datetime]".to_string(),
+                dataverse_lib::model::Value::Guid(_) => "[guid]".to_string(),
+                _ => "[value]".to_string(),
+            };
+            format!("constant ({})", summary)
+        }
+        TransformData::Guid => "guid".to_string(),
+        TransformData::Format { template } => {
+            let summary = if template.len() > 20 {
+                format!("\"{}...\"", &template[..17])
+            } else {
+                format!("\"{}\"", template)
+            };
+            format!("format ({})", summary)
+        }
+        TransformData::Replace { from, to, regex } => {
+            let prefix = if *regex { "r" } else { "" };
+            format!("replace ({}\"{}\" → \"{}\")", prefix, from, to)
+        }
+        TransformData::StringOps { ops } => {
+            let op_names: Vec<&str> = ops
+                .iter()
+                .map(|op| match op {
+                    crate::apps::migration::types::StringOp::Uppercase => "uppercase",
+                    crate::apps::migration::types::StringOp::Lowercase => "lowercase",
+                    crate::apps::migration::types::StringOp::Trim => "trim",
+                    crate::apps::migration::types::StringOp::TrimStart => "trim_start",
+                    crate::apps::migration::types::StringOp::TrimEnd => "trim_end",
+                })
+                .collect();
+            format!("string_ops ({})", op_names.join(", "))
+        }
+        TransformData::Convert { target_type } => {
+            format!("convert ({})", target_type)
+        }
+        TransformData::ParseInt => "parse_int".to_string(),
+        TransformData::ParseDecimal => "parse_decimal".to_string(),
+        TransformData::ParseDate { format } => {
+            format!("parse_date (\"{}\")", format)
+        }
+        TransformData::ValueMap { mappings } => {
+            format!("value_map ({} mappings)", mappings.len())
+        }
+        TransformData::Math { operation } => {
+            let op_str = match operation {
+                crate::apps::migration::types::MathOp::Add(n) => format!("add {}", n),
+                crate::apps::migration::types::MathOp::Subtract(n) => format!("subtract {}", n),
+                crate::apps::migration::types::MathOp::Multiply(n) => format!("multiply {}", n),
+                crate::apps::migration::types::MathOp::Divide(n) => format!("divide {}", n),
+                crate::apps::migration::types::MathOp::Round(places) => {
+                    format!("round {}", places)
+                }
+            };
+            format!("math ({})", op_str)
+        }
+        TransformData::Guard { condition: _ } => {
+            // TODO: Show condition summary when condition display is implemented
+            "guard (...)".to_string()
+        }
+        TransformData::Match => "match".to_string(),
+        TransformData::Coalesce => "coalesce".to_string(),
+        TransformData::Find {
+            entity,
+            fallback: _,
+            mode: _,
+        } => {
+            format!("find ({})", entity)
         }
     }
 }

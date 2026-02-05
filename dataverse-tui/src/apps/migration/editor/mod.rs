@@ -320,6 +320,24 @@ impl MigrationEditor {
                     fm.target_field
                 )));
             }
+            MigrationTreeNode::Transform(_t) => {
+                // TODO: Open transform edit modal based on transform type
+                gx.toast(Toast::info("Transform editor not yet implemented"));
+            }
+            MigrationTreeNode::MatchBranch(_mb) => {
+                // TODO: Open match branch editor (condition editor)
+                gx.toast(Toast::info("Match branch editor not yet implemented"));
+            }
+            MigrationTreeNode::CoalesceChain(_cc) => {
+                // Coalesce chains don't have configuration - just add transforms under them
+            }
+            MigrationTreeNode::FindCondition(_fc) => {
+                // TODO: Open find condition editor (target_field edit)
+                gx.toast(Toast::info("Find condition editor not yet implemented"));
+            }
+            MigrationTreeNode::Chain { .. } => {
+                // Chain wrappers don't have configuration - just add transforms under them
+            }
         }
     }
 
@@ -428,6 +446,21 @@ impl MigrationEditor {
                             }
                             Some(MigrationTreeNode::FieldMapping(fm)) => {
                                 { self.render_field_mapping_detail(&fm) }
+                            }
+                            Some(MigrationTreeNode::Transform(t)) => {
+                                { self.render_transform_detail(&t) }
+                            }
+                            Some(MigrationTreeNode::MatchBranch(mb)) => {
+                                { self.render_match_branch_detail(&mb) }
+                            }
+                            Some(MigrationTreeNode::CoalesceChain(cc)) => {
+                                { self.render_coalesce_chain_detail(&cc) }
+                            }
+                            Some(MigrationTreeNode::FindCondition(fc)) => {
+                                { self.render_find_condition_detail(&fc) }
+                            }
+                            Some(MigrationTreeNode::Chain { parent_type, parent_id }) => {
+                                { self.render_chain_detail(parent_type, parent_id) }
                             }
                         }
                     }
