@@ -3,10 +3,6 @@
 use rafter::prelude::*;
 
 use crate::apps::migration::repository::MigrationRepository;
-use crate::apps::migration::types::EntityMapping;
-use crate::apps::migration::types::FieldMapping;
-use crate::apps::migration::types::Phase;
-use crate::apps::migration::types::Variable;
 
 use super::tree::build_tree_nodes;
 use super::tree::MigrationTreeNode;
@@ -14,39 +10,43 @@ use super::MigrationEditor;
 
 impl MigrationEditor {
     /// Refresh all data from the repository.
+    /// Uses bulk queries to avoid N+1 (8 queries total).
     pub(super) async fn refresh_data(&self, gx: &GlobalContext) {
         let migration_id = self.migration.get().id;
         let repo = gx.data::<MigrationRepository>();
 
-        // Reload phases
+        // Reload all data with bulk queries
         if let Ok(phases) = repo.get_phases(migration_id).await {
             self.phases.set(phases);
         }
 
-        // Reload entity mappings
-        let phases = self.phases.get();
-        let mut all_mappings = Vec::new();
-        for phase in &phases {
-            if let Ok(mappings) = repo.get_entity_mappings(phase.id).await {
-                all_mappings.extend(mappings);
-            }
+        if let Ok(mappings) = repo.get_entity_mappings_by_migration(migration_id).await {
+            self.entity_mappings.set(mappings);
         }
-        self.entity_mappings.set(all_mappings);
 
-        // Reload variables and field mappings
-        let entity_mappings = self.entity_mappings.get();
-        let mut all_variables = Vec::new();
-        let mut all_field_mappings = Vec::new();
-        for em in &entity_mappings {
-            if let Ok(vars) = repo.get_variables(em.id).await {
-                all_variables.extend(vars);
-            }
-            if let Ok(fms) = repo.get_field_mappings(em.id).await {
-                all_field_mappings.extend(fms);
-            }
+        if let Ok(vars) = repo.get_variables_by_migration(migration_id).await {
+            self.variables.set(vars);
         }
-        self.variables.set(all_variables);
-        self.field_mappings.set(all_field_mappings);
+
+        if let Ok(fms) = repo.get_field_mappings_by_migration(migration_id).await {
+            self.field_mappings.set(fms);
+        }
+
+        if let Ok(transforms) = repo.get_transforms_by_migration(migration_id).await {
+            self.transforms.set(transforms);
+        }
+
+        if let Ok(branches) = repo.get_match_branches_by_migration(migration_id).await {
+            self.match_branches.set(branches);
+        }
+
+        if let Ok(chains) = repo.get_coalesce_chains_by_migration(migration_id).await {
+            self.coalesce_chains.set(chains);
+        }
+
+        if let Ok(conditions) = repo.get_find_conditions_by_migration(migration_id).await {
+            self.find_conditions.set(conditions);
+        }
 
         self.rebuild_tree();
     }
@@ -57,8 +57,21 @@ impl MigrationEditor {
         let entity_mappings = self.entity_mappings.get();
         let variables = self.variables.get();
         let field_mappings = self.field_mappings.get();
+        let transforms = self.transforms.get();
+        let match_branches = self.match_branches.get();
+        let coalesce_chains = self.coalesce_chains.get();
+        let find_conditions = self.find_conditions.get();
 
-        let nodes = build_tree_nodes(phases, entity_mappings, variables, field_mappings);
+        let nodes = build_tree_nodes(
+            phases,
+            entity_mappings,
+            variables,
+            field_mappings,
+            transforms,
+            match_branches,
+            coalesce_chains,
+            find_conditions,
+        );
         self.tree_state.update(|s| {
             s.set_roots(nodes);
             s.expand_all();

@@ -46,6 +46,36 @@ impl super::MigrationRepository {
             .map_err(RepositoryError::Database)
     }
 
+    /// Get all find conditions for a migration (joins through transforms, entity_mappings, phases).
+    pub async fn get_find_conditions_by_migration(
+        &self,
+        migration_id: i64,
+    ) -> Result<Vec<FindCondition>, RepositoryError> {
+        self.client
+            .conn_mut(move |conn| {
+                let mut stmt = conn.prepare(
+                    "SELECT fc.id, fc.transform_id, fc.target_field, fc.\"order\"
+                     FROM find_conditions fc
+                     INNER JOIN transforms t ON fc.transform_id = t.id
+                     INNER JOIN entity_mappings em ON t.entity_mapping_id = em.id
+                     INNER JOIN phases p ON em.phase_id = p.id
+                     WHERE p.migration_id = ?1
+                     ORDER BY fc.id ASC",
+                )?;
+                let rows = stmt.query_map([migration_id], |row| {
+                    Ok(FindCondition {
+                        id: row.get(0)?,
+                        transform_id: row.get(1)?,
+                        target_field: row.get(2)?,
+                        order: row.get(3)?,
+                    })
+                })?;
+                rows.collect::<Result<Vec<_>, _>>()
+            })
+            .await
+            .map_err(RepositoryError::Database)
+    }
+
     /// Get a find condition by ID.
     pub async fn get_find_condition(&self, id: i64) -> Result<FindCondition, RepositoryError> {
         self.client

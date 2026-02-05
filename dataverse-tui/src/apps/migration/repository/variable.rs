@@ -47,6 +47,35 @@ impl super::MigrationRepository {
             .map_err(RepositoryError::Database)
     }
 
+    /// Get all variables for a migration (joins through entity_mappings and phases).
+    pub async fn get_variables_by_migration(
+        &self,
+        migration_id: i64,
+    ) -> Result<Vec<Variable>, RepositoryError> {
+        self.client
+            .conn_mut(move |conn| {
+                let mut stmt = conn.prepare(
+                    "SELECT v.id, v.entity_mapping_id, v.\"order\", v.name
+                     FROM variables v
+                     INNER JOIN entity_mappings em ON v.entity_mapping_id = em.id
+                     INNER JOIN phases p ON em.phase_id = p.id
+                     WHERE p.migration_id = ?1
+                     ORDER BY p.\"order\" ASC, em.\"order\" ASC, v.\"order\" ASC",
+                )?;
+                let rows = stmt.query_map([migration_id], |row| {
+                    Ok(Variable {
+                        id: row.get(0)?,
+                        entity_mapping_id: row.get(1)?,
+                        order: row.get(2)?,
+                        name: row.get(3)?,
+                    })
+                })?;
+                rows.collect::<Result<Vec<_>, _>>()
+            })
+            .await
+            .map_err(RepositoryError::Database)
+    }
+
     /// Get a variable by ID.
     pub async fn get_variable(&self, id: i64) -> Result<Variable, RepositoryError> {
         self.client

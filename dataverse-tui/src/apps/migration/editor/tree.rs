@@ -417,13 +417,66 @@ pub fn transform_display_text(data: &TransformData) -> String {
     }
 }
 
-/// Build tree nodes from phases and entity mappings.
+/// Context for building the tree, holding all lookup data.
+struct TreeBuildContext<'a> {
+    transforms: &'a [Transform],
+    match_branches: &'a [MatchBranch],
+    coalesce_chains: &'a [CoalesceChain],
+    find_conditions: &'a [FindCondition],
+}
+
+impl<'a> TreeBuildContext<'a> {
+    /// Get transforms for a specific parent.
+    fn get_transforms(&self, parent_type: ParentType, parent_id: i64) -> Vec<&Transform> {
+        self.transforms
+            .iter()
+            .filter(|t| t.parent_type == parent_type && t.parent_id == parent_id)
+            .collect()
+    }
+
+    /// Get match branches for a transform.
+    fn get_match_branches(&self, transform_id: i64) -> Vec<&MatchBranch> {
+        self.match_branches
+            .iter()
+            .filter(|mb| mb.transform_id == transform_id)
+            .collect()
+    }
+
+    /// Get coalesce chains for a transform.
+    fn get_coalesce_chains(&self, transform_id: i64) -> Vec<&CoalesceChain> {
+        self.coalesce_chains
+            .iter()
+            .filter(|cc| cc.transform_id == transform_id)
+            .collect()
+    }
+
+    /// Get find conditions for a transform.
+    fn get_find_conditions(&self, transform_id: i64) -> Vec<&FindCondition> {
+        self.find_conditions
+            .iter()
+            .filter(|fc| fc.transform_id == transform_id)
+            .collect()
+    }
+}
+
+/// Build tree nodes from all migration data.
 pub fn build_tree_nodes(
     phases: Vec<Phase>,
     entity_mappings: Vec<EntityMapping>,
     variables: Vec<Variable>,
     field_mappings: Vec<FieldMapping>,
+    transforms: Vec<Transform>,
+    match_branches: Vec<MatchBranch>,
+    coalesce_chains: Vec<CoalesceChain>,
+    find_conditions: Vec<FindCondition>,
 ) -> Vec<TreeNode<MigrationTreeNode>> {
+    let ctx = TreeBuildContext {
+        transforms: &transforms,
+        match_branches: &match_branches,
+        coalesce_chains: &coalesce_chains,
+        find_conditions: &find_conditions,
+    };
+
     phases
         .into_iter()
         .map(|phase| {
@@ -439,7 +492,7 @@ pub fn build_tree_nodes(
                 .iter()
                 .filter(|em| em.phase_id == phase_id)
                 .cloned()
-                .map(|em| build_entity_mapping_node(em, &variables, &field_mappings))
+                .map(|em| build_entity_mapping_node(em, &variables, &field_mappings, &ctx))
                 .collect();
 
             if children.is_empty() {
@@ -456,6 +509,7 @@ fn build_entity_mapping_node(
     em: EntityMapping,
     variables: &[Variable],
     field_mappings: &[FieldMapping],
+    ctx: &TreeBuildContext,
 ) -> TreeNode<MigrationTreeNode> {
     let em_id = em.id;
     let is_lua = em.mode == Mode::Lua;
@@ -488,12 +542,12 @@ fn build_entity_mapping_node(
             entity_mapping_id: em_id,
         }));
 
-        // Variables section
+        // Variables section with transforms
         let var_children: Vec<TreeNode<MigrationTreeNode>> = variables
             .iter()
             .filter(|v| v.entity_mapping_id == em_id)
             .cloned()
-            .map(|v| TreeNode::leaf(MigrationTreeNode::Variable(v)))
+            .map(|v| build_variable_node(v, ctx))
             .collect();
 
         if var_children.is_empty() {
@@ -509,12 +563,12 @@ fn build_entity_mapping_node(
             ));
         }
 
-        // Field mappings section
+        // Field mappings section with transforms
         let fm_children: Vec<TreeNode<MigrationTreeNode>> = field_mappings
             .iter()
             .filter(|fm| fm.entity_mapping_id == em_id)
             .cloned()
-            .map(|fm| TreeNode::leaf(MigrationTreeNode::FieldMapping(fm)))
+            .map(|fm| build_field_mapping_node(fm, ctx))
             .collect();
 
         if fm_children.is_empty() {
@@ -532,4 +586,185 @@ fn build_entity_mapping_node(
     }
 
     TreeNode::branch(MigrationTreeNode::EntityMapping(em), children)
+}
+
+/// Build a tree node for a variable with its transforms.
+fn build_variable_node(v: Variable, ctx: &TreeBuildContext) -> TreeNode<MigrationTreeNode> {
+    let transforms = ctx.get_transforms(ParentType::Variable, v.id);
+
+    if transforms.is_empty() {
+        TreeNode::leaf(MigrationTreeNode::Variable(v))
+    } else {
+        let transform_nodes: Vec<TreeNode<MigrationTreeNode>> = transforms
+            .into_iter()
+            .map(|t| build_transform_node(t.clone(), ctx))
+            .collect();
+        TreeNode::branch(MigrationTreeNode::Variable(v), transform_nodes)
+    }
+}
+
+/// Build a tree node for a field mapping with its transforms.
+fn build_field_mapping_node(
+    fm: FieldMapping,
+    ctx: &TreeBuildContext,
+) -> TreeNode<MigrationTreeNode> {
+    let transforms = ctx.get_transforms(ParentType::FieldMapping, fm.id);
+
+    if transforms.is_empty() {
+        TreeNode::leaf(MigrationTreeNode::FieldMapping(fm))
+    } else {
+        let transform_nodes: Vec<TreeNode<MigrationTreeNode>> = transforms
+            .into_iter()
+            .map(|t| build_transform_node(t.clone(), ctx))
+            .collect();
+        TreeNode::branch(MigrationTreeNode::FieldMapping(fm), transform_nodes)
+    }
+}
+
+/// Build a tree node for a transform, including nested structures.
+fn build_transform_node(t: Transform, ctx: &TreeBuildContext) -> TreeNode<MigrationTreeNode> {
+    match &t.data {
+        TransformData::Guard { .. } => {
+            // Guard: child transforms appear directly under the guard node
+            let fallback_transforms = ctx.get_transforms(ParentType::GuardFallback, t.id);
+            if fallback_transforms.is_empty() {
+                TreeNode::leaf(MigrationTreeNode::Transform(t))
+            } else {
+                let children: Vec<TreeNode<MigrationTreeNode>> = fallback_transforms
+                    .into_iter()
+                    .map(|ft| build_transform_node(ft.clone(), ctx))
+                    .collect();
+                TreeNode::branch(MigrationTreeNode::Transform(t), children)
+            }
+        }
+        TransformData::Match => {
+            // Match: branches as children
+            let branches = ctx.get_match_branches(t.id);
+            if branches.is_empty() {
+                TreeNode::leaf(MigrationTreeNode::Transform(t))
+            } else {
+                let children: Vec<TreeNode<MigrationTreeNode>> = branches
+                    .into_iter()
+                    .map(|mb| build_match_branch_node(mb.clone(), ctx))
+                    .collect();
+                TreeNode::branch(MigrationTreeNode::Transform(t), children)
+            }
+        }
+        TransformData::Coalesce => {
+            // Coalesce: chains as children
+            let chains = ctx.get_coalesce_chains(t.id);
+            if chains.is_empty() {
+                TreeNode::leaf(MigrationTreeNode::Transform(t))
+            } else {
+                let children: Vec<TreeNode<MigrationTreeNode>> = chains
+                    .into_iter()
+                    .map(|cc| build_coalesce_chain_node(cc.clone(), ctx))
+                    .collect();
+                TreeNode::branch(MigrationTreeNode::Transform(t), children)
+            }
+        }
+        TransformData::Find { mode, .. } => {
+            // Find in Where mode: conditions as children
+            if matches!(mode, crate::apps::migration::types::FindMode::Where) {
+                let conditions = ctx.get_find_conditions(t.id);
+                if conditions.is_empty() {
+                    TreeNode::leaf(MigrationTreeNode::Transform(t))
+                } else {
+                    let children: Vec<TreeNode<MigrationTreeNode>> = conditions
+                        .into_iter()
+                        .map(|fc| build_find_condition_node(fc.clone(), ctx))
+                        .collect();
+                    TreeNode::branch(MigrationTreeNode::Transform(t), children)
+                }
+            } else {
+                // Lua mode - no children
+                TreeNode::leaf(MigrationTreeNode::Transform(t))
+            }
+        }
+        _ => {
+            // Simple transforms - no children
+            TreeNode::leaf(MigrationTreeNode::Transform(t))
+        }
+    }
+}
+
+/// Build a tree node for a match branch with its transforms.
+fn build_match_branch_node(mb: MatchBranch, ctx: &TreeBuildContext) -> TreeNode<MigrationTreeNode> {
+    let transforms = ctx.get_transforms(ParentType::MatchBranch, mb.id);
+    build_nested_chain_node(
+        MigrationTreeNode::MatchBranch(mb),
+        ParentType::MatchBranch,
+        transforms,
+        ctx,
+    )
+}
+
+/// Build a tree node for a coalesce chain with its transforms.
+fn build_coalesce_chain_node(
+    cc: CoalesceChain,
+    ctx: &TreeBuildContext,
+) -> TreeNode<MigrationTreeNode> {
+    let transforms = ctx.get_transforms(ParentType::CoalesceChain, cc.id);
+    build_nested_chain_node(
+        MigrationTreeNode::CoalesceChain(cc),
+        ParentType::CoalesceChain,
+        transforms,
+        ctx,
+    )
+}
+
+/// Build a tree node for a find condition with its transforms.
+fn build_find_condition_node(
+    fc: FindCondition,
+    ctx: &TreeBuildContext,
+) -> TreeNode<MigrationTreeNode> {
+    let transforms = ctx.get_transforms(ParentType::FindCondition, fc.id);
+    build_nested_chain_node(
+        MigrationTreeNode::FindCondition(fc),
+        ParentType::FindCondition,
+        transforms,
+        ctx,
+    )
+}
+
+/// Build a nested chain node following the display rules:
+/// - Single transform: show directly as child
+/// - Multiple transforms: wrap in a Chain node
+fn build_nested_chain_node(
+    parent_node: MigrationTreeNode,
+    parent_type: ParentType,
+    transforms: Vec<&Transform>,
+    ctx: &TreeBuildContext,
+) -> TreeNode<MigrationTreeNode> {
+    let parent_id = match &parent_node {
+        MigrationTreeNode::MatchBranch(mb) => mb.id,
+        MigrationTreeNode::CoalesceChain(cc) => cc.id,
+        MigrationTreeNode::FindCondition(fc) => fc.id,
+        _ => return TreeNode::leaf(parent_node),
+    };
+
+    if transforms.is_empty() {
+        TreeNode::leaf(parent_node)
+    } else if transforms.len() == 1 {
+        // Single transform: show directly under parent
+        let transform_nodes: Vec<TreeNode<MigrationTreeNode>> = transforms
+            .into_iter()
+            .map(|t| build_transform_node(t.clone(), ctx))
+            .collect();
+        TreeNode::branch(parent_node, transform_nodes)
+    } else {
+        // Multiple transforms: wrap in a Chain node
+        let transform_nodes: Vec<TreeNode<MigrationTreeNode>> = transforms
+            .into_iter()
+            .map(|t| build_transform_node(t.clone(), ctx))
+            .collect();
+        let chain_node = TreeNode::branch(
+            MigrationTreeNode::Chain {
+                parent_type,
+                parent_id,
+            },
+            transform_nodes,
+        );
+        TreeNode::branch(parent_node, vec![chain_node])
+    }
 }

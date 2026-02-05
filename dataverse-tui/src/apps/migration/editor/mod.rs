@@ -19,11 +19,15 @@ use tuidom::Color;
 use tuidom::Style;
 
 use crate::apps::migration::repository::MigrationRepository;
+use crate::apps::migration::types::CoalesceChain;
 use crate::apps::migration::types::EntityMapping;
 use crate::apps::migration::types::FieldMapping;
+use crate::apps::migration::types::FindCondition;
+use crate::apps::migration::types::MatchBranch;
 use crate::apps::migration::types::Migration;
 use crate::apps::migration::types::Mode;
 use crate::apps::migration::types::Phase;
+use crate::apps::migration::types::Transform;
 use crate::apps::migration::types::Variable;
 
 use tree::build_tree_nodes;
@@ -48,6 +52,14 @@ pub struct MigrationEditor {
     variables: Vec<Variable>,
     /// All field mappings (for tree building).
     field_mappings: Vec<FieldMapping>,
+    /// All transforms (for tree building).
+    transforms: Vec<Transform>,
+    /// All match branches (for tree building).
+    match_branches: Vec<MatchBranch>,
+    /// All coalesce chains (for tree building).
+    coalesce_chains: Vec<CoalesceChain>,
+    /// All find conditions (for tree building).
+    find_conditions: Vec<FindCondition>,
 }
 
 impl MigrationEditor {
@@ -62,10 +74,14 @@ impl MigrationEditor {
             source_client,
             target_client,
             TreeState::default(),
-            Vec::new(),
-            Vec::new(),
-            Vec::new(),
-            Vec::new(),
+            Vec::new(), // phases
+            Vec::new(), // entity_mappings
+            Vec::new(), // variables
+            Vec::new(), // field_mappings
+            Vec::new(), // transforms
+            Vec::new(), // match_branches
+            Vec::new(), // coalesce_chains
+            Vec::new(), // find_conditions
         )
     }
 }
@@ -77,56 +93,70 @@ impl MigrationEditor {
         let migration_id = self.migration.get().id;
         let repo = gx.data::<MigrationRepository>();
 
-        // Load phases
+        // Load all data with bulk queries (8 queries total, no N+1)
         match repo.get_phases(migration_id).await {
-            Ok(phases) => {
-                self.phases.set(phases);
-            }
+            Ok(phases) => self.phases.set(phases),
             Err(e) => {
                 log::error!("Failed to load phases: {}", e);
                 gx.toast(Toast::error("Failed to load phases"));
             }
         }
 
-        // Load entity mappings for all phases
-        let phases = self.phases.get();
-        let mut all_mappings = Vec::new();
-        for phase in &phases {
-            match repo.get_entity_mappings(phase.id).await {
-                Ok(mappings) => {
-                    all_mappings.extend(mappings);
-                }
-                Err(e) => {
-                    log::error!("Failed to load entity mappings for phase {}: {}", phase.id, e);
-                }
+        match repo.get_entity_mappings_by_migration(migration_id).await {
+            Ok(mappings) => self.entity_mappings.set(mappings),
+            Err(e) => {
+                log::error!("Failed to load entity mappings: {}", e);
+                gx.toast(Toast::error("Failed to load entity mappings"));
             }
         }
-        self.entity_mappings.set(all_mappings);
 
-        // Load variables and field mappings for all entity mappings
-        let entity_mappings = self.entity_mappings.get();
-        let mut all_variables = Vec::new();
-        let mut all_field_mappings = Vec::new();
-        for em in &entity_mappings {
-            match repo.get_variables(em.id).await {
-                Ok(vars) => all_variables.extend(vars),
-                Err(e) => {
-                    log::error!("Failed to load variables for entity mapping {}: {}", em.id, e);
-                }
-            }
-            match repo.get_field_mappings(em.id).await {
-                Ok(fms) => all_field_mappings.extend(fms),
-                Err(e) => {
-                    log::error!(
-                        "Failed to load field mappings for entity mapping {}: {}",
-                        em.id,
-                        e
-                    );
-                }
+        match repo.get_variables_by_migration(migration_id).await {
+            Ok(vars) => self.variables.set(vars),
+            Err(e) => {
+                log::error!("Failed to load variables: {}", e);
+                gx.toast(Toast::error("Failed to load variables"));
             }
         }
-        self.variables.set(all_variables);
-        self.field_mappings.set(all_field_mappings);
+
+        match repo.get_field_mappings_by_migration(migration_id).await {
+            Ok(fms) => self.field_mappings.set(fms),
+            Err(e) => {
+                log::error!("Failed to load field mappings: {}", e);
+                gx.toast(Toast::error("Failed to load field mappings"));
+            }
+        }
+
+        match repo.get_transforms_by_migration(migration_id).await {
+            Ok(transforms) => self.transforms.set(transforms),
+            Err(e) => {
+                log::error!("Failed to load transforms: {}", e);
+                gx.toast(Toast::error("Failed to load transforms"));
+            }
+        }
+
+        match repo.get_match_branches_by_migration(migration_id).await {
+            Ok(branches) => self.match_branches.set(branches),
+            Err(e) => {
+                log::error!("Failed to load match branches: {}", e);
+                gx.toast(Toast::error("Failed to load match branches"));
+            }
+        }
+
+        match repo.get_coalesce_chains_by_migration(migration_id).await {
+            Ok(chains) => self.coalesce_chains.set(chains),
+            Err(e) => {
+                log::error!("Failed to load coalesce chains: {}", e);
+                gx.toast(Toast::error("Failed to load coalesce chains"));
+            }
+        }
+
+        match repo.get_find_conditions_by_migration(migration_id).await {
+            Ok(conditions) => self.find_conditions.set(conditions),
+            Err(e) => {
+                log::error!("Failed to load find conditions: {}", e);
+                gx.toast(Toast::error("Failed to load find conditions"));
+            }
+        }
 
         // Build tree
         self.rebuild_tree();

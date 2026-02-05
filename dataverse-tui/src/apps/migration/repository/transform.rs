@@ -63,6 +63,28 @@ impl super::MigrationRepository {
             .map_err(RepositoryError::Database)
     }
 
+    /// Get all transforms for a migration (joins through entity_mappings and phases).
+    pub async fn get_transforms_by_migration(
+        &self,
+        migration_id: i64,
+    ) -> Result<Vec<Transform>, RepositoryError> {
+        self.client
+            .conn_mut(move |conn| {
+                let mut stmt = conn.prepare(
+                    "SELECT t.id, t.entity_mapping_id, t.parent_type, t.parent_id, t.\"order\", t.transform_type, t.data
+                     FROM transforms t
+                     INNER JOIN entity_mappings em ON t.entity_mapping_id = em.id
+                     INNER JOIN phases p ON em.phase_id = p.id
+                     WHERE p.migration_id = ?1
+                     ORDER BY t.id ASC",
+                )?;
+                let rows = stmt.query_map([migration_id], row_to_transform)?;
+                rows.collect::<Result<Vec<_>, _>>()
+            })
+            .await
+            .map_err(RepositoryError::Database)
+    }
+
     /// Get a transform by ID.
     pub async fn get_transform(&self, id: i64) -> Result<Transform, RepositoryError> {
         self.client
@@ -267,6 +289,43 @@ impl super::MigrationRepository {
                      ORDER BY \"order\" ASC",
                 )?;
                 let rows = stmt.query_map([transform_id], |row| {
+                    let condition_blob: Option<Vec<u8>> = row.get(3)?;
+                    let condition = condition_blob
+                        .map(|b| deserialize_condition(&b))
+                        .transpose()
+                        .map_err(|_| rusqlite::Error::InvalidQuery)?;
+
+                    Ok(MatchBranch {
+                        id: row.get(0)?,
+                        transform_id: row.get(1)?,
+                        order: row.get(2)?,
+                        condition,
+                        is_default: row.get::<_, i32>(4)? != 0,
+                    })
+                })?;
+                rows.collect::<Result<Vec<_>, _>>()
+            })
+            .await
+            .map_err(RepositoryError::Database)
+    }
+
+    /// Get all match branches for a migration (joins through transforms, entity_mappings, phases).
+    pub async fn get_match_branches_by_migration(
+        &self,
+        migration_id: i64,
+    ) -> Result<Vec<MatchBranch>, RepositoryError> {
+        self.client
+            .conn_mut(move |conn| {
+                let mut stmt = conn.prepare(
+                    "SELECT mb.id, mb.transform_id, mb.\"order\", mb.condition, mb.is_default
+                     FROM match_branches mb
+                     INNER JOIN transforms t ON mb.transform_id = t.id
+                     INNER JOIN entity_mappings em ON t.entity_mapping_id = em.id
+                     INNER JOIN phases p ON em.phase_id = p.id
+                     WHERE p.migration_id = ?1
+                     ORDER BY mb.id ASC",
+                )?;
+                let rows = stmt.query_map([migration_id], |row| {
                     let condition_blob: Option<Vec<u8>> = row.get(3)?;
                     let condition = condition_blob
                         .map(|b| deserialize_condition(&b))

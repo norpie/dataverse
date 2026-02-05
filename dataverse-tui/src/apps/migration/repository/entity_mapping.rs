@@ -80,6 +80,30 @@ impl super::MigrationRepository {
             .map_err(RepositoryError::Database)
     }
 
+    /// Get all entity mappings for a migration (joins through phases).
+    pub async fn get_entity_mappings_by_migration(
+        &self,
+        migration_id: i64,
+    ) -> Result<Vec<EntityMapping>, RepositoryError> {
+        self.client
+            .conn(move |conn| {
+                let mut stmt = conn.prepare(
+                    "SELECT em.id, em.phase_id, em.\"order\", em.name, em.source_entity, em.target_entity, em.mode, em.lua_script,
+                            em.match_strategy, em.match_find_config, em.no_match_fallback, em.orphan_strategy,
+                            em.create_pass_enabled, em.update_pass_enabled, em.delete_pass_enabled, em.deactivate_pass_enabled,
+                            em.associate_pass_enabled, em.disassociate_pass_enabled, em.source_filter, em.target_filter, em.test_guids
+                     FROM entity_mappings em
+                     INNER JOIN phases p ON em.phase_id = p.id
+                     WHERE p.migration_id = ?1
+                     ORDER BY p.\"order\" ASC, em.\"order\" ASC",
+                )?;
+                let rows = stmt.query_map([migration_id], row_to_entity_mapping)?;
+                rows.collect::<Result<Vec<_>, _>>()
+            })
+            .await
+            .map_err(RepositoryError::Database)
+    }
+
     /// Get an entity mapping by ID (without related data).
     pub async fn get_entity_mapping(&self, id: i64) -> Result<EntityMapping, RepositoryError> {
         self.client
