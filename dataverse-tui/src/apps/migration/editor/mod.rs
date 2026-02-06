@@ -370,22 +370,14 @@ impl MigrationEditor {
             MigrationTreeNode::Variables { .. } => {
                 // Section header - no action, use 'a' to add
             }
-            MigrationTreeNode::Variable(v) => {
-                // TODO: Open transform chain editor
-                gx.toast(Toast::info(format!(
-                    "Transform editor for ${} not yet implemented",
-                    v.name
-                )));
+            MigrationTreeNode::Variable(_) => {
+                self.add_transform_impl(gx).await;
             }
             MigrationTreeNode::FieldMappings { .. } => {
                 // Section header - no action, use 'a' to add
             }
-            MigrationTreeNode::FieldMapping(fm) => {
-                // TODO: Open transform chain editor
-                gx.toast(Toast::info(format!(
-                    "Transform editor for '{}' not yet implemented",
-                    fm.target_field
-                )));
+            MigrationTreeNode::FieldMapping(_) => {
+                self.add_transform_impl(gx).await;
             }
             MigrationTreeNode::Transform(tn) => {
                 self.edit_transform_impl(&tn.transform, gx).await;

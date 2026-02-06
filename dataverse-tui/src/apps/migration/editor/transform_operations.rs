@@ -122,8 +122,18 @@ impl MigrationEditor {
                         .await;
                 }
 
-                gx.toast(Toast::info("Transform added"));
                 self.refresh_data(gx).await;
+
+                // Automatically open the edit modal for the newly added transform
+                let new_transform = self
+                    .transforms
+                    .get()
+                    .iter()
+                    .find(|t| t.id == new_id)
+                    .cloned();
+                if let Some(t) = new_transform {
+                    self.edit_transform_impl(&t, gx).await;
+                }
             }
             Err(e) => {
                 log::error!("Failed to create transform: {}", e);
