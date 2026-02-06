@@ -8,6 +8,15 @@ use super::condition::Condition;
 use super::enums::MathOp;
 use super::enums::StringOp;
 
+/// A single mapping from source option set value to target option set value.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OptionSetMapping {
+    /// Source option set value.
+    pub from: i32,
+    /// Target option set value.
+    pub to: i32,
+}
+
 /// Transform operation data (excludes nested transforms which are separate DB rows).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum TransformData {
@@ -35,8 +44,8 @@ pub enum TransformData {
     },
     /// String operation (chain multiple for sequence).
     StringOps { op: StringOp },
-    /// Value mapping lookup table.
-    ValueMap { mappings: Vec<(Value, Value)> },
+    /// Option set value mapping (source value -> target value).
+    ValueMap { mappings: Vec<OptionSetMapping> },
     /// Mathematical operation.
     Math { operation: MathOp },
     /// First non-null value (uses chain).
