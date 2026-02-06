@@ -715,6 +715,11 @@ fn build_variable_node(v: Variable, ctx: &mut TreeBuildContext) -> TreeNode<Migr
         let chain_result = compute_chain_types(&transforms, ctx);
 
         // Record variable output type for use in later chains
+        log::debug!(
+            "type_tracking: variable ${} resolved to {:?}",
+            var_name,
+            chain_result.output_type,
+        );
         ctx.type_tracking
             .variable_types
             .insert(var_name, chain_result.output_type.clone());
@@ -739,6 +744,11 @@ fn build_field_mapping_node(
         TreeNode::leaf(MigrationTreeNode::FieldMapping(fm))
     } else {
         // Compute types for this chain
+        log::debug!(
+            "type_tracking: computing chain for field mapping {} (target={})",
+            fm.id,
+            fm.target_field,
+        );
         let chain_result = compute_chain_types(&transforms, ctx);
         ctx.type_tracking.merge(&chain_result);
 
@@ -754,6 +764,12 @@ fn build_field_mapping_node(
 fn make_transform_node(t: Transform, ctx: &TreeBuildContext) -> MigrationTreeNode {
     let output_type = ctx.type_tracking.type_for(t.id).cloned();
     let warning = ctx.type_tracking.warning_for(t.id).cloned();
+    log::debug!(
+        "type_tracking: tree node for transform {} -> type={:?}, warning={}",
+        t.id,
+        output_type,
+        warning.is_some(),
+    );
     MigrationTreeNode::Transform(TransformNode {
         transform: t,
         output_type,

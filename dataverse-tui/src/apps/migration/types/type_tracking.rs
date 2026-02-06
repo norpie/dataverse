@@ -216,10 +216,24 @@ where
 
     for transform in transforms {
         let sig = transform.data.signature();
+        log::debug!(
+            "type_tracking: transform {} ({:?}) sig input={:?} output={:?}, current_type={:?}",
+            transform.id,
+            std::mem::discriminant(&transform.data),
+            sig.input,
+            sig.output,
+            current_type,
+        );
 
         // Check input compatibility
         if let Some(expected_input) = &sig.input {
             if !current_type.is_compatible_with(expected_input) {
+                log::debug!(
+                    "type_tracking: WARNING transform {} expected {:?} but got {:?}",
+                    transform.id,
+                    expected_input,
+                    current_type,
+                );
                 result.warnings.push(TypeWarning {
                     transform_id: transform.id,
                     expected: expected_input.clone(),
@@ -230,12 +244,29 @@ where
 
         // Compute output type
         current_type = match sig.output {
-            Some(t) => t,
+            Some(t) => {
+                log::debug!(
+                    "type_tracking: transform {} output from signature: {:?}",
+                    transform.id,
+                    t,
+                );
+                t
+            }
             None => {
                 // Dynamic or passthrough - try to resolve
                 if let Some(resolved) = resolve_fn(&transform.data, &current_type) {
+                    log::debug!(
+                        "type_tracking: transform {} output resolved dynamically: {:?}",
+                        transform.id,
+                        resolved,
+                    );
                     resolved
                 } else {
+                    log::debug!(
+                        "type_tracking: transform {} output passthrough: {:?}",
+                        transform.id,
+                        current_type,
+                    );
                     // Passthrough
                     current_type.clone()
                 }
@@ -247,7 +278,12 @@ where
             .insert(transform.id, current_type.clone());
     }
 
-    result.output_type = current_type;
+    result.output_type = current_type.clone();
+    log::debug!(
+        "type_tracking: chain result output={:?}, warnings={}",
+        current_type,
+        result.warnings.len()
+    );
     result
 }
 
@@ -292,9 +328,15 @@ pub fn resolve_branch_union(branch_types: &[ValueType]) -> ValueType {
         }
     }
 
-    match known_types.len() {
+    let result = match known_types.len() {
         0 => ValueType::Null,
         1 if !has_null => ValueType::Known(known_types[0]),
         _ => ValueType::Union(known_types),
-    }
+    };
+    log::debug!(
+        "type_tracking: branch union from {} branches -> {:?}",
+        branch_types.len(),
+        result
+    );
+    result
 }
