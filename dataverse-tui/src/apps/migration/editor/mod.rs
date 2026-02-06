@@ -32,6 +32,7 @@ use crate::apps::migration::types::Transform;
 use crate::apps::migration::types::Variable;
 
 use tree::build_tree_nodes;
+use tree::FieldTypeCache;
 use tree::MigrationTreeNode;
 use tree::TransformNode;
 use tree::TypeTrackingResult;
@@ -65,6 +66,8 @@ pub struct MigrationEditor {
     find_conditions: Vec<FindCondition>,
     /// Type tracking result (computed during tree building).
     type_tracking: TypeTrackingResult,
+    /// Cached field types per source entity (for type tracking).
+    field_type_cache: FieldTypeCache,
 }
 
 impl MigrationEditor {
@@ -79,15 +82,16 @@ impl MigrationEditor {
             source_client,
             target_client,
             TreeState::default(),
-            Vec::new(),                  // phases
-            Vec::new(),                  // entity_mappings
-            Vec::new(),                  // variables
-            Vec::new(),                  // field_mappings
-            Vec::new(),                  // transforms
-            Vec::new(),                  // match_branches
-            Vec::new(),                  // coalesce_chains
-            Vec::new(),                  // find_conditions
+            Vec::new(),                    // phases
+            Vec::new(),                    // entity_mappings
+            Vec::new(),                    // variables
+            Vec::new(),                    // field_mappings
+            Vec::new(),                    // transforms
+            Vec::new(),                    // match_branches
+            Vec::new(),                    // coalesce_chains
+            Vec::new(),                    // find_conditions
             TypeTrackingResult::default(), // type_tracking
+            FieldTypeCache::default(),     // field_type_cache
         )
     }
 }
@@ -164,7 +168,8 @@ impl MigrationEditor {
             }
         }
 
-        // Build tree
+        // Fetch metadata for source entities and build tree
+        self.fetch_missing_metadata(gx).await;
         self.rebuild_tree();
     }
 

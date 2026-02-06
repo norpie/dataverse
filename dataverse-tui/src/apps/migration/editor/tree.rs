@@ -2,6 +2,7 @@
 
 use std::collections::HashMap;
 
+use dataverse_lib::model::metadata::AttributeType;
 use dataverse_lib::model::ValueType;
 use rafter::element;
 use rafter::widgets::Text;
@@ -24,6 +25,10 @@ use crate::apps::migration::types::Transform;
 use crate::apps::migration::types::TransformData;
 use crate::apps::migration::types::TypeWarning;
 use crate::apps::migration::types::Variable;
+
+/// Cache of field types per source entity.
+/// Maps `source_entity_logical_name -> (field_logical_name -> AttributeType)`.
+pub type FieldTypeCache = HashMap<String, HashMap<String, AttributeType>>;
 
 /// A transform node in the tree, enriched with type tracking data.
 #[derive(Clone, Debug)]
@@ -558,8 +563,23 @@ impl<'a> TreeLookup<'a> {
 /// Context for building the tree, holding lookup data and mutable type tracking.
 struct TreeBuildContext<'a> {
     lookup: TreeLookup<'a>,
+    /// Entity mappings for looking up source entity names.
+    entity_mappings: &'a [EntityMapping],
+    /// Cached field types per source entity (for type tracking).
+    field_type_cache: &'a FieldTypeCache,
     /// Mutable type tracking result, populated during tree building.
     type_tracking: TypeTrackingResult,
+}
+
+impl<'a> TreeBuildContext<'a> {
+    /// Look up the source entity name for a given entity mapping ID.
+    fn source_entity_for(&self, entity_mapping_id: i64) -> &str {
+        self.entity_mappings
+            .iter()
+            .find(|em| em.id == entity_mapping_id)
+            .map(|em| em.source_entity.as_str())
+            .unwrap_or("")
+    }
 }
 
 /// Build tree nodes from all migration data.
@@ -573,6 +593,7 @@ pub fn build_tree_nodes(
     match_branches: Vec<MatchBranch>,
     coalesce_chains: Vec<CoalesceChain>,
     find_conditions: Vec<FindCondition>,
+    field_type_cache: &FieldTypeCache,
 ) -> (Vec<TreeNode<MigrationTreeNode>>, TypeTrackingResult) {
     let mut ctx = TreeBuildContext {
         lookup: TreeLookup {
@@ -581,6 +602,8 @@ pub fn build_tree_nodes(
             coalesce_chains: &coalesce_chains,
             find_conditions: &find_conditions,
         },
+        entity_mappings: &entity_mappings,
+        field_type_cache,
         type_tracking: TypeTrackingResult::default(),
     };
 
@@ -712,7 +735,8 @@ fn build_variable_node(v: Variable, ctx: &mut TreeBuildContext) -> TreeNode<Migr
         TreeNode::leaf(MigrationTreeNode::Variable(v))
     } else {
         // Compute types for this chain
-        let chain_result = compute_chain_types(&transforms, ctx);
+        let source_entity = ctx.source_entity_for(v.entity_mapping_id);
+        let chain_result = compute_chain_types(&transforms, source_entity, ctx);
 
         // Record variable output type for use in later chains
         log::debug!(
@@ -744,12 +768,14 @@ fn build_field_mapping_node(
         TreeNode::leaf(MigrationTreeNode::FieldMapping(fm))
     } else {
         // Compute types for this chain
+        let source_entity = ctx.source_entity_for(fm.entity_mapping_id);
         log::debug!(
-            "type_tracking: computing chain for field mapping {} (target={})",
+            "type_tracking: computing chain for field mapping {} (target={}, source={})",
             fm.id,
             fm.target_field,
+            source_entity,
         );
-        let chain_result = compute_chain_types(&transforms, ctx);
+        let chain_result = compute_chain_types(&transforms, source_entity, ctx);
         ctx.type_tracking.merge(&chain_result);
 
         let transform_nodes: Vec<TreeNode<MigrationTreeNode>> = transforms
@@ -779,6 +805,7 @@ fn make_transform_node(t: Transform, ctx: &TreeBuildContext) -> MigrationTreeNod
 
 /// Build a tree node for a transform, including nested structures.
 fn build_transform_node(t: Transform, ctx: &mut TreeBuildContext) -> TreeNode<MigrationTreeNode> {
+    let source_entity = ctx.source_entity_for(t.entity_mapping_id).to_owned();
     match &t.data {
         TransformData::Guard { .. } => {
             // Guard: child transforms appear directly under the guard node
@@ -806,7 +833,8 @@ fn build_transform_node(t: Transform, ctx: &mut TreeBuildContext) -> TreeNode<Mi
                     let branch_transforms =
                         ctx.lookup.get_transforms(ParentType::MatchBranch, mb.id);
                     if !branch_transforms.is_empty() {
-                        let branch_result = compute_chain_types(&branch_transforms, ctx);
+                        let branch_result =
+                            compute_chain_types(&branch_transforms, &source_entity, ctx);
                         branch_output_types.push(branch_result.output_type.clone());
                         ctx.type_tracking.merge(&branch_result);
                     }
@@ -837,7 +865,8 @@ fn build_transform_node(t: Transform, ctx: &mut TreeBuildContext) -> TreeNode<Mi
                     let chain_transforms =
                         ctx.lookup.get_transforms(ParentType::CoalesceChain, cc.id);
                     if !chain_transforms.is_empty() {
-                        let chain_result = compute_chain_types(&chain_transforms, ctx);
+                        let chain_result =
+                            compute_chain_types(&chain_transforms, &source_entity, ctx);
                         chain_output_types.push(chain_result.output_type.clone());
                         ctx.type_tracking.merge(&chain_result);
                     }
@@ -868,7 +897,8 @@ fn build_transform_node(t: Transform, ctx: &mut TreeBuildContext) -> TreeNode<Mi
                         let cond_transforms =
                             ctx.lookup.get_transforms(ParentType::FindCondition, fc.id);
                         if !cond_transforms.is_empty() {
-                            let cond_result = compute_chain_types(&cond_transforms, ctx);
+                            let cond_result =
+                                compute_chain_types(&cond_transforms, &source_entity, ctx);
                             ctx.type_tracking.merge(&cond_result);
                         }
                     }
@@ -982,9 +1012,16 @@ fn build_nested_chain_node(
 
 /// Compute chain types using the current type tracking context.
 ///
-/// Resolves `copy($var)` references using already-computed variable types.
-fn compute_chain_types(transforms: &[Transform], ctx: &TreeBuildContext) -> ChainTypeResult {
+/// Resolves `copy($var)` references using already-computed variable types,
+/// and `copy(field)` paths using the field type cache from entity metadata.
+fn compute_chain_types(
+    transforms: &[Transform],
+    source_entity: &str,
+    ctx: &TreeBuildContext,
+) -> ChainTypeResult {
     let variable_types = &ctx.type_tracking.variable_types;
+    let field_types = ctx.field_type_cache.get(source_entity);
+
     propagate_chain_types(transforms, |data, current_type| {
         match data {
             TransformData::Copy { path } => {
@@ -999,17 +1036,45 @@ fn compute_chain_types(transforms: &[Transform], ctx: &TreeBuildContext) -> Chai
                 } else if path == "#value" {
                     Some(current_type.clone())
                 } else if path == "#index" {
-                    Some(ValueType::Known(
-                        dataverse_lib::model::metadata::AttributeType::Integer,
-                    ))
+                    Some(ValueType::Known(AttributeType::Integer))
                 } else if path == "#type" || path == "#source_entity" || path == "#target_entity" {
-                    Some(ValueType::Known(
-                        dataverse_lib::model::metadata::AttributeType::String,
-                    ))
+                    Some(ValueType::Known(AttributeType::String))
                 } else {
-                    // Field path - would need metadata to resolve.
-                    // For now, return None (passthrough) until async resolution is wired up.
-                    None
+                    // Field path - resolve from metadata cache.
+                    // For dotted paths (e.g., "parentaccountid.name"), use the root field.
+                    let root_field = path.split('.').next().unwrap_or(path);
+                    // Strip optional marker and polymorphic hint (e.g., "ownerid?[systemuser]" -> "ownerid")
+                    let clean_field = root_field
+                        .split('?')
+                        .next()
+                        .unwrap_or(root_field)
+                        .split('[')
+                        .next()
+                        .unwrap_or(root_field);
+
+                    if let Some(fields) = field_types {
+                        if let Some(attr_type) = fields.get(clean_field) {
+                            log::debug!(
+                                "type_tracking: resolved field '{}' -> {:?}",
+                                path,
+                                attr_type,
+                            );
+                            Some(ValueType::Known(*attr_type))
+                        } else {
+                            log::debug!(
+                                "type_tracking: field '{}' not found in metadata for '{}'",
+                                clean_field,
+                                source_entity,
+                            );
+                            None
+                        }
+                    } else {
+                        log::debug!(
+                            "type_tracking: no metadata cached for entity '{}'",
+                            source_entity,
+                        );
+                        None
+                    }
                 }
             }
             _ => None, // Passthrough for all other dynamic cases
