@@ -47,8 +47,7 @@ use super::types::OptionSetValue;
 /// let active = Value::from(true);
 /// let empty = Value::Null;
 /// ```
-#[derive(Debug, Clone, PartialEq)]
-#[derive(Default)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub enum Value {
     /// Null/empty value.
     #[default]
@@ -237,4 +236,3 @@ impl<T: Into<Value>> From<Option<T>> for Value {
         }
     }
 }
-
