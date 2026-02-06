@@ -9,10 +9,10 @@ use crate::apps::migration::types::FieldMapping;
 use crate::apps::migration::types::FindCondition;
 use crate::apps::migration::types::MatchBranch;
 use crate::apps::migration::types::ParentType;
-use crate::apps::migration::types::Transform;
 use crate::apps::migration::types::Variable;
 
 use super::tree::transform_display_text;
+use super::tree::TransformNode;
 use super::MigrationEditor;
 
 impl MigrationEditor {
@@ -183,7 +183,8 @@ impl MigrationEditor {
     }
 
     /// Render a Transform detail view.
-    pub(super) fn render_transform_detail(&self, transform: &Transform) -> Element {
+    pub(super) fn render_transform_detail(&self, tn: &TransformNode) -> Element {
+        let transform = &tn.transform;
         let display_text = transform_display_text(&transform.data);
         let parent_desc = match transform.parent_type {
             ParentType::FieldMapping => "Field Mapping",
@@ -194,6 +195,23 @@ impl MigrationEditor {
             ParentType::FindCondition => "Find Condition",
         };
         let order_str = format!("{}", transform.order + 1);
+        let has_type = tn.output_type.is_some();
+        let type_str = tn
+            .output_type
+            .as_ref()
+            .map(|t| t.display())
+            .unwrap_or_default();
+        let has_warning = tn.warning.is_some();
+        let expected_str = tn
+            .warning
+            .as_ref()
+            .map(|w| w.expected.display())
+            .unwrap_or_default();
+        let actual_str = tn
+            .warning
+            .as_ref()
+            .map(|w| w.actual.display())
+            .unwrap_or_default();
 
         element! {
             column (gap: 1) {
@@ -211,7 +229,27 @@ impl MigrationEditor {
                         text (content: "Parent") style (fg: muted)
                         text (content: {parent_desc})
                     }
+                    if has_type {
+                        row (gap: 1) {
+                            text (content: "Output") style (fg: muted)
+                            text (content: {type_str})
+                        }
+                    }
                     text (content: "Press Enter to edit transform parameters") style (fg: muted)
+                }
+                if has_warning {
+                    column {
+                        text (content: "Type Warning") style (bold, fg: warning)
+                        row (gap: 1) {
+                            text (content: "Expected") style (fg: muted)
+                            text (content: {expected_str})
+                        }
+                        row (gap: 1) {
+                            text (content: "Actual") style (fg: muted)
+                            text (content: {actual_str}) style (fg: warning)
+                        }
+                        text (content: "Consider adding a convert transform before this one") style (fg: muted)
+                    }
                 }
             }
         }

@@ -33,6 +33,7 @@ use crate::apps::migration::types::Variable;
 
 use tree::build_tree_nodes;
 use tree::MigrationTreeNode;
+use tree::TransformNode;
 use tree::TypeTrackingResult;
 
 /// Migration editor app.
@@ -235,7 +236,7 @@ impl MigrationEditor {
                 // Field mapping selected -> add transform to its chain
                 self.add_transform_impl(gx).await;
             }
-            Some(MigrationTreeNode::Transform(_)) => {
+            Some(MigrationTreeNode::Transform(..)) => {
                 // Transform selected -> add transform after it in the chain
                 self.add_transform_impl(gx).await;
             }
@@ -284,8 +285,8 @@ impl MigrationEditor {
                 self.delete_field_mapping_impl(fm.id, fm.entity_mapping_id, cx, gx)
                     .await;
             }
-            Some(MigrationTreeNode::Transform(t)) => {
-                self.delete_transform_impl(&t, cx, gx).await;
+            Some(MigrationTreeNode::Transform(tn)) => {
+                self.delete_transform_impl(&tn.transform, cx, gx).await;
             }
             // Other config nodes can't be deleted
             Some(_) | None => {}
@@ -320,8 +321,8 @@ impl MigrationEditor {
                 self.reorder_field_mapping_impl(fm.id, fm.entity_mapping_id, direction, gx)
                     .await;
             }
-            MigrationTreeNode::Transform(t) => {
-                self.reorder_transform_impl(&t, direction, gx).await;
+            MigrationTreeNode::Transform(tn) => {
+                self.reorder_transform_impl(&tn.transform, direction, gx).await;
             }
             // Other nodes don't support reordering (yet)
             _ => {}
@@ -381,8 +382,8 @@ impl MigrationEditor {
                     fm.target_field
                 )));
             }
-            MigrationTreeNode::Transform(t) => {
-                self.edit_transform_impl(&t, gx).await;
+            MigrationTreeNode::Transform(tn) => {
+                self.edit_transform_impl(&tn.transform, gx).await;
             }
             MigrationTreeNode::MatchBranch(_mb) => {
                 // TODO: Open match branch editor (condition editor)
@@ -412,7 +413,7 @@ impl MigrationEditor {
             Some(MigrationTreeNode::Variable(_)) => (true, "Add Transform"),
             Some(MigrationTreeNode::FieldMappings { .. }) => (true, "Add Field"),
             Some(MigrationTreeNode::FieldMapping(_)) => (true, "Add Transform"),
-            Some(MigrationTreeNode::Transform(_)) => (true, "Add Transform"),
+            Some(MigrationTreeNode::Transform(..)) => (true, "Add Transform"),
             Some(MigrationTreeNode::MatchBranch(_)) => (true, "Add Transform"),
             Some(MigrationTreeNode::CoalesceChain(_)) => (true, "Add Transform"),
             Some(MigrationTreeNode::FindCondition(_)) => (true, "Add Transform"),
@@ -512,8 +513,8 @@ impl MigrationEditor {
                             Some(MigrationTreeNode::FieldMapping(fm)) => {
                                 { self.render_field_mapping_detail(&fm) }
                             }
-                            Some(MigrationTreeNode::Transform(t)) => {
-                                { self.render_transform_detail(&t) }
+                            Some(MigrationTreeNode::Transform(tn)) => {
+                                { self.render_transform_detail(&tn) }
                             }
                             Some(MigrationTreeNode::MatchBranch(mb)) => {
                                 { self.render_match_branch_detail(&mb) }

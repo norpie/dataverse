@@ -25,6 +25,17 @@ use crate::apps::migration::types::TransformData;
 use crate::apps::migration::types::TypeWarning;
 use crate::apps::migration::types::Variable;
 
+/// A transform node in the tree, enriched with type tracking data.
+#[derive(Clone, Debug)]
+pub struct TransformNode {
+    /// The underlying transform data.
+    pub transform: Transform,
+    /// The resolved output type of this transform (from type propagation).
+    pub output_type: Option<ValueType>,
+    /// Type warning if this transform has an input type mismatch.
+    pub warning: Option<TypeWarning>,
+}
+
 /// A node in the migration editor tree.
 #[derive(Clone, Debug)]
 pub enum MigrationTreeNode {
@@ -53,7 +64,7 @@ pub enum MigrationTreeNode {
     /// An individual field mapping (child of FieldMappings section).
     FieldMapping(FieldMapping),
     /// A transform operation (child of Variable, FieldMapping, or nested chain).
-    Transform(Transform),
+    Transform(TransformNode),
     /// A branch within a match transform.
     MatchBranch(MatchBranch),
     /// A fallback chain within a coalesce transform.
@@ -85,7 +96,7 @@ impl MigrationTreeNode {
             | Self::FieldMappings { entity_mapping_id } => Some(*entity_mapping_id),
             Self::Variable(v) => Some(v.entity_mapping_id),
             Self::FieldMapping(fm) => Some(fm.entity_mapping_id),
-            Self::Transform(t) => Some(t.entity_mapping_id),
+            Self::Transform(tn) => Some(tn.transform.entity_mapping_id),
             Self::MatchBranch(_) => None,   // Get via transform
             Self::CoalesceChain(_) => None, // Get via transform
             Self::FindCondition(_) => None, // Get via transform
@@ -130,10 +141,18 @@ impl MigrationTreeNode {
         matches!(self, Self::Transform(_))
     }
 
+    /// Get the transform node if this is a transform node.
+    pub fn as_transform_node(&self) -> Option<&TransformNode> {
+        match self {
+            Self::Transform(tn) => Some(tn),
+            _ => None,
+        }
+    }
+
     /// Get the transform if this is a transform node.
     pub fn as_transform(&self) -> Option<&Transform> {
         match self {
-            Self::Transform(t) => Some(t),
+            Self::Transform(tn) => Some(&tn.transform),
             _ => None,
         }
     }
@@ -222,7 +241,7 @@ impl TreeItem for MigrationTreeNode {
                 format!("field-mappings-{}", entity_mapping_id)
             }
             Self::FieldMapping(fm) => format!("field-mapping-{}", fm.id),
-            Self::Transform(t) => format!("transform-{}", t.id),
+            Self::Transform(tn) => format!("transform-{}", tn.transform.id),
             Self::MatchBranch(mb) => format!("match-branch-{}", mb.id),
             Self::CoalesceChain(cc) => format!("coalesce-chain-{}", cc.id),
             Self::FindCondition(fc) => format!("find-condition-{}", fc.id),
@@ -296,10 +315,26 @@ impl TreeItem for MigrationTreeNode {
                     text (content: {label}) style (fg: primary)
                 }
             }
-            Self::Transform(t) => {
-                let label = transform_display_text(&t.data);
+            Self::Transform(tn) => {
+                let label = transform_display_text(&tn.transform.data);
+                let has_type = tn.output_type.is_some();
+                let type_label = tn
+                    .output_type
+                    .as_ref()
+                    .map(|t| format!(" -> {}", t.display()))
+                    .unwrap_or_default();
+                let has_warning = tn.warning.is_some();
+
                 element! {
-                    text (content: {label}) style (fg: primary)
+                    row {
+                        text (content: {label}) style (fg: primary)
+                        if has_type {
+                            text (content: {type_label}) style (fg: muted)
+                        }
+                        if has_warning {
+                            text (content: " !") style (fg: warning)
+                        }
+                    }
                 }
             }
             Self::MatchBranch(mb) => {
@@ -715,6 +750,17 @@ fn build_field_mapping_node(
     }
 }
 
+/// Create a `MigrationTreeNode::Transform` with embedded type tracking data.
+fn make_transform_node(t: Transform, ctx: &TreeBuildContext) -> MigrationTreeNode {
+    let output_type = ctx.type_tracking.type_for(t.id).cloned();
+    let warning = ctx.type_tracking.warning_for(t.id).cloned();
+    MigrationTreeNode::Transform(TransformNode {
+        transform: t,
+        output_type,
+        warning,
+    })
+}
+
 /// Build a tree node for a transform, including nested structures.
 fn build_transform_node(t: Transform, ctx: &mut TreeBuildContext) -> TreeNode<MigrationTreeNode> {
     match &t.data {
@@ -722,20 +768,21 @@ fn build_transform_node(t: Transform, ctx: &mut TreeBuildContext) -> TreeNode<Mi
             // Guard: child transforms appear directly under the guard node
             let fallback_transforms = ctx.lookup.get_transforms(ParentType::GuardFallback, t.id);
             if fallback_transforms.is_empty() {
-                TreeNode::leaf(MigrationTreeNode::Transform(t))
+                TreeNode::leaf(make_transform_node(t, ctx))
             } else {
+                let node = make_transform_node(t, ctx);
                 let children: Vec<TreeNode<MigrationTreeNode>> = fallback_transforms
                     .into_iter()
                     .map(|ft| build_transform_node(ft, ctx))
                     .collect();
-                TreeNode::branch(MigrationTreeNode::Transform(t), children)
+                TreeNode::branch(node, children)
             }
         }
         TransformData::Match => {
             // Match: branches as children
             let branches = ctx.lookup.get_match_branches(t.id);
             if branches.is_empty() {
-                TreeNode::leaf(MigrationTreeNode::Transform(t))
+                TreeNode::leaf(make_transform_node(t, ctx))
             } else {
                 // Compute types for each branch, then union them
                 let mut branch_output_types = Vec::new();
@@ -754,18 +801,19 @@ fn build_transform_node(t: Transform, ctx: &mut TreeBuildContext) -> TreeNode<Mi
                     ctx.type_tracking.transform_types.insert(t.id, union_type);
                 }
 
+                let node = make_transform_node(t, ctx);
                 let children: Vec<TreeNode<MigrationTreeNode>> = branches
                     .into_iter()
                     .map(|mb| build_match_branch_node(mb, ctx))
                     .collect();
-                TreeNode::branch(MigrationTreeNode::Transform(t), children)
+                TreeNode::branch(node, children)
             }
         }
         TransformData::Coalesce => {
             // Coalesce: chains as children
             let chains = ctx.lookup.get_coalesce_chains(t.id);
             if chains.is_empty() {
-                TreeNode::leaf(MigrationTreeNode::Transform(t))
+                TreeNode::leaf(make_transform_node(t, ctx))
             } else {
                 // Compute types for each fallback chain, then union them
                 let mut chain_output_types = Vec::new();
@@ -784,11 +832,12 @@ fn build_transform_node(t: Transform, ctx: &mut TreeBuildContext) -> TreeNode<Mi
                     ctx.type_tracking.transform_types.insert(t.id, union_type);
                 }
 
+                let node = make_transform_node(t, ctx);
                 let children: Vec<TreeNode<MigrationTreeNode>> = chains
                     .into_iter()
                     .map(|cc| build_coalesce_chain_node(cc, ctx))
                     .collect();
-                TreeNode::branch(MigrationTreeNode::Transform(t), children)
+                TreeNode::branch(node, children)
             }
         }
         TransformData::Find { mode, .. } => {
@@ -796,7 +845,7 @@ fn build_transform_node(t: Transform, ctx: &mut TreeBuildContext) -> TreeNode<Mi
             if matches!(mode, crate::apps::migration::types::FindMode::Where) {
                 let conditions = ctx.lookup.get_find_conditions(t.id);
                 if conditions.is_empty() {
-                    TreeNode::leaf(MigrationTreeNode::Transform(t))
+                    TreeNode::leaf(make_transform_node(t, ctx))
                 } else {
                     // Compute types for each condition's chain
                     for fc in &conditions {
@@ -808,20 +857,21 @@ fn build_transform_node(t: Transform, ctx: &mut TreeBuildContext) -> TreeNode<Mi
                         }
                     }
 
+                    let node = make_transform_node(t, ctx);
                     let children: Vec<TreeNode<MigrationTreeNode>> = conditions
                         .into_iter()
                         .map(|fc| build_find_condition_node(fc, ctx))
                         .collect();
-                    TreeNode::branch(MigrationTreeNode::Transform(t), children)
+                    TreeNode::branch(node, children)
                 }
             } else {
                 // Lua mode - no children
-                TreeNode::leaf(MigrationTreeNode::Transform(t))
+                TreeNode::leaf(make_transform_node(t, ctx))
             }
         }
         _ => {
             // Simple transforms - no children
-            TreeNode::leaf(MigrationTreeNode::Transform(t))
+            TreeNode::leaf(make_transform_node(t, ctx))
         }
     }
 }

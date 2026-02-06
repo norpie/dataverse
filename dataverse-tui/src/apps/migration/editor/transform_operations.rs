@@ -157,13 +157,13 @@ impl MigrationEditor {
                     insert_order: order,
                 })
             }
-            MigrationTreeNode::Transform(t) => {
+            MigrationTreeNode::Transform(tn) => {
                 // Add after this transform in the same chain
                 Some(InsertTarget {
-                    entity_mapping_id: t.entity_mapping_id,
-                    parent_type: t.parent_type,
-                    parent_id: t.parent_id,
-                    insert_order: t.order + 1,
+                    entity_mapping_id: tn.transform.entity_mapping_id,
+                    parent_type: tn.transform.parent_type,
+                    parent_id: tn.transform.parent_id,
+                    insert_order: tn.transform.order + 1,
                 })
             }
             MigrationTreeNode::MatchBranch(mb) => {
