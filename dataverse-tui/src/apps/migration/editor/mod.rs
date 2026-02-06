@@ -33,6 +33,7 @@ use crate::apps::migration::types::Variable;
 
 use tree::build_tree_nodes;
 use tree::MigrationTreeNode;
+use tree::TypeTrackingResult;
 
 /// Migration editor app.
 #[app(name = "Migration Editor", on_blur = Continue)]
@@ -61,6 +62,8 @@ pub struct MigrationEditor {
     coalesce_chains: Vec<CoalesceChain>,
     /// All find conditions (for tree building).
     find_conditions: Vec<FindCondition>,
+    /// Type tracking result (computed during tree building).
+    type_tracking: TypeTrackingResult,
 }
 
 impl MigrationEditor {
@@ -75,14 +78,15 @@ impl MigrationEditor {
             source_client,
             target_client,
             TreeState::default(),
-            Vec::new(), // phases
-            Vec::new(), // entity_mappings
-            Vec::new(), // variables
-            Vec::new(), // field_mappings
-            Vec::new(), // transforms
-            Vec::new(), // match_branches
-            Vec::new(), // coalesce_chains
-            Vec::new(), // find_conditions
+            Vec::new(),                  // phases
+            Vec::new(),                  // entity_mappings
+            Vec::new(),                  // variables
+            Vec::new(),                  // field_mappings
+            Vec::new(),                  // transforms
+            Vec::new(),                  // match_branches
+            Vec::new(),                  // coalesce_chains
+            Vec::new(),                  // find_conditions
+            TypeTrackingResult::default(), // type_tracking
         )
     }
 }

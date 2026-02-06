@@ -62,7 +62,7 @@ impl MigrationEditor {
         let coalesce_chains = self.coalesce_chains.get();
         let find_conditions = self.find_conditions.get();
 
-        let nodes = build_tree_nodes(
+        let (nodes, type_tracking) = build_tree_nodes(
             phases,
             entity_mappings,
             variables,
@@ -72,6 +72,7 @@ impl MigrationEditor {
             coalesce_chains,
             find_conditions,
         );
+        self.type_tracking.set(type_tracking);
         self.tree_state.update(|s| {
             s.set_roots(nodes);
             s.expand_all();
