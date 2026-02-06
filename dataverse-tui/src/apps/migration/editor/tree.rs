@@ -323,6 +323,7 @@ impl TreeItem for MigrationTreeNode {
             Self::Transform(tn) => {
                 let label = transform_display_text(&tn.transform.data);
                 let has_type = tn.output_type.is_some();
+                let is_null = matches!(&tn.output_type, Some(ValueType::Null));
                 let type_label = tn
                     .output_type
                     .as_ref()
@@ -335,6 +336,9 @@ impl TreeItem for MigrationTreeNode {
                         text (content: {label}) style (fg: primary)
                         if has_type {
                             text (content: {type_label}) style (fg: muted)
+                        }
+                        if is_null {
+                            text (content: " !") style (fg: error)
                         }
                         if has_warning {
                             text (content: " !") style (fg: warning)
