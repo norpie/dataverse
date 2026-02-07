@@ -5,13 +5,13 @@ use rafter::widgets::Text;
 use tuidom::Element;
 
 use crate::apps::migration::types::CoalesceChain;
-use crate::apps::migration::types::FieldMapping;
 use crate::apps::migration::types::FindCondition;
 use crate::apps::migration::types::MatchBranch;
 use crate::apps::migration::types::ParentType;
 use crate::apps::migration::types::Variable;
 
 use super::tree::transform_display_text;
+use super::tree::FieldMappingNode;
 use super::tree::TransformNode;
 use super::MigrationEditor;
 
@@ -153,7 +153,8 @@ impl MigrationEditor {
     }
 
     /// Render a single Field Mapping detail view.
-    pub(super) fn render_field_mapping_detail(&self, field_mapping: &FieldMapping) -> Element {
+    pub(super) fn render_field_mapping_detail(&self, fmn: &FieldMappingNode) -> Element {
+        let field_mapping = &fmn.field_mapping;
         let em = self
             .entity_mappings
             .get()
@@ -163,6 +164,17 @@ impl MigrationEditor {
 
         let parent_name = em.map(|e| e.name).unwrap_or_else(|| "Unknown".to_string());
         let target_field = field_mapping.target_field.clone();
+        let has_warning = fmn.warning.is_some();
+        let chain_output_str = fmn
+            .warning
+            .as_ref()
+            .map(|w| w.chain_output.display())
+            .unwrap_or_default();
+        let target_type_str = fmn
+            .warning
+            .as_ref()
+            .map(|w| w.target_type.display())
+            .unwrap_or_default();
 
         element! {
             column (gap: 1) {
@@ -177,6 +189,20 @@ impl MigrationEditor {
                         text (content: {parent_name})
                     }
                     text (content: "Press Enter to edit transform chain") style (fg: muted)
+                }
+                if has_warning {
+                    column {
+                        text (content: "Type Warning") style (bold, fg: warning)
+                        row (gap: 1) {
+                            text (content: "Chain Output") style (fg: muted)
+                            text (content: {chain_output_str}) style (fg: warning)
+                        }
+                        row (gap: 1) {
+                            text (content: "Target Expects") style (fg: muted)
+                            text (content: {target_type_str})
+                        }
+                        text (content: "Chain output type is incompatible with target field") style (fg: muted)
+                    }
                 }
             }
         }

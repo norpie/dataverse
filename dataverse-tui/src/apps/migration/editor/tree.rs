@@ -17,6 +17,7 @@ use crate::apps::migration::types::ChainTypeResult;
 use crate::apps::migration::types::CoalesceChain;
 use crate::apps::migration::types::EntityMapping;
 use crate::apps::migration::types::FieldMapping;
+use crate::apps::migration::types::FieldMappingWarning;
 use crate::apps::migration::types::FindCondition;
 use crate::apps::migration::types::MatchBranch;
 use crate::apps::migration::types::Mode;
@@ -40,6 +41,15 @@ pub struct TransformNode {
     pub output_type: Option<ValueType>,
     /// Type warning if this transform has an input type mismatch.
     pub warning: Option<TypeWarning>,
+}
+
+/// A field mapping node in the tree, enriched with target type checking data.
+#[derive(Clone, Debug)]
+pub struct FieldMappingNode {
+    /// The underlying field mapping data.
+    pub field_mapping: FieldMapping,
+    /// Type warning if the chain output doesn't match the target field type.
+    pub warning: Option<FieldMappingWarning>,
 }
 
 /// A node in the migration editor tree.
@@ -68,7 +78,7 @@ pub enum MigrationTreeNode {
     /// Field mappings section header (child of entity mapping, Declarative only).
     FieldMappings { entity_mapping_id: i64 },
     /// An individual field mapping (child of FieldMappings section).
-    FieldMapping(FieldMapping),
+    FieldMapping(FieldMappingNode),
     /// A transform operation (child of Variable, FieldMapping, or nested chain).
     Transform(TransformNode),
     /// A branch within a match transform.
@@ -101,7 +111,7 @@ impl MigrationTreeNode {
             | Self::Variables { entity_mapping_id }
             | Self::FieldMappings { entity_mapping_id } => Some(*entity_mapping_id),
             Self::Variable(v) => Some(v.entity_mapping_id),
-            Self::FieldMapping(fm) => Some(fm.entity_mapping_id),
+            Self::FieldMapping(fmn) => Some(fmn.field_mapping.entity_mapping_id),
             Self::Transform(tn) => Some(tn.transform.entity_mapping_id),
             Self::MatchBranch(_) => None,   // Get via transform
             Self::CoalesceChain(_) => None, // Get via transform
@@ -171,10 +181,18 @@ impl MigrationTreeNode {
         }
     }
 
+    /// Get the field mapping node if this is a field mapping node.
+    pub fn as_field_mapping_node(&self) -> Option<&FieldMappingNode> {
+        match self {
+            Self::FieldMapping(fmn) => Some(fmn),
+            _ => None,
+        }
+    }
+
     /// Get the field mapping if this is a field mapping node.
     pub fn as_field_mapping(&self) -> Option<&FieldMapping> {
         match self {
-            Self::FieldMapping(fm) => Some(fm),
+            Self::FieldMapping(fmn) => Some(&fmn.field_mapping),
             _ => None,
         }
     }
@@ -246,7 +264,7 @@ impl TreeItem for MigrationTreeNode {
             Self::FieldMappings { entity_mapping_id } => {
                 format!("field-mappings-{}", entity_mapping_id)
             }
-            Self::FieldMapping(fm) => format!("field-mapping-{}", fm.id),
+            Self::FieldMapping(fmn) => format!("field-mapping-{}", fmn.field_mapping.id),
             Self::Transform(tn) => format!("transform-{}", tn.transform.id),
             Self::MatchBranch(mb) => format!("match-branch-{}", mb.id),
             Self::CoalesceChain(cc) => format!("coalesce-chain-{}", cc.id),
@@ -315,10 +333,16 @@ impl TreeItem for MigrationTreeNode {
             Self::FieldMappings { .. } => element! {
                 text (content: "Field Mappings") style (fg: muted)
             },
-            Self::FieldMapping(fm) => {
-                let label = fm.target_field.clone();
+            Self::FieldMapping(fmn) => {
+                let label = fmn.field_mapping.target_field.clone();
+                let has_warning = fmn.warning.is_some();
                 element! {
-                    text (content: {label}) style (fg: primary)
+                    row {
+                        text (content: {label}) style (fg: primary)
+                        if has_warning {
+                            text (content: " !") style (fg: warning)
+                        }
+                    }
                 }
             }
             Self::Transform(tn) => {
@@ -475,6 +499,8 @@ pub struct TypeTrackingResult {
     pub warnings: Vec<TypeWarning>,
     /// Variable name -> resolved output type of its chain.
     pub variable_types: HashMap<String, ValueType>,
+    /// Field mapping ID -> warning if chain output doesn't match target field type.
+    pub field_mapping_warnings: HashMap<i64, FieldMappingWarning>,
 }
 
 impl TypeTrackingResult {
@@ -572,6 +598,8 @@ struct TreeBuildContext<'a> {
     entity_mappings: &'a [EntityMapping],
     /// Cached field types per source entity (for type tracking).
     field_type_cache: &'a FieldTypeCache,
+    /// Cached field types per target entity (for target field type checking).
+    target_field_cache: &'a FieldTypeCache,
     /// Mutable type tracking result, populated during tree building.
     type_tracking: TypeTrackingResult,
 }
@@ -583,6 +611,15 @@ impl<'a> TreeBuildContext<'a> {
             .iter()
             .find(|em| em.id == entity_mapping_id)
             .map(|em| em.source_entity.as_str())
+            .unwrap_or("")
+    }
+
+    /// Look up the target entity name for a given entity mapping ID.
+    fn target_entity_for(&self, entity_mapping_id: i64) -> &str {
+        self.entity_mappings
+            .iter()
+            .find(|em| em.id == entity_mapping_id)
+            .map(|em| em.target_entity.as_str())
             .unwrap_or("")
     }
 }
@@ -599,6 +636,7 @@ pub fn build_tree_nodes(
     coalesce_chains: Vec<CoalesceChain>,
     find_conditions: Vec<FindCondition>,
     field_type_cache: &FieldTypeCache,
+    target_field_cache: &FieldTypeCache,
 ) -> (Vec<TreeNode<MigrationTreeNode>>, TypeTrackingResult) {
     let mut ctx = TreeBuildContext {
         lookup: TreeLookup {
@@ -609,6 +647,7 @@ pub fn build_tree_nodes(
         },
         entity_mappings: &entity_mappings,
         field_type_cache,
+        target_field_cache,
         type_tracking: TypeTrackingResult::default(),
     };
 
@@ -770,24 +809,85 @@ fn build_field_mapping_node(
     let transforms = ctx.lookup.get_transforms(ParentType::FieldMapping, fm.id);
 
     if transforms.is_empty() {
-        TreeNode::leaf(MigrationTreeNode::FieldMapping(fm))
+        let fmn = FieldMappingNode {
+            field_mapping: fm,
+            warning: None,
+        };
+        TreeNode::leaf(MigrationTreeNode::FieldMapping(fmn))
     } else {
         // Compute types for this chain
-        let source_entity = ctx.source_entity_for(fm.entity_mapping_id);
+        let source_entity = ctx.source_entity_for(fm.entity_mapping_id).to_owned();
+        let target_entity = ctx.target_entity_for(fm.entity_mapping_id).to_owned();
         log::debug!(
-            "type_tracking: computing chain for field mapping {} (target={}, source={})",
+            "type_tracking: computing chain for field mapping {} (target_field={}, source={}, target={})",
             fm.id,
             fm.target_field,
             source_entity,
+            target_entity,
         );
-        let chain_result = compute_chain_types(&transforms, source_entity, ctx);
+        let chain_result = compute_chain_types(&transforms, &source_entity, ctx);
         ctx.type_tracking.merge(&chain_result);
 
+        // Check chain output against target field type
+        let warning = check_field_mapping_output(
+            fm.id,
+            &fm.target_field,
+            &target_entity,
+            &chain_result.output_type,
+            ctx,
+        );
+        if let Some(ref w) = warning {
+            ctx.type_tracking
+                .field_mapping_warnings
+                .insert(fm.id, w.clone());
+        }
+
+        let fmn = FieldMappingNode {
+            field_mapping: fm,
+            warning,
+        };
         let transform_nodes: Vec<TreeNode<MigrationTreeNode>> = transforms
             .into_iter()
             .map(|t| build_transform_node(t, ctx))
             .collect();
-        TreeNode::branch(MigrationTreeNode::FieldMapping(fm), transform_nodes)
+        TreeNode::branch(MigrationTreeNode::FieldMapping(fmn), transform_nodes)
+    }
+}
+
+/// Check if a chain output type is compatible with the target field type.
+/// Returns a `FieldMappingWarning` if incompatible.
+fn check_field_mapping_output(
+    field_mapping_id: i64,
+    target_field: &str,
+    target_entity: &str,
+    chain_output: &ValueType,
+    ctx: &TreeBuildContext,
+) -> Option<FieldMappingWarning> {
+    // Skip check if chain output is Null (always compatible) or Any
+    if matches!(chain_output, ValueType::Null | ValueType::Any) {
+        return None;
+    }
+
+    // Look up target field type from cache
+    let target_fields = ctx.target_field_cache.get(target_entity)?;
+    let target_field_type = target_fields.get(target_field)?;
+    let target_type = ValueType::Known(target_field_type.clone());
+
+    if !chain_output.is_compatible_with(&target_type) {
+        log::debug!(
+            "type_tracking: field mapping {} output {:?} incompatible with target field '{}' type {:?}",
+            field_mapping_id,
+            chain_output,
+            target_field,
+            target_type,
+        );
+        Some(FieldMappingWarning {
+            field_mapping_id,
+            chain_output: chain_output.clone(),
+            target_type,
+        })
+    } else {
+        None
     }
 }
 

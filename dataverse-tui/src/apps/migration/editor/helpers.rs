@@ -58,46 +58,83 @@ impl MigrationEditor {
         self.rebuild_tree();
     }
 
-    /// Fetch entity metadata for source entities not yet in the cache.
+    /// Fetch entity metadata for source and target entities not yet in their caches.
     pub(super) async fn fetch_missing_metadata(&self, gx: &GlobalContext) {
         let entity_mappings = self.entity_mappings.get();
-        let current_cache = self.field_type_cache.get();
+        let current_source_cache = self.field_type_cache.get();
+        let current_target_cache = self.target_field_cache.get();
 
         // Collect unique source entities not yet cached
-        let mut missing: Vec<String> = Vec::new();
+        let mut missing_source: Vec<String> = Vec::new();
         for em in entity_mappings.iter() {
             if !em.source_entity.is_empty()
-                && !current_cache.contains_key(&em.source_entity)
-                && !missing.contains(&em.source_entity)
+                && !current_source_cache.contains_key(&em.source_entity)
+                && !missing_source.contains(&em.source_entity)
             {
-                missing.push(em.source_entity.clone());
+                missing_source.push(em.source_entity.clone());
             }
         }
 
-        if missing.is_empty() {
+        // Collect unique target entities not yet cached
+        let mut missing_target: Vec<String> = Vec::new();
+        for em in entity_mappings.iter() {
+            if !em.target_entity.is_empty()
+                && !current_target_cache.contains_key(&em.target_entity)
+                && !missing_target.contains(&em.target_entity)
+            {
+                missing_target.push(em.target_entity.clone());
+            }
+        }
+
+        if missing_source.is_empty() && missing_target.is_empty() {
             return;
         }
 
-        log::debug!(
-            "type_tracking: fetching metadata for {} source entities: {:?}",
-            missing.len(),
-            missing,
-        );
+        // Fetch source entity metadata
+        if !missing_source.is_empty() {
+            log::debug!(
+                "type_tracking: fetching metadata for {} source entities: {:?}",
+                missing_source.len(),
+                missing_source,
+            );
 
-        let client = self.source_client.get().clone();
-        let result: FieldTypeCache = gx
-            .modal(LoadingModal::run(
-                "Loading entity metadata...",
-                fetch_entity_field_types(client, missing),
-            ))
-            .await;
+            let client = self.source_client.get().clone();
+            let result: FieldTypeCache = gx
+                .modal(LoadingModal::run(
+                    "Loading source entity metadata...",
+                    fetch_entity_field_types(client, missing_source),
+                ))
+                .await;
 
-        // Merge into existing cache
-        self.field_type_cache.update(|cache| {
-            for (entity, fields) in result {
-                cache.insert(entity, fields);
-            }
-        });
+            self.field_type_cache.update(|cache| {
+                for (entity, fields) in result {
+                    cache.insert(entity, fields);
+                }
+            });
+        }
+
+        // Fetch target entity metadata
+        if !missing_target.is_empty() {
+            log::debug!(
+                "type_tracking: fetching metadata for {} target entities: {:?}",
+                missing_target.len(),
+                missing_target,
+            );
+
+            let client = self.target_client.get().clone();
+            let result: FieldTypeCache = gx
+                .modal(LoadingModal::run(
+                    "Loading target entity metadata...",
+                    fetch_entity_field_types(client, missing_target),
+                ))
+                .await;
+
+            self.target_field_cache.update(|cache| {
+                for (entity, fields) in result {
+                    cache.insert(entity, fields);
+                }
+            });
+        }
     }
 
     /// Rebuild the tree from current data.
@@ -111,6 +148,7 @@ impl MigrationEditor {
         let coalesce_chains = self.coalesce_chains.get();
         let find_conditions = self.find_conditions.get();
         let field_type_cache = self.field_type_cache.get();
+        let target_field_cache = self.target_field_cache.get();
 
         let (nodes, type_tracking) = build_tree_nodes(
             phases,
@@ -122,6 +160,7 @@ impl MigrationEditor {
             coalesce_chains,
             find_conditions,
             &field_type_cache,
+            &target_field_cache,
         );
         self.type_tracking.set(type_tracking);
         self.tree_state.update(|s| {

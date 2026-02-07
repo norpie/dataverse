@@ -68,6 +68,8 @@ pub struct MigrationEditor {
     type_tracking: TypeTrackingResult,
     /// Cached field types per source entity (for type tracking).
     field_type_cache: FieldTypeCache,
+    /// Cached field types per target entity (for target field type checking).
+    target_field_cache: FieldTypeCache,
 }
 
 impl MigrationEditor {
@@ -92,6 +94,7 @@ impl MigrationEditor {
             Vec::new(),                    // find_conditions
             TypeTrackingResult::default(), // type_tracking
             FieldTypeCache::default(),     // field_type_cache
+            FieldTypeCache::default(),     // target_field_cache
         )
     }
 }
@@ -286,8 +289,8 @@ impl MigrationEditor {
                 self.delete_variable_impl(v.id, v.entity_mapping_id, cx, gx)
                     .await;
             }
-            Some(MigrationTreeNode::FieldMapping(fm)) => {
-                self.delete_field_mapping_impl(fm.id, fm.entity_mapping_id, cx, gx)
+            Some(MigrationTreeNode::FieldMapping(fmn)) => {
+                self.delete_field_mapping_impl(fmn.field_mapping.id, fmn.field_mapping.entity_mapping_id, cx, gx)
                     .await;
             }
             Some(MigrationTreeNode::Transform(tn)) => {
@@ -322,8 +325,8 @@ impl MigrationEditor {
                 self.reorder_variable_impl(v.id, v.entity_mapping_id, direction, gx)
                     .await;
             }
-            MigrationTreeNode::FieldMapping(fm) => {
-                self.reorder_field_mapping_impl(fm.id, fm.entity_mapping_id, direction, gx)
+            MigrationTreeNode::FieldMapping(fmn) => {
+                self.reorder_field_mapping_impl(fmn.field_mapping.id, fmn.field_mapping.entity_mapping_id, direction, gx)
                     .await;
             }
             MigrationTreeNode::Transform(tn) => {
@@ -507,8 +510,8 @@ impl MigrationEditor {
                             Some(MigrationTreeNode::FieldMappings { entity_mapping_id }) => {
                                 { self.render_field_mappings_detail(entity_mapping_id) }
                             }
-                            Some(MigrationTreeNode::FieldMapping(fm)) => {
-                                { self.render_field_mapping_detail(&fm) }
+                            Some(MigrationTreeNode::FieldMapping(fmn)) => {
+                                { self.render_field_mapping_detail(&fmn) }
                             }
                             Some(MigrationTreeNode::Transform(tn)) => {
                                 { self.render_transform_detail(&tn) }

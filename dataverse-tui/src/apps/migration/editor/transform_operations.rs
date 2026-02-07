@@ -157,8 +157,9 @@ impl MigrationEditor {
                     insert_order: order,
                 })
             }
-            MigrationTreeNode::FieldMapping(fm) => {
+            MigrationTreeNode::FieldMapping(fmn) => {
                 // Add to end of field mapping's chain
+                let fm = &fmn.field_mapping;
                 let order = self.transform_count_for_parent(ParentType::FieldMapping, fm.id);
                 Some(InsertTarget {
                     entity_mapping_id: fm.entity_mapping_id,
