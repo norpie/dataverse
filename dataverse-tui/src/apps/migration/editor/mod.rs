@@ -370,11 +370,11 @@ impl MigrationEditor {
             MigrationTreeNode::TestGuids { entity_mapping_id } => {
                 self.edit_test_guids_impl(entity_mapping_id, gx).await;
             }
-            MigrationTreeNode::Variables { .. } => {
-                // Section header - no action, use 'a' to add
+            MigrationTreeNode::Variables { entity_mapping_id } => {
+                self.add_variable_impl(entity_mapping_id, gx).await;
             }
-            MigrationTreeNode::Variable(_) => {
-                self.add_transform_impl(gx).await;
+            MigrationTreeNode::Variable(v) => {
+                self.edit_variable_impl(&v, gx).await;
             }
             MigrationTreeNode::FieldMappings { .. } => {
                 // Section header - no action, use 'a' to add

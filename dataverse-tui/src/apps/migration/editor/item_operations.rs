@@ -8,6 +8,8 @@ use crate::apps::migration::modals::AddVariableModal;
 use crate::apps::migration::repository::MigrationRepository;
 use crate::apps::migration::repository::NewFieldMapping;
 use crate::apps::migration::repository::NewVariable;
+use crate::apps::migration::repository::UpdateVariable;
+use crate::apps::migration::types::Variable;
 use crate::modals::LoadingModal;
 
 use super::MigrationEditor;
@@ -16,7 +18,17 @@ impl MigrationEditor {
     /// Add a new variable to an entity mapping.
     pub(super) async fn add_variable_impl(&self, entity_mapping_id: i64, gx: &GlobalContext) {
         let client = self.target_client.get();
-        let Some(result) = gx.modal(AddVariableModal::new_modal(client)).await else {
+        let existing_names: Vec<String> = self
+            .variables
+            .get()
+            .iter()
+            .filter(|v| v.entity_mapping_id == entity_mapping_id)
+            .map(|v| v.name.clone())
+            .collect();
+        let Some(result) = gx
+            .modal(AddVariableModal::new_modal(client, existing_names))
+            .await
+        else {
             return;
         };
 
@@ -43,6 +55,46 @@ impl MigrationEditor {
             Err(e) => {
                 log::error!("Failed to create variable: {}", e);
                 gx.toast(Toast::error("Failed to create variable"));
+            }
+        }
+    }
+
+    /// Edit an existing variable (name and type).
+    pub(super) async fn edit_variable_impl(&self, variable: &Variable, gx: &GlobalContext) {
+        let client = self.target_client.get();
+        let existing_names: Vec<String> = self
+            .variables
+            .get()
+            .iter()
+            .filter(|v| v.entity_mapping_id == variable.entity_mapping_id)
+            .map(|v| v.name.clone())
+            .collect();
+        let Some(result) = gx
+            .modal(AddVariableModal::edit_modal(
+                client,
+                &variable.name,
+                variable.declared_type.clone(),
+                existing_names,
+            ))
+            .await
+        else {
+            return;
+        };
+
+        let repo = gx.data::<MigrationRepository>();
+        let update = UpdateVariable {
+            name: Some(result.name),
+            declared_type: Some(result.declared_type),
+        };
+
+        match repo.update_variable(variable.id, update).await {
+            Ok(()) => {
+                gx.toast(Toast::info("Variable updated"));
+                self.refresh_data(gx).await;
+            }
+            Err(e) => {
+                log::error!("Failed to update variable: {}", e);
+                gx.toast(Toast::error("Failed to update variable"));
             }
         }
     }
