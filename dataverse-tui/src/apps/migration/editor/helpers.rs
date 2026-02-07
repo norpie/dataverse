@@ -5,6 +5,10 @@ use dataverse_lib::DataverseClient;
 use rafter::prelude::*;
 
 use crate::apps::migration::repository::MigrationRepository;
+use crate::apps::migration::types::TransformData;
+use crate::apps::migration::validation::parse_path;
+use crate::apps::migration::validation::FieldPath;
+use crate::apps::migration::validation::PathExpr;
 use crate::modals::LoadingModal;
 
 use super::tree::build_tree_nodes;
@@ -59,6 +63,11 @@ impl MigrationEditor {
     }
 
     /// Fetch entity metadata for source and target entities not yet in their caches.
+    ///
+    /// Also pre-scans dotted copy paths to discover navigation entities (entities
+    /// referenced via lookup traversal, e.g., `parentaccountid.name` navigates to
+    /// the `account` entity). These are fetched iteratively until all reachable
+    /// entities are cached.
     pub(super) async fn fetch_missing_metadata(&self, gx: &GlobalContext) {
         let entity_mappings = self.entity_mappings.get();
         let current_source_cache = self.field_type_cache.get();
@@ -111,6 +120,55 @@ impl MigrationEditor {
                     cache.insert(entity, fields);
                 }
             });
+        }
+
+        // Pre-scan dotted copy paths to discover navigation entities.
+        // Iteratively fetch metadata for entities reached via lookup traversal
+        // until no new entities are discovered.
+        let transforms = self.transforms.get();
+        let dotted_paths = collect_dotted_copy_paths(&transforms);
+        if !dotted_paths.is_empty() {
+            log::debug!(
+                "type_tracking: found {} dotted copy paths for navigation scanning",
+                dotted_paths.len(),
+            );
+
+            loop {
+                let source_cache = self.field_type_cache.get();
+                let nav_entities =
+                    discover_navigation_entities(&dotted_paths, &entity_mappings, &source_cache);
+
+                if nav_entities.is_empty() {
+                    break;
+                }
+
+                log::debug!(
+                    "type_tracking: fetching metadata for {} navigation entities: {:?}",
+                    nav_entities.len(),
+                    nav_entities,
+                );
+
+                let client = self.source_client.get().clone();
+                let result: FieldTypeCache = gx
+                    .modal(LoadingModal::run(
+                        "Loading navigation entity metadata...",
+                        fetch_entity_field_types(client, nav_entities),
+                    ))
+                    .await;
+
+                let fetched_any = !result.is_empty();
+                self.field_type_cache.update(|cache| {
+                    for (entity, fields) in result {
+                        cache.insert(entity, fields);
+                    }
+                });
+
+                // If we didn't successfully fetch any new entities, stop to avoid
+                // infinite loop (e.g., metadata fetch failures).
+                if !fetched_any {
+                    break;
+                }
+            }
         }
 
         // Fetch target entity metadata
@@ -222,4 +280,127 @@ async fn fetch_entity_field_types(
     }
 
     cache
+}
+
+/// A dotted copy path paired with the entity mapping it belongs to.
+struct DottedCopyPath {
+    entity_mapping_id: i64,
+    path: FieldPath,
+}
+
+/// Collect all dotted copy paths (paths with 2+ segments) from transforms.
+fn collect_dotted_copy_paths(transforms: &[crate::apps::migration::types::Transform]) -> Vec<DottedCopyPath> {
+    let mut paths = Vec::new();
+
+    for t in transforms {
+        if let TransformData::Copy { path } = &t.data {
+            // Skip variables and system vars
+            if path.starts_with('$') || path.starts_with('#') {
+                continue;
+            }
+            // Only interested in dotted paths (2+ segments)
+            if !path.contains('.') {
+                continue;
+            }
+            if let Ok(PathExpr::Field(field_path)) = parse_path(path) {
+                if field_path.segments.len() >= 2 {
+                    paths.push(DottedCopyPath {
+                        entity_mapping_id: t.entity_mapping_id,
+                        path: field_path,
+                    });
+                }
+            }
+        }
+    }
+
+    paths
+}
+
+/// Discover navigation entities that are not yet in the source cache.
+///
+/// Walks each dotted path segment-by-segment using the cached metadata. For each
+/// lookup segment, collects the target entity names. Returns entities that are
+/// not yet in the cache.
+fn discover_navigation_entities(
+    dotted_paths: &[DottedCopyPath],
+    entity_mappings: &[crate::apps::migration::types::EntityMapping],
+    source_cache: &FieldTypeCache,
+) -> Vec<String> {
+    let mut missing: Vec<String> = Vec::new();
+
+    for dcp in dotted_paths {
+        // Find the source entity for this transform's entity mapping
+        let source_entity = entity_mappings
+            .iter()
+            .find(|em| em.id == dcp.entity_mapping_id)
+            .map(|em| em.source_entity.as_str())
+            .unwrap_or("");
+
+        if source_entity.is_empty() {
+            continue;
+        }
+
+        // Walk segments (all except the last, which is the leaf field)
+        let mut current_entity = source_entity.to_string();
+        for segment in &dcp.path.segments[..dcp.path.segments.len() - 1] {
+            // Look up the field in the current entity's cached metadata
+            let Some(fields) = source_cache.get(&current_entity) else {
+                // Entity not yet cached — it will be discovered on the next iteration
+                // after it's been fetched.
+                if !missing.contains(&current_entity) {
+                    missing.push(current_entity.clone());
+                }
+                break;
+            };
+
+            let Some(field_type) = fields.get(&segment.field) else {
+                log::debug!(
+                    "type_tracking: nav scan: field '{}' not found on '{}'",
+                    segment.field,
+                    current_entity,
+                );
+                break;
+            };
+
+            // The field must be a lookup to navigate through
+            let targets = match field_type {
+                FieldType::Lookup { targets, .. } => targets,
+                FieldType::Simple(_) => {
+                    log::debug!(
+                        "type_tracking: nav scan: field '{}' on '{}' is not a lookup",
+                        segment.field,
+                        current_entity,
+                    );
+                    break;
+                }
+            };
+
+            // Determine the target entity to navigate to
+            let next_entity = if let Some(specified) = &segment.target {
+                // Polymorphic lookup with explicit target: ownerid[systemuser]
+                specified.clone()
+            } else if targets.len() == 1 {
+                // Single-target lookup
+                targets[0].clone()
+            } else {
+                // Polymorphic lookup without explicit target — can't navigate
+                log::debug!(
+                    "type_tracking: nav scan: polymorphic lookup '{}' on '{}' without target specifier, targets={:?}",
+                    segment.field,
+                    current_entity,
+                    targets,
+                );
+                break;
+            };
+
+            // If the target entity is not yet cached, mark it as missing
+            if !source_cache.contains_key(&next_entity) && !missing.contains(&next_entity) {
+                missing.push(next_entity.clone());
+            }
+
+            current_entity = next_entity;
+        }
+    }
+
+    missing
 }

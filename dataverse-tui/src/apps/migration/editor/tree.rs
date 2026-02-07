@@ -27,6 +27,9 @@ use crate::apps::migration::types::Transform;
 use crate::apps::migration::types::TransformData;
 use crate::apps::migration::types::TypeWarning;
 use crate::apps::migration::types::Variable;
+use crate::apps::migration::validation::parse_path;
+use crate::apps::migration::validation::FieldPath;
+use crate::apps::migration::validation::PathExpr;
 
 /// Cache of field types per source entity.
 /// Maps `source_entity_logical_name -> (field_logical_name -> FieldType)`.
@@ -1146,43 +1149,157 @@ fn compute_chain_types(
                     Some(ValueType::simple(AttributeType::String))
                 } else {
                     // Field path - resolve from metadata cache.
-                    // For dotted paths (e.g., "parentaccountid.name"), use the root field.
-                    let root_field = path.split('.').next().unwrap_or(path);
-                    // Strip optional marker and polymorphic hint (e.g., "ownerid?[systemuser]" -> "ownerid")
-                    let clean_field = root_field
-                        .split('?')
-                        .next()
-                        .unwrap_or(root_field)
-                        .split('[')
-                        .next()
-                        .unwrap_or(root_field);
-
-                    if let Some(fields) = field_types {
-                        if let Some(field_type) = fields.get(clean_field) {
-                            log::debug!(
-                                "type_tracking: resolved field '{}' -> {:?}",
-                                path,
-                                field_type,
-                            );
-                            Some(ValueType::Known(field_type.clone()))
-                        } else {
-                            log::debug!(
-                                "type_tracking: field '{}' not found in metadata for '{}'",
-                                clean_field,
-                                source_entity,
-                            );
-                            None
-                        }
-                    } else {
-                        log::debug!(
-                            "type_tracking: no metadata cached for entity '{}'",
-                            source_entity,
-                        );
-                        None
-                    }
+                    resolve_field_path(path, source_entity, ctx)
                 }
             }
             _ => None, // Passthrough for all other dynamic cases
         }
     })
+}
+
+/// Resolve a field path (possibly dotted) to its `ValueType` using the field type cache.
+///
+/// For simple paths like `name`, looks up the field directly on the source entity.
+/// For dotted paths like `parentaccountid.name`, walks segment-by-segment:
+/// each navigation segment must be a lookup, and its target entity is used to
+/// resolve the next segment.
+fn resolve_field_path(
+    path: &str,
+    source_entity: &str,
+    ctx: &TreeBuildContext,
+) -> Option<ValueType> {
+    // Parse the path to get structured segments
+    let field_path = match parse_path(path) {
+        Ok(PathExpr::Field(fp)) => fp,
+        _ => {
+            // Not a field path (variable/system var handled elsewhere), or parse error
+            log::debug!("type_tracking: failed to parse field path '{}'", path,);
+            return None;
+        }
+    };
+
+    if field_path.segments.is_empty() {
+        return None;
+    }
+
+    // Simple (non-dotted) path: single segment lookup
+    if field_path.segments.len() == 1 {
+        let segment = &field_path.segments[0];
+        let fields = ctx.field_type_cache.get(source_entity)?;
+        let field_type = fields.get(&segment.field)?;
+        log::debug!(
+            "type_tracking: resolved field '{}' -> {:?}",
+            path,
+            field_type,
+        );
+        return Some(ValueType::Known(field_type.clone()));
+    }
+
+    // Dotted path: walk segment-by-segment
+    resolve_dotted_field_path(&field_path, source_entity, ctx, path)
+}
+
+/// Walk a dotted field path segment-by-segment through the field type cache.
+fn resolve_dotted_field_path(
+    field_path: &FieldPath,
+    source_entity: &str,
+    ctx: &TreeBuildContext,
+    original_path: &str,
+) -> Option<ValueType> {
+    let mut current_entity = source_entity.to_string();
+
+    for (i, segment) in field_path.segments.iter().enumerate() {
+        let is_last = i == field_path.segments.len() - 1;
+
+        let fields = match ctx.field_type_cache.get(&current_entity) {
+            Some(f) => f,
+            None => {
+                log::debug!(
+                    "type_tracking: no metadata cached for entity '{}' while resolving '{}'",
+                    current_entity,
+                    original_path,
+                );
+                return None;
+            }
+        };
+
+        let field_type = match fields.get(&segment.field) {
+            Some(ft) => ft,
+            None => {
+                log::debug!(
+                    "type_tracking: field '{}' not found on '{}' while resolving '{}'",
+                    segment.field,
+                    current_entity,
+                    original_path,
+                );
+                return None;
+            }
+        };
+
+        if is_last {
+            // Last segment — this is the leaf field, return its type
+            log::debug!(
+                "type_tracking: resolved dotted path '{}' -> {:?}",
+                original_path,
+                field_type,
+            );
+            return Some(ValueType::Known(field_type.clone()));
+        }
+
+        // Navigation segment — must be a lookup
+        let targets = match field_type {
+            FieldType::Lookup { targets, .. } => targets,
+            FieldType::Simple(_) => {
+                log::debug!(
+                    "type_tracking: field '{}' on '{}' is not a lookup, cannot navigate in '{}'",
+                    segment.field,
+                    current_entity,
+                    original_path,
+                );
+                return None;
+            }
+        };
+
+        // Determine the target entity to navigate to
+        let next_entity = if let Some(specified) = &segment.target {
+            // Polymorphic lookup with explicit target: ownerid[systemuser]
+            if !targets.is_empty() && !targets.contains(specified) {
+                log::debug!(
+                    "type_tracking: specified target '{}' not in targets {:?} for '{}' on '{}'",
+                    specified,
+                    targets,
+                    segment.field,
+                    current_entity,
+                );
+                return None;
+            }
+            specified.clone()
+        } else if targets.len() == 1 {
+            // Single-target lookup
+            targets[0].clone()
+        } else if targets.is_empty() {
+            // Unknown targets — can't navigate
+            log::debug!(
+                "type_tracking: lookup '{}' on '{}' has no known targets, cannot navigate in '{}'",
+                segment.field,
+                current_entity,
+                original_path,
+            );
+            return None;
+        } else {
+            // Polymorphic lookup without explicit target — ambiguous
+            log::debug!(
+                "type_tracking: polymorphic lookup '{}' on '{}' requires target specifier (targets: {:?}) in '{}'",
+                segment.field,
+                current_entity,
+                targets,
+                original_path,
+            );
+            return None;
+        };
+
+        current_entity = next_entity;
+    }
+
+    None
 }
