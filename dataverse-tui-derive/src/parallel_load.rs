@@ -175,7 +175,18 @@ fn generate_parallel_load(input: ParallelLoadInput) -> TokenStream2 {
         .map(|i| {
             let rx = Ident::new(&format!("__rx_{}", i), Span::call_site());
             quote! {
-                #rx.try_recv().ok()
+                match #rx.try_recv() {
+                    Ok(value) => Ok(value),
+                    Err(_) => {
+                        let label = __failed_task_label.lock().unwrap();
+                        Err(match label.as_deref() {
+                            Some(failed) => crate::modals::ParallelLoadError::Cancelled {
+                                failed_task: failed.to_string(),
+                            },
+                            None => crate::modals::ParallelLoadError::Dropped,
+                        })
+                    }
+                }
             }
         })
         .collect();
@@ -219,10 +230,14 @@ fn generate_parallel_load(input: ParallelLoadInput) -> TokenStream2 {
                 #(#task_info_inits),*
             ];
 
+            // Shared handle for tracking which task caused a fail-fast cancellation
+            let __failed_task_label = std::sync::Arc::new(std::sync::Mutex::new(None::<String>));
+
             // Create and run the modal
             let __modal = crate::modals::ParallelLoadingModal::new(
                 std::sync::Arc::new(std::sync::Mutex::new(__tasks)),
                 #fail_fast_value,
+                std::sync::Arc::clone(&__failed_task_label),
                 __task_infos,
             );
 

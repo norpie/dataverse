@@ -2,6 +2,7 @@
 //!
 //! Use via the `parallel_load!` macro for ergonomic syntax with typed results.
 
+use std::fmt;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
@@ -14,6 +15,31 @@ use tokio::sync::mpsc;
 use crate::widgets::BrailleSpinner;
 
 type BoxFuture<T> = Pin<Box<dyn Future<Output = T> + Send + 'static>>;
+
+/// Error returned when a parallel-loaded task did not produce a result.
+#[derive(Debug, Clone)]
+pub enum ParallelLoadError {
+    /// This task was cancelled because another task failed (fail-fast).
+    Cancelled {
+        /// The label of the task whose failure triggered cancellation.
+        failed_task: String,
+    },
+    /// The task was dropped (e.g. it panicked or the channel was lost).
+    Dropped,
+}
+
+impl fmt::Display for ParallelLoadError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Cancelled { failed_task } => {
+                write!(f, "Task cancelled: \"{failed_task}\" failed")
+            }
+            Self::Dropped => write!(f, "Task dropped (possibly panicked)"),
+        }
+    }
+}
+
+impl std::error::Error for ParallelLoadError {}
 
 /// Trait to determine if an async result represents success or failure.
 ///
@@ -123,6 +149,10 @@ pub struct ParallelLoadingModal {
     #[state(skip)]
     fail_fast: bool,
 
+    /// Label of the task that caused fail-fast cancellation (shared with macro).
+    #[state(skip)]
+    failed_task_label: Arc<Mutex<Option<String>>>,
+
     /// Task display info (reactive for UI updates).
     task_infos: Vec<TaskInfo>,
 }
@@ -135,6 +165,8 @@ impl ParallelLoadingModal {
         self.fail_fast = fail_fast;
         self
     }
+
+
 }
 
 #[modal_impl(Result = ())]
@@ -197,8 +229,16 @@ impl ParallelLoadingModal {
             if fail_fast && failed && !short_circuited {
                 short_circuited = true;
 
-                // Cancel remaining running tasks
+                // Record which task caused the cancellation
                 let infos = self.task_infos.get();
+                {
+                    let mut label = self.failed_task_label.lock().unwrap();
+                    if label.is_none() {
+                        *label = Some(infos[complete.index].label.clone());
+                    }
+                }
+
+                // Cancel remaining running tasks
                 for (i, info) in infos.iter().enumerate() {
                     if info.status == TaskStatus::Running {
                         if let Some(handle) = handles.get_mut(i).and_then(|h| h.take()) {

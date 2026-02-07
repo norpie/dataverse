@@ -51,9 +51,11 @@ pub fn settings(attr: TokenStream, item: TokenStream) -> TokenStream {
 ///
 /// # Return Value
 ///
-/// Returns a tuple of `Option<T>` for each task. The option is `None` if:
-/// - The task was cancelled due to fail-fast
-/// - The task panicked
+/// Returns a tuple of `Result<T, ParallelLoadError>` for each task. The result is:
+/// - `Ok(value)` if the task completed (the value itself may be a `Result`)
+/// - `Err(ParallelLoadError::Cancelled { failed_task })` if the task was cancelled
+///   due to fail-fast, with the label of the task that failed
+/// - `Err(ParallelLoadError::Dropped)` if the task panicked or its channel was lost
 ///
 /// # Example
 ///
@@ -61,10 +63,10 @@ pub fn settings(attr: TokenStream, item: TokenStream) -> TokenStream {
 /// let (entities, attributes) = parallel_load!(gx, {
 ///     "Loading entities" => client.query(Entity::set("accounts")).execute(),
 ///     "Loading attributes" => client.metadata().attributes("account"),
-/// }).await;
+/// });
 ///
-/// let entities = entities.ok_or(Error::Cancelled)??;
-/// let attributes = attributes.ok_or(Error::Cancelled)??;
+/// let entities = entities.map_err(|e| log::warn!("{e}"))??;
+/// let attributes = attributes.map_err(|e| log::warn!("{e}"))??;
 /// ```
 #[proc_macro]
 pub fn parallel_load(input: TokenStream) -> TokenStream {

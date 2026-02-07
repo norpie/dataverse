@@ -310,23 +310,31 @@ impl MigrationEditor {
         });
 
         let source_options = match source_result {
-            Some(Ok(opts)) => opts,
-            Some(Err(e)) => {
+            Ok(Ok(opts)) => opts,
+            Ok(Err(e)) => {
                 log::error!("Failed to fetch source option set: {}", e);
                 gx.toast(Toast::error("Failed to fetch source option set metadata"));
                 return None;
             }
-            None => return None,
+            Err(e) => {
+                log::warn!("Source option set load cancelled: {e}");
+                gx.toast(Toast::error("Failed to load source option set"));
+                return None;
+            }
         };
 
         let target_options = match target_result {
-            Some(Ok(opts)) => opts,
-            Some(Err(e)) => {
+            Ok(Ok(opts)) => opts,
+            Ok(Err(e)) => {
                 log::error!("Failed to fetch target option set: {}", e);
                 gx.toast(Toast::error("Failed to fetch target option set metadata"));
                 return None;
             }
-            None => return None,
+            Err(e) => {
+                log::warn!("Target option set load cancelled: {e}");
+                gx.toast(Toast::error("Failed to load target option set"));
+                return None;
+            }
         };
 
         let source_ctx = OptionSetContext {

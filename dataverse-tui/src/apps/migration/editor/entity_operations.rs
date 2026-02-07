@@ -44,25 +44,29 @@ impl MigrationEditor {
         });
 
         let source_entities = match source_result {
-            Some(Ok(entities)) => entities,
-            Some(Err(e)) => {
+            Ok(Ok(entities)) => entities,
+            Ok(Err(e)) => {
                 log::error!("Failed to fetch source entities: {}", e);
                 gx.toast(Toast::error("Failed to fetch source entities"));
                 return;
             }
-            None => {
+            Err(e) => {
+                log::warn!("Source entities load cancelled: {e}");
+                gx.toast(Toast::error("Failed to load source entities"));
                 return;
             }
         };
 
         let target_entities = match target_result {
-            Some(Ok(entities)) => entities,
-            Some(Err(e)) => {
+            Ok(Ok(entities)) => entities,
+            Ok(Err(e)) => {
                 log::error!("Failed to fetch target entities: {}", e);
                 gx.toast(Toast::error("Failed to fetch target entities"));
                 return;
             }
-            None => {
+            Err(e) => {
+                log::warn!("Target entities load cancelled: {e}");
+                gx.toast(Toast::error("Failed to load target entities"));
                 return;
             }
         };
@@ -180,25 +184,29 @@ impl MigrationEditor {
         });
 
         let source_entities = match source_result {
-            Some(Ok(entities)) => entities,
-            Some(Err(e)) => {
+            Ok(Ok(entities)) => entities,
+            Ok(Err(e)) => {
                 log::error!("Failed to fetch source entities: {}", e);
                 gx.toast(Toast::error("Failed to fetch source entities"));
                 return;
             }
-            None => {
+            Err(e) => {
+                log::warn!("Source entities load cancelled: {e}");
+                gx.toast(Toast::error("Failed to load source entities"));
                 return;
             }
         };
 
         let target_entities = match target_result {
-            Some(Ok(entities)) => entities,
-            Some(Err(e)) => {
+            Ok(Ok(entities)) => entities,
+            Ok(Err(e)) => {
                 log::error!("Failed to fetch target entities: {}", e);
                 gx.toast(Toast::error("Failed to fetch target entities"));
                 return;
             }
-            None => {
+            Err(e) => {
+                log::warn!("Target entities load cancelled: {e}");
+                gx.toast(Toast::error("Failed to load target entities"));
                 return;
             }
         };

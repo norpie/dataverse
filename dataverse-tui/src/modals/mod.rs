@@ -15,6 +15,8 @@ pub use error::ErrorModal;
 pub use file_browser::FileBrowserModal;
 pub use filter_builder::FilterBuilderModal;
 pub use loading::LoadingModal;
-pub use parallel_loading::{Checkable, ParallelLoadingModal, ParallelTask, TaskInfo, TaskStatus};
+pub use parallel_loading::{
+    Checkable, ParallelLoadError, ParallelLoadingModal, ParallelTask, TaskInfo, TaskStatus,
+};
 pub use searchable_list::{ListEntry, SearchableListModal};
 pub use sheet_selector::SheetSelectorModal;
