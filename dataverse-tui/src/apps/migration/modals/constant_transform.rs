@@ -1,14 +1,15 @@
 //! Modal for editing a Constant transform.
 
-use chrono::DateTime;
-use chrono::NaiveDateTime;
-use chrono::Utc;
 use dataverse_lib::model::Value;
 use rafter::page;
 use rafter::prelude::*;
 use rafter::widgets::Button;
 use rafter::widgets::Checkbox;
+use rafter::widgets::DatePicker;
+use rafter::widgets::DatePickerState;
 use rafter::widgets::Input;
+use rafter::widgets::NumberInput;
+use rafter::widgets::NumberInputState;
 use rafter::widgets::Select;
 use rafter::widgets::SelectState;
 use rafter::widgets::Text;
@@ -62,11 +63,11 @@ pub struct ConstantTransformModal {
     /// String value input.
     string_value: String,
     /// Number value input.
-    number_value: String,
+    number_value: NumberInputState,
     /// Boolean value.
     bool_value: bool,
-    /// Date value input (ISO format).
-    date_value: String,
+    /// Date value input.
+    date_value: DatePickerState,
     /// Validation error message.
     error: Option<String>,
 }
@@ -74,7 +75,7 @@ pub struct ConstantTransformModal {
 impl ConstantTransformModal {
     /// Create a new Constant transform modal with the given initial value.
     pub fn new_modal(current_value: Value) -> Self {
-        let (constant_type, string_val, number_val, bool_val, date_val) =
+        let (constant_type, string_val, number_state, bool_val, date_state) =
             Self::decompose_value(&current_value);
 
         let type_select = SelectState::new(ConstantType::all()).with_value(constant_type);
@@ -82,26 +83,93 @@ impl ConstantTransformModal {
         Self::new(
             type_select,
             string_val,
-            number_val,
+            number_state,
             bool_val,
-            date_val,
+            date_state,
             None,
         )
     }
 
     /// Decompose a Value into type and component values.
-    fn decompose_value(value: &Value) -> (ConstantType, String, String, bool, String) {
+    fn decompose_value(
+        value: &Value,
+    ) -> (ConstantType, String, NumberInputState, bool, DatePickerState) {
+        let default_number = NumberInputState::new(0.0).allow_negative();
+        let default_date = DatePickerState::new().with_time();
+
         match value {
-            Value::Null => (ConstantType::Null, String::new(), String::new(), false, String::new()),
-            Value::String(s) => (ConstantType::String, s.clone(), String::new(), false, String::new()),
-            Value::Bool(b) => (ConstantType::Bool, String::new(), String::new(), *b, String::new()),
-            Value::Int(n) => (ConstantType::Number, String::new(), n.to_string(), false, String::new()),
-            Value::Long(n) => (ConstantType::Number, String::new(), n.to_string(), false, String::new()),
-            Value::Float(n) => (ConstantType::Number, String::new(), n.to_string(), false, String::new()),
-            Value::Decimal(n) => (ConstantType::Number, String::new(), n.to_string(), false, String::new()),
-            Value::DateTime(dt) => (ConstantType::Date, String::new(), String::new(), false, dt.format("%Y-%m-%dT%H:%M:%S").to_string()),
+            Value::Null => (
+                ConstantType::Null,
+                String::new(),
+                default_number,
+                false,
+                default_date,
+            ),
+            Value::String(s) => (
+                ConstantType::String,
+                s.clone(),
+                default_number,
+                false,
+                default_date,
+            ),
+            Value::Bool(b) => (
+                ConstantType::Bool,
+                String::new(),
+                default_number,
+                *b,
+                default_date,
+            ),
+            Value::Int(n) => (
+                ConstantType::Number,
+                String::new(),
+                NumberInputState::new(*n as f64).allow_negative(),
+                false,
+                default_date,
+            ),
+            Value::Long(n) => (
+                ConstantType::Number,
+                String::new(),
+                NumberInputState::new(*n as f64).allow_negative(),
+                false,
+                default_date,
+            ),
+            Value::Float(n) => (
+                ConstantType::Number,
+                String::new(),
+                NumberInputState::new(*n).allow_negative(),
+                false,
+                default_date,
+            ),
+            Value::Decimal(n) => {
+                use rust_decimal::prelude::ToPrimitive;
+                let f = n.to_f64().unwrap_or(0.0);
+                (
+                    ConstantType::Number,
+                    String::new(),
+                    NumberInputState::new(f).allow_negative(),
+                    false,
+                    default_date,
+                )
+            }
+            Value::DateTime(dt) => {
+                let date = dt.date_naive();
+                let time = dt.time();
+                (
+                    ConstantType::Date,
+                    String::new(),
+                    default_number,
+                    false,
+                    DatePickerState::new().with_datetime(date, time),
+                )
+            }
             // For other types, default to string representation
-            _ => (ConstantType::String, format!("{:?}", value), String::new(), false, String::new()),
+            _ => (
+                ConstantType::String,
+                format!("{:?}", value),
+                default_number,
+                false,
+                default_date,
+            ),
         }
     }
 
@@ -117,32 +185,20 @@ impl ConstantTransformModal {
             ConstantType::String => Ok(Value::String(self.string_value.get().clone())),
             ConstantType::Bool => Ok(Value::Bool(self.bool_value.get().clone())),
             ConstantType::Number => {
-                let text = self.number_value.get().trim().to_string();
-                if text.is_empty() {
-                    return Err("Number value is required".to_string());
-                }
-                // Try parsing as decimal (most flexible)
+                let number_state = self.number_value.get();
+                let f = number_state.value();
+                // Convert f64 to Decimal for precision
+                let text = format!("{}", f);
                 text.parse::<Decimal>()
                     .map(Value::Decimal)
                     .map_err(|_| format!("Invalid number: {}", text))
             }
             ConstantType::Date => {
-                let text = self.date_value.get().trim().to_string();
-                if text.is_empty() {
-                    return Err("Date value is required".to_string());
+                let date_state = self.date_value.get();
+                match date_state.datetime_utc() {
+                    Some(dt) => Ok(Value::DateTime(dt)),
+                    None => Err("Please select a date".to_string()),
                 }
-                // Try parsing as ISO datetime
-                NaiveDateTime::parse_from_str(&text, "%Y-%m-%dT%H:%M:%S")
-                    .map(|dt| Value::DateTime(DateTime::from_naive_utc_and_offset(dt, Utc)))
-                    .or_else(|_| {
-                        // Try date-only format
-                        chrono::NaiveDate::parse_from_str(&text, "%Y-%m-%d")
-                            .map(|d| {
-                                let dt = d.and_hms_opt(0, 0, 0).unwrap();
-                                Value::DateTime(DateTime::from_naive_utc_and_offset(dt, Utc))
-                            })
-                    })
-                    .map_err(|_| "Invalid date format. Use YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS".to_string())
             }
         }
     }
@@ -160,7 +216,7 @@ impl ConstantTransformModal {
         match self.selected_type() {
             ConstantType::String => mx.focus("string-input"),
             ConstantType::Number => mx.focus("number-input"),
-            ConstantType::Date => mx.focus("date-input"),
+            ConstantType::Date => mx.focus("date-input-toggle"),
             _ => mx.focus("type-select"),
         }
     }
@@ -188,13 +244,13 @@ impl ConstantTransformModal {
     async fn on_type_change(&self, mx: &ModalContext<Option<Value>>) {
         // Clear error when type changes
         self.error.set(None);
-        
+
         // Focus appropriate input
         match self.selected_type() {
             ConstantType::String => mx.focus("string-input"),
             ConstantType::Number => mx.focus("number-input"),
             ConstantType::Bool => mx.focus("bool-checkbox"),
-            ConstantType::Date => mx.focus("date-input"),
+            ConstantType::Date => mx.focus("date-input-toggle"),
             ConstantType::Null => {}
         }
     }
@@ -241,10 +297,10 @@ impl ConstantTransformModal {
                     ConstantType::Number => {
                         column (gap: 0, width: fill) {
                             text (content: "Value") style (fg: muted)
-                            input (
+                            number_input (
                                 state: self.number_value,
                                 id: "number-input",
-                                placeholder: "Enter number (e.g., 42, 3.14)",
+                                placeholder: "0",
                                 width: fill
                             )
                                 on_change: on_value_change()
@@ -262,14 +318,13 @@ impl ConstantTransformModal {
                     ConstantType::Date => {
                         column (gap: 0, width: fill) {
                             text (content: "Value") style (fg: muted)
-                            input (
+                            date_picker (
                                 state: self.date_value,
                                 id: "date-input",
-                                placeholder: "YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS",
+                                placeholder: "Select date...",
                                 width: fill
                             )
                                 on_change: on_value_change()
-                            text (content: "Format: YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS") style (fg: muted)
                         }
                     }
                     ConstantType::Null => {
