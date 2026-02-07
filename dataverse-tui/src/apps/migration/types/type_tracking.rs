@@ -83,10 +83,11 @@ impl TransformData {
                 }
             }
 
-            // ValueMap (OptionSet -> passthrough)
+            // ValueMap (any option set -> passthrough for now)
+            // TODO: Phase 1.3 will change output to concrete type from target context
             TransformData::ValueMap { .. } => TransformSignature {
-                input: Some(ValueType::option_set(AttributeType::Picklist, vec![])),
-                output: None, // Passthrough - preserves option set kind
+                input: Some(ValueType::AnyOptionSet),
+                output: None, // Passthrough until Phase 1 adds target context
             },
 
             // Math (numeric -> passthrough)
@@ -341,8 +342,8 @@ pub fn resolve_branch_union(branch_types: &[ValueType]) -> ValueType {
                     }
                 }
             }
-            ValueType::Any => {
-                // If any branch returns Any, result is Any
+            ValueType::Any | ValueType::AnyOptionSet => {
+                // If any branch returns Any/AnyOptionSet, result is Any
                 return ValueType::Any;
             }
         }

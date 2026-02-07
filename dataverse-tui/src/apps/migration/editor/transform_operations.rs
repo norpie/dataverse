@@ -12,6 +12,8 @@ use crate::apps::migration::modals::ReplaceTransformModal;
 use crate::apps::migration::modals::SelectTransformModal;
 use crate::apps::migration::modals::StringOpsTransformModal;
 use crate::apps::migration::modals::TransformType;
+// TODO: Phase 1 — re-enable when ValueMap handler is restored
+// use crate::apps::migration::modals::ValueMapTransformModal;
 use crate::apps::migration::repository::MigrationRepository;
 use crate::apps::migration::repository::NewTransform;
 use crate::apps::migration::repository::UpdateTransform;
@@ -572,6 +574,21 @@ impl MigrationEditor {
                     )
                     .await;
                 }
+            }
+            TransformData::ValueMap { .. } => {
+                // TODO: Phase 1 — ValueMap will carry its own OptionSetContext (source + target).
+                // The handler will read options from TransformData directly instead of caches.
+                // See .plans/reactive-metadata-refactor.md Phase 1.5 for the replacement.
+                //
+                // Dead-coded: previously read `options` from FieldType::OptionSet (removed in Phase 0).
+                // Old flow:
+                //   1. source_options from type_tracking input type's FieldType::OptionSet.options
+                //   2. target_options from target_field_cache's FieldType::OptionSet.options
+                //   3. Open ValueMapTransformModal with both
+                //   4. Save new mappings
+                gx.toast(Toast::error(
+                    "ValueMap editing not yet available — requires Phase 1 (OptionSetContext)",
+                ));
             }
             // Other transform types - show toast for now
             _ => {

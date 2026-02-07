@@ -51,6 +51,8 @@ pub struct TransformNode {
 pub struct FieldMappingNode {
     /// The underlying field mapping data.
     pub field_mapping: FieldMapping,
+    /// The target field's type (for display in the tree).
+    pub target_type: Option<ValueType>,
     /// Type warning if the chain output doesn't match the target field type.
     pub warning: Option<FieldMappingWarning>,
 }
@@ -339,9 +341,18 @@ impl TreeItem for MigrationTreeNode {
             Self::FieldMapping(fmn) => {
                 let label = fmn.field_mapping.target_field.clone();
                 let has_warning = fmn.warning.is_some();
+                let type_label = fmn
+                    .target_type
+                    .as_ref()
+                    .map(|t| format!(" ({})", t.display()))
+                    .unwrap_or_default();
+                let has_type = fmn.target_type.is_some();
                 element! {
                     row {
                         text (content: {label}) style (fg: primary)
+                        if has_type {
+                            text (content: {type_label}) style (fg: muted)
+                        }
                         if has_warning {
                             text (content: " !") style (fg: warning)
                         }
@@ -823,17 +834,21 @@ fn build_field_mapping_node(
     ctx: &mut TreeBuildContext,
 ) -> TreeNode<MigrationTreeNode> {
     let transforms = ctx.lookup.get_transforms(ParentType::FieldMapping, fm.id);
+    let target_entity = ctx.target_entity_for(fm.entity_mapping_id).to_owned();
+
+    // Resolve the target field type for display
+    let target_type = resolve_target_field_type(&fm.target_field, &target_entity, ctx);
 
     if transforms.is_empty() {
         let fmn = FieldMappingNode {
             field_mapping: fm,
+            target_type,
             warning: None,
         };
         TreeNode::leaf(MigrationTreeNode::FieldMapping(fmn))
     } else {
         // Compute types for this chain
         let source_entity = ctx.source_entity_for(fm.entity_mapping_id).to_owned();
-        let target_entity = ctx.target_entity_for(fm.entity_mapping_id).to_owned();
         log::debug!(
             "type_tracking: computing chain for field mapping {} (target_field={}, source={}, target={})",
             fm.id,
@@ -860,6 +875,7 @@ fn build_field_mapping_node(
 
         let fmn = FieldMappingNode {
             field_mapping: fm,
+            target_type,
             warning,
         };
         let transform_nodes: Vec<TreeNode<MigrationTreeNode>> = transforms
@@ -868,6 +884,17 @@ fn build_field_mapping_node(
             .collect();
         TreeNode::branch(MigrationTreeNode::FieldMapping(fmn), transform_nodes)
     }
+}
+
+/// Look up the target field type from the target field cache.
+fn resolve_target_field_type(
+    target_field: &str,
+    target_entity: &str,
+    ctx: &TreeBuildContext,
+) -> Option<ValueType> {
+    let target_fields = ctx.target_field_cache.get(target_entity)?;
+    let field_type = target_fields.get(target_field)?;
+    Some(ValueType::Known(field_type.clone()))
 }
 
 /// Check if a chain output type is compatible with the target field type.

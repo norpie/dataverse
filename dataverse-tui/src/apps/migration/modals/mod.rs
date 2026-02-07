@@ -18,6 +18,7 @@ mod select_transform;
 mod string_ops_transform;
 mod test_guids;
 mod unmatched_handling;
+mod value_map_transform;
 
 pub use add_field_mapping::AddFieldMappingModal;
 pub use add_field_mapping::AddFieldMappingResult;
@@ -45,3 +46,4 @@ pub use string_ops_transform::StringOpsTransformModal;
 pub use test_guids::TestGuidsModal;
 pub use unmatched_handling::UnmatchedHandlingModal;
 pub use unmatched_handling::UnmatchedHandlingResult;
+pub use value_map_transform::ValueMapTransformModal;

@@ -1,5 +1,6 @@
 //! Internal helper functions for the migration editor.
 
+use dataverse_lib::model::metadata::AttributeType;
 use dataverse_lib::model::FieldType;
 use dataverse_lib::DataverseClient;
 use rafter::prelude::*;
@@ -260,7 +261,27 @@ async fn fetch_entity_field_types(
                 let fields: std::collections::HashMap<String, FieldType> = metadata
                     .attributes
                     .iter()
-                    .map(|attr| (attr.logical_name.clone(), FieldType::from(attr)))
+                    .map(|attr| {
+                        let field_type = match attr.attribute_type {
+                            // For option set types, use the typed attribute accessors
+                            // which have the full option set metadata (name + options).
+                            AttributeType::Picklist => {
+                                resolve_picklist_field_type(&metadata, &attr.logical_name)
+                            }
+                            AttributeType::State => {
+                                resolve_state_field_type(&metadata, &attr.logical_name)
+                            }
+                            AttributeType::Status => {
+                                resolve_status_field_type(&metadata, &attr.logical_name)
+                            }
+                            AttributeType::MultiSelectPicklist => {
+                                resolve_multi_select_field_type(&metadata, &attr.logical_name)
+                            }
+                            // All other types use the base AttributeMetadata conversion.
+                            _ => FieldType::from(attr),
+                        };
+                        (attr.logical_name.clone(), field_type)
+                    })
                     .collect();
                 log::debug!(
                     "type_tracking: fetched {} fields for entity '{}'",
@@ -280,6 +301,66 @@ async fn fetch_entity_field_types(
     }
 
     cache
+}
+
+/// Resolve a picklist field to a `FieldType::OptionSet` using the typed attribute accessor.
+fn resolve_picklist_field_type(
+    metadata: &dataverse_lib::model::metadata::EntityMetadata,
+    logical_name: &str,
+) -> FieldType {
+    let name = metadata
+        .picklist_attribute(logical_name)
+        .and_then(|typed| typed.option_set.name.clone())
+        .unwrap_or_default();
+    FieldType::OptionSet {
+        kind: AttributeType::Picklist,
+        name,
+    }
+}
+
+/// Resolve a state field to a `FieldType::OptionSet` using the typed attribute accessor.
+fn resolve_state_field_type(
+    metadata: &dataverse_lib::model::metadata::EntityMetadata,
+    logical_name: &str,
+) -> FieldType {
+    let name = metadata
+        .state_attribute(logical_name)
+        .and_then(|typed| typed.option_set.name.clone())
+        .unwrap_or_default();
+    FieldType::OptionSet {
+        kind: AttributeType::State,
+        name,
+    }
+}
+
+/// Resolve a status field to a `FieldType::OptionSet` using the typed attribute accessor.
+fn resolve_status_field_type(
+    metadata: &dataverse_lib::model::metadata::EntityMetadata,
+    logical_name: &str,
+) -> FieldType {
+    let name = metadata
+        .status_attribute(logical_name)
+        .and_then(|typed| typed.option_set.name.clone())
+        .unwrap_or_default();
+    FieldType::OptionSet {
+        kind: AttributeType::Status,
+        name,
+    }
+}
+
+/// Resolve a multi-select picklist field to a `FieldType::OptionSet` using the typed attribute accessor.
+fn resolve_multi_select_field_type(
+    metadata: &dataverse_lib::model::metadata::EntityMetadata,
+    logical_name: &str,
+) -> FieldType {
+    let name = metadata
+        .multi_select_picklist_attribute(logical_name)
+        .and_then(|typed| typed.option_set.name.clone())
+        .unwrap_or_default();
+    FieldType::OptionSet {
+        kind: AttributeType::MultiSelectPicklist,
+        name,
+    }
 }
 
 /// A dotted copy path paired with the entity mapping it belongs to.
