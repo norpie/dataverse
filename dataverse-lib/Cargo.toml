@@ -17,7 +17,7 @@ hyper = { version = "1.8.1", features = ["server", "http1"] }
 hyper-util = { version = "0.1.19", features = ["tokio"] }
 rand = "0.9.2"
 reqwest = { version = "0.13.1", default-features = false, features = ["form", "json", "rustls"] }
-rust_decimal = { version = "1.39.0", features = ["serde"] }
+rust_decimal = { version = "1.39.0", features = ["serde", "serde-with-str"] }
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.149"
 sha2 = "0.10.9"

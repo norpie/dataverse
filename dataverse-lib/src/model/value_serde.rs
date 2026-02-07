@@ -34,6 +34,9 @@ use super::Value;
 
 /// Helper enum for binary serialization (externally tagged, derives Serialize).
 /// Uses references to avoid cloning during serialization.
+///
+/// Note: Decimal uses `serde::str` serialization because `rust_decimal`'s default
+/// serde impl uses `deserialize_any` which bincode doesn't support.
 #[derive(Serialize)]
 enum BinaryRef<'a> {
     Null,
@@ -41,7 +44,7 @@ enum BinaryRef<'a> {
     Int(i32),
     Long(i64),
     Float(f64),
-    Decimal(&'a Decimal),
+    Decimal(#[serde(with = "rust_decimal::serde::str")] &'a Decimal),
     String(&'a str),
     Guid(&'a Uuid),
     DateTime(&'a DateTime<Utc>),
@@ -140,6 +143,9 @@ enum HumanReadable {
 }
 
 /// Helper enum for binary deserialization (externally tagged with variant index).
+///
+/// Note: Decimal uses `serde::str` deserialization because `rust_decimal`'s default
+/// serde impl uses `deserialize_any` which bincode doesn't support.
 #[derive(Deserialize)]
 enum Binary {
     Null,
@@ -147,7 +153,7 @@ enum Binary {
     Int(i32),
     Long(i64),
     Float(f64),
-    Decimal(Decimal),
+    Decimal(#[serde(with = "rust_decimal::serde::str")] Decimal),
     String(String),
     Guid(Uuid),
     DateTime(DateTime<Utc>),
@@ -324,5 +330,21 @@ mod tests {
         let long_bytes = bincode::serde::encode_to_vec(&long_val, BINCODE_CONFIG).unwrap();
         // Tagged format means different discriminants = different bytes
         assert_ne!(int_bytes, long_bytes);
+    }
+
+    #[test]
+    fn test_bincode_roundtrip_decimal() {
+        assert_eq!(
+            bincode_roundtrip(&Value::Decimal(Decimal::ZERO)),
+            Value::Decimal(Decimal::ZERO)
+        );
+        assert_eq!(
+            bincode_roundtrip(&Value::Decimal(Decimal::new(314, 2))),
+            Value::Decimal(Decimal::new(314, 2))
+        );
+        assert_eq!(
+            bincode_roundtrip(&Value::Decimal(Decimal::new(-42, 0))),
+            Value::Decimal(Decimal::new(-42, 0))
+        );
     }
 }
