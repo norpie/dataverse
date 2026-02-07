@@ -123,26 +123,26 @@ pub struct EntityMetadata {
 
     /// State attributes with their option sets.
     /// Populated by parallel fetch, not directly from the API response.
-    /// Not cached - must be fetched separately.
-    #[serde(default, skip)]
+    /// Cached via bincode; absent from API JSON (defaults to empty).
+    #[serde(default)]
     pub state_attributes: Vec<StateAttributeMetadata>,
 
     /// Status attributes with their option sets.
     /// Populated by parallel fetch, not directly from the API response.
-    /// Not cached - must be fetched separately.
-    #[serde(default, skip)]
+    /// Cached via bincode; absent from API JSON (defaults to empty).
+    #[serde(default)]
     pub status_attributes: Vec<StatusAttributeMetadata>,
 
     /// Picklist attributes with their option sets.
     /// Populated by parallel fetch, not directly from the API response.
-    /// Not cached - must be fetched separately.
-    #[serde(default, skip)]
+    /// Cached via bincode; absent from API JSON (defaults to empty).
+    #[serde(default)]
     pub picklist_attributes: Vec<PicklistAttributeMetadata>,
 
     /// Multi-select picklist attributes with their option sets.
     /// Populated by parallel fetch, not directly from the API response.
-    /// Not cached - must be fetched separately.
-    #[serde(default, skip)]
+    /// Cached via bincode; absent from API JSON (defaults to empty).
+    #[serde(default)]
     pub multi_select_picklist_attributes: Vec<MultiSelectPicklistAttributeMetadata>,
 
     /// One-to-many relationships where this entity is the primary (referenced) entity.
