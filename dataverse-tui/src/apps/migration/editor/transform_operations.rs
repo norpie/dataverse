@@ -295,6 +295,19 @@ impl MigrationEditor {
             .map(|em| em.target_entity.clone())
             .unwrap_or_default();
 
+        log::debug!(
+            "create_value_map_data: source option set kind={:?} name='{}' on entity '{}'",
+            source_os_info.kind,
+            source_os_info.name,
+            source_entity,
+        );
+        log::debug!(
+            "create_value_map_data: target option set kind={:?} name='{}' on entity '{}'",
+            target_os_info.kind,
+            target_os_info.name,
+            target_entity,
+        );
+
         let src_name = source_os_info.name.clone();
         let src_entity = source_entity.clone();
         let tgt_name = target_os_info.name.clone();
@@ -336,6 +349,12 @@ impl MigrationEditor {
                 return None;
             }
         };
+
+        log::debug!(
+            "create_value_map_data: source options count={}, target options count={}",
+            source_options.len(),
+            target_options.len(),
+        );
 
         let source_ctx = OptionSetContext {
             name: source_os_info.name,
@@ -1054,31 +1073,121 @@ struct OptionSetInfo {
     name: String,
 }
 
-/// Fetch option set options for an attribute on an entity.
+/// Fetch option set options by option set name on an entity.
 ///
-/// Looks up the attribute metadata to find its option set, then extracts options.
+/// Uses the full entity metadata (which expands typed picklist/state/status
+/// attributes with their option sets) and searches by option set name.
 async fn fetch_option_set_options(
     client: DataverseClient,
     entity: &str,
-    attribute_name: &str,
+    option_set_name: &str,
 ) -> Result<Vec<OptionInfo>, dataverse_lib::error::Error> {
-    let attr = client
-        .metadata()
-        .attribute(entity, attribute_name)
-        .await?;
+    log::debug!(
+        "fetch_option_set_options: fetching entity metadata for '{}' to find option set '{}'",
+        entity,
+        option_set_name,
+    );
+    let metadata = client.metadata().entity(entity).await?;
 
-    let options = attr
-        .options()
-        .map(|os| {
-            os.options
+    // Search picklist attributes
+    let options = metadata
+        .picklist_attributes
+        .iter()
+        .find(|a| a.option_set.name.as_deref() == Some(option_set_name))
+        .map(|a| extract_picklist_options(&a.option_set.options));
+
+    if let Some(opts) = options {
+        log::debug!(
+            "fetch_option_set_options: found {} options in picklist for '{}'",
+            opts.len(),
+            option_set_name,
+        );
+        return Ok(opts);
+    }
+
+    // Search state attributes
+    let options = metadata
+        .state_attributes
+        .iter()
+        .find(|a| a.option_set.name.as_deref() == Some(option_set_name))
+        .map(|a| {
+            a.option_set
+                .options
                 .iter()
                 .map(|opt| OptionInfo {
                     value: opt.value,
                     label: opt.label.text().unwrap_or("").to_string(),
                 })
                 .collect::<Vec<_>>()
-        })
-        .unwrap_or_default();
+        });
 
-    Ok(options)
+    if let Some(opts) = options {
+        log::debug!(
+            "fetch_option_set_options: found {} options in state for '{}'",
+            opts.len(),
+            option_set_name,
+        );
+        return Ok(opts);
+    }
+
+    // Search status attributes
+    let options = metadata
+        .status_attributes
+        .iter()
+        .find(|a| a.option_set.name.as_deref() == Some(option_set_name))
+        .map(|a| {
+            a.option_set
+                .options
+                .iter()
+                .map(|opt| OptionInfo {
+                    value: opt.value,
+                    label: opt.label.text().unwrap_or("").to_string(),
+                })
+                .collect::<Vec<_>>()
+        });
+
+    if let Some(opts) = options {
+        log::debug!(
+            "fetch_option_set_options: found {} options in status for '{}'",
+            opts.len(),
+            option_set_name,
+        );
+        return Ok(opts);
+    }
+
+    // Search multi-select picklist attributes
+    let options = metadata
+        .multi_select_picklist_attributes
+        .iter()
+        .find(|a| a.option_set.name.as_deref() == Some(option_set_name))
+        .map(|a| extract_picklist_options(&a.option_set.options));
+
+    if let Some(opts) = options {
+        log::debug!(
+            "fetch_option_set_options: found {} options in multi-select for '{}'",
+            opts.len(),
+            option_set_name,
+        );
+        return Ok(opts);
+    }
+
+    log::warn!(
+        "fetch_option_set_options: no option set '{}' found on entity '{}'",
+        option_set_name,
+        entity,
+    );
+    Ok(vec![])
+}
+
+/// Extract `OptionInfo` values from API option metadata.
+fn extract_picklist_options(
+    options: &[dataverse_lib::model::metadata::OptionMetadata],
+) -> Vec<OptionInfo> {
+    options
+        .iter()
+        .map(|opt| OptionInfo {
+            value: opt.value,
+            label: opt.label.text().unwrap_or("").to_string(),
+        })
+        .collect()
 }
