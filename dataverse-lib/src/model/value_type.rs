@@ -31,19 +31,17 @@ pub enum FieldType {
         kind: AttributeType,
         targets: Vec<String>,
     },
-    /// Option set type with available options.
-    /// `options` may be empty if unknown (e.g., from a constant Value).
-    OptionSet {
-        kind: AttributeType,
-        options: Vec<OptionInfo>,
-    },
+    /// Option set type with name for compatibility checking.
+    /// `name` identifies the option set (e.g., "statusreason").
+    /// Empty name means unknown — treated as wildcard for compatibility.
+    OptionSet { kind: AttributeType, name: String },
 }
 
 impl FieldType {
     /// Check if two field types are compatible.
     pub fn is_compatible_with(&self, other: &FieldType) -> bool {
         match (self, other) {
-            (FieldType::Simple(a), FieldType::Simple(b)) => attr_types_compatible(a, b),
+            (FieldType::Simple(a), FieldType::Simple(b)) => attr_type_assignable_to(a, b),
             (
                 FieldType::Lookup {
                     kind: ka,
@@ -55,7 +53,7 @@ impl FieldType {
                 },
             ) => {
                 // Kinds must be in the same compatibility group
-                if !attr_types_compatible(ka, kb) {
+                if !attr_type_assignable_to(ka, kb) {
                     return false;
                 }
                 // If both have non-empty targets, they must overlap
@@ -66,9 +64,25 @@ impl FieldType {
                     true
                 }
             }
-            (FieldType::OptionSet { kind: ka, .. }, FieldType::OptionSet { kind: kb, .. }) => {
-                // All option set kinds are compatible with each other
-                attr_types_compatible(ka, kb)
+            (
+                FieldType::OptionSet {
+                    kind: ka, name: na, ..
+                },
+                FieldType::OptionSet {
+                    kind: kb, name: nb, ..
+                },
+            ) => {
+                // Kinds must be in the same compatibility group
+                if !attr_type_assignable_to(ka, kb) {
+                    return false;
+                }
+                // If both have names, they must match
+                if !na.is_empty() && !nb.is_empty() {
+                    na == nb
+                } else {
+                    // Unknown name = assume compatible
+                    true
+                }
             }
             // Different categories (Simple vs Lookup vs OptionSet) are incompatible
             _ => false,
@@ -87,7 +101,13 @@ impl FieldType {
                     format!("{:?}({})", kind, target_list)
                 }
             }
-            FieldType::OptionSet { kind, .. } => format!("{:?}", kind),
+            FieldType::OptionSet { kind, name, .. } => {
+                if name.is_empty() {
+                    format!("{:?}", kind)
+                } else {
+                    format!("{:?}({})", kind, name)
+                }
+            }
         }
     }
 
@@ -97,14 +117,6 @@ impl FieldType {
             FieldType::Simple(attr) => *attr,
             FieldType::Lookup { kind, .. } => *kind,
             FieldType::OptionSet { kind, .. } => *kind,
-        }
-    }
-
-    /// Returns the option set options, if this is an `OptionSet` variant.
-    pub fn options(&self) -> Option<&[OptionInfo]> {
-        match self {
-            FieldType::OptionSet { options, .. } => Some(options),
-            _ => None,
         }
     }
 }
@@ -119,7 +131,7 @@ impl From<AttributeType> for FieldType {
         } else if is_option_set_type(attr) {
             FieldType::OptionSet {
                 kind: attr,
-                options: vec![],
+                name: String::new(),
             }
         } else {
             FieldType::Simple(attr)
@@ -135,21 +147,13 @@ impl From<&AttributeMetadata> for FieldType {
                 targets: attr.targets.clone(),
             }
         } else if is_option_set_type(attr.attribute_type) {
-            let options = attr
+            let name = attr
                 .options()
-                .map(|os| {
-                    os.options
-                        .iter()
-                        .map(|o| OptionInfo {
-                            value: o.value,
-                            label: o.label.text().unwrap_or("").to_string(),
-                        })
-                        .collect()
-                })
+                .and_then(|os| os.name.clone())
                 .unwrap_or_default();
             FieldType::OptionSet {
                 kind: attr.attribute_type,
-                options,
+                name,
             }
         } else {
             FieldType::Simple(attr.attribute_type)
@@ -166,6 +170,9 @@ pub enum ValueType {
     Known(FieldType),
     /// Accepts any type (for transform input signatures only).
     Any,
+    /// Accepts any option set regardless of kind or name.
+    /// Used by transforms like ValueMap that operate on any option set.
+    AnyOptionSet,
     /// Null value (compatible with any target type).
     #[default]
     Null,
@@ -184,16 +191,27 @@ impl ValueType {
         ValueType::Known(FieldType::Lookup { kind, targets })
     }
 
-    /// Convenience: create a `Known(OptionSet { kind, options })`.
-    pub fn option_set(kind: AttributeType, options: Vec<OptionInfo>) -> Self {
-        ValueType::Known(FieldType::OptionSet { kind, options })
+    /// Convenience: create a `Known(OptionSet { kind, name })`.
+    pub fn option_set(kind: AttributeType, name: String) -> Self {
+        ValueType::Known(FieldType::OptionSet { kind, name })
     }
 
     /// Check if this type is compatible with expected input type.
+    ///
+    /// Directional: `self` is the actual value type, `expected` is the slot type.
+    /// "Can `self` flow into a slot expecting `expected`?"
     pub fn is_compatible_with(&self, expected: &ValueType) -> bool {
         match (self, expected) {
             // Any accepts anything
             (_, ValueType::Any) => true,
+
+            // AnyOptionSet accepts any option set type
+            (ValueType::Known(FieldType::OptionSet { .. }), ValueType::AnyOptionSet) => true,
+            (ValueType::Union(types), ValueType::AnyOptionSet) => types
+                .iter()
+                .any(|t| matches!(t, FieldType::OptionSet { .. })),
+            (ValueType::Null, ValueType::AnyOptionSet) => true,
+            (_, ValueType::AnyOptionSet) => false,
 
             // Null is compatible with any known type
             (ValueType::Null, ValueType::Known(_)) => true,
@@ -218,8 +236,9 @@ impl ValueType {
             // Null-to-null
             (ValueType::Null, ValueType::Null) => true,
 
-            // Any as actual value (shouldn't happen in practice)
+            // Any/AnyOptionSet as actual value (shouldn't happen in practice)
             (ValueType::Any, _) => true,
+            (ValueType::AnyOptionSet, _) => true,
 
             // Known/Union to Null - not compatible (Null is a specific type)
             (ValueType::Known(_), ValueType::Null) => false,
@@ -232,6 +251,7 @@ impl ValueType {
         match self {
             ValueType::Known(ft) => ft.display(),
             ValueType::Any => "Any".to_string(),
+            ValueType::AnyOptionSet => "OptionSet(any)".to_string(),
             ValueType::Null => "Null".to_string(),
             ValueType::Union(types) => {
                 let names: Vec<_> = types.iter().map(|t| t.display()).collect();
@@ -263,9 +283,9 @@ impl From<&Value> for ValueType {
                 ValueType::lookup(AttributeType::Lookup, vec![er.entity.name().to_string()])
             }
             Value::EntityBinding(_) => ValueType::lookup(AttributeType::Lookup, vec![]),
-            Value::OptionSet(_) => ValueType::option_set(AttributeType::Picklist, vec![]),
+            Value::OptionSet(_) => ValueType::option_set(AttributeType::Picklist, String::new()),
             Value::MultiOptionSet(_) => {
-                ValueType::option_set(AttributeType::MultiSelectPicklist, vec![])
+                ValueType::option_set(AttributeType::MultiSelectPicklist, String::new())
             }
             Value::File(_) => ValueType::simple(AttributeType::File),
             Value::Image(_) => ValueType::simple(AttributeType::Image),
@@ -298,36 +318,44 @@ fn is_option_set_type(attr: AttributeType) -> bool {
     )
 }
 
-/// Check if two `AttributeType`s are compatible (same type or in same compatibility group).
-fn attr_types_compatible(a: &AttributeType, b: &AttributeType) -> bool {
-    if a == b {
+/// Check if `from` type can be assigned to a slot expecting `to` (directional).
+///
+/// This is asymmetric for option set types:
+/// - Single-select (Picklist/State/Status) → MultiSelectPicklist is OK (widening)
+/// - MultiSelectPicklist → single-select is NOT OK (lossy)
+fn attr_type_assignable_to(from: &AttributeType, to: &AttributeType) -> bool {
+    if from == to {
         return true;
     }
 
     matches!(
-        (a, b),
-        // Integer types
+        (from, to),
+        // Integer types (bidirectional)
         (AttributeType::Integer, AttributeType::BigInt)
             | (AttributeType::BigInt, AttributeType::Integer)
-            // Decimal types
+            // Decimal types (bidirectional)
             | (AttributeType::Decimal, AttributeType::Double)
             | (AttributeType::Double, AttributeType::Decimal)
-            // String types
+            // String types (bidirectional)
             | (AttributeType::String, AttributeType::Memo)
             | (AttributeType::Memo, AttributeType::String)
-            // Lookup types
+            // Lookup types (bidirectional)
             | (AttributeType::Lookup, AttributeType::Customer)
             | (AttributeType::Customer, AttributeType::Lookup)
             | (AttributeType::Lookup, AttributeType::Owner)
             | (AttributeType::Owner, AttributeType::Lookup)
             | (AttributeType::Customer, AttributeType::Owner)
             | (AttributeType::Owner, AttributeType::Customer)
-            // OptionSet types
+            // Single-select option sets (bidirectional among themselves)
             | (AttributeType::Picklist, AttributeType::State)
             | (AttributeType::State, AttributeType::Picklist)
             | (AttributeType::Picklist, AttributeType::Status)
             | (AttributeType::Status, AttributeType::Picklist)
             | (AttributeType::State, AttributeType::Status)
             | (AttributeType::Status, AttributeType::State)
+            // Single-select → MultiSelect OK (widening)
+            | (AttributeType::Picklist, AttributeType::MultiSelectPicklist)
+            | (AttributeType::State, AttributeType::MultiSelectPicklist)
+            | (AttributeType::Status, AttributeType::MultiSelectPicklist) // MultiSelect → single-select is NOT listed (lossy, rejected)
     )
 }
