@@ -1,8 +1,6 @@
 //! Internal helper functions for the migration editor.
 
-use std::collections::HashMap;
-
-use dataverse_lib::model::metadata::AttributeType;
+use dataverse_lib::model::FieldType;
 use dataverse_lib::DataverseClient;
 use rafter::prelude::*;
 
@@ -162,10 +160,10 @@ async fn fetch_entity_field_types(
     for entity_name in entities {
         match client.metadata().entity(entity_name.as_str()).await {
             Ok(metadata) => {
-                let fields: HashMap<String, AttributeType> = metadata
+                let fields: std::collections::HashMap<String, FieldType> = metadata
                     .attributes
-                    .into_iter()
-                    .map(|attr| (attr.logical_name, attr.attribute_type))
+                    .iter()
+                    .map(|attr| (attr.logical_name.clone(), FieldType::from(attr)))
                     .collect();
                 log::debug!(
                     "type_tracking: fetched {} fields for entity '{}'",

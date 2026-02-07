@@ -1,25 +1,134 @@
 //! Design-time value type for type tracking.
 
+use super::metadata::AttributeMetadata;
 use super::metadata::AttributeType;
 use super::Value;
 
+/// A concrete data type with enough info for compatibility checking.
+///
+/// Non-lookup types are `Simple(AttributeType)`. Lookup types carry target entity info
+/// so that compatibility can check for overlapping targets.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FieldType {
+    /// Non-lookup type (String, Integer, DateTime, etc.)
+    Simple(AttributeType),
+    /// Lookup type with target entity info.
+    /// `targets` may be empty if unknown (e.g., from a constant Value).
+    Lookup {
+        kind: AttributeType,
+        targets: Vec<String>,
+    },
+}
+
+impl FieldType {
+    /// Check if two field types are compatible.
+    pub fn is_compatible_with(&self, other: &FieldType) -> bool {
+        match (self, other) {
+            (FieldType::Simple(a), FieldType::Simple(b)) => attr_types_compatible(a, b),
+            (
+                FieldType::Lookup {
+                    kind: ka,
+                    targets: ta,
+                },
+                FieldType::Lookup {
+                    kind: kb,
+                    targets: tb,
+                },
+            ) => {
+                // Kinds must be in the same compatibility group
+                if !attr_types_compatible(ka, kb) {
+                    return false;
+                }
+                // If both have non-empty targets, they must overlap
+                if !ta.is_empty() && !tb.is_empty() {
+                    ta.iter().any(|t| tb.contains(t))
+                } else {
+                    // Unknown targets = assume compatible
+                    true
+                }
+            }
+            // Simple vs Lookup (and vice versa) are incompatible
+            _ => false,
+        }
+    }
+
+    /// Display string for UI.
+    pub fn display(&self) -> String {
+        match self {
+            FieldType::Simple(attr) => format!("{:?}", attr),
+            FieldType::Lookup { kind, targets } => {
+                if targets.is_empty() {
+                    format!("{:?}", kind)
+                } else {
+                    let target_list = targets.join(" | ");
+                    format!("{:?}({})", kind, target_list)
+                }
+            }
+        }
+    }
+
+    /// Returns the underlying `AttributeType`.
+    pub fn attribute_type(&self) -> AttributeType {
+        match self {
+            FieldType::Simple(attr) => *attr,
+            FieldType::Lookup { kind, .. } => *kind,
+        }
+    }
+}
+
+impl From<AttributeType> for FieldType {
+    fn from(attr: AttributeType) -> Self {
+        if is_lookup_type(attr) {
+            FieldType::Lookup {
+                kind: attr,
+                targets: vec![],
+            }
+        } else {
+            FieldType::Simple(attr)
+        }
+    }
+}
+
+impl From<&AttributeMetadata> for FieldType {
+    fn from(attr: &AttributeMetadata) -> Self {
+        if is_lookup_type(attr.attribute_type) {
+            FieldType::Lookup {
+                kind: attr.attribute_type,
+                targets: attr.targets.clone(),
+            }
+        } else {
+            FieldType::Simple(attr.attribute_type)
+        }
+    }
+}
+
 /// Value type for design-time type tracking in transform chains.
 ///
-/// Wraps `AttributeType` with additional variants for type inference.
+/// Wraps `FieldType` with additional variants for type inference.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub enum ValueType {
-    /// Known attribute type from metadata.
-    Known(AttributeType),
+    /// Known field type from metadata.
+    Known(FieldType),
     /// Accepts any type (for transform input signatures only).
     Any,
     /// Null value (compatible with any target type).
     #[default]
     Null,
     /// Multiple possible types (from coalesce/match branches).
-    Union(Vec<AttributeType>),
+    Union(Vec<FieldType>),
 }
 
 impl ValueType {
+    /// Convenience: create a `Known(Simple(attr))`.
+    pub fn simple(attr: AttributeType) -> Self {
+        ValueType::Known(FieldType::Simple(attr))
+    }
+
+    /// Convenience: create a `Known(Lookup { kind, targets })`.
+    pub fn lookup(kind: AttributeType, targets: Vec<String>) -> Self {
+        ValueType::Known(FieldType::Lookup { kind, targets })
+    }
+
     /// Check if this type is compatible with expected input type.
     pub fn is_compatible_with(&self, expected: &ValueType) -> bool {
         match (self, expected) {
@@ -31,19 +140,19 @@ impl ValueType {
             (ValueType::Null, ValueType::Union(_)) => true,
 
             // Known types must match
-            (ValueType::Known(a), ValueType::Known(b)) => types_compatible(a, b),
+            (ValueType::Known(a), ValueType::Known(b)) => a.is_compatible_with(b),
 
             // Union is compatible if ANY member matches
             (ValueType::Union(types), ValueType::Known(b)) => {
-                types.iter().any(|a| types_compatible(a, b))
+                types.iter().any(|a| a.is_compatible_with(b))
             }
             (ValueType::Known(a), ValueType::Union(types)) => {
-                types.iter().any(|b| types_compatible(a, b))
+                types.iter().any(|b| a.is_compatible_with(b))
             }
 
             // Union to union: any overlap
             (ValueType::Union(a), ValueType::Union(b)) => {
-                a.iter().any(|t| b.iter().any(|u| types_compatible(t, u)))
+                a.iter().any(|t| b.iter().any(|u| t.is_compatible_with(u)))
             }
 
             // Null-to-null
@@ -61,24 +170,67 @@ impl ValueType {
     /// Display string for UI.
     pub fn display(&self) -> String {
         match self {
-            ValueType::Known(attr) => format!("{:?}", attr),
+            ValueType::Known(ft) => ft.display(),
             ValueType::Any => "Any".to_string(),
             ValueType::Null => "Null".to_string(),
             ValueType::Union(types) => {
-                let names: Vec<_> = types.iter().map(|t| format!("{:?}", t)).collect();
+                let names: Vec<_> = types.iter().map(|t| t.display()).collect();
                 names.join(" | ")
             }
         }
     }
 }
 
-/// Check if two AttributeTypes are compatible.
-fn types_compatible(a: &AttributeType, b: &AttributeType) -> bool {
+impl From<AttributeType> for ValueType {
+    fn from(attr: AttributeType) -> Self {
+        ValueType::Known(FieldType::from(attr))
+    }
+}
+
+impl From<&Value> for ValueType {
+    fn from(value: &Value) -> Self {
+        match value {
+            Value::Null => ValueType::Null,
+            Value::Bool(_) => ValueType::simple(AttributeType::Boolean),
+            Value::Int(_) => ValueType::simple(AttributeType::Integer),
+            Value::Long(_) => ValueType::simple(AttributeType::BigInt),
+            Value::Float(_) | Value::Decimal(_) => ValueType::simple(AttributeType::Decimal),
+            Value::String(_) => ValueType::simple(AttributeType::String),
+            Value::Guid(_) => ValueType::simple(AttributeType::Uniqueidentifier),
+            Value::DateTime(_) => ValueType::simple(AttributeType::DateTime),
+            Value::Money(_) => ValueType::simple(AttributeType::Money),
+            Value::EntityReference(er) => {
+                ValueType::lookup(AttributeType::Lookup, vec![er.entity.name().to_string()])
+            }
+            Value::EntityBinding(_) => ValueType::lookup(AttributeType::Lookup, vec![]),
+            Value::OptionSet(_) => ValueType::simple(AttributeType::Picklist),
+            Value::MultiOptionSet(_) => ValueType::simple(AttributeType::MultiSelectPicklist),
+            Value::File(_) => ValueType::simple(AttributeType::File),
+            Value::Image(_) => ValueType::simple(AttributeType::Image),
+            // Record/Records/Json don't have direct AttributeType mappings
+            Value::Record(_) | Value::Records(_) | Value::Json(_) => ValueType::Any,
+        }
+    }
+}
+
+// =============================================================================
+// Helpers
+// =============================================================================
+
+/// Check if an `AttributeType` is a lookup variant.
+fn is_lookup_type(attr: AttributeType) -> bool {
+    matches!(
+        attr,
+        AttributeType::Lookup | AttributeType::Customer | AttributeType::Owner
+    )
+}
+
+/// Check if two `AttributeType`s are compatible (same type or in same compatibility group).
+fn attr_types_compatible(a: &AttributeType, b: &AttributeType) -> bool {
     if a == b {
         return true;
     }
 
-    // Group compatible types
     matches!(
         (a, b),
         // Integer types
@@ -105,35 +257,4 @@ fn types_compatible(a: &AttributeType, b: &AttributeType) -> bool {
             | (AttributeType::State, AttributeType::Status)
             | (AttributeType::Status, AttributeType::State)
     )
-}
-
-impl From<AttributeType> for ValueType {
-    fn from(attr: AttributeType) -> Self {
-        ValueType::Known(attr)
-    }
-}
-
-impl From<&Value> for ValueType {
-    fn from(value: &Value) -> Self {
-        match value {
-            Value::Null => ValueType::Null,
-            Value::Bool(_) => ValueType::Known(AttributeType::Boolean),
-            Value::Int(_) => ValueType::Known(AttributeType::Integer),
-            Value::Long(_) => ValueType::Known(AttributeType::BigInt),
-            Value::Float(_) | Value::Decimal(_) => ValueType::Known(AttributeType::Decimal),
-            Value::String(_) => ValueType::Known(AttributeType::String),
-            Value::Guid(_) => ValueType::Known(AttributeType::Uniqueidentifier),
-            Value::DateTime(_) => ValueType::Known(AttributeType::DateTime),
-            Value::Money(_) => ValueType::Known(AttributeType::Money),
-            Value::EntityReference(_) | Value::EntityBinding(_) => {
-                ValueType::Known(AttributeType::Lookup)
-            }
-            Value::OptionSet(_) => ValueType::Known(AttributeType::Picklist),
-            Value::MultiOptionSet(_) => ValueType::Known(AttributeType::MultiSelectPicklist),
-            Value::File(_) => ValueType::Known(AttributeType::File),
-            Value::Image(_) => ValueType::Known(AttributeType::Image),
-            // Record/Records/Json don't have direct AttributeType mappings
-            Value::Record(_) | Value::Records(_) | Value::Json(_) => ValueType::Any,
-        }
-    }
 }

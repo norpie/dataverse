@@ -3,6 +3,7 @@
 use std::collections::HashMap;
 
 use dataverse_lib::model::metadata::AttributeType;
+use dataverse_lib::model::FieldType;
 use dataverse_lib::model::ValueType;
 
 use super::domain::Transform;
@@ -32,39 +33,39 @@ impl TransformData {
             },
             TransformData::Guid => TransformSignature {
                 input: None,
-                output: Some(ValueType::Known(AttributeType::Uniqueidentifier)),
+                output: Some(ValueType::simple(AttributeType::Uniqueidentifier)),
             },
             TransformData::Find { .. } => TransformSignature {
                 input: None,
-                output: Some(ValueType::Known(AttributeType::Lookup)),
+                output: Some(ValueType::lookup(AttributeType::Lookup, vec![])),
             },
 
             // String operations (expect String)
             TransformData::StringOps { .. } => TransformSignature {
-                input: Some(ValueType::Known(AttributeType::String)),
+                input: Some(ValueType::simple(AttributeType::String)),
                 output: None, // Passthrough
             },
             TransformData::Format { .. } => TransformSignature {
                 input: Some(ValueType::Any),
-                output: Some(ValueType::Known(AttributeType::String)),
+                output: Some(ValueType::simple(AttributeType::String)),
             },
             TransformData::Replace { .. } => TransformSignature {
-                input: Some(ValueType::Known(AttributeType::String)),
+                input: Some(ValueType::simple(AttributeType::String)),
                 output: None, // Passthrough
             },
 
             // Parse transforms (String -> specific type)
             TransformData::ParseInt => TransformSignature {
-                input: Some(ValueType::Known(AttributeType::String)),
-                output: Some(ValueType::Known(AttributeType::Integer)),
+                input: Some(ValueType::simple(AttributeType::String)),
+                output: Some(ValueType::simple(AttributeType::Integer)),
             },
             TransformData::ParseDecimal => TransformSignature {
-                input: Some(ValueType::Known(AttributeType::String)),
-                output: Some(ValueType::Known(AttributeType::Decimal)),
+                input: Some(ValueType::simple(AttributeType::String)),
+                output: Some(ValueType::simple(AttributeType::Decimal)),
             },
             TransformData::ParseDate { .. } => TransformSignature {
-                input: Some(ValueType::Known(AttributeType::String)),
-                output: Some(ValueType::Known(AttributeType::DateTime)),
+                input: Some(ValueType::simple(AttributeType::String)),
+                output: Some(ValueType::simple(AttributeType::DateTime)),
             },
 
             // Convert (Any -> target type)
@@ -78,21 +79,21 @@ impl TransformData {
                 };
                 TransformSignature {
                     input: Some(ValueType::Any),
-                    output: Some(ValueType::Known(output)),
+                    output: Some(ValueType::simple(output)),
                 }
             }
 
             // ValueMap (OptionSet -> OptionSet)
             TransformData::ValueMap { .. } => TransformSignature {
-                input: Some(ValueType::Known(AttributeType::Picklist)),
-                output: Some(ValueType::Known(AttributeType::Picklist)),
+                input: Some(ValueType::simple(AttributeType::Picklist)),
+                output: Some(ValueType::simple(AttributeType::Picklist)),
             },
 
             // Math (numeric -> passthrough)
             TransformData::Math { .. } => TransformSignature {
                 input: Some(ValueType::Union(vec![
-                    AttributeType::Integer,
-                    AttributeType::Decimal,
+                    FieldType::Simple(AttributeType::Integer),
+                    FieldType::Simple(AttributeType::Decimal),
                 ])),
                 output: None, // Passthrough
             },
@@ -302,22 +303,22 @@ pub fn resolve_branch_union(branch_types: &[ValueType]) -> ValueType {
         return ValueType::Null;
     }
 
-    // Collect all known types
-    let mut known_types: Vec<AttributeType> = Vec::new();
+    // Collect all known field types
+    let mut known_types: Vec<FieldType> = Vec::new();
     let mut has_null = false;
 
     for t in branch_types {
         match t {
-            ValueType::Known(attr) => {
-                if !known_types.contains(attr) {
-                    known_types.push(*attr);
+            ValueType::Known(ft) => {
+                if !known_types.contains(ft) {
+                    known_types.push(ft.clone());
                 }
             }
             ValueType::Null => has_null = true,
             ValueType::Union(types) => {
-                for attr in types {
-                    if !known_types.contains(attr) {
-                        known_types.push(*attr);
+                for ft in types {
+                    if !known_types.contains(ft) {
+                        known_types.push(ft.clone());
                     }
                 }
             }
@@ -330,7 +331,7 @@ pub fn resolve_branch_union(branch_types: &[ValueType]) -> ValueType {
 
     let result = match known_types.len() {
         0 => ValueType::Null,
-        1 if !has_null => ValueType::Known(known_types[0]),
+        1 if !has_null => ValueType::Known(known_types.into_iter().next().unwrap()),
         _ => ValueType::Union(known_types),
     };
     log::debug!(

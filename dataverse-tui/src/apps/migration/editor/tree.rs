@@ -3,6 +3,7 @@
 use std::collections::HashMap;
 
 use dataverse_lib::model::metadata::AttributeType;
+use dataverse_lib::model::FieldType;
 use dataverse_lib::model::ValueType;
 use rafter::element;
 use rafter::widgets::Text;
@@ -27,8 +28,8 @@ use crate::apps::migration::types::TypeWarning;
 use crate::apps::migration::types::Variable;
 
 /// Cache of field types per source entity.
-/// Maps `source_entity_logical_name -> (field_logical_name -> AttributeType)`.
-pub type FieldTypeCache = HashMap<String, HashMap<String, AttributeType>>;
+/// Maps `source_entity_logical_name -> (field_logical_name -> FieldType)`.
+pub type FieldTypeCache = HashMap<String, HashMap<String, FieldType>>;
 
 /// A transform node in the tree, enriched with type tracking data.
 #[derive(Clone, Debug)]
@@ -1040,9 +1041,9 @@ fn compute_chain_types(
                 } else if path == "#value" {
                     Some(current_type.clone())
                 } else if path == "#index" {
-                    Some(ValueType::Known(AttributeType::Integer))
+                    Some(ValueType::simple(AttributeType::Integer))
                 } else if path == "#type" || path == "#source_entity" || path == "#target_entity" {
-                    Some(ValueType::Known(AttributeType::String))
+                    Some(ValueType::simple(AttributeType::String))
                 } else {
                     // Field path - resolve from metadata cache.
                     // For dotted paths (e.g., "parentaccountid.name"), use the root field.
@@ -1057,13 +1058,13 @@ fn compute_chain_types(
                         .unwrap_or(root_field);
 
                     if let Some(fields) = field_types {
-                        if let Some(attr_type) = fields.get(clean_field) {
+                        if let Some(field_type) = fields.get(clean_field) {
                             log::debug!(
                                 "type_tracking: resolved field '{}' -> {:?}",
                                 path,
-                                attr_type,
+                                field_type,
                             );
-                            Some(ValueType::Known(*attr_type))
+                            Some(ValueType::Known(field_type.clone()))
                         } else {
                             log::debug!(
                                 "type_tracking: field '{}' not found in metadata for '{}'",
