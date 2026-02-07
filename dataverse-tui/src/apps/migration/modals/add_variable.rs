@@ -3,6 +3,7 @@
 use dataverse_lib::model::FieldType;
 use dataverse_lib::model::ValueType;
 use dataverse_lib::model::metadata::AttributeType;
+use dataverse_lib::DataverseClient;
 use rafter::page;
 use rafter::prelude::*;
 use rafter::widgets::Button;
@@ -10,16 +11,20 @@ use rafter::widgets::Input;
 use rafter::widgets::Text;
 use tuidom::Element;
 
+use super::TypePickerModal;
+
 /// Result of the add variable modal.
 #[derive(Debug, Clone)]
 pub struct AddVariableResult {
     pub name: String,
-    pub declared_type: dataverse_lib::model::ValueType,
+    pub declared_type: ValueType,
 }
 
 /// Modal for adding a new variable.
 #[modal(size = Sm)]
 pub struct AddVariableModal {
+    #[state(skip)]
+    client: DataverseClient,
     name: String,
     /// The declared type for the variable.
     declared_type: ValueType,
@@ -28,14 +33,32 @@ pub struct AddVariableModal {
 
 impl AddVariableModal {
     /// Create a new add variable modal.
-    pub fn new_modal() -> Self {
+    pub fn new_modal(client: DataverseClient) -> Self {
         let default_type = ValueType::Known(FieldType::Simple(AttributeType::String));
-        Self::new(String::new(), default_type, None)
+        Self::new(client, String::new(), default_type, None)
     }
 
     /// Create an edit variable modal with initial name and type.
-    pub fn edit_modal(name: &str, declared_type: ValueType) -> Self {
-        Self::new(name.to_string(), declared_type, None)
+    pub fn edit_modal(client: DataverseClient, name: &str, declared_type: ValueType) -> Self {
+        Self::new(client, name.to_string(), declared_type, None)
+    }
+
+    /// Convert a `Vec<FieldType>` from the type picker into a `ValueType`.
+    fn types_to_value_type(types: Vec<FieldType>) -> ValueType {
+        match types.len() {
+            0 => ValueType::Known(FieldType::Simple(AttributeType::String)),
+            1 => ValueType::Known(types.into_iter().next().unwrap()),
+            _ => ValueType::Union(types),
+        }
+    }
+
+    /// Convert current `ValueType` into a `Vec<FieldType>` for the type picker.
+    fn value_type_to_types(vt: &ValueType) -> Vec<FieldType> {
+        match vt {
+            ValueType::Known(ft) => vec![ft.clone()],
+            ValueType::Union(types) => types.clone(),
+            _ => vec![],
+        }
     }
 }
 
@@ -53,11 +76,28 @@ impl AddVariableModal {
     #[keybinds]
     fn keybinds() {
         bind("escape", cancel);
+        bind("t", edit_type);
     }
 
     #[handler]
     async fn cancel(&self, mx: &ModalContext<Option<AddVariableResult>>) {
         mx.close(None);
+    }
+
+    #[handler]
+    async fn edit_type(&self, gx: &GlobalContext) {
+        let current = Self::value_type_to_types(&self.declared_type.get());
+        let Some(types) = gx
+            .modal(TypePickerModal::with_types(
+                self.client.clone(),
+                current,
+            ))
+            .await
+        else {
+            return;
+        };
+
+        self.declared_type.set(Self::types_to_value_type(types));
     }
 
     #[handler]
@@ -78,7 +118,6 @@ impl AddVariableModal {
         // Remove leading $ if user typed it
         let name = name.strip_prefix('$').unwrap_or(&name).to_string();
 
-        // TODO: Replace with type picker modal result
         let declared_type = self.declared_type.get();
 
         mx.close(Some(AddVariableResult {
@@ -89,6 +128,7 @@ impl AddVariableModal {
 
     fn element(&self) -> Element {
         let error = self.error.get();
+        let type_display = self.declared_type.get().display();
 
         page! {
             column (padding: (1, 2), gap: 1, width: fill, height: fill) style (bg: surface) {
@@ -103,6 +143,12 @@ impl AddVariableModal {
                     input (state: self.name, id: "variable-name-input", placeholder: "variable_name")
                         on_submit: submit()
                     text (content: "Will be accessible as $name in transforms") style (fg: muted)
+
+                    row (gap: 1) {
+                        text (content: "Type:") style (fg: muted)
+                        text (content: {type_display}) style (fg: primary)
+                    }
+                    button (label: "Change Type", hint: "t", id: "type-btn") on_activate: edit_type()
                 }
 
                 row (width: fill, justify: between) {

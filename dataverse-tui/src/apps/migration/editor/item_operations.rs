@@ -15,7 +15,8 @@ use super::MigrationEditor;
 impl MigrationEditor {
     /// Add a new variable to an entity mapping.
     pub(super) async fn add_variable_impl(&self, entity_mapping_id: i64, gx: &GlobalContext) {
-        let Some(result) = gx.modal(AddVariableModal::new_modal()).await else {
+        let client = self.target_client.get();
+        let Some(result) = gx.modal(AddVariableModal::new_modal(client)).await else {
             return;
         };
 
