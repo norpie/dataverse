@@ -1,6 +1,11 @@
 //! Transform add/delete/reorder operations.
 
+use dataverse_lib::model::metadata::AttributeType;
+use dataverse_lib::model::FieldType;
+use dataverse_lib::model::OptionInfo;
 use dataverse_lib::model::Value;
+use dataverse_lib::model::ValueType;
+use dataverse_lib::DataverseClient;
 use rafter::prelude::*;
 
 use crate::apps::migration::modals::ConstantTransformModal;
@@ -24,12 +29,14 @@ use crate::apps::migration::types::FindFallback;
 use crate::apps::migration::types::FindMode;
 use crate::apps::migration::types::MatchBranch;
 use crate::apps::migration::types::MathOp;
+use crate::apps::migration::types::OptionSetContext;
 use crate::apps::migration::types::ParentType;
 use crate::apps::migration::types::StringOp;
 use crate::apps::migration::types::SystemVar;
 use crate::apps::migration::types::Transform;
 use crate::apps::migration::types::TransformData;
 use crate::modals::ConfirmModal;
+use crate::modals::LoadingModal;
 
 use super::tree::MigrationTreeNode;
 use super::MigrationEditor;
@@ -230,12 +237,283 @@ impl MigrationEditor {
                 })
             }
             TransformType::ValueMap => {
-                // Special flow — see 1C.5
-                // TODO: create_value_map_data
-                gx.toast(Toast::warning(
-                    "ValueMap creation flow not yet implemented",
+                self.create_value_map_data(target, gx).await
+            }
+        }
+    }
+
+    // =========================================================================
+    // ValueMap Creation
+    // =========================================================================
+
+    /// Create ValueMap transform data by determining source/target option set
+    /// contexts from type tracking and entity metadata.
+    async fn create_value_map_data(
+        &self,
+        target: &InsertTarget,
+        gx: &GlobalContext,
+    ) -> Option<TransformData> {
+        // --- Step 1: Determine source option set type ---
+        let source_type = self.resolve_input_type_at(target);
+
+        let source_os_info = match Self::extract_option_set_info(&source_type) {
+            Some(info) => info,
+            None => {
+                gx.toast(Toast::error(
+                    "No option set type flowing in — add a source transform first",
                 ));
-                None
+                return None;
+            }
+        };
+
+        // --- Step 2: Determine target option set type ---
+        let target_os_info = match self.resolve_target_option_set(target) {
+            Some(info) => info,
+            None => {
+                gx.toast(Toast::error(
+                    "Target is not an option set field — ValueMap requires an option set target",
+                ));
+                return None;
+            }
+        };
+
+        // --- Step 3: Fetch option set metadata for source and target ---
+        let source_client = self.source_client.get();
+        let target_client = self.target_client.get();
+        let source_entity = self
+            .entity_mappings
+            .get()
+            .iter()
+            .find(|em| em.id == target.entity_mapping_id)
+            .map(|em| em.source_entity.clone())
+            .unwrap_or_default();
+        let target_entity = self
+            .entity_mappings
+            .get()
+            .iter()
+            .find(|em| em.id == target.entity_mapping_id)
+            .map(|em| em.target_entity.clone())
+            .unwrap_or_default();
+
+        let src_name = source_os_info.name.clone();
+        let src_entity = source_entity.clone();
+        let tgt_name = target_os_info.name.clone();
+        let tgt_entity = target_entity.clone();
+
+        let (source_result, target_result) = crate::modals::parallel_load!(gx, {
+            "Loading source option set" => async move {
+                fetch_option_set_options(source_client, &src_entity, &src_name).await
+            },
+            "Loading target option set" => async move {
+                fetch_option_set_options(target_client, &tgt_entity, &tgt_name).await
+            },
+        });
+
+        let source_options = match source_result {
+            Some(Ok(opts)) => opts,
+            Some(Err(e)) => {
+                log::error!("Failed to fetch source option set: {}", e);
+                gx.toast(Toast::error("Failed to fetch source option set metadata"));
+                return None;
+            }
+            None => return None,
+        };
+
+        let target_options = match target_result {
+            Some(Ok(opts)) => opts,
+            Some(Err(e)) => {
+                log::error!("Failed to fetch target option set: {}", e);
+                gx.toast(Toast::error("Failed to fetch target option set metadata"));
+                return None;
+            }
+            None => return None,
+        };
+
+        let source_ctx = OptionSetContext {
+            name: source_os_info.name,
+            kind: source_os_info.kind,
+            options: source_options,
+        };
+
+        let target_ctx = OptionSetContext {
+            name: target_os_info.name,
+            kind: target_os_info.kind,
+            options: target_options,
+        };
+
+        // --- Step 4: Open ValueMap modal ---
+        let modal = ValueMapTransformModal::new_modal(
+            source_ctx.options.clone(),
+            target_ctx.options.clone(),
+            vec![],
+        );
+
+        gx.modal(modal).await.map(|mappings| TransformData::ValueMap {
+            source: source_ctx,
+            target: target_ctx,
+            mappings,
+        })
+    }
+
+    /// Get the input type at the insert position.
+    ///
+    /// If inserting after an existing transform, returns that transform's output type.
+    /// If inserting at position 0 (start of chain), returns `Null`.
+    fn resolve_input_type_at(&self, target: &InsertTarget) -> ValueType {
+        if target.insert_order == 0 {
+            return ValueType::Null;
+        }
+
+        // Find the transform right before the insert position
+        let transforms = self.transforms.get();
+        let mut siblings: Vec<_> = transforms
+            .iter()
+            .filter(|t| t.parent_type == target.parent_type && t.parent_id == target.parent_id)
+            .collect();
+        siblings.sort_by_key(|t| t.order);
+
+        let prev_transform = siblings
+            .iter()
+            .filter(|t| t.order < target.insert_order)
+            .last();
+
+        match prev_transform {
+            Some(t) => self
+                .type_tracking
+                .get()
+                .transform_types
+                .get(&t.id)
+                .cloned()
+                .unwrap_or(ValueType::Null),
+            None => ValueType::Null,
+        }
+    }
+
+    /// Extract option set kind + name from a ValueType, if it's an option set.
+    fn extract_option_set_info(vt: &ValueType) -> Option<OptionSetInfo> {
+        match vt {
+            ValueType::Known(FieldType::OptionSet { kind, name }) => Some(OptionSetInfo {
+                kind: *kind,
+                name: name.clone(),
+            }),
+            // If it's a union, pick the first option set
+            ValueType::Union(types) => types.iter().find_map(|ft| match ft {
+                FieldType::OptionSet { kind, name } => Some(OptionSetInfo {
+                    kind: *kind,
+                    name: name.clone(),
+                }),
+                _ => None,
+            }),
+            _ => None,
+        }
+    }
+
+    /// Resolve the target option set info by walking up from the insert position
+    /// to find the owning FieldMapping or Variable.
+    fn resolve_target_option_set(&self, target: &InsertTarget) -> Option<OptionSetInfo> {
+        match target.parent_type {
+            ParentType::Variable => {
+                // Look up the variable's declared_type
+                let variables = self.variables.get();
+                let variable = variables.iter().find(|v| v.id == target.parent_id)?;
+                Self::extract_option_set_info(&variable.declared_type)
+            }
+            ParentType::FieldMapping => {
+                // Look up the field mapping's target field type from the target field cache
+                let field_mappings = self.field_mappings.get();
+                let fm = field_mappings.iter().find(|fm| fm.id == target.parent_id)?;
+                let target_entity = self
+                    .entity_mappings
+                    .get()
+                    .iter()
+                    .find(|em| em.id == fm.entity_mapping_id)
+                    .map(|em| em.target_entity.clone())?;
+                let target_field_types = self.target_field_cache.get();
+                let entity_fields = target_field_types.get(&target_entity)?;
+                let field_type = entity_fields.get(&fm.target_field)?;
+                match field_type {
+                    FieldType::OptionSet { kind, name } => Some(OptionSetInfo {
+                        kind: *kind,
+                        name: name.clone(),
+                    }),
+                    _ => None,
+                }
+            }
+            ParentType::MatchBranch => {
+                // Walk up: MatchBranch → parent Transform → its parent (FieldMapping/Variable)
+                let mb = self
+                    .match_branches
+                    .get()
+                    .iter()
+                    .find(|mb| mb.id == target.parent_id)
+                    .cloned()?;
+                let parent_transform = self
+                    .transforms
+                    .get()
+                    .iter()
+                    .find(|t| t.id == mb.transform_id)
+                    .cloned()?;
+                self.resolve_target_option_set(&InsertTarget {
+                    entity_mapping_id: target.entity_mapping_id,
+                    parent_type: parent_transform.parent_type,
+                    parent_id: parent_transform.parent_id,
+                    insert_order: 0,
+                })
+            }
+            ParentType::CoalesceChain => {
+                let cc = self
+                    .coalesce_chains
+                    .get()
+                    .iter()
+                    .find(|cc| cc.id == target.parent_id)
+                    .cloned()?;
+                let parent_transform = self
+                    .transforms
+                    .get()
+                    .iter()
+                    .find(|t| t.id == cc.transform_id)
+                    .cloned()?;
+                self.resolve_target_option_set(&InsertTarget {
+                    entity_mapping_id: target.entity_mapping_id,
+                    parent_type: parent_transform.parent_type,
+                    parent_id: parent_transform.parent_id,
+                    insert_order: 0,
+                })
+            }
+            ParentType::FindCondition => {
+                let fc = self
+                    .find_conditions
+                    .get()
+                    .iter()
+                    .find(|fc| fc.id == target.parent_id)
+                    .cloned()?;
+                let parent_transform = self
+                    .transforms
+                    .get()
+                    .iter()
+                    .find(|t| t.id == fc.transform_id)
+                    .cloned()?;
+                self.resolve_target_option_set(&InsertTarget {
+                    entity_mapping_id: target.entity_mapping_id,
+                    parent_type: parent_transform.parent_type,
+                    parent_id: parent_transform.parent_id,
+                    insert_order: 0,
+                })
+            }
+            ParentType::GuardFallback => {
+                // GuardFallback parent_id is the transform_id of the guard
+                let parent_transform = self
+                    .transforms
+                    .get()
+                    .iter()
+                    .find(|t| t.id == target.parent_id)
+                    .cloned()?;
+                self.resolve_target_option_set(&InsertTarget {
+                    entity_mapping_id: target.entity_mapping_id,
+                    parent_type: parent_transform.parent_type,
+                    parent_id: parent_transform.parent_id,
+                    insert_order: 0,
+                })
             }
         }
     }
@@ -760,4 +1038,39 @@ impl MigrationEditor {
             }
         }
     }
+}
+
+/// Extracted option set kind + name for ValueMap resolution.
+struct OptionSetInfo {
+    kind: AttributeType,
+    name: String,
+}
+
+/// Fetch option set options for an attribute on an entity.
+///
+/// Looks up the attribute metadata to find its option set, then extracts options.
+async fn fetch_option_set_options(
+    client: DataverseClient,
+    entity: &str,
+    attribute_name: &str,
+) -> Result<Vec<OptionInfo>, dataverse_lib::error::Error> {
+    let attr = client
+        .metadata()
+        .attribute(entity, attribute_name)
+        .await?;
+
+    let options = attr
+        .options()
+        .map(|os| {
+            os.options
+                .iter()
+                .map(|opt| OptionInfo {
+                    value: opt.value,
+                    label: opt.label.text().unwrap_or("").to_string(),
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+
+    Ok(options)
 }
