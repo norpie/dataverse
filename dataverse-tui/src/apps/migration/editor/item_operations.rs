@@ -31,6 +31,7 @@ impl MigrationEditor {
             entity_mapping_id,
             order,
             name: result.name,
+            declared_type: result.declared_type,
         };
 
         match repo.create_variable(new_variable).await {

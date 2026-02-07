@@ -8,7 +8,7 @@ use super::Value;
 ///
 /// Derived from `OptionMetadata` but carries only what's needed for display
 /// and mapping in the UI.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct OptionInfo {
     /// The integer value of the option.
     pub value: i32,
@@ -21,7 +21,7 @@ pub struct OptionInfo {
 /// Non-lookup types are `Simple(AttributeType)`. Lookup types carry target entity info
 /// so that compatibility can check for overlapping targets. Option set types carry
 /// the available options (value + label) for UI display and mapping.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum FieldType {
     /// Non-lookup, non-option-set type (String, Integer, DateTime, etc.)
     Simple(AttributeType),
@@ -164,7 +164,7 @@ impl From<&AttributeMetadata> for FieldType {
 /// Value type for design-time type tracking in transform chains.
 ///
 /// Wraps `FieldType` with additional variants for type inference.
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
 pub enum ValueType {
     /// Known field type from metadata.
     Known(FieldType),

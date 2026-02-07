@@ -1,5 +1,8 @@
 //! Modal for adding a new variable.
 
+use dataverse_lib::model::FieldType;
+use dataverse_lib::model::ValueType;
+use dataverse_lib::model::metadata::AttributeType;
 use rafter::page;
 use rafter::prelude::*;
 use rafter::widgets::Button;
@@ -11,24 +14,28 @@ use tuidom::Element;
 #[derive(Debug, Clone)]
 pub struct AddVariableResult {
     pub name: String,
+    pub declared_type: dataverse_lib::model::ValueType,
 }
 
 /// Modal for adding a new variable.
 #[modal(size = Sm)]
 pub struct AddVariableModal {
     name: String,
+    /// The declared type for the variable.
+    declared_type: ValueType,
     error: Option<String>,
 }
 
 impl AddVariableModal {
     /// Create a new add variable modal.
     pub fn new_modal() -> Self {
-        Self::new(String::new(), None)
+        let default_type = ValueType::Known(FieldType::Simple(AttributeType::String));
+        Self::new(String::new(), default_type, None)
     }
 
-    /// Create an edit variable modal with initial name.
-    pub fn edit_modal(name: &str) -> Self {
-        Self::new(name.to_string(), None)
+    /// Create an edit variable modal with initial name and type.
+    pub fn edit_modal(name: &str, declared_type: ValueType) -> Self {
+        Self::new(name.to_string(), declared_type, None)
     }
 }
 
@@ -71,7 +78,13 @@ impl AddVariableModal {
         // Remove leading $ if user typed it
         let name = name.strip_prefix('$').unwrap_or(&name).to_string();
 
-        mx.close(Some(AddVariableResult { name }));
+        // TODO: Replace with type picker modal result
+        let declared_type = self.declared_type.get();
+
+        mx.close(Some(AddVariableResult {
+            name,
+            declared_type,
+        }));
     }
 
     fn element(&self) -> Element {

@@ -1,5 +1,7 @@
 //! Transform types and related structures.
 
+use dataverse_lib::model::metadata::AttributeType;
+use dataverse_lib::model::OptionInfo;
 use dataverse_lib::model::Value;
 use serde::Deserialize;
 use serde::Serialize;
@@ -15,6 +17,20 @@ pub struct OptionSetMapping {
     pub from: i32,
     /// Target option set value.
     pub to: i32,
+}
+
+/// Option set context captured at configuration time.
+///
+/// Stores everything needed to display and edit value mappings without
+/// re-fetching metadata from the API.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OptionSetContext {
+    /// Option set logical name (e.g., "statuscode").
+    pub name: String,
+    /// The attribute type kind (Picklist, State, Status, MultiSelectPicklist).
+    pub kind: AttributeType,
+    /// Available options with value + label, captured when configured.
+    pub options: Vec<OptionInfo>,
 }
 
 /// Transform operation data (excludes nested transforms which are separate DB rows).
@@ -45,7 +61,12 @@ pub enum TransformData {
     /// String operation (chain multiple for sequence).
     StringOps { op: StringOp },
     /// Option set value mapping (source value -> target value).
-    ValueMap { mappings: Vec<OptionSetMapping> },
+    /// Source and target contexts are captured at configuration time.
+    ValueMap {
+        source: OptionSetContext,
+        target: OptionSetContext,
+        mappings: Vec<OptionSetMapping>,
+    },
     /// Mathematical operation.
     Math { operation: MathOp },
     /// First non-null value (uses chain).

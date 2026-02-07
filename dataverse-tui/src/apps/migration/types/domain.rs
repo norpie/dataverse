@@ -103,6 +103,8 @@ pub struct Variable {
     pub entity_mapping_id: i64,
     pub order: i32,
     pub name: String,
+    /// The declared output type of this variable.
+    pub declared_type: dataverse_lib::model::ValueType,
 }
 
 // =============================================================================

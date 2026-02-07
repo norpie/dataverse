@@ -473,7 +473,7 @@ pub fn transform_display_text(data: &TransformData) -> String {
         TransformData::ParseDate { format } => {
             format!("parse_date (\"{}\")", format)
         }
-        TransformData::ValueMap { mappings } => {
+        TransformData::ValueMap { mappings, .. } => {
             format!("value_map ({} mappings)", mappings.len())
         }
         TransformData::Math { operation } => {

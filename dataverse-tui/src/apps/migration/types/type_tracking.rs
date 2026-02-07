@@ -83,11 +83,10 @@ impl TransformData {
                 }
             }
 
-            // ValueMap (any option set -> passthrough for now)
-            // TODO: Phase 1.3 will change output to concrete type from target context
-            TransformData::ValueMap { .. } => TransformSignature {
+            // ValueMap accepts any option set, outputs the target's type
+            TransformData::ValueMap { target, .. } => TransformSignature {
                 input: Some(ValueType::AnyOptionSet),
-                output: None, // Passthrough until Phase 1 adds target context
+                output: Some(ValueType::option_set(target.kind, target.name.clone())),
             },
 
             // Math (numeric -> passthrough)

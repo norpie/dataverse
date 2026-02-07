@@ -89,6 +89,23 @@ pub fn deserialize_transform_data(bytes: &[u8]) -> Result<TransformData, Reposit
         .map_err(|e| RepositoryError::Deserialization(e.to_string()))
 }
 
+/// Serialize ValueType to bincode.
+pub fn serialize_value_type(
+    value_type: &dataverse_lib::model::ValueType,
+) -> Result<Vec<u8>, RepositoryError> {
+    bincode::serde::encode_to_vec(value_type, bincode::config::standard())
+        .map_err(|e| RepositoryError::Serialization(e.to_string()))
+}
+
+/// Deserialize ValueType from bincode.
+pub fn deserialize_value_type(
+    bytes: &[u8],
+) -> Result<dataverse_lib::model::ValueType, RepositoryError> {
+    bincode::serde::decode_from_slice(bytes, bincode::config::standard())
+        .map(|(vt, _)| vt)
+        .map_err(|e| RepositoryError::Deserialization(e.to_string()))
+}
+
 /// Serialize FindConfig to bincode.
 pub fn serialize_find_config(config: &FindConfig) -> Result<Vec<u8>, RepositoryError> {
     bincode::serde::encode_to_vec(config, bincode::config::standard())
