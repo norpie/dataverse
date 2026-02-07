@@ -48,8 +48,6 @@ struct InsertTarget {
 
 impl MigrationEditor {
     /// Add a new transform based on the focused node.
-    ///
-    /// Returns the target info if the focused node supports adding transforms.
     pub(super) async fn add_transform_impl(&self, gx: &GlobalContext) {
         let Some(target) = self.get_transform_insert_target() else {
             log::debug!("add_transform_impl: focused node doesn't support adding transforms");
@@ -61,33 +59,15 @@ impl MigrationEditor {
             return;
         };
 
-        // Create default transform data for the selected type
-        let data = default_transform_data(transform_type);
+        // Create transform data — config transforms open their edit modal first
+        let Some(data) = self
+            .create_transform_data(transform_type, &target, gx)
+            .await
+        else {
+            return; // User cancelled
+        };
 
         let repo = gx.data::<MigrationRepository>();
-
-        // Shift existing transforms at insert_order and after
-        let transforms = self.transforms.get();
-        let siblings: Vec<_> = transforms
-            .iter()
-            .filter(|t| t.parent_type == target.parent_type && t.parent_id == target.parent_id)
-            .collect();
-
-        // Build new order for siblings that need shifting
-        let mut needs_reorder = false;
-        let mut ordered_ids: Vec<i64> = Vec::new();
-        for t in &siblings {
-            if t.order >= target.insert_order {
-                needs_reorder = true;
-            }
-            ordered_ids.push(t.id);
-        }
-
-        // If we need to shift, update orders first
-        if needs_reorder && !ordered_ids.is_empty() {
-            // Increment order for all transforms at or after insert position
-            // We'll just reorder the whole list after inserting
-        }
 
         let new_transform = NewTransform {
             entity_mapping_id: target.entity_mapping_id,
@@ -99,8 +79,7 @@ impl MigrationEditor {
 
         match repo.create_transform(new_transform).await {
             Ok(new_id) => {
-                // Now reorder to ensure proper sequence
-                // Get fresh list and reorder
+                // Reorder to ensure proper sequence
                 if let Ok(all_transforms) = repo
                     .get_transforms(target.parent_type, target.parent_id)
                     .await
@@ -108,10 +87,8 @@ impl MigrationEditor {
                     let mut sorted: Vec<_> = all_transforms.iter().collect();
                     sorted.sort_by_key(|t| {
                         if t.id == new_id {
-                            // New transform goes at insert position
                             (target.insert_order, 0)
                         } else if t.order >= target.insert_order {
-                            // Existing transforms at or after insert position shift down
                             (t.order, 1)
                         } else {
                             (t.order, 0)
@@ -124,21 +101,141 @@ impl MigrationEditor {
                 }
 
                 self.refresh_data(gx).await;
-
-                // Automatically open the edit modal for the newly added transform
-                let new_transform = self
-                    .transforms
-                    .get()
-                    .iter()
-                    .find(|t| t.id == new_id)
-                    .cloned();
-                if let Some(t) = new_transform {
-                    self.edit_transform_impl(&t, gx).await;
-                }
             }
             Err(e) => {
                 log::error!("Failed to create transform: {}", e);
                 gx.toast(Toast::error("Failed to create transform"));
+            }
+        }
+    }
+
+    /// Create transform data for a given type.
+    ///
+    /// No-config transforms return data directly. Config transforms open their
+    /// edit modal first — the transform is only created if the user confirms.
+    /// Returns `None` if the user cancels.
+    async fn create_transform_data(
+        &self,
+        transform_type: TransformType,
+        target: &InsertTarget,
+        gx: &GlobalContext,
+    ) -> Option<TransformData> {
+        // Get context needed by some modals
+        let entity_mapping = self
+            .entity_mappings
+            .get()
+            .iter()
+            .find(|em| em.id == target.entity_mapping_id)
+            .cloned();
+
+        let source_entity = entity_mapping
+            .as_ref()
+            .map(|em| em.source_entity.clone())
+            .unwrap_or_default();
+
+        let variables: Vec<String> = self
+            .variables
+            .get()
+            .iter()
+            .filter(|v| v.entity_mapping_id == target.entity_mapping_id)
+            .map(|v| v.name.clone())
+            .collect();
+
+        match transform_type {
+            // =================================================================
+            // No-config transforms — create directly
+            // =================================================================
+            TransformType::Guid => Some(TransformData::Guid),
+            TransformType::ParseInt => Some(TransformData::ParseInt),
+            TransformType::ParseDecimal => Some(TransformData::ParseDecimal),
+            TransformType::Coalesce => Some(TransformData::Coalesce),
+            TransformType::Match => Some(TransformData::Match),
+
+            // =================================================================
+            // Config transforms — open edit modal first
+            // =================================================================
+            TransformType::Copy => {
+                let modal = CopyTransformModal::new_modal(
+                    self.source_client.get().clone(),
+                    source_entity,
+                    variables,
+                    String::new(),
+                );
+                gx.modal(modal)
+                    .await
+                    .map(|path| TransformData::Copy { path })
+            }
+            TransformType::Constant => {
+                let modal = ConstantTransformModal::new_modal(Value::Null);
+                gx.modal(modal)
+                    .await
+                    .map(|value| TransformData::Constant { value })
+            }
+            TransformType::StringOps => {
+                let modal = StringOpsTransformModal::new_modal(StringOp::Trim);
+                gx.modal(modal)
+                    .await
+                    .map(|op| TransformData::StringOps { op })
+            }
+            TransformType::Format => {
+                let modal = FormatTransformModal::new_modal(
+                    self.source_client.get().clone(),
+                    source_entity,
+                    variables,
+                    String::new(),
+                );
+                gx.modal(modal)
+                    .await
+                    .map(|template| TransformData::Format { template })
+            }
+            TransformType::Replace => {
+                let modal =
+                    ReplaceTransformModal::new_modal(String::new(), String::new(), false);
+                gx.modal(modal).await.map(|result| TransformData::Replace {
+                    from: result.from,
+                    to: result.to,
+                    regex: result.regex,
+                })
+            }
+            TransformType::Convert => {
+                let modal = ConvertTransformModal::new_modal("string");
+                gx.modal(modal)
+                    .await
+                    .map(|target_type| TransformData::Convert { target_type })
+            }
+            TransformType::ParseDate => {
+                let modal = ParseDateTransformModal::new_modal("%Y-%m-%d".to_string());
+                gx.modal(modal)
+                    .await
+                    .map(|format| TransformData::ParseDate { format })
+            }
+            TransformType::Math => {
+                // TODO: MathTransformModal — for now create with default
+                Some(TransformData::Math {
+                    operation: MathOp::Add(0.0),
+                })
+            }
+            TransformType::Guard => {
+                // TODO: GuardTransformModal — for now create with default
+                Some(TransformData::Guard {
+                    condition: Condition::IsNull(Expr::SystemVar(SystemVar::Value)),
+                })
+            }
+            TransformType::Find => {
+                // TODO: FindTransformModal — for now create with default
+                Some(TransformData::Find {
+                    entity: String::new(),
+                    fallback: FindFallback::Null,
+                    mode: FindMode::Where,
+                })
+            }
+            TransformType::ValueMap => {
+                // Special flow — see 1C.5
+                // TODO: create_value_map_data
+                gx.toast(Toast::warning(
+                    "ValueMap creation flow not yet implemented",
+                ));
+                None
             }
         }
     }
@@ -211,10 +308,14 @@ impl MigrationEditor {
                     insert_order: order,
                 })
             }
-            MigrationTreeNode::Chain { parent_type, parent_id } => {
+            MigrationTreeNode::Chain {
+                parent_type,
+                parent_id,
+            } => {
                 // Add to end of the chain
                 let order = self.transform_count_for_parent(parent_type, parent_id);
-                let entity_mapping_id = self.entity_mapping_id_for_chain(parent_type, parent_id)?;
+                let entity_mapping_id =
+                    self.entity_mapping_id_for_chain(parent_type, parent_id)?;
                 Some(InsertTarget {
                     entity_mapping_id,
                     parent_type,
@@ -264,32 +365,49 @@ impl MigrationEditor {
     }
 
     /// Get entity_mapping_id for a chain wrapper node.
-    fn entity_mapping_id_for_chain(&self, parent_type: ParentType, parent_id: i64) -> Option<i64> {
+    fn entity_mapping_id_for_chain(
+        &self,
+        parent_type: ParentType,
+        parent_id: i64,
+    ) -> Option<i64> {
         match parent_type {
-            ParentType::Variable => {
-                self.variables
-                    .get()
-                    .iter()
-                    .find(|v| v.id == parent_id)
-                    .map(|v| v.entity_mapping_id)
-            }
-            ParentType::FieldMapping => {
-                self.field_mappings
-                    .get()
-                    .iter()
-                    .find(|fm| fm.id == parent_id)
-                    .map(|fm| fm.entity_mapping_id)
-            }
+            ParentType::Variable => self
+                .variables
+                .get()
+                .iter()
+                .find(|v| v.id == parent_id)
+                .map(|v| v.entity_mapping_id),
+            ParentType::FieldMapping => self
+                .field_mappings
+                .get()
+                .iter()
+                .find(|fm| fm.id == parent_id)
+                .map(|fm| fm.entity_mapping_id),
             ParentType::MatchBranch => {
-                let mb = self.match_branches.get().iter().find(|mb| mb.id == parent_id).cloned()?;
+                let mb = self
+                    .match_branches
+                    .get()
+                    .iter()
+                    .find(|mb| mb.id == parent_id)
+                    .cloned()?;
                 self.entity_mapping_id_for_match_branch(&mb)
             }
             ParentType::CoalesceChain => {
-                let cc = self.coalesce_chains.get().iter().find(|cc| cc.id == parent_id).cloned()?;
+                let cc = self
+                    .coalesce_chains
+                    .get()
+                    .iter()
+                    .find(|cc| cc.id == parent_id)
+                    .cloned()?;
                 self.entity_mapping_id_for_coalesce_chain(&cc)
             }
             ParentType::FindCondition => {
-                let fc = self.find_conditions.get().iter().find(|fc| fc.id == parent_id).cloned()?;
+                let fc = self
+                    .find_conditions
+                    .get()
+                    .iter()
+                    .find(|fc| fc.id == parent_id)
+                    .cloned()?;
                 self.entity_mapping_id_for_find_condition(&fc)
             }
             ParentType::GuardFallback => {
@@ -318,19 +436,22 @@ impl MigrationEditor {
         let transforms = self.transforms.get();
         let siblings: Vec<_> = transforms
             .iter()
-            .filter(|t| t.parent_type == transform.parent_type && t.parent_id == transform.parent_id)
+            .filter(|t| {
+                t.parent_type == transform.parent_type && t.parent_id == transform.parent_id
+            })
             .collect();
         let current_idx = siblings.iter().position(|t| t.id == transform.id);
 
         let next_focus = current_idx.and_then(|idx| {
             if idx > 0 {
-                // Focus previous sibling
-                siblings.get(idx - 1).map(|t| format!("transform-{}", t.id))
+                siblings
+                    .get(idx - 1)
+                    .map(|t| format!("transform-{}", t.id))
             } else if idx + 1 < siblings.len() {
-                // Focus next sibling
-                siblings.get(idx + 1).map(|t| format!("transform-{}", t.id))
+                siblings
+                    .get(idx + 1)
+                    .map(|t| format!("transform-{}", t.id))
             } else {
-                // No siblings left, focus parent
                 self.parent_focus_key(transform.parent_type, transform.parent_id)
             }
         });
@@ -354,7 +475,9 @@ impl MigrationEditor {
                 // Reorder remaining siblings
                 if let Ok(remaining) = repo.get_transforms(parent_type, parent_id).await {
                     let ordered_ids: Vec<i64> = remaining.iter().map(|t| t.id).collect();
-                    let _ = repo.reorder_transforms(parent_type, parent_id, ordered_ids).await;
+                    let _ = repo
+                        .reorder_transforms(parent_type, parent_id, ordered_ids)
+                        .await;
                 }
 
                 gx.toast(Toast::info("Transform deleted"));
@@ -397,7 +520,9 @@ impl MigrationEditor {
         let transforms = self.transforms.get();
         let mut siblings: Vec<_> = transforms
             .iter()
-            .filter(|t| t.parent_type == transform.parent_type && t.parent_id == transform.parent_id)
+            .filter(|t| {
+                t.parent_type == transform.parent_type && t.parent_id == transform.parent_id
+            })
             .collect();
         siblings.sort_by_key(|t| t.order);
 
@@ -553,14 +678,19 @@ impl MigrationEditor {
                 }
             }
             TransformData::Guid => {
-                // GUID has no configuration - it just generates a random UUID
-                gx.toast(Toast::info("GUID generates a random UUID - no configuration needed"));
+                gx.toast(Toast::info(
+                    "GUID generates a random UUID - no configuration needed",
+                ));
             }
             TransformData::ParseInt => {
-                gx.toast(Toast::info("Parse Int converts string to integer - no configuration needed"));
+                gx.toast(Toast::info(
+                    "Parse Int converts string to integer - no configuration needed",
+                ));
             }
             TransformData::ParseDecimal => {
-                gx.toast(Toast::info("Parse Decimal converts string to decimal - no configuration needed"));
+                gx.toast(Toast::info(
+                    "Parse Decimal converts string to decimal - no configuration needed",
+                ));
             }
             TransformData::ParseDate { format } => {
                 let modal = ParseDateTransformModal::new_modal(format.clone());
@@ -600,16 +730,26 @@ impl MigrationEditor {
             }
             // Other transform types - show toast for now
             _ => {
-                gx.toast(Toast::info("Editor for this transform type not yet implemented"));
+                gx.toast(Toast::info(
+                    "Editor for this transform type not yet implemented",
+                ));
             }
         }
     }
 
     /// Update a transform's data in the database.
-    async fn update_transform_data(&self, transform_id: i64, data: TransformData, gx: &GlobalContext) {
+    async fn update_transform_data(
+        &self,
+        transform_id: i64,
+        data: TransformData,
+        gx: &GlobalContext,
+    ) {
         let repo = gx.data::<MigrationRepository>();
-        
-        match repo.update_transform(transform_id, UpdateTransform { data }).await {
+
+        match repo
+            .update_transform(transform_id, UpdateTransform { data })
+            .await
+        {
             Ok(()) => {
                 gx.toast(Toast::info("Transform updated"));
                 self.refresh_data(gx).await;
@@ -619,49 +759,5 @@ impl MigrationEditor {
                 gx.toast(Toast::error("Failed to update transform"));
             }
         }
-    }
-}
-
-/// Create default TransformData for a given transform type.
-fn default_transform_data(transform_type: TransformType) -> TransformData {
-    match transform_type {
-        TransformType::Copy => TransformData::Copy {
-            path: String::new(),
-        },
-        TransformType::Constant => TransformData::Constant { value: Value::Null },
-        TransformType::Guid => TransformData::Guid,
-        TransformType::StringOps => TransformData::StringOps { op: StringOp::Trim },
-        TransformType::Format => TransformData::Format {
-            template: String::new(),
-        },
-        TransformType::Replace => TransformData::Replace {
-            from: String::new(),
-            to: String::new(),
-            regex: false,
-        },
-        TransformType::Convert => TransformData::Convert {
-            target_type: "string".to_string(),
-        },
-        TransformType::ParseInt => TransformData::ParseInt,
-        TransformType::ParseDecimal => TransformData::ParseDecimal,
-        TransformType::ParseDate => TransformData::ParseDate {
-            format: "%Y-%m-%d".to_string(),
-        },
-        TransformType::ValueMap => {
-            unreachable!("ValueMap requires source/target context — handled separately in create_transform_data")
-        }
-        TransformType::Math => TransformData::Math {
-            operation: MathOp::Add(0.0),
-        },
-        TransformType::Guard => TransformData::Guard {
-            condition: Condition::IsNull(Expr::SystemVar(SystemVar::Value)),
-        },
-        TransformType::Coalesce => TransformData::Coalesce,
-        TransformType::Match => TransformData::Match,
-        TransformType::Find => TransformData::Find {
-            entity: String::new(),
-            fallback: FindFallback::Null,
-            mode: FindMode::Where,
-        },
     }
 }
