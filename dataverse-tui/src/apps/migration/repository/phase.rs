@@ -5,6 +5,7 @@ use chrono::Utc;
 use rusqlite::params;
 
 use super::super::types::*;
+use super::helpers::invalid_enum;
 use super::RepositoryError;
 
 /// Input for creating a new phase.
@@ -37,7 +38,7 @@ impl super::MigrationRepository {
                 let rows = stmt.query_map([migration_id], |row| {
                     let mode_str: String = row.get(4)?;
                     let mode =
-                        Mode::from_str(&mode_str).ok_or_else(|| rusqlite::Error::InvalidQuery)?;
+                        Mode::from_str(&mode_str).ok_or_else(|| invalid_enum("Mode", &mode_str))?;
 
                     Ok(Phase {
                         id: row.get(0)?,
@@ -66,7 +67,7 @@ impl super::MigrationRepository {
                 stmt.query_row([id], |row| {
                     let mode_str: String = row.get(4)?;
                     let mode =
-                        Mode::from_str(&mode_str).ok_or_else(|| rusqlite::Error::InvalidQuery)?;
+                        Mode::from_str(&mode_str).ok_or_else(|| invalid_enum("Mode", &mode_str))?;
 
                     Ok(Phase {
                         id: row.get(0)?,

@@ -10,6 +10,24 @@ use super::super::types::*;
 use super::RepositoryError;
 
 // =============================================================================
+// Error Bridging
+// =============================================================================
+
+/// Convert a `RepositoryError` into a `rusqlite::Error`, preserving the full error details.
+///
+/// This is used inside rusqlite row-mapping closures that must return `rusqlite::Error`.
+pub fn repo_err_to_rusqlite(e: RepositoryError) -> rusqlite::Error {
+    rusqlite::Error::ToSqlConversionFailure(Box::new(e))
+}
+
+/// Create a `rusqlite::Error` for an invalid enum value, preserving what was received.
+pub fn invalid_enum(type_name: &str, value: &str) -> rusqlite::Error {
+    repo_err_to_rusqlite(RepositoryError::InvalidEnum(format!(
+        "unknown {type_name}: {value:?}"
+    )))
+}
+
+// =============================================================================
 // Datetime Parsing
 // =============================================================================
 
@@ -17,7 +35,11 @@ use super::RepositoryError;
 pub fn parse_datetime(s: &str) -> Result<DateTime<Utc>, rusqlite::Error> {
     DateTime::parse_from_rfc3339(s)
         .map(|dt| dt.with_timezone(&Utc))
-        .map_err(|_| rusqlite::Error::InvalidQuery)
+        .map_err(|e| {
+            repo_err_to_rusqlite(RepositoryError::Deserialization(format!(
+                "invalid datetime {s:?}: {e}"
+            )))
+        })
 }
 
 // =============================================================================
@@ -145,43 +167,43 @@ pub fn transform_type_str(data: &TransformData) -> String {
 ///               associate_pass_enabled, disassociate_pass_enabled, source_filter, target_filter, test_guids
 pub fn row_to_entity_mapping(row: &Row) -> Result<EntityMapping, rusqlite::Error> {
     let mode_str: String = row.get(6)?;
-    let mode = Mode::from_str(&mode_str).ok_or(rusqlite::Error::InvalidQuery)?;
+    let mode = Mode::from_str(&mode_str).ok_or_else(|| invalid_enum("Mode", &mode_str))?;
 
     let match_strategy_str: String = row.get(8)?;
-    let match_strategy =
-        MatchStrategy::from_str(&match_strategy_str).ok_or(rusqlite::Error::InvalidQuery)?;
+    let match_strategy = MatchStrategy::from_str(&match_strategy_str)
+        .ok_or_else(|| invalid_enum("MatchStrategy", &match_strategy_str))?;
 
     let no_match_fallback_str: String = row.get(10)?;
-    let no_match_fallback =
-        NoMatchFallback::from_str(&no_match_fallback_str).ok_or(rusqlite::Error::InvalidQuery)?;
+    let no_match_fallback = NoMatchFallback::from_str(&no_match_fallback_str)
+        .ok_or_else(|| invalid_enum("NoMatchFallback", &no_match_fallback_str))?;
 
     let orphan_strategy_str: String = row.get(11)?;
-    let orphan_strategy =
-        OrphanStrategy::from_str(&orphan_strategy_str).ok_or(rusqlite::Error::InvalidQuery)?;
+    let orphan_strategy = OrphanStrategy::from_str(&orphan_strategy_str)
+        .ok_or_else(|| invalid_enum("OrphanStrategy", &orphan_strategy_str))?;
 
     let match_find_config_blob: Option<Vec<u8>> = row.get(9)?;
     let match_find_config = match_find_config_blob
         .map(|b| deserialize_find_config(&b))
         .transpose()
-        .map_err(|_| rusqlite::Error::InvalidQuery)?;
+        .map_err(repo_err_to_rusqlite)?;
 
     let source_filter_blob: Option<Vec<u8>> = row.get(18)?;
     let source_filter = source_filter_blob
         .map(|b| deserialize_filter_node(&b))
         .transpose()
-        .map_err(|_| rusqlite::Error::InvalidQuery)?;
+        .map_err(repo_err_to_rusqlite)?;
 
     let target_filter_blob: Option<Vec<u8>> = row.get(19)?;
     let target_filter = target_filter_blob
         .map(|b| deserialize_filter_node(&b))
         .transpose()
-        .map_err(|_| rusqlite::Error::InvalidQuery)?;
+        .map_err(repo_err_to_rusqlite)?;
 
     let test_guids_json: Option<String> = row.get(20)?;
     let test_guids = test_guids_json
         .map(|j| deserialize_test_guids(&j))
         .transpose()
-        .map_err(|_| rusqlite::Error::InvalidQuery)?;
+        .map_err(repo_err_to_rusqlite)?;
 
     Ok(EntityMapping {
         id: row.get(0)?,
@@ -211,11 +233,11 @@ pub fn row_to_entity_mapping(row: &Row) -> Result<EntityMapping, rusqlite::Error
 /// Convert database row to Transform.
 pub fn row_to_transform(row: &Row) -> Result<Transform, rusqlite::Error> {
     let parent_type_str: String = row.get(2)?;
-    let parent_type =
-        ParentType::from_str(&parent_type_str).ok_or(rusqlite::Error::InvalidQuery)?;
+    let parent_type = ParentType::from_str(&parent_type_str)
+        .ok_or_else(|| invalid_enum("ParentType", &parent_type_str))?;
 
     let data_blob: Vec<u8> = row.get(6)?;
-    let data = deserialize_transform_data(&data_blob).map_err(|_| rusqlite::Error::InvalidQuery)?;
+    let data = deserialize_transform_data(&data_blob).map_err(repo_err_to_rusqlite)?;
 
     Ok(Transform {
         id: row.get(0)?,
@@ -230,7 +252,8 @@ pub fn row_to_transform(row: &Row) -> Result<Transform, rusqlite::Error> {
 /// Convert database row to PhaseRun.
 pub fn row_to_phase_run(row: &Row) -> Result<PhaseRun, rusqlite::Error> {
     let status_str: String = row.get(4)?;
-    let status = PhaseRunStatus::from_str(&status_str).ok_or(rusqlite::Error::InvalidQuery)?;
+    let status = PhaseRunStatus::from_str(&status_str)
+        .ok_or_else(|| invalid_enum("PhaseRunStatus", &status_str))?;
 
     let completed_at_str: Option<String> = row.get(3)?;
     let completed_at = completed_at_str.map(|s| parse_datetime(&s)).transpose()?;
@@ -239,7 +262,7 @@ pub fn row_to_phase_run(row: &Row) -> Result<PhaseRun, rusqlite::Error> {
     let queue_item_ids = queue_item_ids_json
         .map(|j| deserialize_queue_item_ids(&j))
         .transpose()
-        .map_err(|_| rusqlite::Error::InvalidQuery)?;
+        .map_err(repo_err_to_rusqlite)?;
 
     Ok(PhaseRun {
         id: row.get(0)?,
@@ -249,5 +272,23 @@ pub fn row_to_phase_run(row: &Row) -> Result<PhaseRun, rusqlite::Error> {
         status,
         queue_item_ids,
         error: row.get(6)?,
+    })
+}
+
+/// Convert database row to MatchBranch.
+/// Column order: id, transform_id, order, condition, is_default
+pub fn row_to_match_branch(row: &Row) -> Result<MatchBranch, rusqlite::Error> {
+    let condition_blob: Option<Vec<u8>> = row.get(3)?;
+    let condition = condition_blob
+        .map(|b| deserialize_condition(&b))
+        .transpose()
+        .map_err(repo_err_to_rusqlite)?;
+
+    Ok(MatchBranch {
+        id: row.get(0)?,
+        transform_id: row.get(1)?,
+        order: row.get(2)?,
+        condition,
+        is_default: row.get::<_, i32>(4)? != 0,
     })
 }

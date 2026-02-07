@@ -288,21 +288,7 @@ impl super::MigrationRepository {
                      WHERE transform_id = ?1
                      ORDER BY \"order\" ASC",
                 )?;
-                let rows = stmt.query_map([transform_id], |row| {
-                    let condition_blob: Option<Vec<u8>> = row.get(3)?;
-                    let condition = condition_blob
-                        .map(|b| deserialize_condition(&b))
-                        .transpose()
-                        .map_err(|_| rusqlite::Error::InvalidQuery)?;
-
-                    Ok(MatchBranch {
-                        id: row.get(0)?,
-                        transform_id: row.get(1)?,
-                        order: row.get(2)?,
-                        condition,
-                        is_default: row.get::<_, i32>(4)? != 0,
-                    })
-                })?;
+                let rows = stmt.query_map([transform_id], row_to_match_branch)?;
                 rows.collect::<Result<Vec<_>, _>>()
             })
             .await
@@ -325,21 +311,7 @@ impl super::MigrationRepository {
                      WHERE p.migration_id = ?1
                      ORDER BY mb.id ASC",
                 )?;
-                let rows = stmt.query_map([migration_id], |row| {
-                    let condition_blob: Option<Vec<u8>> = row.get(3)?;
-                    let condition = condition_blob
-                        .map(|b| deserialize_condition(&b))
-                        .transpose()
-                        .map_err(|_| rusqlite::Error::InvalidQuery)?;
-
-                    Ok(MatchBranch {
-                        id: row.get(0)?,
-                        transform_id: row.get(1)?,
-                        order: row.get(2)?,
-                        condition,
-                        is_default: row.get::<_, i32>(4)? != 0,
-                    })
-                })?;
+                let rows = stmt.query_map([migration_id], row_to_match_branch)?;
                 rows.collect::<Result<Vec<_>, _>>()
             })
             .await
@@ -355,21 +327,7 @@ impl super::MigrationRepository {
                      FROM match_branches
                      WHERE id = ?1",
                 )?;
-                stmt.query_row([id], |row| {
-                    let condition_blob: Option<Vec<u8>> = row.get(3)?;
-                    let condition = condition_blob
-                        .map(|b| deserialize_condition(&b))
-                        .transpose()
-                        .map_err(|_| rusqlite::Error::InvalidQuery)?;
-
-                    Ok(MatchBranch {
-                        id: row.get(0)?,
-                        transform_id: row.get(1)?,
-                        order: row.get(2)?,
-                        condition,
-                        is_default: row.get::<_, i32>(4)? != 0,
-                    })
-                })
+                stmt.query_row([id], row_to_match_branch)
             })
             .await
             .map_err(|e| match e {
