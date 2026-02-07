@@ -83,10 +83,10 @@ impl TransformData {
                 }
             }
 
-            // ValueMap (OptionSet -> OptionSet)
+            // ValueMap (OptionSet -> passthrough)
             TransformData::ValueMap { .. } => TransformSignature {
-                input: Some(ValueType::simple(AttributeType::Picklist)),
-                output: Some(ValueType::simple(AttributeType::Picklist)),
+                input: Some(ValueType::option_set(AttributeType::Picklist, vec![])),
+                output: None, // Passthrough - preserves option set kind
             },
 
             // Math (numeric -> passthrough)
@@ -152,6 +152,8 @@ pub struct ChainTypeResult {
     pub output_type: ValueType,
     /// Type at each transform (transform_id -> output type after that transform).
     pub transform_types: HashMap<i64, ValueType>,
+    /// Input type at each transform (transform_id -> #value type going into that transform).
+    pub transform_input_types: HashMap<i64, ValueType>,
     /// Type warnings for mismatches.
     pub warnings: Vec<TypeWarning>,
 }
@@ -162,6 +164,7 @@ impl ChainTypeResult {
         Self {
             output_type: ValueType::Null,
             transform_types: HashMap::new(),
+            transform_input_types: HashMap::new(),
             warnings: Vec::new(),
         }
     }
@@ -236,6 +239,11 @@ where
             sig.output,
             current_type,
         );
+
+        // Store the input type (#value) for this transform
+        result
+            .transform_input_types
+            .insert(transform.id, current_type.clone());
 
         // Check input compatibility
         if let Some(expected_input) = &sig.input {

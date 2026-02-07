@@ -498,6 +498,8 @@ pub fn transform_display_text(data: &TransformData) -> String {
 pub struct TypeTrackingResult {
     /// Transform ID -> output type after that transform.
     pub transform_types: HashMap<i64, ValueType>,
+    /// Transform ID -> input type (#value) going into that transform.
+    pub transform_input_types: HashMap<i64, ValueType>,
     /// All type warnings across all chains.
     pub warnings: Vec<TypeWarning>,
     /// Variable name -> resolved output type of its chain.
@@ -510,6 +512,11 @@ impl TypeTrackingResult {
     /// Get the output type for a transform.
     pub fn type_for(&self, transform_id: i64) -> Option<&ValueType> {
         self.transform_types.get(&transform_id)
+    }
+
+    /// Get the input type (#value) for a transform.
+    pub fn input_type_for(&self, transform_id: i64) -> Option<&ValueType> {
+        self.transform_input_types.get(&transform_id)
     }
 
     /// Check if a transform has a type warning.
@@ -529,6 +536,12 @@ impl TypeTrackingResult {
         self.transform_types.extend(
             chain_result
                 .transform_types
+                .iter()
+                .map(|(k, v)| (*k, v.clone())),
+        );
+        self.transform_input_types.extend(
+            chain_result
+                .transform_input_types
                 .iter()
                 .map(|(k, v)| (*k, v.clone())),
         );
