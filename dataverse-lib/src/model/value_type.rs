@@ -4,19 +4,38 @@ use super::metadata::AttributeMetadata;
 use super::metadata::AttributeType;
 use super::Value;
 
+/// Lightweight option set value + label pair for design-time type tracking.
+///
+/// Derived from `OptionMetadata` but carries only what's needed for display
+/// and mapping in the UI.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OptionInfo {
+    /// The integer value of the option.
+    pub value: i32,
+    /// The display label.
+    pub label: String,
+}
+
 /// A concrete data type with enough info for compatibility checking.
 ///
 /// Non-lookup types are `Simple(AttributeType)`. Lookup types carry target entity info
-/// so that compatibility can check for overlapping targets.
+/// so that compatibility can check for overlapping targets. Option set types carry
+/// the available options (value + label) for UI display and mapping.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FieldType {
-    /// Non-lookup type (String, Integer, DateTime, etc.)
+    /// Non-lookup, non-option-set type (String, Integer, DateTime, etc.)
     Simple(AttributeType),
     /// Lookup type with target entity info.
     /// `targets` may be empty if unknown (e.g., from a constant Value).
     Lookup {
         kind: AttributeType,
         targets: Vec<String>,
+    },
+    /// Option set type with available options.
+    /// `options` may be empty if unknown (e.g., from a constant Value).
+    OptionSet {
+        kind: AttributeType,
+        options: Vec<OptionInfo>,
     },
 }
 
@@ -47,7 +66,11 @@ impl FieldType {
                     true
                 }
             }
-            // Simple vs Lookup (and vice versa) are incompatible
+            (FieldType::OptionSet { kind: ka, .. }, FieldType::OptionSet { kind: kb, .. }) => {
+                // All option set kinds are compatible with each other
+                attr_types_compatible(ka, kb)
+            }
+            // Different categories (Simple vs Lookup vs OptionSet) are incompatible
             _ => false,
         }
     }
@@ -64,6 +87,7 @@ impl FieldType {
                     format!("{:?}({})", kind, target_list)
                 }
             }
+            FieldType::OptionSet { kind, .. } => format!("{:?}", kind),
         }
     }
 
@@ -72,6 +96,15 @@ impl FieldType {
         match self {
             FieldType::Simple(attr) => *attr,
             FieldType::Lookup { kind, .. } => *kind,
+            FieldType::OptionSet { kind, .. } => *kind,
+        }
+    }
+
+    /// Returns the option set options, if this is an `OptionSet` variant.
+    pub fn options(&self) -> Option<&[OptionInfo]> {
+        match self {
+            FieldType::OptionSet { options, .. } => Some(options),
+            _ => None,
         }
     }
 }
@@ -82,6 +115,11 @@ impl From<AttributeType> for FieldType {
             FieldType::Lookup {
                 kind: attr,
                 targets: vec![],
+            }
+        } else if is_option_set_type(attr) {
+            FieldType::OptionSet {
+                kind: attr,
+                options: vec![],
             }
         } else {
             FieldType::Simple(attr)
@@ -95,6 +133,23 @@ impl From<&AttributeMetadata> for FieldType {
             FieldType::Lookup {
                 kind: attr.attribute_type,
                 targets: attr.targets.clone(),
+            }
+        } else if is_option_set_type(attr.attribute_type) {
+            let options = attr
+                .options()
+                .map(|os| {
+                    os.options
+                        .iter()
+                        .map(|o| OptionInfo {
+                            value: o.value,
+                            label: o.label.text().unwrap_or("").to_string(),
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+            FieldType::OptionSet {
+                kind: attr.attribute_type,
+                options,
             }
         } else {
             FieldType::Simple(attr.attribute_type)
@@ -127,6 +182,11 @@ impl ValueType {
     /// Convenience: create a `Known(Lookup { kind, targets })`.
     pub fn lookup(kind: AttributeType, targets: Vec<String>) -> Self {
         ValueType::Known(FieldType::Lookup { kind, targets })
+    }
+
+    /// Convenience: create a `Known(OptionSet { kind, options })`.
+    pub fn option_set(kind: AttributeType, options: Vec<OptionInfo>) -> Self {
+        ValueType::Known(FieldType::OptionSet { kind, options })
     }
 
     /// Check if this type is compatible with expected input type.
@@ -203,8 +263,10 @@ impl From<&Value> for ValueType {
                 ValueType::lookup(AttributeType::Lookup, vec![er.entity.name().to_string()])
             }
             Value::EntityBinding(_) => ValueType::lookup(AttributeType::Lookup, vec![]),
-            Value::OptionSet(_) => ValueType::simple(AttributeType::Picklist),
-            Value::MultiOptionSet(_) => ValueType::simple(AttributeType::MultiSelectPicklist),
+            Value::OptionSet(_) => ValueType::option_set(AttributeType::Picklist, vec![]),
+            Value::MultiOptionSet(_) => {
+                ValueType::option_set(AttributeType::MultiSelectPicklist, vec![])
+            }
             Value::File(_) => ValueType::simple(AttributeType::File),
             Value::Image(_) => ValueType::simple(AttributeType::Image),
             // Record/Records/Json don't have direct AttributeType mappings
@@ -222,6 +284,17 @@ fn is_lookup_type(attr: AttributeType) -> bool {
     matches!(
         attr,
         AttributeType::Lookup | AttributeType::Customer | AttributeType::Owner
+    )
+}
+
+/// Check if an `AttributeType` is an option set variant.
+fn is_option_set_type(attr: AttributeType) -> bool {
+    matches!(
+        attr,
+        AttributeType::Picklist
+            | AttributeType::State
+            | AttributeType::Status
+            | AttributeType::MultiSelectPicklist
     )
 }
 

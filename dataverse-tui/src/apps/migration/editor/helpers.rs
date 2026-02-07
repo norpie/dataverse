@@ -365,7 +365,7 @@ fn discover_navigation_entities(
             // The field must be a lookup to navigate through
             let targets = match field_type {
                 FieldType::Lookup { targets, .. } => targets,
-                FieldType::Simple(_) => {
+                FieldType::Simple(_) | FieldType::OptionSet { .. } => {
                     log::debug!(
                         "type_tracking: nav scan: field '{}' on '{}' is not a lookup",
                         segment.field,

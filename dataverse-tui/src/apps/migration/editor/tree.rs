@@ -1249,7 +1249,7 @@ fn resolve_dotted_field_path(
         // Navigation segment — must be a lookup
         let targets = match field_type {
             FieldType::Lookup { targets, .. } => targets,
-            FieldType::Simple(_) => {
+            FieldType::Simple(_) | FieldType::OptionSet { .. } => {
                 log::debug!(
                     "type_tracking: field '{}' on '{}' is not a lookup, cannot navigate in '{}'",
                     segment.field,
