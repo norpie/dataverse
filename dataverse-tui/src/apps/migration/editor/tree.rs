@@ -813,15 +813,15 @@ fn build_variable_node(v: Variable, ctx: &mut TreeBuildContext) -> TreeNode<Migr
         let source_entity = ctx.source_entity_for(v.entity_mapping_id);
         let chain_result = compute_chain_types(&transforms, source_entity, ctx);
 
-        // Record variable output type for use in later chains
+        // Record variable declared type for use in later chains (copy($var))
         log::debug!(
-            "type_tracking: variable ${} resolved to {:?}",
+            "type_tracking: variable ${} declared as {:?}",
             var_name,
-            chain_result.output_type,
+            v.declared_type,
         );
         ctx.type_tracking
             .variable_types
-            .insert(var_name, chain_result.output_type.clone());
+            .insert(var_name, v.declared_type.clone());
         ctx.type_tracking.merge(&chain_result);
 
         let transform_nodes: Vec<TreeNode<MigrationTreeNode>> = transforms
