@@ -1,5 +1,6 @@
 pub mod app;
 pub mod app_impl;
+pub mod dep_detection;
 pub mod derived;
 pub mod event;
 pub mod event_handler;
@@ -16,3 +17,4 @@ pub mod request_handler;
 pub mod system;
 pub mod system_impl;
 pub mod theme;
+pub mod watch;

@@ -1076,6 +1076,39 @@ impl Runtime {
                 // Just drain the wakeup queue - we'll re-render on next iteration
             }
 
+            // 22. Check watches (reactive async recomputation)
+            {
+                // Check system watches
+                for system in systems.iter() {
+                    system.check_watches(gx);
+                }
+
+                // Check app watches (all non-sleeping instances)
+                let reg = registry.read().unwrap();
+                for instance in reg.iter() {
+                    if !instance.is_sleeping() {
+                        instance.check_watches(gx);
+                    }
+                }
+
+                // Check modal watches (focused app's modals + global modals)
+                if let Some(instance) = reg.focused_instance() {
+                    let cx = instance.app_context();
+                    if let Ok(modals) = instance.modals().read() {
+                        for modal in modals.iter() {
+                            if !modal.is_closed() {
+                                modal.check_watches(&cx, gx);
+                            }
+                        }
+                    }
+                }
+                for modal in global_modals.iter() {
+                    if !modal.is_closed() {
+                        modal.check_watches(&AppContext::default(), gx);
+                    }
+                }
+            }
+
             // Performance timing log (rafter frame overhead, excludes poll wait time)
             let t_loop_end = Instant::now();
             log::debug!(

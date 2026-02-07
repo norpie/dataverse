@@ -15,7 +15,7 @@
 
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
-use syn::{DeriveInput, Field, Fields, FieldsNamed, Ident, parse2};
+use syn::{parse2, DeriveInput, Field, Fields, FieldsNamed, Ident};
 
 use super::fields::{has_state_skip, has_widget_attribute, is_resource_type};
 
@@ -287,6 +287,7 @@ fn generate_default_impl(
                         #page_field
                         __handler_registry: rafter::HandlerRegistry::new(),
                         __derived_cache: std::sync::Arc::new(std::sync::RwLock::new(std::collections::HashMap::new())),
+                        __watch_state: std::sync::Arc::new(std::sync::RwLock::new(std::collections::HashMap::new())),
                     }
                 }
             }
@@ -322,6 +323,7 @@ fn generate_default_impl(
                     #page_field
                     __handler_registry: rafter::HandlerRegistry::new(),
                     __derived_cache: std::sync::Arc::new(std::sync::RwLock::new(std::collections::HashMap::new())),
+                    __watch_state: std::sync::Arc::new(std::sync::RwLock::new(std::collections::HashMap::new())),
                 }
             }
         }
@@ -351,6 +353,7 @@ fn generate_clone_impl(
                         #page_field
                         __handler_registry: self.__handler_registry.clone(),
                         __derived_cache: self.__derived_cache.clone(),
+                        __watch_state: self.__watch_state.clone(),
                     }
                 }
             }
@@ -374,6 +377,7 @@ fn generate_clone_impl(
                     #page_field
                     __handler_registry: self.__handler_registry.clone(),
                     __derived_cache: self.__derived_cache.clone(),
+                    __watch_state: self.__watch_state.clone(),
                 }
             }
         }
@@ -408,6 +412,7 @@ fn generate_new_impl(
                         #page_field
                         __handler_registry: rafter::HandlerRegistry::new(),
                         __derived_cache: std::sync::Arc::new(std::sync::RwLock::new(std::collections::HashMap::new())),
+                        __watch_state: std::sync::Arc::new(std::sync::RwLock::new(std::collections::HashMap::new())),
                     }
                 }
             }
@@ -422,9 +427,8 @@ fn generate_new_impl(
             let ident = f.ident.as_ref().unwrap();
             let ty = &f.ty;
             let is_resource = is_resource_type(ty);
-            let should_wrap = !has_state_skip(&f.attrs)
-                && !is_resource
-                && !has_widget_attribute(&f.attrs);
+            let should_wrap =
+                !has_state_skip(&f.attrs) && !is_resource && !has_widget_attribute(&f.attrs);
             (ident, ty, is_resource, should_wrap)
         })
         .collect();
@@ -460,6 +464,7 @@ fn generate_new_impl(
                     #page_field
                     __handler_registry: rafter::HandlerRegistry::new(),
                     __derived_cache: std::sync::Arc::new(std::sync::RwLock::new(std::collections::HashMap::new())),
+                    __watch_state: std::sync::Arc::new(std::sync::RwLock::new(std::collections::HashMap::new())),
                 }
             }
         }
@@ -682,6 +687,8 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
                 __handler_registry: rafter::HandlerRegistry,
                 #[doc(hidden)]
                 __derived_cache: std::sync::Arc<std::sync::RwLock<std::collections::HashMap<&'static str, Box<dyn std::any::Any + Send + Sync>>>>,
+                #[doc(hidden)]
+                __watch_state: std::sync::Arc<std::sync::RwLock<std::collections::HashMap<&'static str, (Vec<u64>, std::sync::Arc<std::sync::atomic::AtomicBool>)>>>,
             }
 
             #default_impl
@@ -690,7 +697,7 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
             #metadata
         }
     } else {
-        // Unit struct becomes struct with just __handler_registry, __derived_cache (and __page if pages enabled)
+        // Unit struct becomes struct with just __handler_registry, __derived_cache, __watch_state (and __page if pages enabled)
         quote! {
             #(#other_attrs)*
             #vis struct #name #generics {
@@ -699,6 +706,8 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
                 __handler_registry: rafter::HandlerRegistry,
                 #[doc(hidden)]
                 __derived_cache: std::sync::Arc<std::sync::RwLock<std::collections::HashMap<&'static str, Box<dyn std::any::Any + Send + Sync>>>>,
+                #[doc(hidden)]
+                __watch_state: std::sync::Arc<std::sync::RwLock<std::collections::HashMap<&'static str, (Vec<u64>, std::sync::Arc<std::sync::atomic::AtomicBool>)>>>,
             }
 
             #default_impl

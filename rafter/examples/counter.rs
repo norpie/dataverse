@@ -4,6 +4,7 @@
 //! - Declarative pages with the `page!` macro
 //! - State management with automatic reactivity
 //! - Derived state with automatic dependency tracking
+//! - Watched state with async recomputation on dependency change
 //! - Keyboard navigation and vim-style keybinds
 //! - Focus system with Tab navigation
 //! - Async operations with progress feedback
@@ -123,6 +124,8 @@ struct Counter {
     step: i32,
     data: Resource<String>,
     show_data: bool,
+    /// Async computation that auto-triggers when `value` or `step` change.
+    computation: Resource<String>,
 }
 
 #[app_impl]
@@ -136,6 +139,21 @@ impl Counter {
     #[derived]
     fn doubled(&self) -> i32 {
         self.value.get() * 2
+    }
+
+    /// Watched state: async recomputation triggered when `value` or `step` change.
+    /// Simulates an expensive async operation (e.g. API call + CPU work).
+    #[watch]
+    async fn recompute(&self) {
+        let value = self.value.get();
+        let step = self.step.get();
+        self.computation.set_loading();
+
+        // Simulate async work (network call, heavy computation, etc.)
+        tokio::time::sleep(Duration::from_millis(300)).await;
+
+        let result = format!("f({}, {}) = {}", value, step, value * step + 42);
+        self.computation.set_ready(result);
     }
 
     #[keybinds]
@@ -244,13 +262,14 @@ impl Counter {
         let value_str = self.value.get().to_string();
         let step_str = self.step.get().to_string();
         let doubled_str = self.doubled().to_string();
+        let computation_state = self.computation.get();
         let data_state = self.data.get();
 
         page! {
             column (padding: 1, gap: 1) style (bg: background) {
                 column {
                     text (content: "Counter") style (bold, fg: primary)
-                    text (content: "Demonstrating derived state - Doubled updates automatically") style (fg: muted)
+                    text (content: "Derived (sync) and watched (async) state update automatically") style (fg: muted)
                 }
 
                 column (id: "value-display", padding: 1) style (bg: surface) {
@@ -261,6 +280,15 @@ impl Counter {
                     row (gap: 2) {
                         text (content: "Doubled:") style (fg: muted)
                         text (content: {doubled_str}) style (fg: interact)
+                    }
+                    row (gap: 2) {
+                        text (content: "Async:") style (fg: muted)
+                        match computation_state {
+                            ResourceState::Idle => text (content: "...") style (fg: muted),
+                            ResourceState::Loading => text (content: "Computing...") style (fg: warning),
+                            ResourceState::Ready(s) => text (content: {s}) style (fg: success),
+                            _ => text (content: "Error") style (fg: error),
+                        }
                     }
                     row (gap: 2) {
                         text (content: "Step:") style (fg: muted)
@@ -276,8 +304,7 @@ impl Counter {
                 }
 
                 row (gap: 2) {
-                    checkbox (state: self.show_data, id: "show-data", label: "Show data", small)
-                    checkbox (state: self.show_data, id: "show-data-big", label: "Big variant", big)
+                    checkbox (state: self.show_data, id: "show-data", label: "Show data")
                 }
 
                 if self.show_data.get() {

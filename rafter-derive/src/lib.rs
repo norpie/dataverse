@@ -88,3 +88,8 @@ pub fn context_menu(input: TokenStream) -> TokenStream {
 pub fn derived(attr: TokenStream, item: TokenStream) -> TokenStream {
     macros::derived::expand(attr.into(), item.into()).into()
 }
+
+#[proc_macro_attribute]
+pub fn watch(attr: TokenStream, item: TokenStream) -> TokenStream {
+    macros::watch::expand(attr.into(), item.into()).into()
+}

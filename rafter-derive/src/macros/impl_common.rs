@@ -2104,3 +2104,220 @@ fn generate_single_wrapper(handler: &HandlerInfo) -> TokenStream {
         }
     }
 }
+
+// =============================================================================
+// Watch Method Support
+// =============================================================================
+
+/// Information about a `#[watch]` method.
+pub struct WatchMethod {
+    /// Method name
+    pub name: Ident,
+    /// State field dependencies (auto-detected from body)
+    pub deps: Vec<String>,
+    /// Handler context requirements
+    pub contexts: HandlerContexts,
+}
+
+/// Check if method has `#[watch]` attribute and extract metadata.
+///
+/// Dependencies are detected by re-analyzing the method body using the same
+/// AST scanning as `#[derived]`.
+pub fn parse_watch_metadata(method: &ImplItemFn) -> Option<WatchMethod> {
+    let has_attr = method
+        .attrs
+        .iter()
+        .any(|a| a.path().is_ident("watch"));
+
+    if !has_attr {
+        return None;
+    }
+
+    let deps = super::dep_detection::find_dependencies(method);
+    if deps.is_empty() {
+        // The #[watch] attribute macro already validates this,
+        // but double-check here for safety
+        return None;
+    }
+
+    let contexts = detect_handler_contexts(method);
+
+    Some(WatchMethod {
+        name: method.sig.ident.clone(),
+        deps,
+        contexts,
+    })
+}
+
+/// Generate `check_watches` trait method for the given context type.
+///
+/// Each watch method gets a block that:
+/// 1. Reads current generations of all dependencies
+/// 2. Compares against stored generations in `__watch_state`
+/// 3. If changed and not already running, spawns the async method
+/// 4. When the spawned task finishes, clears the running flag
+pub fn generate_watch_checks(
+    watch_methods: &[WatchMethod],
+    context_type: DispatchContextType,
+    result_type: Option<&Type>,
+) -> TokenStream {
+    if watch_methods.is_empty() {
+        return quote! {};
+    }
+
+    // Generate the method signature based on context type
+    let (sig, _) = match context_type {
+        DispatchContextType::App => (
+            quote! { fn check_watches(&self, cx: &rafter::AppContext, gx: &rafter::GlobalContext) },
+            quote! {},
+        ),
+        DispatchContextType::System => (
+            quote! { fn check_watches(&self, gx: &rafter::GlobalContext) },
+            quote! {},
+        ),
+        DispatchContextType::AppModal | DispatchContextType::SystemModal => (
+            quote! { fn check_watches(&self, cx: &rafter::AppContext, gx: &rafter::GlobalContext, mx: &(dyn std::any::Any + Send + Sync)) },
+            quote! {},
+        ),
+    };
+
+    // Generate one block per watch method
+    let watch_blocks: Vec<TokenStream> = watch_methods
+        .iter()
+        .map(|watch| generate_single_watch(watch, context_type, result_type))
+        .collect();
+
+    quote! {
+        #sig {
+            #(#watch_blocks)*
+        }
+    }
+}
+
+/// Generate the check-and-spawn block for a single `#[watch]` method.
+fn generate_single_watch(
+    watch: &WatchMethod,
+    context_type: DispatchContextType,
+    result_type: Option<&Type>,
+) -> TokenStream {
+    let watch_name = &watch.name;
+    let watch_key = watch_name.to_string();
+
+    // Generate generation reads: let __gen_field1 = self.field1.generation();
+    let dep_idents: Vec<_> = watch.deps.iter().map(|d| format_ident!("{}", d)).collect();
+    let gen_var_names: Vec<_> = watch
+        .deps
+        .iter()
+        .map(|d| format_ident!("__gen_{}", d))
+        .collect();
+    let gen_reads: Vec<_> = dep_idents
+        .iter()
+        .zip(gen_var_names.iter())
+        .map(|(field, var)| quote! { let #var = self.#field.generation(); })
+        .collect();
+
+    let num_deps = watch.deps.len();
+
+    // Generate context clones and call arguments based on what the method needs
+    let (context_clones, call_args) =
+        generate_watch_context_clones_and_args(&watch.contexts, context_type, result_type);
+
+    quote! {
+        {
+            const WATCH_KEY: &'static str = #watch_key;
+
+            // Read current generations of all dependencies
+            #(#gen_reads)*
+            let __current_gens: Vec<u64> = vec![#(#gen_var_names),*];
+
+            // Check if we should run
+            let __should_run = {
+                let __state = self.__watch_state.read().unwrap();
+                match __state.get(WATCH_KEY) {
+                    None => true, // Never run before
+                    Some((__prev_gens, __is_running)) => {
+                        !__is_running.load(std::sync::atomic::Ordering::SeqCst)
+                            && *__prev_gens != __current_gens
+                    }
+                }
+            };
+
+            if __should_run {
+                // Get or create the is_running flag, update stored generations
+                let __is_running = {
+                    let mut __state = self.__watch_state.write().unwrap();
+                    let __entry = __state
+                        .entry(WATCH_KEY)
+                        .or_insert_with(|| (
+                            Vec::with_capacity(#num_deps),
+                            std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+                        ));
+                    __entry.0 = __current_gens;
+                    __entry.1.clone()
+                };
+
+                __is_running.store(true, std::sync::atomic::Ordering::SeqCst);
+
+                let __self = self.clone();
+                #context_clones
+                let __is_running_handle = __is_running;
+                tokio::spawn(async move {
+                    __self.#watch_name(#call_args).await;
+                    __is_running_handle.store(false, std::sync::atomic::Ordering::SeqCst);
+                });
+            }
+        }
+    }
+}
+
+/// Generate context clone statements and call arguments for a watch method spawn.
+fn generate_watch_context_clones_and_args(
+    contexts: &HandlerContexts,
+    context_type: DispatchContextType,
+    result_type: Option<&Type>,
+) -> (TokenStream, TokenStream) {
+    let mut clones = Vec::new();
+    let mut args = Vec::new();
+
+    for param in &contexts.param_order {
+        match param {
+            ContextParam::App => {
+                if matches!(
+                    context_type,
+                    DispatchContextType::App
+                        | DispatchContextType::AppModal
+                        | DispatchContextType::SystemModal
+                ) {
+                    clones.push(quote! { let __cx = cx.clone(); });
+                    args.push(quote! { &__cx });
+                }
+            }
+            ContextParam::Global => {
+                clones.push(quote! { let __gx = gx.clone(); });
+                args.push(quote! { &__gx });
+            }
+            ContextParam::Modal => {
+                if let Some(result_ty) = result_type {
+                    clones.push(quote! {
+                        let __mx = mx.downcast_ref::<rafter::ModalContext<#result_ty>>()
+                            .expect("#[watch] modal context downcast failed")
+                            .clone();
+                    });
+                    args.push(quote! { &__mx });
+                }
+            }
+            ContextParam::Event => {
+                // Event data is not supported in watch methods
+            }
+        }
+    }
+
+    let clones_ts = quote! { #(#clones)* };
+    let args_ts = if args.is_empty() {
+        quote! {}
+    } else {
+        quote! { #(#args),* }
+    };
+
+    (clones_ts, args_ts)
+}

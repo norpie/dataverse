@@ -220,6 +220,11 @@ pub trait AnyAppInstance: Send + Sync {
     /// Get lifecycle hook closures.
     fn lifecycle_hooks(&self) -> LifecycleHooks;
 
+    // Watch
+
+    /// Check watched state and trigger async recomputation if dependencies changed.
+    fn check_watches(&self, gx: &GlobalContext);
+
     // Event/Request Dispatch
 
     /// Check if this instance has a handler for the given event type.
@@ -392,6 +397,11 @@ impl<A: App> AnyAppInstance for AppInstance<A> {
 
     fn lifecycle_hooks(&self) -> LifecycleHooks {
         self.app.lifecycle_hooks()
+    }
+
+    fn check_watches(&self, gx: &GlobalContext) {
+        let cx = self.app_context();
+        self.app.check_watches(&cx, gx);
     }
 
     fn has_event_handler(&self, event_type: TypeId) -> bool {

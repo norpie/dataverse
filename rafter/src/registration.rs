@@ -1,12 +1,12 @@
 //! Registration types for inventory-based auto-discovery.
 
-use crate::GlobalContext;
 use crate::app::App;
 use crate::instance::{AnyAppInstance, AppInstance};
 use crate::keybinds::KeybindClosures;
 use crate::lifecycle::LifecycleHooks;
 use crate::system::{Overlay, System};
 use crate::wakeup::WakeupSender;
+use crate::GlobalContext;
 
 /// App registration entry for inventory.
 pub struct AppRegistration {
@@ -102,6 +102,8 @@ pub trait AnySystem: Send + Sync {
     fn lifecycle_hooks(&self) -> LifecycleHooks;
     /// Install wakeup sender.
     fn install_wakeup(&self, sender: WakeupSender);
+    /// Check watched state and trigger async recomputation if dependencies changed.
+    fn check_watches(&self, gx: &GlobalContext);
     /// Check if this system has a handler for the given event type.
     fn has_event_handler(&self, event_type: std::any::TypeId) -> bool;
     /// Dispatch an event to this system.
@@ -155,6 +157,10 @@ impl<T: System> AnySystem for T {
 
     fn install_wakeup(&self, sender: WakeupSender) {
         System::install_wakeup(self, sender)
+    }
+
+    fn check_watches(&self, gx: &GlobalContext) {
+        System::check_watches(self, gx)
     }
 
     fn has_event_handler(&self, event_type: std::any::TypeId) -> bool {

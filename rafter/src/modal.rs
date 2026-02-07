@@ -204,6 +204,13 @@ pub trait Modal: Clone + Send + Sync + 'static {
     /// Clear dirty flags after rendering.
     fn clear_dirty(&self) {}
 
+    /// Check watched state and trigger async recomputation if dependencies changed.
+    ///
+    /// Override via `#[watch]` attribute in `#[modal_impl]`.
+    fn check_watches(&self, cx: &AppContext, gx: &GlobalContext, mx: &(dyn Any + Send + Sync)) {
+        let _ = (cx, gx, mx);
+    }
+
     /// Check if this modal has a handler for the given event type.
     ///
     /// Override via `#[event_handler]` attribute in `#[modal_impl]`.

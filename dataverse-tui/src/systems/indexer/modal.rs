@@ -162,6 +162,7 @@ impl IndexerDashboardModal {
             __page: State::new(Page::default()),
             __handler_registry: rafter::HandlerRegistry::default(),
             __derived_cache: Default::default(),
+            __watch_state: Default::default(),
         }
     }
 }

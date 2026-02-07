@@ -9,11 +9,11 @@ use syn::{AngleBracketedGenericArguments, GenericArgument, PathArguments, Type, 
 use super::impl_common::{
     DispatchContextType, EventHandlerMethod, HandlerContexts, HandlerInfo, KeybindScope,
     KeybindsMethod, LifecycleContext, LifecycleHooksDefined, PageMethod, PartialImplBlock,
-    extract_handler_info, extract_lifecycle_hook_info, generate_element_impl,
+    WatchMethod, extract_handler_info, extract_lifecycle_hook_info, generate_element_impl,
     generate_event_dispatch, generate_handler_wrappers, generate_keybinds_closures_impl,
-    generate_lifecycle_hooks_impl, generate_name_impl, get_type_name, modal_metadata_mod,
-    parse_event_handler_metadata, reconstruct_method, reconstruct_method_stripped,
-    validate_lifecycle_hook_contexts,
+    generate_lifecycle_hooks_impl, generate_name_impl, generate_watch_checks, get_type_name,
+    modal_metadata_mod, parse_event_handler_metadata, parse_watch_metadata, reconstruct_method,
+    reconstruct_method_stripped, validate_lifecycle_hook_contexts,
 };
 
 /// Modal kind for compile-time context checking.
@@ -130,6 +130,7 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
     let mut handler_contexts: HashMap<String, HandlerContexts> = HashMap::new();
     let mut handler_infos: Vec<HandlerInfo> = Vec::new();
     let mut event_handlers: Vec<EventHandlerMethod> = Vec::new();
+    let mut watch_methods: Vec<WatchMethod> = Vec::new();
     let mut page_methods: Vec<PageMethod> = Vec::new();
     let mut lifecycle_hooks = LifecycleHooksDefined::default();
     let mut has_element = false;
@@ -197,6 +198,17 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
                 event_handler.contexts = handler_info.contexts;
 
                 event_handlers.push(event_handler);
+            }
+            if let Some(watch_method) = parse_watch_metadata(&impl_item) {
+                // For system modals, validate that watches don't use AppContext
+                if attrs.kind == ModalKindAttr::System && watch_method.contexts.app_context {
+                    return syn::Error::new_spanned(
+                        &method.sig,
+                        "System modal #[watch] methods cannot use AppContext. System modals only have access to GlobalContext and ModalContext.",
+                    )
+                    .to_compile_error();
+                }
+                watch_methods.push(watch_method);
             }
         }
 
@@ -450,6 +462,8 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
     };
     let event_dispatch_impl =
         generate_event_dispatch(&event_handlers, dispatch_context, Some(&result_type));
+    let watch_checks_impl =
+        generate_watch_checks(&watch_methods, dispatch_context, Some(&result_type));
 
     // Output the impl block plus Modal trait implementation
     let impl_attrs = &partial_impl.attrs;
@@ -489,6 +503,7 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
             #handlers_impl
             #element_impl
             #dirty_impl
+            #watch_checks_impl
             #event_dispatch_impl
         }
 

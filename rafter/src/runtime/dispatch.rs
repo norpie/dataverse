@@ -1439,6 +1439,8 @@ pub trait AnyModal: Send + Sync {
     fn aspect_ratio(&self) -> f32;
     /// Take any pending focus request from the modal.
     fn take_focus_request(&self) -> Option<String>;
+    /// Check watched state and trigger async recomputation if dependencies changed.
+    fn check_watches(&self, cx: &AppContext, gx: &GlobalContext);
     /// Check if this modal has a handler for the given event type.
     fn has_event_handler(&self, event_type: TypeId) -> bool;
     /// Dispatch an event to this modal's handlers.
@@ -1506,6 +1508,11 @@ impl<M: Modal> AnyModal for ModalEntry<M> {
 
     fn take_focus_request(&self) -> Option<String> {
         self.context.take_focus_request()
+    }
+
+    fn check_watches(&self, cx: &AppContext, gx: &GlobalContext) {
+        let mx = self.modal_context();
+        self.modal.check_watches(cx, gx, mx);
     }
 
     fn has_event_handler(&self, event_type: TypeId) -> bool {

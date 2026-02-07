@@ -9,10 +9,11 @@ use syn::parse2;
 use super::impl_common::{
     DispatchContextType, EventHandlerMethod, HandlerContexts, HandlerInfo, KeybindScope,
     KeybindsMethod, LifecycleContext, LifecycleHooksDefined, PageMethod,
-    PartialImplBlock, RequestHandlerMethod, extract_handler_info, extract_lifecycle_hook_info,
-    generate_event_dispatch, generate_handler_wrappers, generate_keybinds_closures_impl,
-    generate_lifecycle_hooks_impl, generate_request_dispatch, get_type_name,
-    parse_event_handler_metadata, parse_request_handler_metadata, reconstruct_method,
+    PartialImplBlock, RequestHandlerMethod, WatchMethod, extract_handler_info,
+    extract_lifecycle_hook_info, generate_event_dispatch, generate_handler_wrappers,
+    generate_keybinds_closures_impl, generate_lifecycle_hooks_impl, generate_request_dispatch,
+    generate_watch_checks, get_type_name, parse_event_handler_metadata,
+    parse_request_handler_metadata, parse_watch_metadata, reconstruct_method,
     reconstruct_method_stripped, system_metadata_mod, validate_lifecycle_hook_contexts,
 };
 
@@ -44,6 +45,7 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
     let mut handler_infos: Vec<HandlerInfo> = Vec::new();
     let mut event_handlers: Vec<EventHandlerMethod> = Vec::new();
     let mut request_handlers: Vec<RequestHandlerMethod> = Vec::new();
+    let mut watch_methods: Vec<WatchMethod> = Vec::new();
     let mut page_methods: Vec<PageMethod> = Vec::new();
     let mut lifecycle_hooks = LifecycleHooksDefined::default();
     let mut has_element = false;
@@ -102,6 +104,25 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
             if method.has_attr("request_handler")
                 && let Some(request_handler) = parse_request_handler_metadata(&impl_item) {
                     request_handlers.push(request_handler);
+                }
+            if method.has_attr("watch")
+                && let Some(watch_method) = parse_watch_metadata(&impl_item) {
+                    // Validate: systems can only use GlobalContext in watches
+                    if watch_method.contexts.app_context {
+                        return syn::Error::new_spanned(
+                            &method.sig,
+                            "System #[watch] methods cannot use AppContext. Systems only have access to GlobalContext.",
+                        )
+                        .to_compile_error();
+                    }
+                    if watch_method.contexts.modal_context {
+                        return syn::Error::new_spanned(
+                            &method.sig,
+                            "System #[watch] methods cannot use ModalContext.",
+                        )
+                        .to_compile_error();
+                    }
+                    watch_methods.push(watch_method);
                 }
         }
 
@@ -224,6 +245,10 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
         }
     };
 
+    // Generate watch checks
+    let watch_checks_impl =
+        generate_watch_checks(&watch_methods, DispatchContextType::System, None);
+
     // Generate event/request dispatch methods
     let event_dispatch_impl = generate_event_dispatch(&event_handlers, DispatchContextType::System, None);
     let request_dispatch_impl =
@@ -255,6 +280,7 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
             #overlay_impl
             #lifecycle_hooks_impl
             #dirty_impl
+            #watch_checks_impl
             #event_dispatch_impl
             #request_dispatch_impl
         }
