@@ -55,8 +55,9 @@ pub struct StateAttributeMetadata {
     pub required_level: RequiredLevel,
 
     /// The default form value (default state).
+    /// `None` when not defined for the entity.
     #[serde(default)]
-    pub default_form_value: i32,
+    pub default_form_value: Option<i32>,
 
     /// The option set containing state options.
     pub option_set: StateOptionSetMetadata,

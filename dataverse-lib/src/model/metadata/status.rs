@@ -55,8 +55,9 @@ pub struct StatusAttributeMetadata {
     pub required_level: RequiredLevel,
 
     /// The default form value (-1 means use the state's default status).
+    /// `None` when not defined for the entity.
     #[serde(default)]
-    pub default_form_value: i32,
+    pub default_form_value: Option<i32>,
 
     /// The option set containing status options.
     pub option_set: StatusOptionSetMetadata,
@@ -119,9 +120,9 @@ pub struct StatusOptionMetadata {
     pub state: i32,
 
     /// JSON string describing allowed status transitions.
-    /// Empty string if no transition rules are defined.
+    /// `None` when no transition rules are defined.
     #[serde(default)]
-    pub transition_data: String,
+    pub transition_data: Option<String>,
 }
 
 #[cfg(test)]
@@ -149,13 +150,13 @@ mod tests {
             color: None,
             is_managed: true,
             state: 0,
-            transition_data: String::new(),
+            transition_data: None,
         };
 
         let roundtripped = bincode_roundtrip(&option);
         assert_eq!(roundtripped.value, 1);
         assert_eq!(roundtripped.state, 0);
-        assert_eq!(roundtripped.transition_data, "");
+        assert_eq!(roundtripped.transition_data, None);
     }
 
     #[test]
@@ -174,7 +175,7 @@ mod tests {
                     color: None,
                     is_managed: true,
                     state: 0,
-                    transition_data: String::new(),
+                    transition_data: None,
                 },
                 StatusOptionMetadata {
                     value: 2,
@@ -183,7 +184,7 @@ mod tests {
                     color: None,
                     is_managed: true,
                     state: 1,
-                    transition_data: String::new(),
+                    transition_data: None,
                 },
             ],
         };
