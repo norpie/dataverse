@@ -331,8 +331,12 @@ impl TreeItem for MigrationTreeNode {
             },
             Self::Variable(v) => {
                 let label = format!("${}", v.name);
+                let type_label = format!(" ({})", v.declared_type.display());
                 element! {
-                    text (content: {label}) style (fg: primary)
+                    row {
+                        text (content: {label}) style (fg: primary)
+                        text (content: {type_label}) style (fg: muted)
+                    }
                 }
             }
             Self::FieldMappings { .. } => element! {
