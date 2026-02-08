@@ -10,17 +10,15 @@ use crate::apps::migration::types::TransformData;
 use crate::apps::migration::validation::parse_path;
 use crate::apps::migration::validation::FieldPath;
 use crate::apps::migration::validation::PathExpr;
-use crate::modals::LoadingModal;
-
-use super::tree::build_tree_nodes;
 use super::tree::FieldTypeCache;
 use super::tree::MigrationTreeNode;
 use super::MigrationEditor;
 
 impl MigrationEditor {
-    /// Refresh all data from the repository.
+    /// Load all data from the repository.
     /// Uses bulk queries to avoid N+1 (8 queries total).
-    pub(super) async fn refresh_data(&self, gx: &GlobalContext) {
+    /// The `#[watch] rebuild` method auto-triggers after state changes.
+    pub(super) async fn load_db_data(&self, gx: &GlobalContext) {
         let migration_id = self.migration.get().id;
         let repo = gx.data::<MigrationRepository>();
 
@@ -56,176 +54,6 @@ impl MigrationEditor {
         if let Ok(conditions) = repo.get_find_conditions_by_migration(migration_id).await {
             self.find_conditions.set(conditions);
         }
-
-        // Fetch metadata for any new source entities not yet cached
-        self.fetch_missing_metadata(gx).await;
-
-        self.rebuild_tree();
-    }
-
-    /// Fetch entity metadata for source and target entities not yet in their caches.
-    ///
-    /// Also pre-scans dotted copy paths to discover navigation entities (entities
-    /// referenced via lookup traversal, e.g., `parentaccountid.name` navigates to
-    /// the `account` entity). These are fetched iteratively until all reachable
-    /// entities are cached.
-    pub(super) async fn fetch_missing_metadata(&self, gx: &GlobalContext) {
-        let entity_mappings = self.entity_mappings.get();
-        let current_source_cache = self.field_type_cache.get();
-        let current_target_cache = self.target_field_cache.get();
-
-        // Collect unique source entities not yet cached
-        let mut missing_source: Vec<String> = Vec::new();
-        for em in entity_mappings.iter() {
-            if !em.source_entity.is_empty()
-                && !current_source_cache.contains_key(&em.source_entity)
-                && !missing_source.contains(&em.source_entity)
-            {
-                missing_source.push(em.source_entity.clone());
-            }
-        }
-
-        // Collect unique target entities not yet cached
-        let mut missing_target: Vec<String> = Vec::new();
-        for em in entity_mappings.iter() {
-            if !em.target_entity.is_empty()
-                && !current_target_cache.contains_key(&em.target_entity)
-                && !missing_target.contains(&em.target_entity)
-            {
-                missing_target.push(em.target_entity.clone());
-            }
-        }
-
-        if missing_source.is_empty() && missing_target.is_empty() {
-            return;
-        }
-
-        // Fetch source entity metadata
-        if !missing_source.is_empty() {
-            log::debug!(
-                "type_tracking: fetching metadata for {} source entities: {:?}",
-                missing_source.len(),
-                missing_source,
-            );
-
-            let client = self.source_client.get().clone();
-            let result: FieldTypeCache = gx
-                .modal(LoadingModal::run(
-                    "Loading source entity metadata...",
-                    fetch_entity_field_types(client, missing_source),
-                ))
-                .await;
-
-            self.field_type_cache.update(|cache| {
-                for (entity, fields) in result {
-                    cache.insert(entity, fields);
-                }
-            });
-        }
-
-        // Pre-scan dotted copy paths to discover navigation entities.
-        // Iteratively fetch metadata for entities reached via lookup traversal
-        // until no new entities are discovered.
-        let transforms = self.transforms.get();
-        let dotted_paths = collect_dotted_copy_paths(&transforms);
-        if !dotted_paths.is_empty() {
-            log::debug!(
-                "type_tracking: found {} dotted copy paths for navigation scanning",
-                dotted_paths.len(),
-            );
-
-            loop {
-                let source_cache = self.field_type_cache.get();
-                let nav_entities =
-                    discover_navigation_entities(&dotted_paths, &entity_mappings, &source_cache);
-
-                if nav_entities.is_empty() {
-                    break;
-                }
-
-                log::debug!(
-                    "type_tracking: fetching metadata for {} navigation entities: {:?}",
-                    nav_entities.len(),
-                    nav_entities,
-                );
-
-                let client = self.source_client.get().clone();
-                let result: FieldTypeCache = gx
-                    .modal(LoadingModal::run(
-                        "Loading navigation entity metadata...",
-                        fetch_entity_field_types(client, nav_entities),
-                    ))
-                    .await;
-
-                let fetched_any = !result.is_empty();
-                self.field_type_cache.update(|cache| {
-                    for (entity, fields) in result {
-                        cache.insert(entity, fields);
-                    }
-                });
-
-                // If we didn't successfully fetch any new entities, stop to avoid
-                // infinite loop (e.g., metadata fetch failures).
-                if !fetched_any {
-                    break;
-                }
-            }
-        }
-
-        // Fetch target entity metadata
-        if !missing_target.is_empty() {
-            log::debug!(
-                "type_tracking: fetching metadata for {} target entities: {:?}",
-                missing_target.len(),
-                missing_target,
-            );
-
-            let client = self.target_client.get().clone();
-            let result: FieldTypeCache = gx
-                .modal(LoadingModal::run(
-                    "Loading target entity metadata...",
-                    fetch_entity_field_types(client, missing_target),
-                ))
-                .await;
-
-            self.target_field_cache.update(|cache| {
-                for (entity, fields) in result {
-                    cache.insert(entity, fields);
-                }
-            });
-        }
-    }
-
-    /// Rebuild the tree from current data.
-    pub(super) fn rebuild_tree(&self) {
-        let phases = self.phases.get();
-        let entity_mappings = self.entity_mappings.get();
-        let variables = self.variables.get();
-        let field_mappings = self.field_mappings.get();
-        let transforms = self.transforms.get();
-        let match_branches = self.match_branches.get();
-        let coalesce_chains = self.coalesce_chains.get();
-        let find_conditions = self.find_conditions.get();
-        let field_type_cache = self.field_type_cache.get();
-        let target_field_cache = self.target_field_cache.get();
-
-        let (nodes, type_tracking) = build_tree_nodes(
-            phases,
-            entity_mappings,
-            variables,
-            field_mappings,
-            transforms,
-            match_branches,
-            coalesce_chains,
-            find_conditions,
-            &field_type_cache,
-            &target_field_cache,
-        );
-        self.type_tracking.set(type_tracking);
-        self.tree_state.update(|s| {
-            s.set_roots(nodes);
-            s.expand_all();
-        });
     }
 
     /// Get the currently focused tree node.
@@ -249,7 +77,7 @@ impl MigrationEditor {
 }
 
 /// Fetch attribute types for multiple entities.
-async fn fetch_entity_field_types(
+pub(super) async fn fetch_entity_field_types(
     client: DataverseClient,
     entities: Vec<String>,
 ) -> FieldTypeCache {
@@ -364,13 +192,13 @@ fn resolve_multi_select_field_type(
 }
 
 /// A dotted copy path paired with the entity mapping it belongs to.
-struct DottedCopyPath {
+pub(super) struct DottedCopyPath {
     entity_mapping_id: i64,
     path: FieldPath,
 }
 
 /// Collect all dotted copy paths (paths with 2+ segments) from transforms.
-fn collect_dotted_copy_paths(transforms: &[crate::apps::migration::types::Transform]) -> Vec<DottedCopyPath> {
+pub(super) fn collect_dotted_copy_paths(transforms: &[crate::apps::migration::types::Transform]) -> Vec<DottedCopyPath> {
     let mut paths = Vec::new();
 
     for t in transforms {
@@ -402,7 +230,7 @@ fn collect_dotted_copy_paths(transforms: &[crate::apps::migration::types::Transf
 /// Walks each dotted path segment-by-segment using the cached metadata. For each
 /// lookup segment, collects the target entity names. Returns entities that are
 /// not yet in the cache.
-fn discover_navigation_entities(
+pub(super) fn discover_navigation_entities(
     dotted_paths: &[DottedCopyPath],
     entity_mappings: &[crate::apps::migration::types::EntityMapping],
     source_cache: &FieldTypeCache,

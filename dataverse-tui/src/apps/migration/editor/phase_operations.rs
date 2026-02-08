@@ -33,7 +33,7 @@ impl MigrationEditor {
         match repo.create_phase(new_phase).await {
             Ok(_id) => {
                 gx.toast(Toast::info("Phase created"));
-                self.refresh_data(gx).await;
+                self.load_db_data(gx).await;
             }
             Err(e) => {
                 log::error!("Failed to create phase: {}", e);
@@ -66,7 +66,7 @@ impl MigrationEditor {
 
         match repo.update_phase(phase.id, update).await {
             Ok(()) => {
-                self.refresh_data(gx).await;
+                self.load_db_data(gx).await;
             }
             Err(e) => {
                 log::error!("Failed to update phase: {}", e);
@@ -108,7 +108,7 @@ impl MigrationEditor {
         match repo.delete_phase(phase_id).await {
             Ok(()) => {
                 gx.toast(Toast::info("Phase deleted"));
-                self.refresh_data(gx).await;
+                self.load_db_data(gx).await;
 
                 // Focus next item
                 if let Some(key) = next_focus {

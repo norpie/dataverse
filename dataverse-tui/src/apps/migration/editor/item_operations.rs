@@ -50,7 +50,7 @@ impl MigrationEditor {
         match repo.create_variable(new_variable).await {
             Ok(_id) => {
                 gx.toast(Toast::info("Variable created"));
-                self.refresh_data(gx).await;
+                self.load_db_data(gx).await;
             }
             Err(e) => {
                 log::error!("Failed to create variable: {}", e);
@@ -90,7 +90,7 @@ impl MigrationEditor {
         match repo.update_variable(variable.id, update).await {
             Ok(()) => {
                 gx.toast(Toast::info("Variable updated"));
-                self.refresh_data(gx).await;
+                self.load_db_data(gx).await;
             }
             Err(e) => {
                 log::error!("Failed to update variable: {}", e);
@@ -139,7 +139,7 @@ impl MigrationEditor {
         match repo.delete_variable(variable_id).await {
             Ok(()) => {
                 gx.toast(Toast::info("Variable deleted"));
-                self.refresh_data(gx).await;
+                self.load_db_data(gx).await;
 
                 if let Some(key) = next_focus {
                     cx.focus(&format!("migration-tree-node-{}", key));
@@ -184,7 +184,7 @@ impl MigrationEditor {
         let repo = gx.data::<MigrationRepository>();
         match repo.reorder_variables(entity_mapping_id, ordered_ids).await {
             Ok(()) => {
-                self.refresh_data(gx).await;
+                self.load_db_data(gx).await;
             }
             Err(e) => {
                 log::error!("Failed to reorder variables: {}", e);
@@ -266,7 +266,7 @@ impl MigrationEditor {
         match repo.create_field_mapping(new_field_mapping).await {
             Ok(_id) => {
                 gx.toast(Toast::info("Field mapping created"));
-                self.refresh_data(gx).await;
+                self.load_db_data(gx).await;
             }
             Err(e) => {
                 log::error!("Failed to create field mapping: {}", e);
@@ -319,7 +319,7 @@ impl MigrationEditor {
         match repo.delete_field_mapping(field_mapping_id).await {
             Ok(()) => {
                 gx.toast(Toast::info("Field mapping deleted"));
-                self.refresh_data(gx).await;
+                self.load_db_data(gx).await;
 
                 if let Some(key) = next_focus {
                     cx.focus(&format!("migration-tree-node-{}", key));
@@ -364,7 +364,7 @@ impl MigrationEditor {
         let repo = gx.data::<MigrationRepository>();
         match repo.reorder_field_mappings(entity_mapping_id, ordered_ids).await {
             Ok(()) => {
-                self.refresh_data(gx).await;
+                self.load_db_data(gx).await;
             }
             Err(e) => {
                 log::error!("Failed to reorder field mappings: {}", e);

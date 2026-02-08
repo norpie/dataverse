@@ -508,55 +508,39 @@ pub fn transform_display_text(data: &TransformData) -> String {
     }
 }
 
-/// Aggregated type tracking result across all chains in the migration.
-#[derive(Debug, Clone, Default)]
-pub struct TypeTrackingResult {
+/// Internal type tracking state accumulated during tree building.
+///
+/// This is NOT exposed outside the tree module. Type data is embedded
+/// directly on tree nodes (`TransformNode.output_type`, `.warning`,
+/// `FieldMappingNode.target_type`, `.warning`).
+#[derive(Debug, Default)]
+struct TypeAccumulator {
     /// Transform ID -> output type after that transform.
-    pub transform_types: HashMap<i64, ValueType>,
-    /// Transform ID -> input type (#value) going into that transform.
-    pub transform_input_types: HashMap<i64, ValueType>,
+    transform_types: HashMap<i64, ValueType>,
     /// All type warnings across all chains.
-    pub warnings: Vec<TypeWarning>,
+    warnings: Vec<TypeWarning>,
     /// Variable name -> resolved output type of its chain.
-    pub variable_types: HashMap<String, ValueType>,
-    /// Field mapping ID -> warning if chain output doesn't match target field type.
-    pub field_mapping_warnings: HashMap<i64, FieldMappingWarning>,
+    variable_types: HashMap<String, ValueType>,
 }
 
-impl TypeTrackingResult {
+impl TypeAccumulator {
     /// Get the output type for a transform.
-    pub fn type_for(&self, transform_id: i64) -> Option<&ValueType> {
+    fn type_for(&self, transform_id: i64) -> Option<&ValueType> {
         self.transform_types.get(&transform_id)
     }
 
-    /// Get the input type (#value) for a transform.
-    pub fn input_type_for(&self, transform_id: i64) -> Option<&ValueType> {
-        self.transform_input_types.get(&transform_id)
-    }
-
-    /// Check if a transform has a type warning.
-    pub fn has_warning_for(&self, transform_id: i64) -> bool {
-        self.warnings.iter().any(|w| w.transform_id == transform_id)
-    }
-
     /// Get the warning for a transform, if any.
-    pub fn warning_for(&self, transform_id: i64) -> Option<&TypeWarning> {
+    fn warning_for(&self, transform_id: i64) -> Option<&TypeWarning> {
         self.warnings
             .iter()
             .find(|w| w.transform_id == transform_id)
     }
 
-    /// Merge a chain type result into this aggregate.
+    /// Merge a chain type result into this accumulator.
     fn merge(&mut self, chain_result: &ChainTypeResult) {
         self.transform_types.extend(
             chain_result
                 .transform_types
-                .iter()
-                .map(|(k, v)| (*k, v.clone())),
-        );
-        self.transform_input_types.extend(
-            chain_result
-                .transform_input_types
                 .iter()
                 .map(|(k, v)| (*k, v.clone())),
         );
@@ -622,7 +606,7 @@ impl<'a> TreeLookup<'a> {
     }
 }
 
-/// Context for building the tree, holding lookup data and mutable type tracking.
+/// Context for building the tree, holding lookup data and mutable type accumulator.
 struct TreeBuildContext<'a> {
     lookup: TreeLookup<'a>,
     /// Entity mappings for looking up source entity names.
@@ -631,8 +615,8 @@ struct TreeBuildContext<'a> {
     field_type_cache: &'a FieldTypeCache,
     /// Cached field types per target entity (for target field type checking).
     target_field_cache: &'a FieldTypeCache,
-    /// Mutable type tracking result, populated during tree building.
-    type_tracking: TypeTrackingResult,
+    /// Internal type accumulator, populated during tree building.
+    types: TypeAccumulator,
 }
 
 impl<'a> TreeBuildContext<'a> {
@@ -656,7 +640,9 @@ impl<'a> TreeBuildContext<'a> {
 }
 
 /// Build tree nodes from all migration data.
-/// Returns the tree nodes and the type tracking result.
+///
+/// Type tracking is performed internally — type data is embedded directly
+/// on `TransformNode` and `FieldMappingNode` tree nodes.
 pub fn build_tree_nodes(
     phases: Vec<Phase>,
     entity_mappings: Vec<EntityMapping>,
@@ -668,7 +654,7 @@ pub fn build_tree_nodes(
     find_conditions: Vec<FindCondition>,
     field_type_cache: &FieldTypeCache,
     target_field_cache: &FieldTypeCache,
-) -> (Vec<TreeNode<MigrationTreeNode>>, TypeTrackingResult) {
+) -> Vec<TreeNode<MigrationTreeNode>> {
     let mut ctx = TreeBuildContext {
         lookup: TreeLookup {
             transforms: &transforms,
@@ -679,7 +665,7 @@ pub fn build_tree_nodes(
         entity_mappings: &entity_mappings,
         field_type_cache,
         target_field_cache,
-        type_tracking: TypeTrackingResult::default(),
+        types: TypeAccumulator::default(),
     };
 
     let nodes = phases
@@ -708,7 +694,7 @@ pub fn build_tree_nodes(
         })
         .collect();
 
-    (nodes, ctx.type_tracking)
+    nodes
 }
 
 /// Build a tree node for an entity mapping with its child config nodes.
@@ -806,23 +792,23 @@ fn build_variable_node(v: Variable, ctx: &mut TreeBuildContext) -> TreeNode<Migr
     let transforms = ctx.lookup.get_transforms(ParentType::Variable, v.id);
     let var_name = v.name.clone();
 
+    // Record variable declared type for use in later chains (copy($var))
+    log::debug!(
+        "type_tracking: variable ${} declared as {:?}",
+        var_name,
+        v.declared_type,
+    );
+    ctx.types
+        .variable_types
+        .insert(var_name, v.declared_type.clone());
+
     if transforms.is_empty() {
         TreeNode::leaf(MigrationTreeNode::Variable(v))
     } else {
         // Compute types for this chain
         let source_entity = ctx.source_entity_for(v.entity_mapping_id);
         let chain_result = compute_chain_types(&transforms, source_entity, ctx);
-
-        // Record variable declared type for use in later chains (copy($var))
-        log::debug!(
-            "type_tracking: variable ${} declared as {:?}",
-            var_name,
-            v.declared_type,
-        );
-        ctx.type_tracking
-            .variable_types
-            .insert(var_name, v.declared_type.clone());
-        ctx.type_tracking.merge(&chain_result);
+        ctx.types.merge(&chain_result);
 
         let transform_nodes: Vec<TreeNode<MigrationTreeNode>> = transforms
             .into_iter()
@@ -861,7 +847,7 @@ fn build_field_mapping_node(
             target_entity,
         );
         let chain_result = compute_chain_types(&transforms, &source_entity, ctx);
-        ctx.type_tracking.merge(&chain_result);
+        ctx.types.merge(&chain_result);
 
         // Check chain output against target field type
         let warning = check_field_mapping_output(
@@ -871,11 +857,7 @@ fn build_field_mapping_node(
             &chain_result.output_type,
             ctx,
         );
-        if let Some(ref w) = warning {
-            ctx.type_tracking
-                .field_mapping_warnings
-                .insert(fm.id, w.clone());
-        }
+        // Warning is embedded directly on FieldMappingNode below
 
         let fmn = FieldMappingNode {
             field_mapping: fm,
@@ -940,8 +922,8 @@ fn check_field_mapping_output(
 
 /// Create a `MigrationTreeNode::Transform` with embedded type tracking data.
 fn make_transform_node(t: Transform, ctx: &TreeBuildContext) -> MigrationTreeNode {
-    let output_type = ctx.type_tracking.type_for(t.id).cloned();
-    let warning = ctx.type_tracking.warning_for(t.id).cloned();
+    let output_type = ctx.types.type_for(t.id).cloned();
+    let warning = ctx.types.warning_for(t.id).cloned();
     log::debug!(
         "type_tracking: tree node for transform {} -> type={:?}, warning={}",
         t.id,
@@ -988,13 +970,13 @@ fn build_transform_node(t: Transform, ctx: &mut TreeBuildContext) -> TreeNode<Mi
                         let branch_result =
                             compute_chain_types(&branch_transforms, &source_entity, ctx);
                         branch_output_types.push(branch_result.output_type.clone());
-                        ctx.type_tracking.merge(&branch_result);
+                        ctx.types.merge(&branch_result);
                     }
                 }
                 // Store the union type for the match transform itself
                 if !branch_output_types.is_empty() {
                     let union_type = resolve_branch_union(&branch_output_types);
-                    ctx.type_tracking.transform_types.insert(t.id, union_type);
+                    ctx.types.transform_types.insert(t.id, union_type);
                 }
 
                 let node = make_transform_node(t, ctx);
@@ -1020,13 +1002,13 @@ fn build_transform_node(t: Transform, ctx: &mut TreeBuildContext) -> TreeNode<Mi
                         let chain_result =
                             compute_chain_types(&chain_transforms, &source_entity, ctx);
                         chain_output_types.push(chain_result.output_type.clone());
-                        ctx.type_tracking.merge(&chain_result);
+                        ctx.types.merge(&chain_result);
                     }
                 }
                 // Store the union type for the coalesce transform itself
                 if !chain_output_types.is_empty() {
                     let union_type = resolve_branch_union(&chain_output_types);
-                    ctx.type_tracking.transform_types.insert(t.id, union_type);
+                    ctx.types.transform_types.insert(t.id, union_type);
                 }
 
                 let node = make_transform_node(t, ctx);
@@ -1051,7 +1033,7 @@ fn build_transform_node(t: Transform, ctx: &mut TreeBuildContext) -> TreeNode<Mi
                         if !cond_transforms.is_empty() {
                             let cond_result =
                                 compute_chain_types(&cond_transforms, &source_entity, ctx);
-                            ctx.type_tracking.merge(&cond_result);
+                            ctx.types.merge(&cond_result);
                         }
                     }
 
@@ -1171,7 +1153,7 @@ fn compute_chain_types(
     source_entity: &str,
     ctx: &TreeBuildContext,
 ) -> ChainTypeResult {
-    let variable_types = &ctx.type_tracking.variable_types;
+    let variable_types = &ctx.types.variable_types;
     let field_types = ctx.field_type_cache.get(source_entity);
 
     propagate_chain_types(transforms, |data, current_type| {

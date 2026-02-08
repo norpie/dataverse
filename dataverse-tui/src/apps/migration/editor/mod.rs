@@ -16,10 +16,6 @@ use rafter::widgets::Button;
 use rafter::widgets::Text;
 use rafter::widgets::Tree;
 use rafter::widgets::TreeState;
-use tuidom::Color;
-use tuidom::Style;
-
-use crate::apps::migration::repository::MigrationRepository;
 use crate::apps::migration::types::CoalesceChain;
 use crate::apps::migration::types::EntityMapping;
 use crate::apps::migration::types::FieldMapping;
@@ -31,11 +27,7 @@ use crate::apps::migration::types::Phase;
 use crate::apps::migration::types::Transform;
 use crate::apps::migration::types::Variable;
 
-use tree::build_tree_nodes;
-use tree::FieldTypeCache;
 use tree::MigrationTreeNode;
-use tree::TransformNode;
-use tree::TypeTrackingResult;
 
 /// Migration editor app.
 #[app(name = "Migration Editor", on_blur = Continue)]
@@ -64,12 +56,6 @@ pub struct MigrationEditor {
     coalesce_chains: Vec<CoalesceChain>,
     /// All find conditions (for tree building).
     find_conditions: Vec<FindCondition>,
-    /// Type tracking result (computed during tree building).
-    type_tracking: TypeTrackingResult,
-    /// Cached field types per source entity (for type tracking).
-    field_type_cache: FieldTypeCache,
-    /// Cached field types per target entity (for target field type checking).
-    target_field_cache: FieldTypeCache,
 }
 
 impl MigrationEditor {
@@ -84,17 +70,14 @@ impl MigrationEditor {
             source_client,
             target_client,
             TreeState::default(),
-            Vec::new(),                    // phases
-            Vec::new(),                    // entity_mappings
-            Vec::new(),                    // variables
-            Vec::new(),                    // field_mappings
-            Vec::new(),                    // transforms
-            Vec::new(),                    // match_branches
-            Vec::new(),                    // coalesce_chains
-            Vec::new(),                    // find_conditions
-            TypeTrackingResult::default(), // type_tracking
-            FieldTypeCache::default(),     // field_type_cache
-            FieldTypeCache::default(),     // target_field_cache
+            Vec::new(), // phases
+            Vec::new(), // entity_mappings
+            Vec::new(), // variables
+            Vec::new(), // field_mappings
+            Vec::new(), // transforms
+            Vec::new(), // match_branches
+            Vec::new(), // coalesce_chains
+            Vec::new(), // find_conditions
         )
     }
 }
@@ -103,77 +86,130 @@ impl MigrationEditor {
 impl MigrationEditor {
     #[on_start]
     async fn on_start(&self, gx: &GlobalContext) {
-        let migration_id = self.migration.get().id;
-        let repo = gx.data::<MigrationRepository>();
+        self.load_db_data(gx).await;
+    }
 
-        // Load all data with bulk queries (8 queries total, no N+1)
-        match repo.get_phases(migration_id).await {
-            Ok(phases) => self.phases.set(phases),
-            Err(e) => {
-                log::error!("Failed to load phases: {}", e);
-                gx.toast(Toast::error("Failed to load phases"));
+    /// Reactive rebuild: auto-triggers whenever any of the 8 data Vec fields change.
+    /// Fetches entity metadata, discovers navigation entities, builds the tree.
+    #[watch]
+    async fn rebuild(&self, gx: &GlobalContext) {
+        use helpers::collect_dotted_copy_paths;
+        use helpers::discover_navigation_entities;
+        use helpers::fetch_entity_field_types;
+        use tree::build_tree_nodes;
+        use tree::FieldTypeCache;
+
+        // 1. Read all dependencies (registers for change detection)
+        let phases = self.phases.get();
+        let entity_mappings = self.entity_mappings.get();
+        let variables = self.variables.get();
+        let field_mappings = self.field_mappings.get();
+        let transforms = self.transforms.get();
+        let match_branches = self.match_branches.get();
+        let coalesce_chains = self.coalesce_chains.get();
+        let find_conditions = self.find_conditions.get();
+
+        // 2. Collect unique entity names
+        let mut source_entities: Vec<String> = Vec::new();
+        let mut target_entities: Vec<String> = Vec::new();
+        for em in entity_mappings.iter() {
+            if !em.source_entity.is_empty() && !source_entities.contains(&em.source_entity) {
+                source_entities.push(em.source_entity.clone());
+            }
+            if !em.target_entity.is_empty() && !target_entities.contains(&em.target_entity) {
+                target_entities.push(em.target_entity.clone());
             }
         }
 
-        match repo.get_entity_mappings_by_migration(migration_id).await {
-            Ok(mappings) => self.entity_mappings.set(mappings),
-            Err(e) => {
-                log::error!("Failed to load entity mappings: {}", e);
-                gx.toast(Toast::error("Failed to load entity mappings"));
+        // 3. Fetch metadata (DataverseClient has API-level cache with TTL)
+        let source_client = self.source_client.get().clone();
+        let target_client = self.target_client.get().clone();
+
+        let mut source_field_types = if source_entities.is_empty() {
+            FieldTypeCache::new()
+        } else {
+            log::debug!(
+                "watch rebuild: fetching metadata for {} source entities",
+                source_entities.len(),
+            );
+            let result: FieldTypeCache = gx
+                .modal(crate::modals::LoadingModal::run(
+                    "Loading source entity metadata...",
+                    fetch_entity_field_types(source_client.clone(), source_entities),
+                ))
+                .await;
+            result
+        };
+
+        // 4. Discover and fetch navigation entities (dotted copy paths)
+        let dotted_paths = collect_dotted_copy_paths(&transforms);
+        if !dotted_paths.is_empty() {
+            log::debug!(
+                "watch rebuild: found {} dotted copy paths for navigation scanning",
+                dotted_paths.len(),
+            );
+            loop {
+                let nav_entities =
+                    discover_navigation_entities(&dotted_paths, &entity_mappings, &source_field_types);
+                if nav_entities.is_empty() {
+                    break;
+                }
+                log::debug!(
+                    "watch rebuild: fetching metadata for {} navigation entities: {:?}",
+                    nav_entities.len(),
+                    nav_entities,
+                );
+                let result: FieldTypeCache = gx
+                    .modal(crate::modals::LoadingModal::run(
+                        "Loading navigation entity metadata...",
+                        fetch_entity_field_types(source_client.clone(), nav_entities),
+                    ))
+                    .await;
+                let fetched_any = !result.is_empty();
+                for (entity, fields) in result {
+                    source_field_types.insert(entity, fields);
+                }
+                if !fetched_any {
+                    break;
+                }
             }
         }
 
-        match repo.get_variables_by_migration(migration_id).await {
-            Ok(vars) => self.variables.set(vars),
-            Err(e) => {
-                log::error!("Failed to load variables: {}", e);
-                gx.toast(Toast::error("Failed to load variables"));
-            }
-        }
+        let target_field_types = if target_entities.is_empty() {
+            FieldTypeCache::new()
+        } else {
+            log::debug!(
+                "watch rebuild: fetching metadata for {} target entities",
+                target_entities.len(),
+            );
+            let result: FieldTypeCache = gx
+                .modal(crate::modals::LoadingModal::run(
+                    "Loading target entity metadata...",
+                    fetch_entity_field_types(target_client, target_entities),
+                ))
+                .await;
+            result
+        };
 
-        match repo.get_field_mappings_by_migration(migration_id).await {
-            Ok(fms) => self.field_mappings.set(fms),
-            Err(e) => {
-                log::error!("Failed to load field mappings: {}", e);
-                gx.toast(Toast::error("Failed to load field mappings"));
-            }
-        }
+        // 5. Build tree — type tracking is embedded in tree nodes
+        let nodes = build_tree_nodes(
+            phases,
+            entity_mappings,
+            variables,
+            field_mappings,
+            transforms,
+            match_branches,
+            coalesce_chains,
+            find_conditions,
+            &source_field_types,
+            &target_field_types,
+        );
 
-        match repo.get_transforms_by_migration(migration_id).await {
-            Ok(transforms) => self.transforms.set(transforms),
-            Err(e) => {
-                log::error!("Failed to load transforms: {}", e);
-                gx.toast(Toast::error("Failed to load transforms"));
-            }
-        }
-
-        match repo.get_match_branches_by_migration(migration_id).await {
-            Ok(branches) => self.match_branches.set(branches),
-            Err(e) => {
-                log::error!("Failed to load match branches: {}", e);
-                gx.toast(Toast::error("Failed to load match branches"));
-            }
-        }
-
-        match repo.get_coalesce_chains_by_migration(migration_id).await {
-            Ok(chains) => self.coalesce_chains.set(chains),
-            Err(e) => {
-                log::error!("Failed to load coalesce chains: {}", e);
-                gx.toast(Toast::error("Failed to load coalesce chains"));
-            }
-        }
-
-        match repo.get_find_conditions_by_migration(migration_id).await {
-            Ok(conditions) => self.find_conditions.set(conditions),
-            Err(e) => {
-                log::error!("Failed to load find conditions: {}", e);
-                gx.toast(Toast::error("Failed to load find conditions"));
-            }
-        }
-
-        // Fetch metadata for source entities and build tree
-        self.fetch_missing_metadata(gx).await;
-        self.rebuild_tree();
+        // 6. Update tree
+        self.tree_state.update(|s| {
+            s.set_roots(nodes);
+            s.expand_all();
+        });
     }
 
     fn title(&self) -> String {

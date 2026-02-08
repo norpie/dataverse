@@ -36,7 +36,6 @@ use crate::apps::migration::types::SystemVar;
 use crate::apps::migration::types::Transform;
 use crate::apps::migration::types::TransformData;
 use crate::modals::ConfirmModal;
-use crate::modals::LoadingModal;
 
 use super::tree::MigrationTreeNode;
 use super::MigrationEditor;
@@ -107,7 +106,7 @@ impl MigrationEditor {
                         .await;
                 }
 
-                self.refresh_data(gx).await;
+                self.load_db_data(gx).await;
             }
             Err(e) => {
                 log::error!("Failed to create transform: {}", e);
@@ -384,8 +383,8 @@ impl MigrationEditor {
 
     /// Get the input type at the insert position.
     ///
-    /// If inserting after an existing transform, returns that transform's output type.
-    /// If inserting at position 0 (start of chain), returns `Null`.
+    /// If inserting after an existing transform, returns that transform's output type
+    /// by looking it up in the tree. If inserting at position 0, returns `Null`.
     fn resolve_input_type_at(&self, target: &InsertTarget) -> ValueType {
         if target.insert_order == 0 {
             return ValueType::Null;
@@ -405,13 +404,17 @@ impl MigrationEditor {
             .last();
 
         match prev_transform {
-            Some(t) => self
-                .type_tracking
-                .get()
-                .transform_types
-                .get(&t.id)
-                .cloned()
-                .unwrap_or(ValueType::Null),
+            Some(t) => {
+                // Look up the transform node in the tree to get its output_type
+                let key = format!("transform-{}", t.id);
+                self.tree_state
+                    .with_ref(|s| {
+                        s.find_node(&key)
+                            .and_then(|node| node.value.as_transform_node())
+                            .and_then(|tn| tn.output_type.clone())
+                    })
+                    .unwrap_or(ValueType::Null)
+            }
             None => ValueType::Null,
         }
     }
@@ -446,25 +449,14 @@ impl MigrationEditor {
                 Self::extract_option_set_info(&variable.declared_type)
             }
             ParentType::FieldMapping => {
-                // Look up the field mapping's target field type from the target field cache
-                let field_mappings = self.field_mappings.get();
-                let fm = field_mappings.iter().find(|fm| fm.id == target.parent_id)?;
-                let target_entity = self
-                    .entity_mappings
-                    .get()
-                    .iter()
-                    .find(|em| em.id == fm.entity_mapping_id)
-                    .map(|em| em.target_entity.clone())?;
-                let target_field_types = self.target_field_cache.get();
-                let entity_fields = target_field_types.get(&target_entity)?;
-                let field_type = entity_fields.get(&fm.target_field)?;
-                match field_type {
-                    FieldType::OptionSet { kind, name } => Some(OptionSetInfo {
-                        kind: *kind,
-                        name: name.clone(),
-                    }),
-                    _ => None,
-                }
+                // Look up the field mapping node in the tree to get its target_type
+                let key = format!("field-mapping-{}", target.parent_id);
+                let target_type = self.tree_state.with_ref(|s| {
+                    s.find_node(&key)
+                        .and_then(|node| node.value.as_field_mapping_node())
+                        .and_then(|fmn| fmn.target_type.clone())
+                })?;
+                Self::extract_option_set_info(&target_type)
             }
             ParentType::MatchBranch => {
                 // Walk up: MatchBranch → parent Transform → its parent (FieldMapping/Variable)
@@ -786,7 +778,7 @@ impl MigrationEditor {
                 }
 
                 gx.toast(Toast::info("Transform deleted"));
-                self.refresh_data(gx).await;
+                self.load_db_data(gx).await;
 
                 if let Some(key) = next_focus {
                     cx.focus(&format!("migration-tree-node-{}", key));
@@ -851,7 +843,7 @@ impl MigrationEditor {
             .await
         {
             Ok(()) => {
-                self.refresh_data(gx).await;
+                self.load_db_data(gx).await;
             }
             Err(e) => {
                 log::error!("Failed to reorder transforms: {}", e);
@@ -1057,7 +1049,7 @@ impl MigrationEditor {
         {
             Ok(()) => {
                 gx.toast(Toast::info("Transform updated"));
-                self.refresh_data(gx).await;
+                self.load_db_data(gx).await;
             }
             Err(e) => {
                 log::error!("Failed to update transform: {}", e);

@@ -147,7 +147,7 @@ impl MigrationEditor {
         match repo.create_entity_mapping(new_mapping).await {
             Ok(_id) => {
                 gx.toast(Toast::info("Entity mapping created"));
-                self.refresh_data(gx).await;
+                self.load_db_data(gx).await;
             }
             Err(e) => {
                 log::error!("Failed to create entity mapping: {}", e);
@@ -274,7 +274,7 @@ impl MigrationEditor {
 
         match repo.update_entity_mapping(em.id, update).await {
             Ok(()) => {
-                self.refresh_data(gx).await;
+                self.load_db_data(gx).await;
             }
             Err(e) => {
                 log::error!("Failed to update entity mapping: {}", e);
@@ -332,7 +332,7 @@ impl MigrationEditor {
         match repo.delete_entity_mapping(entity_id).await {
             Ok(()) => {
                 gx.toast(Toast::info("Entity mapping deleted"));
-                self.refresh_data(gx).await;
+                self.load_db_data(gx).await;
 
                 // Focus next item
                 if let Some(key) = next_focus {

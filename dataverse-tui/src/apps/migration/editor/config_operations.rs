@@ -63,7 +63,7 @@ impl MigrationEditor {
         match repo.update_entity_mapping(entity_mapping_id, update).await {
             Ok(()) => {
                 gx.toast(Toast::info("Test GUIDs updated"));
-                self.refresh_data(gx).await;
+                self.load_db_data(gx).await;
             }
             Err(e) => {
                 log::error!("Failed to update test GUIDs: {}", e);
@@ -125,7 +125,7 @@ impl MigrationEditor {
         match repo.update_entity_mapping(entity_mapping_id, update).await {
             Ok(()) => {
                 gx.toast(Toast::info("Passes updated"));
-                self.refresh_data(gx).await;
+                self.load_db_data(gx).await;
             }
             Err(e) => {
                 log::error!("Failed to update passes: {}", e);
@@ -187,7 +187,7 @@ impl MigrationEditor {
         match repo.update_entity_mapping(entity_mapping_id, update).await {
             Ok(()) => {
                 gx.toast(Toast::info("Unmatched handling updated"));
-                self.refresh_data(gx).await;
+                self.load_db_data(gx).await;
             }
             Err(e) => {
                 log::error!("Failed to update unmatched handling: {}", e);
@@ -287,7 +287,7 @@ impl MigrationEditor {
         match repo.update_entity_mapping(entity_mapping_id, update).await {
             Ok(()) => {
                 gx.toast(Toast::info("Source filter updated"));
-                self.refresh_data(gx).await;
+                self.load_db_data(gx).await;
             }
             Err(e) => {
                 log::error!("Failed to update source filter: {}", e);
@@ -387,7 +387,7 @@ impl MigrationEditor {
         match repo.update_entity_mapping(entity_mapping_id, update).await {
             Ok(()) => {
                 gx.toast(Toast::info("Target filter updated"));
-                self.refresh_data(gx).await;
+                self.load_db_data(gx).await;
             }
             Err(e) => {
                 log::error!("Failed to update target filter: {}", e);
