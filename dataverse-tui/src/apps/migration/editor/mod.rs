@@ -462,7 +462,7 @@ impl MigrationEditor {
                 text (content: {self.title()}) style (bold, fg: interact)
 
                 row (width: fill, height: fill) {
-                    row (width: fill, height: fill) {
+                    row (width: {tuidom::Size::Flex(3)}, height: fill) {
                         box_ (id: "migration-tree-container", height: fill, width: fill) style (bg: surface) {
                             tree (state: self.tree_state, id: "migration-tree", width: fill, height: fill)
                                 on_activate: edit_item()
@@ -470,7 +470,7 @@ impl MigrationEditor {
                         column (width: 1)
                     }
 
-                    column (padding: 1, width: fill, height: fill) style (bg: surface) {
+                    column (padding: 1, width: {tuidom::Size::Flex(2)}, height: fill) style (bg: surface) {
                         match focused {
                             None => {
                                 column (width: fill, height: fill, justify: center, align: center) {
