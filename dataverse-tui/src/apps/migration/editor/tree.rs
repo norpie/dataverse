@@ -16,13 +16,17 @@ use crate::apps::migration::types::resolve_branch_union;
 use crate::apps::migration::types::ChainOutputWarning;
 use crate::apps::migration::types::ChainTypeResult;
 use crate::apps::migration::types::CoalesceChain;
+use crate::apps::migration::types::CompareOp;
+use crate::apps::migration::types::Condition;
 use crate::apps::migration::types::EntityMapping;
+use crate::apps::migration::types::Expr;
 use crate::apps::migration::types::FieldMapping;
 use crate::apps::migration::types::FindCondition;
 use crate::apps::migration::types::MatchBranch;
 use crate::apps::migration::types::Mode;
 use crate::apps::migration::types::ParentType;
 use crate::apps::migration::types::Phase;
+use crate::apps::migration::types::SystemVar;
 use crate::apps::migration::types::Transform;
 use crate::apps::migration::types::TransformData;
 use crate::apps::migration::types::TypeWarning;
@@ -513,9 +517,8 @@ pub fn transform_display_text(data: &TransformData) -> String {
             };
             format!("math ({})", op_str)
         }
-        TransformData::Guard { condition: _ } => {
-            // TODO: Show condition summary when condition display is implemented
-            "guard (...)".to_string()
+        TransformData::Guard { condition } => {
+            format!("guard ({})", condition_summary(condition))
         }
         TransformData::Match => "match".to_string(),
         TransformData::Coalesce => "coalesce".to_string(),
@@ -526,6 +529,66 @@ pub fn transform_display_text(data: &TransformData) -> String {
         } => {
             format!("find ({})", entity)
         }
+    }
+}
+
+/// Produce a short summary of a condition for display in tree nodes.
+fn condition_summary(condition: &Condition) -> String {
+    match condition {
+        Condition::IsNull(expr) => format!("{} is null", expr_short(expr)),
+        Condition::IsNotNull(expr) => format!("{} is not null", expr_short(expr)),
+        Condition::Compare { left, op, right } => {
+            let op_str = match op {
+                CompareOp::Equal => "==",
+                CompareOp::NotEqual => "!=",
+                CompareOp::LessThan => "<",
+                CompareOp::LessThanOrEqual => "<=",
+                CompareOp::GreaterThan => ">",
+                CompareOp::GreaterThanOrEqual => ">=",
+            };
+            format!("{} {} {}", expr_short(left), op_str, expr_short(right))
+        }
+        Condition::Contains { value, substring } => {
+            format!("{} contains {}", expr_short(value), expr_short(substring))
+        }
+        Condition::StartsWith { value, prefix } => {
+            format!("{} starts with {}", expr_short(value), expr_short(prefix))
+        }
+        Condition::EndsWith { value, suffix } => {
+            format!("{} ends with {}", expr_short(value), expr_short(suffix))
+        }
+        Condition::And(conditions) => {
+            format!("({} conditions)", conditions.len())
+        }
+        Condition::Or(conditions) => {
+            format!("({} conditions)", conditions.len())
+        }
+        Condition::Not(inner) => {
+            format!("not ({})", condition_summary(inner))
+        }
+    }
+}
+
+/// Short display of an expression.
+fn expr_short(expr: &Expr) -> String {
+    match expr {
+        Expr::Path(p) => p.clone(),
+        Expr::Variable(v) => format!("${}", v),
+        Expr::SystemVar(sv) => match sv {
+            SystemVar::Value => "#value".to_string(),
+            SystemVar::Type => "#type".to_string(),
+            SystemVar::Index => "#index".to_string(),
+            SystemVar::SourceEntity => "#source_entity".to_string(),
+            SystemVar::TargetEntity => "#target_entity".to_string(),
+        },
+        Expr::Literal(v) => match v {
+            dataverse_lib::model::Value::String(s) => format!("\"{}\"", s),
+            dataverse_lib::model::Value::Int(n) => n.to_string(),
+            dataverse_lib::model::Value::Float(n) => n.to_string(),
+            dataverse_lib::model::Value::Bool(b) => b.to_string(),
+            dataverse_lib::model::Value::Null => "null".to_string(),
+            other => format!("{:?}", other),
+        },
     }
 }
 
@@ -1215,16 +1278,13 @@ fn compute_chain_types(
                         variable_types,
                         ctx,
                     ),
-                    Ok(PathExpr::SystemVar(sys_var)) => {
-                        use crate::apps::migration::types::SystemVar;
-                        match sys_var {
-                            SystemVar::Value => Some(current_type.clone()),
-                            SystemVar::Index => Some(ValueType::simple(AttributeType::Integer)),
-                            SystemVar::Type | SystemVar::SourceEntity | SystemVar::TargetEntity => {
-                                Some(ValueType::simple(AttributeType::String))
-                            }
+                    Ok(PathExpr::SystemVar(sys_var)) => match sys_var {
+                        SystemVar::Value => Some(current_type.clone()),
+                        SystemVar::Index => Some(ValueType::simple(AttributeType::Integer)),
+                        SystemVar::Type | SystemVar::SourceEntity | SystemVar::TargetEntity => {
+                            Some(ValueType::simple(AttributeType::String))
                         }
-                    }
+                    },
                     Ok(PathExpr::Field(_)) => {
                         // Field path - resolve from metadata cache.
                         resolve_field_path(path, source_entity, ctx)

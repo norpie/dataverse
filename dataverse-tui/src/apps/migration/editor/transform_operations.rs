@@ -12,6 +12,7 @@ use crate::apps::migration::modals::ConstantTransformModal;
 use crate::apps::migration::modals::ConvertTransformModal;
 use crate::apps::migration::modals::CopyTransformModal;
 use crate::apps::migration::modals::FormatTransformModal;
+use crate::apps::migration::modals::GuardTransformModal;
 use crate::apps::migration::modals::MathTransformModal;
 use crate::apps::migration::modals::ParseDateTransformModal;
 use crate::apps::migration::modals::VariableInfo;
@@ -227,10 +228,16 @@ impl MigrationEditor {
                     .map(|op| TransformData::Math { operation: op })
             }
             TransformType::Guard => {
-                // TODO: GuardTransformModal — for now create with default
-                Some(TransformData::Guard {
-                    condition: Condition::IsNull(Expr::SystemVar(SystemVar::Value)),
-                })
+                let default_condition = Condition::IsNull(Expr::SystemVar(SystemVar::Value));
+                let modal = GuardTransformModal::new_modal(
+                    self.source_client.get().clone(),
+                    source_entity,
+                    variables,
+                    default_condition,
+                );
+                gx.modal(modal)
+                    .await
+                    .map(|condition| TransformData::Guard { condition })
             }
             TransformType::Find => {
                 // TODO: FindTransformModal — for now create with default
@@ -1041,6 +1048,25 @@ impl MigrationEditor {
                     self.update_transform_data(
                         transform.id,
                         TransformData::Math { operation: new_op },
+                        gx,
+                    )
+                    .await;
+                }
+            }
+            TransformData::Guard { condition } => {
+                let modal = GuardTransformModal::new_modal(
+                    self.source_client.get().clone(),
+                    source_entity,
+                    variables,
+                    condition.clone(),
+                );
+
+                if let Some(new_condition) = gx.modal(modal).await {
+                    self.update_transform_data(
+                        transform.id,
+                        TransformData::Guard {
+                            condition: new_condition,
+                        },
                         gx,
                     )
                     .await;
