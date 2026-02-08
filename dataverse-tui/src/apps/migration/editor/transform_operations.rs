@@ -12,6 +12,7 @@ use crate::apps::migration::modals::ConstantTransformModal;
 use crate::apps::migration::modals::ConvertTransformModal;
 use crate::apps::migration::modals::CopyTransformModal;
 use crate::apps::migration::modals::FormatTransformModal;
+use crate::apps::migration::modals::MathTransformModal;
 use crate::apps::migration::modals::ParseDateTransformModal;
 use crate::apps::migration::modals::VariableInfo;
 use crate::apps::migration::modals::ReplaceTransformModal;
@@ -220,10 +221,10 @@ impl MigrationEditor {
                     .map(|format| TransformData::ParseDate { format })
             }
             TransformType::Math => {
-                // TODO: MathTransformModal — for now create with default
-                Some(TransformData::Math {
-                    operation: MathOp::Add(0.0),
-                })
+                let modal = MathTransformModal::new_modal(MathOp::Add(0.0));
+                gx.modal(modal)
+                    .await
+                    .map(|op| TransformData::Math { operation: op })
             }
             TransformType::Guard => {
                 // TODO: GuardTransformModal — for now create with default
@@ -1028,6 +1029,18 @@ impl MigrationEditor {
                             target: target.clone(),
                             mappings: new_mappings,
                         },
+                        gx,
+                    )
+                    .await;
+                }
+            }
+            TransformData::Math { operation } => {
+                let modal = MathTransformModal::new_modal(operation.clone());
+
+                if let Some(new_op) = gx.modal(modal).await {
+                    self.update_transform_data(
+                        transform.id,
+                        TransformData::Math { operation: new_op },
                         gx,
                     )
                     .await;

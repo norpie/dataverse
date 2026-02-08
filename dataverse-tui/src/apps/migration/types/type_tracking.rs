@@ -89,13 +89,16 @@ impl TransformData {
                 output: Some(ValueType::option_set(target.kind, target.name.clone())),
             },
 
-            // Math (numeric -> passthrough)
+            // Math (numeric -> numeric)
             TransformData::Math { .. } => TransformSignature {
                 input: Some(ValueType::Union(vec![
                     FieldType::Simple(AttributeType::Integer),
                     FieldType::Simple(AttributeType::Decimal),
                 ])),
-                output: None, // Passthrough
+                output: Some(ValueType::Union(vec![
+                    FieldType::Simple(AttributeType::Double),
+                    FieldType::Simple(AttributeType::Decimal),
+                ])),
             },
 
             // Control flow
