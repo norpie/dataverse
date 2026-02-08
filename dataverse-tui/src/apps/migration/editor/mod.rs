@@ -287,6 +287,12 @@ impl MigrationEditor {
                 // Match transform -> add branch
                 self.add_match_branch_impl(&tn.transform, gx).await;
             }
+            Some(MigrationTreeNode::Transform(ref tn))
+                if matches!(tn.transform.data, TransformData::Coalesce) =>
+            {
+                // Coalesce transform -> add fallback chain
+                self.add_coalesce_chain_impl(&tn.transform, gx).await;
+            }
             Some(MigrationTreeNode::Transform(..)) => {
                 // Transform selected -> add transform after it in the chain
                 self.add_transform_impl(gx).await;
@@ -346,6 +352,9 @@ impl MigrationEditor {
             Some(MigrationTreeNode::MatchBranch(mb)) => {
                 self.delete_match_branch_impl(&mb, cx, gx).await;
             }
+            Some(MigrationTreeNode::CoalesceChain(cc)) => {
+                self.delete_coalesce_chain_impl(&cc, cx, gx).await;
+            }
             // Other config nodes can't be deleted
             Some(_) | None => {}
         }
@@ -384,6 +393,9 @@ impl MigrationEditor {
             }
             MigrationTreeNode::MatchBranch(mb) => {
                 self.reorder_match_branch_impl(&mb, direction, gx).await;
+            }
+            MigrationTreeNode::CoalesceChain(cc) => {
+                self.reorder_coalesce_chain_impl(&cc, direction, gx).await;
             }
             // Other nodes don't support reordering (yet)
             _ => {}
@@ -442,7 +454,8 @@ impl MigrationEditor {
                 self.edit_match_branch_impl(&mb, gx).await;
             }
             MigrationTreeNode::CoalesceChain(_cc) => {
-                // Coalesce chains don't have configuration - just add transforms under them
+                // Coalesce chains have no config - Enter adds a transform
+                self.add_transform_impl(gx).await;
             }
             MigrationTreeNode::FindCondition(_fc) => {
                 // TODO: Open find condition editor (target_field edit)
@@ -473,6 +486,11 @@ impl MigrationEditor {
             {
                 (true, "Add Branch")
             }
+            Some(MigrationTreeNode::Transform(tn))
+                if matches!(tn.transform.data, TransformData::Coalesce) =>
+            {
+                (true, "Add Fallback")
+            }
             Some(MigrationTreeNode::Transform(..)) => (true, "Add Transform"),
             Some(MigrationTreeNode::MatchBranch(_)) => (true, "Add Transform"),
             Some(MigrationTreeNode::CoalesceChain(_)) => (true, "Add Transform"),
@@ -480,6 +498,11 @@ impl MigrationEditor {
             Some(MigrationTreeNode::MatchDefault { .. }) => (true, "Add Transform"),
             Some(MigrationTreeNode::Chain { .. }) => (true, "Add Transform"),
             Some(_) => (false, "Add"), // Other config nodes - can't add
+        };
+
+        let edit_label = match &focused {
+            Some(MigrationTreeNode::CoalesceChain(_)) => "Add Transform",
+            _ => "Edit",
         };
 
         page! {
@@ -601,7 +624,7 @@ impl MigrationEditor {
                     row (gap: 1) {
                         button (label: {add_label}, hint: "a", id: "add-btn", disabled: {!can_add}) on_activate: add_item()
                         if has_selection {
-                            button (label: "Edit", hint: "enter", id: "edit-btn") on_activate: edit_item()
+                            button (label: {edit_label}, hint: "enter", id: "edit-btn") on_activate: edit_item()
                         }
                         if has_selection {
                             button (label: "Delete", hint: "d", id: "delete-btn") on_activate: delete_item()

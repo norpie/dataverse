@@ -430,7 +430,7 @@ impl TreeItem for MigrationTreeNode {
             Self::CoalesceChain(cc) => {
                 let label = format!("Fallback {}", cc.order + 1);
                 element! {
-                    text (content: {label}) style (fg: muted)
+                    text (content: {label}) style (fg: primary)
                 }
             }
             Self::FindCondition(fc) => {
@@ -1224,12 +1224,16 @@ fn build_coalesce_chain_node(
     ctx: &mut TreeBuildContext,
 ) -> TreeNode<MigrationTreeNode> {
     let transforms = ctx.lookup.get_transforms(ParentType::CoalesceChain, cc.id);
-    build_nested_chain_node(
-        MigrationTreeNode::CoalesceChain(cc),
-        ParentType::CoalesceChain,
-        transforms,
-        ctx,
-    )
+    if transforms.is_empty() {
+        TreeNode::leaf(MigrationTreeNode::CoalesceChain(cc))
+    } else {
+        // Always show transforms directly under the chain node (no Chain wrapper)
+        let children: Vec<TreeNode<MigrationTreeNode>> = transforms
+            .into_iter()
+            .map(|t| build_transform_node(t, ctx))
+            .collect();
+        TreeNode::branch(MigrationTreeNode::CoalesceChain(cc), children)
+    }
 }
 
 /// Build a tree node for a find condition with its transforms.

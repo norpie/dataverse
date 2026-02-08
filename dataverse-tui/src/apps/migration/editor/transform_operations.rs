@@ -23,6 +23,7 @@ use crate::apps::migration::modals::StringOpsTransformModal;
 use crate::apps::migration::modals::TransformType;
 use crate::apps::migration::modals::ValueMapTransformModal;
 use crate::apps::migration::repository::MigrationRepository;
+use crate::apps::migration::repository::NewCoalesceChain;
 use crate::apps::migration::repository::NewMatchBranch;
 use crate::apps::migration::repository::NewTransform;
 use crate::apps::migration::repository::UpdateMatchBranch;
@@ -1144,6 +1145,10 @@ impl MigrationEditor {
                     .await;
                 }
             }
+            TransformData::Coalesce => {
+                // Coalesce has no config — Enter adds a fallback chain
+                self.add_coalesce_chain_impl(transform, gx).await;
+            }
             // Other transform types - show toast for now
             _ => {
                 gx.toast(Toast::info(
@@ -1403,6 +1408,145 @@ impl MigrationEditor {
             Err(e) => {
                 log::error!("Failed to reorder match branches: {}", e);
                 gx.toast(Toast::error("Failed to reorder branches"));
+            }
+        }
+    }
+
+    // =========================================================================
+    // Coalesce Chain Operations
+    // =========================================================================
+
+    /// Add a new fallback chain to a coalesce transform.
+    pub(super) async fn add_coalesce_chain_impl(
+        &self,
+        transform: &Transform,
+        gx: &GlobalContext,
+    ) {
+        let chains = self.coalesce_chains.get();
+        let order = chains
+            .iter()
+            .filter(|cc| cc.transform_id == transform.id)
+            .count() as i32;
+
+        let repo = gx.data::<MigrationRepository>();
+        match repo
+            .create_coalesce_chain(NewCoalesceChain {
+                transform_id: transform.id,
+                order,
+            })
+            .await
+        {
+            Ok(_id) => {
+                gx.toast(Toast::info("Fallback chain added"));
+                self.load_db_data(gx).await;
+            }
+            Err(e) => {
+                log::error!("Failed to create coalesce chain: {}", e);
+                gx.toast(Toast::error("Failed to create fallback chain"));
+            }
+        }
+    }
+
+    /// Delete a coalesce chain and its child transforms.
+    pub(super) async fn delete_coalesce_chain_impl(
+        &self,
+        chain: &CoalesceChain,
+        cx: &AppContext,
+        gx: &GlobalContext,
+    ) {
+        let chains = self.coalesce_chains.get();
+        let siblings: Vec<_> = chains
+            .iter()
+            .filter(|cc| cc.transform_id == chain.transform_id)
+            .collect();
+        let current_idx = siblings.iter().position(|cc| cc.id == chain.id);
+
+        let next_focus = current_idx.and_then(|idx| {
+            if idx > 0 {
+                siblings
+                    .get(idx - 1)
+                    .map(|cc| format!("coalesce-chain-{}", cc.id))
+            } else if idx + 1 < siblings.len() {
+                siblings
+                    .get(idx + 1)
+                    .map(|cc| format!("coalesce-chain-{}", cc.id))
+            } else {
+                Some(format!("transform-{}", chain.transform_id))
+            }
+        });
+
+        let confirmed = gx
+            .modal(ConfirmModal::with_message(
+                "Delete this fallback chain and its transforms?",
+            ))
+            .await;
+
+        if !confirmed {
+            return;
+        }
+
+        let repo = gx.data::<MigrationRepository>();
+        match repo.delete_coalesce_chain(chain.id).await {
+            Ok(()) => {
+                if let Ok(remaining) = repo.get_coalesce_chains(chain.transform_id).await {
+                    let ordered_ids: Vec<i64> = remaining.iter().map(|cc| cc.id).collect();
+                    let _ = repo
+                        .reorder_coalesce_chains(chain.transform_id, ordered_ids)
+                        .await;
+                }
+
+                gx.toast(Toast::info("Fallback chain deleted"));
+                self.load_db_data(gx).await;
+
+                if let Some(key) = next_focus {
+                    cx.focus(&format!("migration-tree-node-{}", key));
+                }
+            }
+            Err(e) => {
+                log::error!("Failed to delete coalesce chain: {}", e);
+                gx.toast(Toast::error("Failed to delete fallback chain"));
+            }
+        }
+    }
+
+    /// Reorder a coalesce chain within its transform.
+    pub(super) async fn reorder_coalesce_chain_impl(
+        &self,
+        chain: &CoalesceChain,
+        direction: i32,
+        gx: &GlobalContext,
+    ) {
+        let chains = self.coalesce_chains.get();
+        let mut siblings: Vec<_> = chains
+            .iter()
+            .filter(|cc| cc.transform_id == chain.transform_id)
+            .collect();
+        siblings.sort_by_key(|cc| cc.order);
+
+        let Some(current_idx) = siblings.iter().position(|cc| cc.id == chain.id) else {
+            return;
+        };
+
+        let new_idx = (current_idx as i32 + direction).max(0) as usize;
+        if new_idx >= siblings.len() || new_idx == current_idx {
+            return;
+        }
+
+        let mut ordered_ids: Vec<i64> = siblings.iter().map(|cc| cc.id).collect();
+        ordered_ids.remove(current_idx);
+        ordered_ids.insert(new_idx, chain.id);
+
+        let repo = gx.data::<MigrationRepository>();
+        match repo
+            .reorder_coalesce_chains(chain.transform_id, ordered_ids)
+            .await
+        {
+            Ok(()) => {
+                self.load_db_data(gx).await;
+            }
+            Err(e) => {
+                log::error!("Failed to reorder coalesce chains: {}", e);
+                gx.toast(Toast::error("Failed to reorder fallback chains"));
             }
         }
     }
