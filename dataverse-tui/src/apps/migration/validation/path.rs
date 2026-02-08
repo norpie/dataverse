@@ -21,6 +21,15 @@ pub enum PathExpr {
     Field(FieldPath),
     /// Variable reference: `$my_var`
     Variable(String),
+    /// Variable with field navigation: `$my_var.field`, `$my_var[account].name`
+    VariableNavigation {
+        /// The variable name (without `$` prefix).
+        name: String,
+        /// For polymorphic lookups, the target entity (e.g., `$var[account].name`).
+        target: Option<String>,
+        /// The field path to navigate after resolving the variable.
+        path: FieldPath,
+    },
     /// System variable: `#value`, `#type`, `#index`
     SystemVar(SystemVar),
 }
@@ -106,13 +115,13 @@ pub fn parse_path(input: &str) -> Result<PathExpr, ParseError> {
         return Err(ParseError::Empty);
     }
 
-    // Variable: $name
+    // Variable: $name, $name.field, $name[target].field
     if let Some(rest) = input.strip_prefix('$') {
-        let name = rest.trim();
-        if name.is_empty() {
+        let rest = rest.trim();
+        if rest.is_empty() {
             return Err(ParseError::EmptyVariable);
         }
-        return Ok(PathExpr::Variable(name.to_string()));
+        return parse_variable_path(rest);
     }
 
     // System variable: #name
@@ -128,6 +137,47 @@ pub fn parse_path(input: &str) -> Result<PathExpr, ParseError> {
     // Field path: field.field.field
     let segments = parse_field_path(input)?;
     Ok(PathExpr::Field(FieldPath { segments }))
+}
+
+/// Parse a variable path: `name`, `name.field`, `name[target].field`.
+fn parse_variable_path(input: &str) -> Result<PathExpr, ParseError> {
+    // Check for bracket target on the variable itself: $var[target].field
+    let (name, target, remainder) = if let Some(bracket_start) = input.find('[') {
+        let name = &input[..bracket_start];
+        if name.is_empty() {
+            return Err(ParseError::EmptyVariable);
+        }
+        let after_bracket = &input[bracket_start + 1..];
+        let bracket_end = after_bracket.find(']').ok_or(ParseError::UnclosedBracket)?;
+        let target = &after_bracket[..bracket_end];
+        if target.is_empty() {
+            return Err(ParseError::EmptyTarget);
+        }
+        let remainder = &after_bracket[bracket_end + 1..];
+        (name, Some(target.to_string()), remainder)
+    } else if let Some(dot_pos) = input.find('.') {
+        let name = &input[..dot_pos];
+        if name.is_empty() {
+            return Err(ParseError::EmptyVariable);
+        }
+        (name, None, &input[dot_pos..])
+    } else {
+        // Plain variable, no navigation
+        return Ok(PathExpr::Variable(input.to_string()));
+    };
+
+    // Must have a dot followed by field path
+    let remainder = remainder.strip_prefix('.').ok_or(ParseError::EmptyFieldName)?;
+    if remainder.is_empty() {
+        return Err(ParseError::EmptyFieldName);
+    }
+
+    let segments = parse_field_path(remainder)?;
+    Ok(PathExpr::VariableNavigation {
+        name: name.to_string(),
+        target,
+        path: FieldPath { segments },
+    })
 }
 
 /// Parse a system variable name.
@@ -262,6 +312,11 @@ impl PathValidator {
 
         match parsed {
             PathExpr::Variable(name) => self.validate_variable(&name, ctx),
+            PathExpr::VariableNavigation { name, target: _, path: _ } => {
+                // For now, just validate the variable name exists.
+                // Full field navigation validation requires knowing the variable's type.
+                self.validate_variable(&name, ctx)
+            }
             PathExpr::SystemVar(var) => self.validate_system_var(var),
             PathExpr::Field(field_path) => self.validate_field_path(&field_path, ctx).await,
         }
@@ -516,6 +571,70 @@ mod tests {
     fn parse_variable() {
         let result = parse_path("$my_var").unwrap();
         assert_eq!(result, PathExpr::Variable("my_var".to_string()));
+    }
+
+    #[test]
+    fn parse_variable_navigation() {
+        let result = parse_path("$my_var.name").unwrap();
+        assert_eq!(
+            result,
+            PathExpr::VariableNavigation {
+                name: "my_var".to_string(),
+                target: None,
+                path: FieldPath {
+                    segments: vec![FieldSegment {
+                        field: "name".to_string(),
+                        target: None,
+                        optional: false,
+                    }]
+                },
+            }
+        );
+    }
+
+    #[test]
+    fn parse_variable_navigation_dotted() {
+        let result = parse_path("$my_var.parentaccountid.name").unwrap();
+        assert_eq!(
+            result,
+            PathExpr::VariableNavigation {
+                name: "my_var".to_string(),
+                target: None,
+                path: FieldPath {
+                    segments: vec![
+                        FieldSegment {
+                            field: "parentaccountid".to_string(),
+                            target: None,
+                            optional: false,
+                        },
+                        FieldSegment {
+                            field: "name".to_string(),
+                            target: None,
+                            optional: false,
+                        },
+                    ]
+                },
+            }
+        );
+    }
+
+    #[test]
+    fn parse_variable_navigation_polymorphic() {
+        let result = parse_path("$my_var[account].name").unwrap();
+        assert_eq!(
+            result,
+            PathExpr::VariableNavigation {
+                name: "my_var".to_string(),
+                target: Some("account".to_string()),
+                path: FieldPath {
+                    segments: vec![FieldSegment {
+                        field: "name".to_string(),
+                        target: None,
+                        optional: false,
+                    }]
+                },
+            }
+        );
     }
 
     #[test]

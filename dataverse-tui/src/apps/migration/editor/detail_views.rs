@@ -4,16 +4,15 @@ use rafter::element;
 use rafter::widgets::Text;
 use tuidom::Element;
 
+use super::tree::transform_display_text;
+use super::tree::FieldMappingNode;
+use super::tree::TransformNode;
+use super::tree::VariableNode;
+use super::MigrationEditor;
 use crate::apps::migration::types::CoalesceChain;
 use crate::apps::migration::types::FindCondition;
 use crate::apps::migration::types::MatchBranch;
 use crate::apps::migration::types::ParentType;
-use crate::apps::migration::types::Variable;
-
-use super::tree::transform_display_text;
-use super::tree::FieldMappingNode;
-use super::tree::TransformNode;
-use super::MigrationEditor;
 
 impl MigrationEditor {
     /// Render a generic config detail view.
@@ -86,7 +85,8 @@ impl MigrationEditor {
     }
 
     /// Render a single Variable detail view.
-    pub(super) fn render_variable_detail(&self, variable: &Variable) -> Element {
+    pub(super) fn render_variable_detail(&self, vn: &VariableNode) -> Element {
+        let variable = &vn.variable;
         let em = self
             .entity_mappings
             .get()
@@ -96,6 +96,18 @@ impl MigrationEditor {
 
         let parent_name = em.map(|e| e.name).unwrap_or_else(|| "Unknown".to_string());
         let var_name = format!("${}", variable.name);
+        let declared_type_str = variable.declared_type.display();
+        let has_warning = vn.warning.is_some();
+        let chain_output_str = vn
+            .warning
+            .as_ref()
+            .map(|w| w.chain_output.display())
+            .unwrap_or_default();
+        let target_type_str = vn
+            .warning
+            .as_ref()
+            .map(|w| w.target_type.display())
+            .unwrap_or_default();
 
         element! {
             column (gap: 1) {
@@ -106,10 +118,28 @@ impl MigrationEditor {
                         text (content: {var_name})
                     }
                     row (gap: 1) {
+                        text (content: "Type") style (fg: muted)
+                        text (content: {declared_type_str})
+                    }
+                    row (gap: 1) {
                         text (content: "Parent") style (fg: muted)
                         text (content: {parent_name})
                     }
                     text (content: "Press Enter to edit transform chain") style (fg: muted)
+                }
+                if has_warning {
+                    column {
+                        text (content: "Type Warning") style (bold, fg: warning)
+                        row (gap: 1) {
+                            text (content: "Chain Output") style (fg: muted)
+                            text (content: {chain_output_str}) style (fg: warning)
+                        }
+                        row (gap: 1) {
+                            text (content: "Declared Type") style (fg: muted)
+                            text (content: {target_type_str})
+                        }
+                        text (content: "Chain output type is incompatible with declared type") style (fg: muted)
+                    }
                 }
             }
         }

@@ -13,11 +13,11 @@ use tuidom::Element;
 
 use crate::apps::migration::types::propagate_chain_types;
 use crate::apps::migration::types::resolve_branch_union;
+use crate::apps::migration::types::ChainOutputWarning;
 use crate::apps::migration::types::ChainTypeResult;
 use crate::apps::migration::types::CoalesceChain;
 use crate::apps::migration::types::EntityMapping;
 use crate::apps::migration::types::FieldMapping;
-use crate::apps::migration::types::FieldMappingWarning;
 use crate::apps::migration::types::FindCondition;
 use crate::apps::migration::types::MatchBranch;
 use crate::apps::migration::types::Mode;
@@ -54,7 +54,16 @@ pub struct FieldMappingNode {
     /// The target field's type (for display in the tree).
     pub target_type: Option<ValueType>,
     /// Type warning if the chain output doesn't match the target field type.
-    pub warning: Option<FieldMappingWarning>,
+    pub warning: Option<ChainOutputWarning>,
+}
+
+/// A variable node in the tree, enriched with type checking data.
+#[derive(Clone, Debug)]
+pub struct VariableNode {
+    /// The underlying variable data.
+    pub variable: Variable,
+    /// Type warning if the chain output doesn't match the declared type.
+    pub warning: Option<ChainOutputWarning>,
 }
 
 /// A node in the migration editor tree.
@@ -79,7 +88,7 @@ pub enum MigrationTreeNode {
     /// Variables section header (child of entity mapping, Declarative only).
     Variables { entity_mapping_id: i64 },
     /// An individual variable (child of Variables section).
-    Variable(Variable),
+    Variable(VariableNode),
     /// Field mappings section header (child of entity mapping, Declarative only).
     FieldMappings { entity_mapping_id: i64 },
     /// An individual field mapping (child of FieldMappings section).
@@ -115,7 +124,7 @@ impl MigrationTreeNode {
             | Self::TestGuids { entity_mapping_id }
             | Self::Variables { entity_mapping_id }
             | Self::FieldMappings { entity_mapping_id } => Some(*entity_mapping_id),
-            Self::Variable(v) => Some(v.entity_mapping_id),
+            Self::Variable(vn) => Some(vn.variable.entity_mapping_id),
             Self::FieldMapping(fmn) => Some(fmn.field_mapping.entity_mapping_id),
             Self::Transform(tn) => Some(tn.transform.entity_mapping_id),
             Self::MatchBranch(_) => None,   // Get via transform
@@ -178,10 +187,18 @@ impl MigrationTreeNode {
         }
     }
 
+    /// Get the variable node if this is a variable node.
+    pub fn as_variable_node(&self) -> Option<&VariableNode> {
+        match self {
+            Self::Variable(vn) => Some(vn),
+            _ => None,
+        }
+    }
+
     /// Get the variable if this is a variable node.
     pub fn as_variable(&self) -> Option<&Variable> {
         match self {
-            Self::Variable(v) => Some(v),
+            Self::Variable(vn) => Some(&vn.variable),
             _ => None,
         }
     }
@@ -265,7 +282,7 @@ impl TreeItem for MigrationTreeNode {
             Self::Passes { entity_mapping_id } => format!("passes-{}", entity_mapping_id),
             Self::TestGuids { entity_mapping_id } => format!("test-guids-{}", entity_mapping_id),
             Self::Variables { entity_mapping_id } => format!("variables-{}", entity_mapping_id),
-            Self::Variable(v) => format!("variable-{}", v.id),
+            Self::Variable(vn) => format!("variable-{}", vn.variable.id),
             Self::FieldMappings { entity_mapping_id } => {
                 format!("field-mappings-{}", entity_mapping_id)
             }
@@ -329,13 +346,17 @@ impl TreeItem for MigrationTreeNode {
             Self::Variables { .. } => element! {
                 text (content: "Variables") style (fg: muted)
             },
-            Self::Variable(v) => {
-                let label = format!("${}", v.name);
-                let type_label = format!(" ({})", v.declared_type.display());
+            Self::Variable(vn) => {
+                let label = format!("${}", vn.variable.name);
+                let type_label = format!(" ({})", vn.variable.declared_type.display());
+                let has_warning = vn.warning.is_some();
                 element! {
                     row {
                         text (content: {label}) style (fg: primary)
                         text (content: {type_label}) style (fg: muted)
+                        if has_warning {
+                            text (content: " !") style (fg: warning)
+                        }
                     }
                 }
             }
@@ -803,18 +824,37 @@ fn build_variable_node(v: Variable, ctx: &mut TreeBuildContext) -> TreeNode<Migr
         .insert(var_name, v.declared_type.clone());
 
     if transforms.is_empty() {
-        TreeNode::leaf(MigrationTreeNode::Variable(v))
+        let vn = VariableNode {
+            variable: v,
+            warning: None,
+        };
+        TreeNode::leaf(MigrationTreeNode::Variable(vn))
     } else {
         // Compute types for this chain
         let source_entity = ctx.source_entity_for(v.entity_mapping_id);
         let chain_result = compute_chain_types(&transforms, source_entity, ctx);
         ctx.types.merge(&chain_result);
 
+        // Check chain output against declared type
+        let warning = check_chain_output(&v.declared_type, &chain_result.output_type);
+        if let Some(ref w) = warning {
+            log::debug!(
+                "type_tracking: variable ${} chain output {:?} incompatible with declared type {:?}",
+                v.name,
+                w.chain_output,
+                w.target_type,
+            );
+        }
+
+        let vn = VariableNode {
+            variable: v,
+            warning,
+        };
         let transform_nodes: Vec<TreeNode<MigrationTreeNode>> = transforms
             .into_iter()
             .map(|t| build_transform_node(t, ctx))
             .collect();
-        TreeNode::branch(MigrationTreeNode::Variable(v), transform_nodes)
+        TreeNode::branch(MigrationTreeNode::Variable(vn), transform_nodes)
     }
 }
 
@@ -851,7 +891,6 @@ fn build_field_mapping_node(
 
         // Check chain output against target field type
         let warning = check_field_mapping_output(
-            fm.id,
             &fm.target_field,
             &target_entity,
             &chain_result.output_type,
@@ -883,41 +922,39 @@ fn resolve_target_field_type(
     Some(ValueType::Known(field_type.clone()))
 }
 
-/// Check if a chain output type is compatible with the target field type.
-/// Returns a `FieldMappingWarning` if incompatible.
-fn check_field_mapping_output(
-    field_mapping_id: i64,
-    target_field: &str,
-    target_entity: &str,
+/// Check if a chain output type is compatible with an expected type.
+/// Returns a `ChainOutputWarning` if incompatible.
+fn check_chain_output(
+    expected_type: &ValueType,
     chain_output: &ValueType,
-    ctx: &TreeBuildContext,
-) -> Option<FieldMappingWarning> {
+) -> Option<ChainOutputWarning> {
     // Skip check if chain output is Null (always compatible) or Any
     if matches!(chain_output, ValueType::Null | ValueType::Any) {
         return None;
     }
 
-    // Look up target field type from cache
-    let target_fields = ctx.target_field_cache.get(target_entity)?;
-    let target_field_type = target_fields.get(target_field)?;
-    let target_type = ValueType::Known(target_field_type.clone());
-
-    if !chain_output.is_compatible_with(&target_type) {
-        log::debug!(
-            "type_tracking: field mapping {} output {:?} incompatible with target field '{}' type {:?}",
-            field_mapping_id,
-            chain_output,
-            target_field,
-            target_type,
-        );
-        Some(FieldMappingWarning {
-            field_mapping_id,
+    if !chain_output.is_compatible_with(expected_type) {
+        Some(ChainOutputWarning {
             chain_output: chain_output.clone(),
-            target_type,
+            target_type: expected_type.clone(),
         })
     } else {
         None
     }
+}
+
+/// Check if a chain output type is compatible with the target field type.
+/// Returns a `ChainOutputWarning` if incompatible.
+fn check_field_mapping_output(
+    target_field: &str,
+    target_entity: &str,
+    chain_output: &ValueType,
+    ctx: &TreeBuildContext,
+) -> Option<ChainOutputWarning> {
+    let target_fields = ctx.target_field_cache.get(target_entity)?;
+    let target_field_type = target_fields.get(target_field)?;
+    let target_type = ValueType::Known(target_field_type.clone());
+    check_chain_output(&target_type, chain_output)
 }
 
 /// Create a `MigrationTreeNode::Transform` with embedded type tracking data.
@@ -1159,28 +1196,146 @@ fn compute_chain_types(
     propagate_chain_types(transforms, |data, current_type| {
         match data {
             TransformData::Copy { path } => {
-                // Resolve variable references
-                if let Some(var_name) = path.strip_prefix('$') {
-                    Some(
+                // Use the structured parser for all path resolution
+                match parse_path(path) {
+                    Ok(PathExpr::Variable(var_name)) => Some(
                         variable_types
-                            .get(var_name)
+                            .get(&var_name)
                             .cloned()
                             .unwrap_or(ValueType::Null),
-                    )
-                } else if path == "#value" {
-                    Some(current_type.clone())
-                } else if path == "#index" {
-                    Some(ValueType::simple(AttributeType::Integer))
-                } else if path == "#type" || path == "#source_entity" || path == "#target_entity" {
-                    Some(ValueType::simple(AttributeType::String))
-                } else {
-                    // Field path - resolve from metadata cache.
-                    resolve_field_path(path, source_entity, ctx)
+                    ),
+                    Ok(PathExpr::VariableNavigation {
+                        name,
+                        target,
+                        path: field_path,
+                    }) => resolve_variable_navigation(
+                        &name,
+                        target.as_deref(),
+                        &field_path,
+                        variable_types,
+                        ctx,
+                    ),
+                    Ok(PathExpr::SystemVar(sys_var)) => {
+                        use crate::apps::migration::types::SystemVar;
+                        match sys_var {
+                            SystemVar::Value => Some(current_type.clone()),
+                            SystemVar::Index => Some(ValueType::simple(AttributeType::Integer)),
+                            SystemVar::Type | SystemVar::SourceEntity | SystemVar::TargetEntity => {
+                                Some(ValueType::simple(AttributeType::String))
+                            }
+                        }
+                    }
+                    Ok(PathExpr::Field(_)) => {
+                        // Field path - resolve from metadata cache.
+                        resolve_field_path(path, source_entity, ctx)
+                    }
+                    Err(_) => None,
                 }
             }
             _ => None, // Passthrough for all other dynamic cases
         }
     })
+}
+
+/// Resolve a variable navigation path (`$var.field` or `$var[target].field`).
+///
+/// Looks up the variable's declared type, determines the target entity from
+/// its Lookup type, then resolves the remaining field path against that entity.
+fn resolve_variable_navigation(
+    var_name: &str,
+    target: Option<&str>,
+    field_path: &FieldPath,
+    variable_types: &HashMap<String, ValueType>,
+    ctx: &TreeBuildContext,
+) -> Option<ValueType> {
+    let var_type = variable_types.get(var_name)?;
+
+    // The variable must be a lookup to navigate into it
+    let targets = match var_type {
+        ValueType::Known(FieldType::Lookup { targets, .. }) => targets,
+        ValueType::Union(types) => {
+            // Find the first lookup in the union
+            let lookup = types.iter().find_map(|ft| match ft {
+                FieldType::Lookup { targets, .. } => Some(targets),
+                _ => None,
+            })?;
+            lookup
+        }
+        _ => {
+            log::debug!(
+                "type_tracking: variable ${} is not a lookup, cannot navigate into it",
+                var_name,
+            );
+            return None;
+        }
+    };
+
+    // Determine target entity
+    let target_entity = if let Some(specified) = target {
+        // Explicit target: $var[account].name
+        if !targets.is_empty() && !targets.contains(&specified.to_string()) {
+            log::debug!(
+                "type_tracking: specified target '{}' not in targets {:?} for variable ${}",
+                specified,
+                targets,
+                var_name,
+            );
+            return None;
+        }
+        specified.to_string()
+    } else if targets.len() == 1 {
+        targets[0].clone()
+    } else if targets.is_empty() {
+        log::debug!(
+            "type_tracking: variable ${} lookup has no known targets, cannot navigate",
+            var_name,
+        );
+        return None;
+    } else {
+        log::debug!(
+            "type_tracking: variable ${} is polymorphic (targets: {:?}), use ${}[target].field syntax",
+            var_name,
+            targets,
+            var_name,
+        );
+        return None;
+    };
+
+    log::debug!(
+        "type_tracking: resolving ${}.{} via entity '{}'",
+        var_name,
+        field_path
+            .segments
+            .iter()
+            .map(|s| s.field.as_str())
+            .collect::<Vec<_>>()
+            .join("."),
+        target_entity,
+    );
+
+    // Resolve the field path starting from the target entity
+    if field_path.segments.len() == 1 {
+        let segment = &field_path.segments[0];
+        let fields = ctx.field_type_cache.get(&target_entity)?;
+        let field_type = fields.get(&segment.field)?;
+        Some(ValueType::Known(field_type.clone()))
+    } else {
+        resolve_dotted_field_path(
+            field_path,
+            &target_entity,
+            ctx,
+            &format!(
+                "${}.{}",
+                var_name,
+                field_path
+                    .segments
+                    .iter()
+                    .map(|s| s.field.as_str())
+                    .collect::<Vec<_>>()
+                    .join(".")
+            ),
+        )
+    }
 }
 
 /// Resolve a field path (possibly dotted) to its `ValueType` using the field type cache.

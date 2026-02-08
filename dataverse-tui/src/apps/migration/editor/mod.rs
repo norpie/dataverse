@@ -93,7 +93,7 @@ impl MigrationEditor {
     /// Fetches entity metadata, discovers navigation entities, builds the tree.
     #[watch]
     async fn rebuild(&self, gx: &GlobalContext) {
-        use helpers::collect_dotted_copy_paths;
+        use helpers::collect_navigation_paths;
         use helpers::discover_navigation_entities;
         use helpers::fetch_entity_field_types;
         use tree::build_tree_nodes;
@@ -141,16 +141,16 @@ impl MigrationEditor {
             result
         };
 
-        // 4. Discover and fetch navigation entities (dotted copy paths)
-        let dotted_paths = collect_dotted_copy_paths(&transforms);
-        if !dotted_paths.is_empty() {
+        // 4. Discover and fetch navigation entities (dotted copy paths + variable navigation)
+        let nav_paths = collect_navigation_paths(&transforms, &entity_mappings, &variables);
+        if !nav_paths.is_empty() {
             log::debug!(
-                "watch rebuild: found {} dotted copy paths for navigation scanning",
-                dotted_paths.len(),
+                "watch rebuild: found {} navigation paths for entity scanning",
+                nav_paths.len(),
             );
             loop {
                 let nav_entities =
-                    discover_navigation_entities(&dotted_paths, &entity_mappings, &source_field_types);
+                    discover_navigation_entities(&nav_paths, &source_field_types);
                 if nav_entities.is_empty() {
                     break;
                 }
@@ -321,8 +321,8 @@ impl MigrationEditor {
             Some(MigrationTreeNode::EntityMapping(em)) => {
                 self.delete_entity_mapping_impl(em.id, cx, gx).await;
             }
-            Some(MigrationTreeNode::Variable(v)) => {
-                self.delete_variable_impl(v.id, v.entity_mapping_id, cx, gx)
+            Some(MigrationTreeNode::Variable(vn)) => {
+                self.delete_variable_impl(vn.variable.id, vn.variable.entity_mapping_id, cx, gx)
                     .await;
             }
             Some(MigrationTreeNode::FieldMapping(fmn)) => {
@@ -357,8 +357,8 @@ impl MigrationEditor {
         log::debug!("move_item: focused node = {:?}", focused);
 
         match focused {
-            MigrationTreeNode::Variable(v) => {
-                self.reorder_variable_impl(v.id, v.entity_mapping_id, direction, gx)
+            MigrationTreeNode::Variable(vn) => {
+                self.reorder_variable_impl(vn.variable.id, vn.variable.entity_mapping_id, direction, gx)
                     .await;
             }
             MigrationTreeNode::FieldMapping(fmn) => {
@@ -409,8 +409,8 @@ impl MigrationEditor {
             MigrationTreeNode::Variables { entity_mapping_id } => {
                 self.add_variable_impl(entity_mapping_id, gx).await;
             }
-            MigrationTreeNode::Variable(v) => {
-                self.edit_variable_impl(&v, gx).await;
+            MigrationTreeNode::Variable(vn) => {
+                self.edit_variable_impl(&vn.variable, gx).await;
             }
             MigrationTreeNode::FieldMappings { .. } => {
                 // Section header - no action, use 'a' to add
@@ -540,8 +540,8 @@ impl MigrationEditor {
                             Some(MigrationTreeNode::Variables { entity_mapping_id }) => {
                                 { self.render_variables_detail(entity_mapping_id) }
                             }
-                            Some(MigrationTreeNode::Variable(v)) => {
-                                { self.render_variable_detail(&v) }
+                            Some(MigrationTreeNode::Variable(vn)) => {
+                                { self.render_variable_detail(&vn) }
                             }
                             Some(MigrationTreeNode::FieldMappings { entity_mapping_id }) => {
                                 { self.render_field_mappings_detail(entity_mapping_id) }

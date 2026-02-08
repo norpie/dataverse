@@ -130,14 +130,15 @@ pub struct TypeWarning {
     pub actual: ValueType,
 }
 
-/// A type mismatch warning for a field mapping (chain output vs target field).
+/// A type mismatch warning when a chain's output type doesn't match the expected type.
+///
+/// Used for both field mappings (chain output vs target field type) and
+/// variables (chain output vs declared type).
 #[derive(Debug, Clone)]
-pub struct FieldMappingWarning {
-    /// ID of the field mapping with the warning.
-    pub field_mapping_id: i64,
+pub struct ChainOutputWarning {
     /// The chain output type.
     pub chain_output: ValueType,
-    /// The expected target field type.
+    /// The expected target type (field type or declared type).
     pub target_type: ValueType,
 }
 

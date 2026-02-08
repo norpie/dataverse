@@ -542,8 +542,9 @@ impl MigrationEditor {
         let focused = self.focused_node()?;
 
         match focused {
-            MigrationTreeNode::Variable(v) => {
+            MigrationTreeNode::Variable(vn) => {
                 // Add to end of variable's chain
+                let v = &vn.variable;
                 let order = self.transform_count_for_parent(ParentType::Variable, v.id);
                 Some(InsertTarget {
                     entity_mapping_id: v.entity_mapping_id,
