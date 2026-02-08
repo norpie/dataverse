@@ -25,6 +25,7 @@ use crate::apps::migration::types::Migration;
 use crate::apps::migration::types::Mode;
 use crate::apps::migration::types::Phase;
 use crate::apps::migration::types::Transform;
+use crate::apps::migration::types::TransformData;
 use crate::apps::migration::types::Variable;
 
 use tree::MigrationTreeNode;
@@ -280,6 +281,12 @@ impl MigrationEditor {
                 // Field mapping selected -> add transform to its chain
                 self.add_transform_impl(gx).await;
             }
+            Some(MigrationTreeNode::Transform(ref tn))
+                if matches!(tn.transform.data, TransformData::Match { .. }) =>
+            {
+                // Match transform -> add branch
+                self.add_match_branch_impl(&tn.transform, gx).await;
+            }
             Some(MigrationTreeNode::Transform(..)) => {
                 // Transform selected -> add transform after it in the chain
                 self.add_transform_impl(gx).await;
@@ -336,6 +343,9 @@ impl MigrationEditor {
             Some(MigrationTreeNode::Transform(tn)) => {
                 self.delete_transform_impl(&tn.transform, cx, gx).await;
             }
+            Some(MigrationTreeNode::MatchBranch(mb)) => {
+                self.delete_match_branch_impl(&mb, cx, gx).await;
+            }
             // Other config nodes can't be deleted
             Some(_) | None => {}
         }
@@ -371,6 +381,9 @@ impl MigrationEditor {
             }
             MigrationTreeNode::Transform(tn) => {
                 self.reorder_transform_impl(&tn.transform, direction, gx).await;
+            }
+            MigrationTreeNode::MatchBranch(mb) => {
+                self.reorder_match_branch_impl(&mb, direction, gx).await;
             }
             // Other nodes don't support reordering (yet)
             _ => {}
@@ -425,9 +438,8 @@ impl MigrationEditor {
             MigrationTreeNode::Transform(tn) => {
                 self.edit_transform_impl(&tn.transform, gx).await;
             }
-            MigrationTreeNode::MatchBranch(_mb) => {
-                // TODO: Open match branch editor (condition editor)
-                gx.toast(Toast::info("Match branch editor not yet implemented"));
+            MigrationTreeNode::MatchBranch(mb) => {
+                self.edit_match_branch_impl(&mb, gx).await;
             }
             MigrationTreeNode::CoalesceChain(_cc) => {
                 // Coalesce chains don't have configuration - just add transforms under them
@@ -456,6 +468,11 @@ impl MigrationEditor {
             Some(MigrationTreeNode::Variable(_)) => (true, "Add Transform"),
             Some(MigrationTreeNode::FieldMappings { .. }) => (true, "Add Field"),
             Some(MigrationTreeNode::FieldMapping(_)) => (true, "Add Transform"),
+            Some(MigrationTreeNode::Transform(tn))
+                if matches!(tn.transform.data, TransformData::Match { .. }) =>
+            {
+                (true, "Add Branch")
+            }
             Some(MigrationTreeNode::Transform(..)) => (true, "Add Transform"),
             Some(MigrationTreeNode::MatchBranch(_)) => (true, "Add Transform"),
             Some(MigrationTreeNode::CoalesceChain(_)) => (true, "Add Transform"),

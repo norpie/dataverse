@@ -23,7 +23,9 @@ use crate::apps::migration::modals::StringOpsTransformModal;
 use crate::apps::migration::modals::TransformType;
 use crate::apps::migration::modals::ValueMapTransformModal;
 use crate::apps::migration::repository::MigrationRepository;
+use crate::apps::migration::repository::NewMatchBranch;
 use crate::apps::migration::repository::NewTransform;
+use crate::apps::migration::repository::UpdateMatchBranch;
 use crate::apps::migration::repository::UpdateTransform;
 use crate::apps::migration::types::CoalesceChain;
 use crate::apps::migration::types::Condition;
@@ -1147,6 +1149,260 @@ impl MigrationEditor {
                 gx.toast(Toast::info(
                     "Editor for this transform type not yet implemented",
                 ));
+            }
+        }
+    }
+
+    // =========================================================================
+    // Match Branch Operations
+    // =========================================================================
+
+    /// Add a new match branch to a match transform.
+    pub(super) async fn add_match_branch_impl(
+        &self,
+        transform: &Transform,
+        gx: &GlobalContext,
+    ) {
+        // Get entity mapping for source entity + variables
+        let entity_mapping = self
+            .entity_mappings
+            .get()
+            .iter()
+            .find(|em| em.id == transform.entity_mapping_id)
+            .cloned();
+
+        let Some(entity_mapping) = entity_mapping else {
+            log::error!("Entity mapping not found for transform");
+            return;
+        };
+
+        let source_entity = entity_mapping.source_entity;
+        let variables: Vec<VariableInfo> = self
+            .variables
+            .get()
+            .iter()
+            .filter(|v| v.entity_mapping_id == entity_mapping.id)
+            .map(|v| VariableInfo {
+                name: v.name.clone(),
+                declared_type: v.declared_type.clone(),
+            })
+            .collect();
+
+        // Open guard-style condition modal for the branch condition
+        let default_condition = Condition::IsNull(Expr::SystemVar(SystemVar::Value));
+        let modal = GuardTransformModal::new_modal(
+            self.source_client.get().clone(),
+            source_entity,
+            variables,
+            default_condition,
+        );
+
+        let Some(condition) = gx.modal(modal).await else {
+            return;
+        };
+
+        // Determine order (append at end)
+        let branches = self.match_branches.get();
+        let order = branches
+            .iter()
+            .filter(|mb| mb.transform_id == transform.id)
+            .count() as i32;
+
+        let repo = gx.data::<MigrationRepository>();
+        match repo
+            .create_match_branch(NewMatchBranch {
+                transform_id: transform.id,
+                order,
+                condition,
+            })
+            .await
+        {
+            Ok(_id) => {
+                gx.toast(Toast::info("Branch added"));
+                self.load_db_data(gx).await;
+            }
+            Err(e) => {
+                log::error!("Failed to create match branch: {}", e);
+                gx.toast(Toast::error("Failed to create branch"));
+            }
+        }
+    }
+
+    /// Edit a match branch's condition.
+    pub(super) async fn edit_match_branch_impl(
+        &self,
+        branch: &MatchBranch,
+        gx: &GlobalContext,
+    ) {
+        // Get entity mapping via the parent transform
+        let transform = self
+            .transforms
+            .get()
+            .iter()
+            .find(|t| t.id == branch.transform_id)
+            .cloned();
+
+        let Some(transform) = transform else {
+            log::error!("Parent transform not found for match branch");
+            return;
+        };
+
+        let entity_mapping = self
+            .entity_mappings
+            .get()
+            .iter()
+            .find(|em| em.id == transform.entity_mapping_id)
+            .cloned();
+
+        let Some(entity_mapping) = entity_mapping else {
+            log::error!("Entity mapping not found for transform");
+            return;
+        };
+
+        let source_entity = entity_mapping.source_entity;
+        let variables: Vec<VariableInfo> = self
+            .variables
+            .get()
+            .iter()
+            .filter(|v| v.entity_mapping_id == entity_mapping.id)
+            .map(|v| VariableInfo {
+                name: v.name.clone(),
+                declared_type: v.declared_type.clone(),
+            })
+            .collect();
+
+        let modal = GuardTransformModal::new_modal(
+            self.source_client.get().clone(),
+            source_entity,
+            variables,
+            branch.condition.clone(),
+        );
+
+        let Some(new_condition) = gx.modal(modal).await else {
+            return;
+        };
+
+        let repo = gx.data::<MigrationRepository>();
+        match repo
+            .update_match_branch(
+                branch.id,
+                UpdateMatchBranch {
+                    condition: Some(new_condition),
+                },
+            )
+            .await
+        {
+            Ok(()) => {
+                gx.toast(Toast::info("Branch updated"));
+                self.load_db_data(gx).await;
+            }
+            Err(e) => {
+                log::error!("Failed to update match branch: {}", e);
+                gx.toast(Toast::error("Failed to update branch"));
+            }
+        }
+    }
+
+    /// Delete a match branch and its child transforms.
+    pub(super) async fn delete_match_branch_impl(
+        &self,
+        branch: &MatchBranch,
+        cx: &AppContext,
+        gx: &GlobalContext,
+    ) {
+        // Compute next focus before deletion
+        let branches = self.match_branches.get();
+        let siblings: Vec<_> = branches
+            .iter()
+            .filter(|mb| mb.transform_id == branch.transform_id)
+            .collect();
+        let current_idx = siblings.iter().position(|mb| mb.id == branch.id);
+
+        let next_focus = current_idx.and_then(|idx| {
+            if idx > 0 {
+                siblings
+                    .get(idx - 1)
+                    .map(|mb| format!("match-branch-{}", mb.id))
+            } else if idx + 1 < siblings.len() {
+                siblings
+                    .get(idx + 1)
+                    .map(|mb| format!("match-branch-{}", mb.id))
+            } else {
+                Some(format!("transform-{}", branch.transform_id))
+            }
+        });
+
+        let confirmed = gx
+            .modal(ConfirmModal::with_message("Delete this branch?"))
+            .await;
+
+        if !confirmed {
+            return;
+        }
+
+        let repo = gx.data::<MigrationRepository>();
+        match repo.delete_match_branch(branch.id).await {
+            Ok(()) => {
+                // Reorder remaining siblings
+                if let Ok(remaining) = repo.get_match_branches(branch.transform_id).await {
+                    let ordered_ids: Vec<i64> = remaining.iter().map(|mb| mb.id).collect();
+                    let _ = repo
+                        .reorder_match_branches(branch.transform_id, ordered_ids)
+                        .await;
+                }
+
+                gx.toast(Toast::info("Branch deleted"));
+                self.load_db_data(gx).await;
+
+                if let Some(key) = next_focus {
+                    cx.focus(&format!("migration-tree-node-{}", key));
+                }
+            }
+            Err(e) => {
+                log::error!("Failed to delete match branch: {}", e);
+                gx.toast(Toast::error("Failed to delete branch"));
+            }
+        }
+    }
+
+    /// Reorder a match branch within its transform.
+    pub(super) async fn reorder_match_branch_impl(
+        &self,
+        branch: &MatchBranch,
+        direction: i32,
+        gx: &GlobalContext,
+    ) {
+        let branches = self.match_branches.get();
+        let mut siblings: Vec<_> = branches
+            .iter()
+            .filter(|mb| mb.transform_id == branch.transform_id)
+            .collect();
+        siblings.sort_by_key(|mb| mb.order);
+
+        let Some(current_idx) = siblings.iter().position(|mb| mb.id == branch.id) else {
+            return;
+        };
+
+        let new_idx = (current_idx as i32 + direction).max(0) as usize;
+        if new_idx >= siblings.len() || new_idx == current_idx {
+            return;
+        }
+
+        let mut ordered_ids: Vec<i64> = siblings.iter().map(|mb| mb.id).collect();
+        ordered_ids.remove(current_idx);
+        ordered_ids.insert(new_idx, branch.id);
+
+        let repo = gx.data::<MigrationRepository>();
+        match repo
+            .reorder_match_branches(branch.transform_id, ordered_ids)
+            .await
+        {
+            Ok(()) => {
+                self.load_db_data(gx).await;
+            }
+            Err(e) => {
+                log::error!("Failed to reorder match branches: {}", e);
+                gx.toast(Toast::error("Failed to reorder branches"));
             }
         }
     }

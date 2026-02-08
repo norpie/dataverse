@@ -421,7 +421,7 @@ impl TreeItem for MigrationTreeNode {
             Self::MatchBranch(mb) => {
                 let label = format!("Branch: {}", condition_summary(&mb.condition));
                 element! {
-                    text (content: {label}) style (fg: muted)
+                    text (content: {label}) style (fg: primary)
                 }
             }
             Self::MatchDefault { .. } => element! {
