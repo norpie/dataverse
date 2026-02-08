@@ -8,6 +8,7 @@ use rafter::widgets::AutocompleteState;
 use tuidom::Element;
 
 use super::path_suggestions::PathSuggestionGenerator;
+use super::path_suggestions::VariableInfo;
 
 /// Modal for editing a Format transform's template.
 #[modal(size = Md)]
@@ -18,9 +19,9 @@ pub struct FormatTransformModal {
     /// The source entity logical name.
     #[state(skip)]
     source_entity: String,
-    /// Available variable names (without `$` prefix).
+    /// Available variables with type info.
     #[state(skip)]
-    variables: Vec<String>,
+    variables: Vec<VariableInfo>,
 
     /// Autocomplete state for template input.
     autocomplete: AutocompleteState<String>,
@@ -31,7 +32,7 @@ impl FormatTransformModal {
     pub fn new_modal(
         client: DataverseClient,
         source_entity: String,
-        variables: Vec<String>,
+        variables: Vec<VariableInfo>,
         current_template: String,
     ) -> Self {
         let mut autocomplete = AutocompleteState::new(Vec::<(String, String)>::new());

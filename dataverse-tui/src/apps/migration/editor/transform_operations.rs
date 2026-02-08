@@ -13,6 +13,7 @@ use crate::apps::migration::modals::ConvertTransformModal;
 use crate::apps::migration::modals::CopyTransformModal;
 use crate::apps::migration::modals::FormatTransformModal;
 use crate::apps::migration::modals::ParseDateTransformModal;
+use crate::apps::migration::modals::VariableInfo;
 use crate::apps::migration::modals::ReplaceTransformModal;
 use crate::apps::migration::modals::SelectTransformModal;
 use crate::apps::migration::modals::StringOpsTransformModal;
@@ -139,12 +140,15 @@ impl MigrationEditor {
             .map(|em| em.source_entity.clone())
             .unwrap_or_default();
 
-        let variables: Vec<String> = self
+        let variables: Vec<VariableInfo> = self
             .variables
             .get()
             .iter()
             .filter(|v| v.entity_mapping_id == target.entity_mapping_id)
-            .map(|v| v.name.clone())
+            .map(|v| VariableInfo {
+                name: v.name.clone(),
+                declared_type: v.declared_type.clone(),
+            })
             .collect();
 
         match transform_type {
@@ -874,13 +878,16 @@ impl MigrationEditor {
 
         let source_entity = entity_mapping.source_entity;
 
-        // Get variable names for this entity mapping
-        let variables: Vec<String> = self
+        // Get variables with type info for this entity mapping
+        let variables: Vec<VariableInfo> = self
             .variables
             .get()
             .iter()
             .filter(|v| v.entity_mapping_id == entity_mapping.id)
-            .map(|v| v.name.clone())
+            .map(|v| VariableInfo {
+                name: v.name.clone(),
+                declared_type: v.declared_type.clone(),
+            })
             .collect();
 
         // Dispatch based on transform type

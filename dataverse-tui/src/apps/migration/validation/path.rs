@@ -5,7 +5,11 @@
 //! - Variables: `$my_var`
 //! - System variables: `#value`, `#type`, `#index`
 
+use std::collections::HashMap;
+
 use dataverse_lib::model::metadata::AttributeType;
+use dataverse_lib::model::FieldType;
+use dataverse_lib::model::ValueType;
 use dataverse_lib::DataverseClient;
 
 use crate::apps::migration::types::SystemVar;
@@ -266,8 +270,9 @@ fn parse_field_segment(input: &str) -> Result<FieldSegment, ParseError> {
 pub struct ValidationContext {
     /// The source entity logical name.
     pub source_entity: String,
-    /// Available variable names (without `$` prefix).
-    pub variables: Vec<String>,
+    /// Variable types keyed by name (without `$` prefix).
+    /// Used for both existence checks and navigation validation.
+    pub variable_types: HashMap<String, ValueType>,
 }
 
 /// Result of path validation.
@@ -312,10 +317,9 @@ impl PathValidator {
 
         match parsed {
             PathExpr::Variable(name) => self.validate_variable(&name, ctx),
-            PathExpr::VariableNavigation { name, target: _, path: _ } => {
-                // For now, just validate the variable name exists.
-                // Full field navigation validation requires knowing the variable's type.
-                self.validate_variable(&name, ctx)
+            PathExpr::VariableNavigation { name, target, path } => {
+                self.validate_variable_navigation(&name, target.as_deref(), &path, ctx)
+                    .await
             }
             PathExpr::SystemVar(var) => self.validate_system_var(var),
             PathExpr::Field(field_path) => self.validate_field_path(&field_path, ctx).await,
@@ -324,13 +328,18 @@ impl PathValidator {
 
     /// Validate a variable reference.
     fn validate_variable(&self, name: &str, ctx: &ValidationContext) -> ValidationResult {
-        if ctx.variables.iter().any(|v| v == name) {
-            ValidationResult::Valid(ValidPath {
-                description: format!("Variable: ${}", name),
-                value_type: None, // Variables don't have a known type at validation time
-            })
-        } else {
-            ValidationResult::Invalid(format!("Variable '{}' is not defined", name))
+        match ctx.variable_types.get(name) {
+            Some(vt) => {
+                let attr_type = match vt {
+                    ValueType::Known(ft) => Some(ft.attribute_type()),
+                    _ => None,
+                };
+                ValidationResult::Valid(ValidPath {
+                    description: format!("Variable: ${} ({})", name, vt),
+                    value_type: attr_type,
+                })
+            }
+            None => ValidationResult::Invalid(format!("Variable '{}' is not defined", name)),
         }
     }
 
@@ -349,14 +358,96 @@ impl PathValidator {
         })
     }
 
-    /// Validate a field path.
+    /// Validate a variable navigation path: `$var.field`, `$var[target].field`.
+    async fn validate_variable_navigation(
+        &self,
+        name: &str,
+        target: Option<&str>,
+        field_path: &FieldPath,
+        ctx: &ValidationContext,
+    ) -> ValidationResult {
+        // Look up the variable's type to determine the starting entity
+        let var_type = match ctx.variable_types.get(name) {
+            Some(vt) => vt,
+            None => {
+                return ValidationResult::Invalid(format!(
+                    "Variable '{}' is not defined",
+                    name
+                ));
+            }
+        };
+
+        // Variable must be a Lookup to navigate into
+        let targets = match var_type {
+            ValueType::Known(FieldType::Lookup { targets, .. }) => targets,
+            _ => {
+                return ValidationResult::Invalid(format!(
+                    "Variable '{}' has type {} which is not a Lookup — cannot navigate fields",
+                    name, var_type
+                ));
+            }
+        };
+
+        if targets.is_empty() {
+            return ValidationResult::Invalid(format!(
+                "Variable '{}' is a Lookup with no target entities",
+                name
+            ));
+        }
+
+        // Resolve the start entity (handle polymorphic disambiguation)
+        let start_entity = if let Some(specified) = target {
+            if targets.contains(&specified.to_string()) {
+                specified.to_string()
+            } else {
+                return ValidationResult::Invalid(format!(
+                    "'{}' is not a valid target for variable '{}'. Valid targets: {}",
+                    specified,
+                    name,
+                    targets.join(", ")
+                ));
+            }
+        } else if targets.len() == 1 {
+            targets[0].clone()
+        } else {
+            return ValidationResult::Invalid(format!(
+                "Variable '{}' is polymorphic. Specify target with ${}[{}]",
+                name,
+                name,
+                targets.join("|")
+            ));
+        };
+
+        // Build path description prefix
+        let target_label = target
+            .map(|t| format!("[{}]", t))
+            .unwrap_or_default();
+        let mut path_parts = vec![format!("${}{} ({})", name, target_label, start_entity)];
+
+        // Validate the field path starting from the resolved entity
+        self.validate_field_path_from(&start_entity, field_path, &mut path_parts)
+            .await
+    }
+
+    /// Validate a field path starting from the source entity in ctx.
     async fn validate_field_path(
         &self,
         field_path: &FieldPath,
         ctx: &ValidationContext,
     ) -> ValidationResult {
-        let mut current_entity = ctx.source_entity.clone();
-        let mut path_parts: Vec<String> = vec![current_entity.clone()];
+        let mut path_parts: Vec<String> = vec![ctx.source_entity.clone()];
+        self.validate_field_path_from(&ctx.source_entity, field_path, &mut path_parts)
+            .await
+    }
+
+    /// Core field path validation: walk segments from a starting entity.
+    async fn validate_field_path_from(
+        &self,
+        start_entity: &str,
+        field_path: &FieldPath,
+        path_parts: &mut Vec<String>,
+    ) -> ValidationResult {
+        let mut current_entity = start_entity.to_string();
 
         for (i, segment) in field_path.segments.iter().enumerate() {
             let is_last = i == field_path.segments.len() - 1;

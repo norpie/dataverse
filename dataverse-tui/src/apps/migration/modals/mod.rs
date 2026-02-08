@@ -57,4 +57,5 @@ pub use type_picker::TypePickerModal;
 pub use test_guids::TestGuidsModal;
 pub use unmatched_handling::UnmatchedHandlingModal;
 pub use unmatched_handling::UnmatchedHandlingResult;
+pub use path_suggestions::VariableInfo;
 pub use value_map_transform::ValueMapTransformModal;

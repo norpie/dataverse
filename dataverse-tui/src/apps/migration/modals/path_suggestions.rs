@@ -1,11 +1,20 @@
 //! Shared path suggestion logic for Copy and Format transform modals.
 
 use dataverse_lib::model::metadata::AttributeType;
+use dataverse_lib::model::FieldType;
+use dataverse_lib::model::ValueType;
 use dataverse_lib::DataverseClient;
 use log::debug;
 
 use crate::apps::migration::validation::parse_path;
 use crate::apps::migration::validation::PathExpr;
+
+/// A variable with its name and declared type, for path suggestions.
+#[derive(Clone, Debug)]
+pub struct VariableInfo {
+    pub name: String,
+    pub declared_type: ValueType,
+}
 
 /// Generator for path autocomplete suggestions.
 ///
@@ -14,12 +23,12 @@ use crate::apps::migration::validation::PathExpr;
 pub struct PathSuggestionGenerator {
     client: DataverseClient,
     source_entity: String,
-    variables: Vec<String>,
+    variables: Vec<VariableInfo>,
 }
 
 impl PathSuggestionGenerator {
     /// Create a new path suggestion generator.
-    pub fn new(client: DataverseClient, source_entity: String, variables: Vec<String>) -> Self {
+    pub fn new(client: DataverseClient, source_entity: String, variables: Vec<VariableInfo>) -> Self {
         Self {
             client,
             source_entity,
@@ -129,8 +138,9 @@ impl PathSuggestionGenerator {
 
         // Add variables
         for var in &self.variables {
-            let value = format!("${}", var);
-            let label = format!("${} (variable)", var);
+            let value = format!("${}", var.name);
+            let type_hint = format!("{}", var.declared_type);
+            let label = format!("${} ({})", var.name, type_hint);
             suggestions.push((value, label));
         }
 
@@ -205,7 +215,47 @@ impl PathSuggestionGenerator {
             prefix
         );
 
-        // Parse to find the lookup field
+        // Check if prefix is a variable: "$varname" or "$varname.field...field"
+        if let Some(var_rest) = prefix.strip_prefix('$') {
+            // The last segment is the lookup — either the variable itself or a field after dots
+            if let Some(dot_pos) = var_rest.rfind('.') {
+                // "$var.some.field[" — resolve entity at "$var.some", then get field's targets
+                let path_before_last = format!("${}", &var_rest[..dot_pos]);
+                let lookup_field = &var_rest[dot_pos + 1..];
+                debug!(
+                    "[PathSuggestions] Variable nested polymorphic: path_before={:?}, lookup_field={:?}",
+                    path_before_last, lookup_field
+                );
+                let entity = match self.resolve_entity_at_path(&path_before_last).await {
+                    Some(e) => e,
+                    None => return Vec::new(),
+                };
+                return self.fetch_field_targets(&entity, lookup_field).await;
+            } else {
+                // "$var[" — the variable itself is the lookup, return its targets
+                let var_name = var_rest;
+                debug!(
+                    "[PathSuggestions] Variable root polymorphic: var_name={:?}",
+                    var_name
+                );
+                if let Some(var) = self.variables.iter().find(|v| v.name == var_name) {
+                    if let ValueType::Known(FieldType::Lookup { targets, .. }) =
+                        &var.declared_type
+                    {
+                        return targets
+                            .iter()
+                            .map(|t| {
+                                let label = format!("{} (target)", t);
+                                (t.clone(), label)
+                            })
+                            .collect();
+                    }
+                }
+                return Vec::new();
+            }
+        }
+
+        // Regular field path: parse to find the lookup field
         let segments: Vec<&str> = prefix.split('.').collect();
         let lookup_field = segments.last().map(|s| s.trim()).unwrap_or("");
         debug!(
@@ -245,14 +295,18 @@ impl PathSuggestionGenerator {
             }
         };
 
-        // Fetch metadata and get targets
-        match self.client.metadata().entity(entity_name.as_str()).await {
+        self.fetch_field_targets(&entity_name, lookup_field).await
+    }
+
+    /// Fetch the target entities for a lookup field on an entity.
+    async fn fetch_field_targets(&self, entity: &str, field: &str) -> Vec<(String, String)> {
+        match self.client.metadata().entity(entity).await {
             Ok(metadata) => {
-                debug!("[PathSuggestions] Fetched metadata for {}", entity_name);
-                if let Some(attr) = metadata.attribute(lookup_field) {
+                debug!("[PathSuggestions] Fetched metadata for {}", entity);
+                if let Some(attr) = metadata.attribute(field) {
                     debug!(
                         "[PathSuggestions] Found attribute {:?} with targets: {:?}",
-                        lookup_field, attr.targets
+                        field, attr.targets
                     );
                     return attr
                         .targets
@@ -265,14 +319,14 @@ impl PathSuggestionGenerator {
                 } else {
                     debug!(
                         "[PathSuggestions] Attribute {:?} not found on {}",
-                        lookup_field, entity_name
+                        field, entity
                     );
                 }
             }
             Err(e) => {
                 debug!(
                     "[PathSuggestions] Failed to fetch metadata for {}: {:?}",
-                    entity_name, e
+                    entity, e
                 );
             }
         }
@@ -297,30 +351,53 @@ impl PathSuggestionGenerator {
 
         // Parse the path
         let parsed = match parse_path(path) {
-            Ok(PathExpr::Field(field_path)) => {
-                debug!(
-                    "[PathSuggestions] Parsed path into {} segments",
-                    field_path.segments.len()
-                );
-                field_path
-            }
-            Ok(other) => {
-                debug!(
-                    "[PathSuggestions] Path parsed but not a field path: {:?}",
-                    other
-                );
-                return None;
-            }
+            Ok(parsed) => parsed,
             Err(e) => {
                 debug!("[PathSuggestions] Failed to parse path: {:?}", e);
+                // Fallback for partial variable paths like "$var[target]" that the strict
+                // parser rejects (it requires ".field" after "]"). For suggestion purposes
+                // we just need to resolve to the target entity.
+                if let Some(rest) = path.strip_prefix('$') {
+                    return self.resolve_partial_variable_path(rest);
+                }
                 return None;
             }
         };
 
-        let mut current_entity = self.source_entity.clone();
+        // Determine the starting entity and field path based on parsed expression
+        let (mut current_entity, field_path) = match parsed {
+            PathExpr::Field(field_path) => {
+                debug!(
+                    "[PathSuggestions] Parsed field path with {} segments",
+                    field_path.segments.len()
+                );
+                (self.source_entity.clone(), field_path)
+            }
+            PathExpr::Variable(name) => {
+                // A bare variable — resolve to its Lookup target entity
+                debug!(
+                    "[PathSuggestions] Parsed variable '{}', resolving to target entity",
+                    name
+                );
+                return self.resolve_variable_target_entity(&name, None);
+            }
+            PathExpr::VariableNavigation { name, target, path } => {
+                // Variable with field navigation — start from variable's target entity
+                let start_entity = self.resolve_variable_target_entity(&name, target.as_deref())?;
+                debug!(
+                    "[PathSuggestions] Parsed variable navigation '{}' -> entity '{}', {} path segments",
+                    name, start_entity, path.segments.len()
+                );
+                (start_entity, path)
+            }
+            PathExpr::SystemVar(_) => {
+                debug!("[PathSuggestions] System variables don't resolve to entities");
+                return None;
+            }
+        };
 
         // Walk through segments (excluding the last one if it's a field)
-        for segment in &parsed.segments {
+        for segment in &field_path.segments {
             debug!(
                 "[PathSuggestions] Processing segment: field={:?}, target={:?}, optional={:?}",
                 segment.field, segment.target, segment.optional
@@ -392,6 +469,81 @@ impl PathSuggestionGenerator {
 
         debug!("[PathSuggestions] Resolved to entity: {:?}", current_entity);
         Some(current_entity)
+    }
+
+    /// Fallback for partial variable paths that the strict parser rejects.
+    ///
+    /// Handles paths like `var[target]` (after `$` is stripped) that `parse_path`
+    /// rejects because there's no `.field` after `]`.
+    fn resolve_partial_variable_path(&self, rest: &str) -> Option<String> {
+        // Check for bracket target: "var[target]"
+        if let Some(bracket_start) = rest.find('[') {
+            let name = &rest[..bracket_start];
+            let after = &rest[bracket_start + 1..];
+            if let Some(bracket_end) = after.find(']') {
+                let target = &after[..bracket_end];
+                if !name.is_empty() && !target.is_empty() {
+                    debug!(
+                        "[PathSuggestions] Partial variable path: name={:?}, target={:?}",
+                        name, target
+                    );
+                    return self.resolve_variable_target_entity(name, Some(target));
+                }
+            }
+        }
+        // Plain variable name without brackets
+        if !rest.is_empty() && !rest.contains('.') {
+            debug!(
+                "[PathSuggestions] Partial variable path (plain): name={:?}",
+                rest
+            );
+            return self.resolve_variable_target_entity(rest, None);
+        }
+        None
+    }
+
+    /// Resolve a variable to its target entity name.
+    ///
+    /// For a variable typed as `Lookup(account)`, returns `"account"`.
+    /// For polymorphic lookups `Lookup(account, contact)`, `target` disambiguates.
+    fn resolve_variable_target_entity(&self, name: &str, target: Option<&str>) -> Option<String> {
+        let var = self.variables.iter().find(|v| v.name == name)?;
+        let targets = match &var.declared_type {
+            ValueType::Known(FieldType::Lookup { targets, .. }) => targets,
+            _ => {
+                debug!(
+                    "[PathSuggestions] Variable '{}' type {:?} is not a Lookup",
+                    name, var.declared_type
+                );
+                return None;
+            }
+        };
+
+        if targets.is_empty() {
+            debug!("[PathSuggestions] Variable '{}' Lookup has no targets", name);
+            return None;
+        }
+
+        if let Some(specified) = target {
+            // Polymorphic disambiguation
+            if targets.contains(&specified.to_string()) {
+                Some(specified.to_string())
+            } else {
+                debug!(
+                    "[PathSuggestions] Variable '{}' target '{}' not in {:?}",
+                    name, specified, targets
+                );
+                None
+            }
+        } else if targets.len() == 1 {
+            Some(targets[0].clone())
+        } else {
+            debug!(
+                "[PathSuggestions] Variable '{}' is polymorphic ({:?}) but no target specified",
+                name, targets
+            );
+            None
+        }
     }
 }
 

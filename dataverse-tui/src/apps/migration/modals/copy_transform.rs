@@ -8,6 +8,7 @@ use rafter::widgets::AutocompleteState;
 use tuidom::Element;
 
 use super::path_suggestions::PathSuggestionGenerator;
+use super::path_suggestions::VariableInfo;
 use crate::apps::migration::validation::PathValidator;
 use crate::apps::migration::validation::ValidationContext;
 use crate::apps::migration::validation::ValidationResult;
@@ -22,9 +23,9 @@ pub struct CopyTransformModal {
     /// The source entity logical name.
     #[state(skip)]
     source_entity: String,
-    /// Available variable names (without `$` prefix).
+    /// Available variables with type info.
     #[state(skip)]
-    variables: Vec<String>,
+    variables: Vec<VariableInfo>,
 
     /// Autocomplete state for path input.
     autocomplete: AutocompleteState<String>,
@@ -37,7 +38,7 @@ impl CopyTransformModal {
     pub fn new_modal(
         client: DataverseClient,
         source_entity: String,
-        variables: Vec<String>,
+        variables: Vec<VariableInfo>,
         current_path: String,
     ) -> Self {
         // Initialize autocomplete with empty options (will populate in on_start)
@@ -157,7 +158,11 @@ impl CopyTransformModal {
         let validator = PathValidator::new(self.client.clone());
         let ctx = ValidationContext {
             source_entity: self.source_entity.clone(),
-            variables: self.variables.clone(),
+            variable_types: self
+                .variables
+                .iter()
+                .map(|v| (v.name.clone(), v.declared_type.clone()))
+                .collect(),
         };
 
         // Validate
