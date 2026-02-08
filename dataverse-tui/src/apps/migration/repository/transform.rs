@@ -26,14 +26,12 @@ pub struct UpdateTransform {
 pub struct NewMatchBranch {
     pub transform_id: i64,
     pub order: i32,
-    pub condition: Option<Condition>,
-    pub is_default: bool,
+    pub condition: Condition,
 }
 
 /// Input for updating a match branch.
 pub struct UpdateMatchBranch {
     pub condition: Option<Condition>,
-    pub is_default: Option<bool>,
 }
 
 impl super::MigrationRepository {
@@ -283,7 +281,7 @@ impl super::MigrationRepository {
         self.client
             .conn_mut(move |conn| {
                 let mut stmt = conn.prepare(
-                    "SELECT id, transform_id, \"order\", condition, is_default
+                    "SELECT id, transform_id, \"order\", condition
                      FROM match_branches
                      WHERE transform_id = ?1
                      ORDER BY \"order\" ASC",
@@ -303,7 +301,7 @@ impl super::MigrationRepository {
         self.client
             .conn_mut(move |conn| {
                 let mut stmt = conn.prepare(
-                    "SELECT mb.id, mb.transform_id, mb.\"order\", mb.condition, mb.is_default
+                    "SELECT mb.id, mb.transform_id, mb.\"order\", mb.condition
                      FROM match_branches mb
                      INNER JOIN transforms t ON mb.transform_id = t.id
                      INNER JOIN entity_mappings em ON t.entity_mapping_id = em.id
@@ -323,7 +321,7 @@ impl super::MigrationRepository {
         self.client
             .conn_mut(move |conn| {
                 let mut stmt = conn.prepare(
-                    "SELECT id, transform_id, \"order\", condition, is_default
+                    "SELECT id, transform_id, \"order\", condition
                      FROM match_branches
                      WHERE id = ?1",
                 )?;
@@ -343,22 +341,17 @@ impl super::MigrationRepository {
         &self,
         branch: NewMatchBranch,
     ) -> Result<i64, RepositoryError> {
-        let condition_blob = branch
-            .condition
-            .as_ref()
-            .map(serialize_condition)
-            .transpose()?;
+        let condition_blob = serialize_condition(&branch.condition)?;
         let transform_id = branch.transform_id;
         let order = branch.order;
-        let is_default = branch.is_default;
         let now = Utc::now().to_rfc3339();
 
         self.client
             .conn_mut(move |conn| {
                 conn.execute(
-                    "INSERT INTO match_branches (transform_id, \"order\", condition, is_default)
-                     VALUES (?1, ?2, ?3, ?4)",
-                    params![transform_id, order, condition_blob, is_default as i32,],
+                    "INSERT INTO match_branches (transform_id, \"order\", condition)
+                     VALUES (?1, ?2, ?3)",
+                    params![transform_id, order, condition_blob],
                 )?;
                 let branch_id = conn.last_insert_rowid();
 
@@ -377,52 +370,28 @@ impl super::MigrationRepository {
             .map_err(RepositoryError::Database)
     }
 
-    /// Update a match branch.
+    /// Update a match branch's condition.
     pub async fn update_match_branch(
         &self,
         id: i64,
         update: UpdateMatchBranch,
     ) -> Result<(), RepositoryError> {
-        // Serialize before entering closure
-        let condition_blob = update
-            .condition
-            .as_ref()
-            .map(serialize_condition)
-            .transpose()?;
+        let Some(condition) = update.condition else {
+            return Ok(());
+        };
 
+        let condition_blob = serialize_condition(&condition)?;
         let now = Utc::now().to_rfc3339();
-        let client = self.client.clone();
 
-        client
+        self.client
             .conn(move |conn| {
-                let mut updates = Vec::new();
-                let mut param_vals: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
-
-                if let Some(blob) = condition_blob {
-                    updates.push("condition = ?");
-                    param_vals.push(Box::new(blob));
-                }
-                if let Some(is_default) = update.is_default {
-                    updates.push("is_default = ?");
-                    param_vals.push(Box::new(is_default as i32));
-                }
-
-                if updates.is_empty() {
-                    return Ok((0, 0));
-                }
-
-                param_vals.push(Box::new(id));
-
-                let sql = format!(
-                    "UPDATE match_branches SET {} WHERE id = ?",
-                    updates.join(", ")
-                );
-                let param_refs: Vec<&dyn rusqlite::ToSql> =
-                    param_vals.iter().map(|p| p.as_ref()).collect();
-                let affected = conn.execute(&sql, param_refs.as_slice())?;
+                let affected = conn.execute(
+                    "UPDATE match_branches SET condition = ?1 WHERE id = ?2",
+                    params![condition_blob, id],
+                )?;
 
                 // Update parent migration timestamp
-                let migration_affected = conn.execute(
+                conn.execute(
                     "UPDATE migrations SET updated_at = ?1
                      WHERE id = (SELECT migration_id FROM phases
                                  WHERE id = (SELECT phase_id FROM entity_mappings
@@ -431,11 +400,11 @@ impl super::MigrationRepository {
                     params![now, id],
                 )?;
 
-                Ok((affected, migration_affected))
+                Ok(affected)
             })
             .await
             .map_err(RepositoryError::Database)
-            .and_then(|(affected, _)| {
+            .and_then(|affected| {
                 if affected == 0 {
                     Err(RepositoryError::NotFound("MatchBranch", id))
                 } else {

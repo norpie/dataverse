@@ -25,6 +25,7 @@ use crate::apps::migration::types::Migration;
 use crate::apps::migration::types::Mode;
 use crate::apps::migration::types::Phase;
 use crate::apps::migration::types::Transform;
+use crate::apps::migration::types::ParentType;
 use crate::apps::migration::types::Variable;
 
 use tree::MigrationTreeNode;
@@ -296,6 +297,10 @@ impl MigrationEditor {
                 // Find condition selected -> add transform to the condition
                 self.add_transform_impl(gx).await;
             }
+            Some(MigrationTreeNode::MatchDefault { .. }) => {
+                // Match default selected -> add transform to the default chain
+                self.add_transform_impl(gx).await;
+            }
             Some(MigrationTreeNode::Chain { .. }) => {
                 // Chain wrapper selected -> add transform to the chain
                 self.add_transform_impl(gx).await;
@@ -432,6 +437,9 @@ impl MigrationEditor {
                 // TODO: Open find condition editor (target_field edit)
                 gx.toast(Toast::info("Find condition editor not yet implemented"));
             }
+            MigrationTreeNode::MatchDefault { .. } => {
+                // MatchDefault is managed by the Match transform's has_default flag
+            }
             MigrationTreeNode::Chain { .. } => {
                 // Chain wrappers don't have configuration - just add transforms under them
             }
@@ -453,6 +461,7 @@ impl MigrationEditor {
             Some(MigrationTreeNode::MatchBranch(_)) => (true, "Add Transform"),
             Some(MigrationTreeNode::CoalesceChain(_)) => (true, "Add Transform"),
             Some(MigrationTreeNode::FindCondition(_)) => (true, "Add Transform"),
+            Some(MigrationTreeNode::MatchDefault { .. }) => (true, "Add Transform"),
             Some(MigrationTreeNode::Chain { .. }) => (true, "Add Transform"),
             Some(_) => (false, "Add"), // Other config nodes - can't add
         };
@@ -560,6 +569,9 @@ impl MigrationEditor {
                             }
                             Some(MigrationTreeNode::FindCondition(fc)) => {
                                 { self.render_find_condition_detail(&fc) }
+                            }
+                            Some(MigrationTreeNode::MatchDefault { transform_id }) => {
+                                { self.render_chain_detail(ParentType::MatchDefault, transform_id) }
                             }
                             Some(MigrationTreeNode::Chain { parent_type, parent_id }) => {
                                 { self.render_chain_detail(parent_type, parent_id) }

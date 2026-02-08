@@ -161,7 +161,7 @@ impl MigrationEditor {
             TransformType::ParseInt => Some(TransformData::ParseInt),
             TransformType::ParseDecimal => Some(TransformData::ParseDecimal),
             TransformType::Coalesce => Some(TransformData::Coalesce),
-            TransformType::Match => Some(TransformData::Match),
+            TransformType::Match => Some(TransformData::Match { has_default: false }),
 
             // =================================================================
             // Config transforms — open edit modal first
@@ -531,8 +531,8 @@ impl MigrationEditor {
                     insert_order: 0,
                 })
             }
-            ParentType::GuardFallback => {
-                // GuardFallback parent_id is the transform_id of the guard
+            ParentType::GuardFallback | ParentType::MatchDefault => {
+                // parent_id is the transform_id of the guard/match
                 let parent_transform = self
                     .transforms
                     .get()
@@ -615,6 +615,23 @@ impl MigrationEditor {
                     entity_mapping_id,
                     parent_type: ParentType::FindCondition,
                     parent_id: fc.id,
+                    insert_order: order,
+                })
+            }
+            MigrationTreeNode::MatchDefault { transform_id } => {
+                // Add to end of default branch chain
+                let order =
+                    self.transform_count_for_parent(ParentType::MatchDefault, transform_id);
+                let entity_mapping_id = self
+                    .transforms
+                    .get()
+                    .iter()
+                    .find(|t| t.id == transform_id)
+                    .map(|t| t.entity_mapping_id)?;
+                Some(InsertTarget {
+                    entity_mapping_id,
+                    parent_type: ParentType::MatchDefault,
+                    parent_id: transform_id,
                     insert_order: order,
                 })
             }
@@ -720,8 +737,8 @@ impl MigrationEditor {
                     .cloned()?;
                 self.entity_mapping_id_for_find_condition(&fc)
             }
-            ParentType::GuardFallback => {
-                // GuardFallback parent_id is the transform_id of the guard
+            ParentType::GuardFallback | ParentType::MatchDefault => {
+                // parent_id is the transform_id of the guard/match
                 self.transforms
                     .get()
                     .iter()
@@ -813,6 +830,7 @@ impl MigrationEditor {
             ParentType::CoalesceChain => Some(format!("coalesce-chain-{}", parent_id)),
             ParentType::FindCondition => Some(format!("find-condition-{}", parent_id)),
             ParentType::GuardFallback => Some(format!("transform-{}", parent_id)),
+            ParentType::MatchDefault => Some(format!("match-default-{}", parent_id)),
         }
     }
 

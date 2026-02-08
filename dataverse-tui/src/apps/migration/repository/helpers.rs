@@ -156,7 +156,7 @@ pub fn transform_type_str(data: &TransformData) -> String {
         TransformData::Copy { .. } => "copy",
         TransformData::Constant { .. } => "constant",
         TransformData::Guard { .. } => "guard",
-        TransformData::Match => "match",
+        TransformData::Match { .. } => "match",
         TransformData::Find { .. } => "find",
         TransformData::Format { .. } => "format",
         TransformData::Replace { .. } => "replace",
@@ -293,19 +293,15 @@ pub fn row_to_phase_run(row: &Row) -> Result<PhaseRun, rusqlite::Error> {
 }
 
 /// Convert database row to MatchBranch.
-/// Column order: id, transform_id, order, condition, is_default
+/// Column order: id, transform_id, order, condition
 pub fn row_to_match_branch(row: &Row) -> Result<MatchBranch, rusqlite::Error> {
-    let condition_blob: Option<Vec<u8>> = row.get(3)?;
-    let condition = condition_blob
-        .map(|b| deserialize_condition(&b))
-        .transpose()
-        .map_err(repo_err_to_rusqlite)?;
+    let condition_blob: Vec<u8> = row.get(3)?;
+    let condition = deserialize_condition(&condition_blob).map_err(repo_err_to_rusqlite)?;
 
     Ok(MatchBranch {
         id: row.get(0)?,
         transform_id: row.get(1)?,
         order: row.get(2)?,
         condition,
-        is_default: row.get::<_, i32>(4)? != 0,
     })
 }

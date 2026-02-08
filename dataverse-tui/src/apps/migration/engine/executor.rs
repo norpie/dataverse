@@ -47,10 +47,14 @@ impl ChainItem {
     }
 
     /// Creates a chain item with branches (for match).
-    pub fn with_branches(data: TransformData, branches: Vec<BranchItem>) -> Self {
+    pub fn with_branches(
+        data: TransformData,
+        branches: Vec<BranchItem>,
+        default_chain: Option<Vec<ChainItem>>,
+    ) -> Self {
         Self {
             data,
-            children: ChainChildren::Branches(branches),
+            children: ChainChildren::Branches(branches, default_chain),
         }
     }
 
@@ -80,7 +84,8 @@ pub enum ChainChildren {
     /// Guard fallback chain - executed when condition is true.
     Fallback(Vec<ChainItem>),
     /// Match branches - evaluated in order, first match wins.
-    Branches(Vec<BranchItem>),
+    /// The optional second element is the default chain (executed when no branch matches).
+    Branches(Vec<BranchItem>, Option<Vec<ChainItem>>),
     /// Coalesce alternatives - first non-null wins.
     Alternatives(Vec<Vec<ChainItem>>),
     /// Find condition source chains - produce values to match against.
@@ -90,10 +95,8 @@ pub enum ChainChildren {
 /// A branch within a match transform.
 #[derive(Debug, Clone)]
 pub struct BranchItem {
-    /// Condition to evaluate (None for default branch).
-    pub condition: Option<Condition>,
-    /// Whether this is the default branch.
-    pub is_default: bool,
+    /// Condition to evaluate for this branch.
+    pub condition: Condition,
     /// Transform chain to execute if this branch matches.
     pub chain: Vec<ChainItem>,
 }
@@ -206,7 +209,7 @@ fn execute_transform(item: &ChainItem, ctx: &mut TransformContext<'_>) -> Transf
 
         // Control flow (Step 8)
         TransformData::Guard { .. } => not_implemented("guard"),
-        TransformData::Match => not_implemented("match"),
+        TransformData::Match { .. } => not_implemented("match"),
 
         // Data transforms (Step 9)
         TransformData::ValueMap { .. } => not_implemented("value_map"),

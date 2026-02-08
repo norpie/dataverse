@@ -101,6 +101,8 @@ pub enum MigrationTreeNode {
     Transform(TransformNode),
     /// A branch within a match transform.
     MatchBranch(MatchBranch),
+    /// The default branch of a match transform (transforms use ParentType::MatchDefault).
+    MatchDefault { transform_id: i64 },
     /// A fallback chain within a coalesce transform.
     CoalesceChain(CoalesceChain),
     /// A condition within a find transform (where-clause mode).
@@ -131,10 +133,11 @@ impl MigrationTreeNode {
             Self::Variable(vn) => Some(vn.variable.entity_mapping_id),
             Self::FieldMapping(fmn) => Some(fmn.field_mapping.entity_mapping_id),
             Self::Transform(tn) => Some(tn.transform.entity_mapping_id),
-            Self::MatchBranch(_) => None,   // Get via transform
-            Self::CoalesceChain(_) => None, // Get via transform
-            Self::FindCondition(_) => None, // Get via transform
-            Self::Chain { .. } => None,     // Get via parent
+            Self::MatchBranch(_) => None,      // Get via transform
+            Self::MatchDefault { .. } => None, // Get via transform
+            Self::CoalesceChain(_) => None,    // Get via transform
+            Self::FindCondition(_) => None,    // Get via transform
+            Self::Chain { .. } => None,        // Get via parent
         }
     }
 
@@ -293,6 +296,7 @@ impl TreeItem for MigrationTreeNode {
             Self::FieldMapping(fmn) => format!("field-mapping-{}", fmn.field_mapping.id),
             Self::Transform(tn) => format!("transform-{}", tn.transform.id),
             Self::MatchBranch(mb) => format!("match-branch-{}", mb.id),
+            Self::MatchDefault { transform_id } => format!("match-default-{}", transform_id),
             Self::CoalesceChain(cc) => format!("coalesce-chain-{}", cc.id),
             Self::FindCondition(fc) => format!("find-condition-{}", fc.id),
             Self::Chain {
@@ -415,16 +419,14 @@ impl TreeItem for MigrationTreeNode {
                 }
             }
             Self::MatchBranch(mb) => {
-                let label = if mb.is_default {
-                    "Default".to_string()
-                } else {
-                    // TODO: Show condition summary when condition display is implemented
-                    format!("Branch {}", mb.order + 1)
-                };
+                let label = format!("Branch: {}", condition_summary(&mb.condition));
                 element! {
                     text (content: {label}) style (fg: muted)
                 }
             }
+            Self::MatchDefault { .. } => element! {
+                text (content: "Default") style (fg: muted)
+            },
             Self::CoalesceChain(cc) => {
                 let label = format!("Fallback {}", cc.order + 1);
                 element! {
@@ -520,7 +522,7 @@ pub fn transform_display_text(data: &TransformData) -> String {
         TransformData::Guard { condition } => {
             format!("guard ({})", condition_summary(condition))
         }
-        TransformData::Match => "match".to_string(),
+        TransformData::Match { .. } => "match".to_string(),
         TransformData::Coalesce => "coalesce".to_string(),
         TransformData::Find {
             entity,
@@ -533,7 +535,7 @@ pub fn transform_display_text(data: &TransformData) -> String {
 }
 
 /// Produce a short summary of a condition for display in tree nodes.
-fn condition_summary(condition: &Condition) -> String {
+pub fn condition_summary(condition: &Condition) -> String {
     match condition {
         Condition::IsNull(expr) => format!("{} is null", expr_short(expr)),
         Condition::IsNotNull(expr) => format!("{} is not null", expr_short(expr)),
@@ -1055,10 +1057,13 @@ fn build_transform_node(t: Transform, ctx: &mut TreeBuildContext) -> TreeNode<Mi
                 TreeNode::branch(node, children)
             }
         }
-        TransformData::Match => {
-            // Match: branches as children
+        TransformData::Match { has_default } => {
+            // Match: branches as children, plus optional default
+            let has_default = *has_default;
             let branches = ctx.lookup.get_match_branches(t.id);
-            if branches.is_empty() {
+            let has_branches = !branches.is_empty() || has_default;
+
+            if !has_branches {
                 TreeNode::leaf(make_transform_node(t, ctx))
             } else {
                 // Compute types for each branch, then union them
@@ -1073,17 +1078,37 @@ fn build_transform_node(t: Transform, ctx: &mut TreeBuildContext) -> TreeNode<Mi
                         ctx.types.merge(&branch_result);
                     }
                 }
+
+                // Also include default branch type if present
+                if has_default {
+                    let default_transforms =
+                        ctx.lookup.get_transforms(ParentType::MatchDefault, t.id);
+                    if !default_transforms.is_empty() {
+                        let default_result =
+                            compute_chain_types(&default_transforms, &source_entity, ctx);
+                        branch_output_types.push(default_result.output_type.clone());
+                        ctx.types.merge(&default_result);
+                    }
+                }
+
                 // Store the union type for the match transform itself
                 if !branch_output_types.is_empty() {
                     let union_type = resolve_branch_union(&branch_output_types);
                     ctx.types.transform_types.insert(t.id, union_type);
                 }
 
+                let transform_id = t.id;
                 let node = make_transform_node(t, ctx);
-                let children: Vec<TreeNode<MigrationTreeNode>> = branches
+                let mut children: Vec<TreeNode<MigrationTreeNode>> = branches
                     .into_iter()
                     .map(|mb| build_match_branch_node(mb, ctx))
                     .collect();
+
+                // Add default branch node if has_default
+                if has_default {
+                    children.push(build_match_default_node(transform_id, ctx));
+                }
+
                 TreeNode::branch(node, children)
             }
         }
@@ -1168,6 +1193,29 @@ fn build_match_branch_node(
         transforms,
         ctx,
     )
+}
+
+/// Build a tree node for the match default branch.
+/// Default branch transforms use ParentType::MatchDefault with parent_id = match transform id.
+fn build_match_default_node(
+    match_transform_id: i64,
+    ctx: &mut TreeBuildContext,
+) -> TreeNode<MigrationTreeNode> {
+    let transforms = ctx
+        .lookup
+        .get_transforms(ParentType::MatchDefault, match_transform_id);
+    let node = MigrationTreeNode::MatchDefault {
+        transform_id: match_transform_id,
+    };
+    if transforms.is_empty() {
+        TreeNode::leaf(node)
+    } else {
+        let children: Vec<TreeNode<MigrationTreeNode>> = transforms
+            .into_iter()
+            .map(|t| build_transform_node(t, ctx))
+            .collect();
+        TreeNode::branch(node, children)
+    }
 }
 
 /// Build a tree node for a coalesce chain with its transforms.

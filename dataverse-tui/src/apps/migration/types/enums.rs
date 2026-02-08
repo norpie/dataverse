@@ -67,6 +67,8 @@ pub enum ParentType {
     Variable,
     /// Transform belongs to a match branch.
     MatchBranch,
+    /// Transform belongs to a match default branch.
+    MatchDefault,
     /// Transform belongs to a guard fallback.
     GuardFallback,
     /// Transform belongs to a coalesce chain (one of multiple fallback chains).
@@ -226,6 +228,7 @@ impl ParentType {
             ParentType::FieldMapping => "field_mapping",
             ParentType::Variable => "variable",
             ParentType::MatchBranch => "match_branch",
+            ParentType::MatchDefault => "match_default",
             ParentType::GuardFallback => "guard_fallback",
             ParentType::CoalesceChain => "coalesce_chain",
             ParentType::FindCondition => "find_condition",
@@ -237,6 +240,7 @@ impl ParentType {
             "field_mapping" => Some(ParentType::FieldMapping),
             "variable" => Some(ParentType::Variable),
             "match_branch" => Some(ParentType::MatchBranch),
+            "match_default" => Some(ParentType::MatchDefault),
             "guard_fallback" => Some(ParentType::GuardFallback),
             "coalesce_chain" => Some(ParentType::CoalesceChain),
             "find_condition" => Some(ParentType::FindCondition),

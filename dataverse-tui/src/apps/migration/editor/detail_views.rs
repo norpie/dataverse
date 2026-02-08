@@ -4,6 +4,7 @@ use rafter::element;
 use rafter::widgets::Text;
 use tuidom::Element;
 
+use super::tree::condition_summary;
 use super::tree::transform_display_text;
 use super::tree::FieldMappingNode;
 use super::tree::TransformNode;
@@ -246,6 +247,7 @@ impl MigrationEditor {
             ParentType::FieldMapping => "Field Mapping",
             ParentType::Variable => "Variable",
             ParentType::MatchBranch => "Match Branch",
+            ParentType::MatchDefault => "Match Default",
             ParentType::GuardFallback => "Guard Fallback",
             ParentType::CoalesceChain => "Coalesce Chain",
             ParentType::FindCondition => "Find Condition",
@@ -313,12 +315,8 @@ impl MigrationEditor {
 
     /// Render a Match Branch detail view.
     pub(super) fn render_match_branch_detail(&self, branch: &MatchBranch) -> Element {
-        let branch_label = if branch.is_default {
-            "Default".to_string()
-        } else {
-            format!("Branch {}", branch.order + 1)
-        };
-        let is_default_str = if branch.is_default { "Yes" } else { "No" };
+        let branch_label = format!("Branch {}", branch.order + 1);
+        let condition_str = condition_summary(&branch.condition);
 
         element! {
             column (gap: 1) {
@@ -329,8 +327,8 @@ impl MigrationEditor {
                         text (content: {branch_label})
                     }
                     row (gap: 1) {
-                        text (content: "Default") style (fg: muted)
-                        text (content: {is_default_str})
+                        text (content: "Condition") style (fg: muted)
+                        text (content: {condition_str})
                     }
                     text (content: "Press Enter to edit branch condition") style (fg: muted)
                 }

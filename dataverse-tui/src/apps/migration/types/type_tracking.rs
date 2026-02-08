@@ -110,7 +110,7 @@ impl TransformData {
                 input: None,
                 output: None, // Dynamic - union of branch outputs
             },
-            TransformData::Match => TransformSignature {
+            TransformData::Match { .. } => TransformSignature {
                 input: Some(ValueType::Any),
                 output: None, // Dynamic - union of branch outputs
             },

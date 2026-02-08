@@ -43,7 +43,7 @@ pub enum TransformData {
     /// Guard with condition - early exit if true.
     Guard { condition: Condition },
     /// Match expression - branches are separate rows.
-    Match,
+    Match { has_default: bool },
     /// Find record in target environment.
     Find {
         entity: String,

@@ -145,8 +145,7 @@ pub struct MatchBranch {
     pub id: i64,
     pub transform_id: i64,
     pub order: i32,
-    pub condition: Option<Condition>,
-    pub is_default: bool,
+    pub condition: Condition,
 }
 
 // =============================================================================
