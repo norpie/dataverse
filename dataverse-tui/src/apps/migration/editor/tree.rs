@@ -425,7 +425,7 @@ impl TreeItem for MigrationTreeNode {
                 }
             }
             Self::MatchDefault { .. } => element! {
-                text (content: "Default") style (fg: muted)
+                text (content: "Default") style (fg: primary)
             },
             Self::CoalesceChain(cc) => {
                 let label = format!("Fallback {}", cc.order + 1);

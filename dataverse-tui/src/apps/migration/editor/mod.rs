@@ -25,7 +25,6 @@ use crate::apps::migration::types::Migration;
 use crate::apps::migration::types::Mode;
 use crate::apps::migration::types::Phase;
 use crate::apps::migration::types::Transform;
-use crate::apps::migration::types::ParentType;
 use crate::apps::migration::types::Variable;
 
 use tree::MigrationTreeNode;
@@ -570,8 +569,8 @@ impl MigrationEditor {
                             Some(MigrationTreeNode::FindCondition(fc)) => {
                                 { self.render_find_condition_detail(&fc) }
                             }
-                            Some(MigrationTreeNode::MatchDefault { transform_id }) => {
-                                { self.render_chain_detail(ParentType::MatchDefault, transform_id) }
+                            Some(MigrationTreeNode::MatchDefault { .. }) => {
+                                { self.render_match_default_detail() }
                             }
                             Some(MigrationTreeNode::Chain { parent_type, parent_id }) => {
                                 { self.render_chain_detail(parent_type, parent_id) }

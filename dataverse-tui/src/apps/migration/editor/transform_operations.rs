@@ -13,6 +13,7 @@ use crate::apps::migration::modals::ConvertTransformModal;
 use crate::apps::migration::modals::CopyTransformModal;
 use crate::apps::migration::modals::FormatTransformModal;
 use crate::apps::migration::modals::GuardTransformModal;
+use crate::apps::migration::modals::MatchTransformModal;
 use crate::apps::migration::modals::MathTransformModal;
 use crate::apps::migration::modals::ParseDateTransformModal;
 use crate::apps::migration::modals::VariableInfo;
@@ -161,11 +162,16 @@ impl MigrationEditor {
             TransformType::ParseInt => Some(TransformData::ParseInt),
             TransformType::ParseDecimal => Some(TransformData::ParseDecimal),
             TransformType::Coalesce => Some(TransformData::Coalesce),
-            TransformType::Match => Some(TransformData::Match { has_default: false }),
 
             // =================================================================
             // Config transforms — open edit modal first
             // =================================================================
+            TransformType::Match => {
+                let modal = MatchTransformModal::new_modal(false);
+                gx.modal(modal)
+                    .await
+                    .map(|has_default| TransformData::Match { has_default })
+            }
             TransformType::Copy => {
                 let modal = CopyTransformModal::new_modal(
                     self.source_client.get().clone(),
@@ -1084,6 +1090,52 @@ impl MigrationEditor {
                         transform.id,
                         TransformData::Guard {
                             condition: new_condition,
+                        },
+                        gx,
+                    )
+                    .await;
+                }
+            }
+            TransformData::Match { has_default } => {
+                let modal = MatchTransformModal::new_modal(*has_default);
+
+                if let Some(new_has_default) = gx.modal(modal).await {
+                    if new_has_default == *has_default {
+                        return; // No change
+                    }
+
+                    // Disabling default: confirm + delete default branch transforms
+                    if !new_has_default {
+                        let repo = gx.data::<MigrationRepository>();
+                        let default_transforms = repo
+                            .get_transforms(ParentType::MatchDefault, transform.id)
+                            .await
+                            .unwrap_or_default();
+
+                        if !default_transforms.is_empty() {
+                            let confirmed = gx
+                                .modal(ConfirmModal::with_message(format!(
+                                    "Removing the default branch will delete {} transform(s). Continue?",
+                                    default_transforms.len()
+                                )))
+                                .await;
+
+                            if !confirmed {
+                                return;
+                            }
+
+                            for t in &default_transforms {
+                                if let Err(e) = repo.delete_transform(t.id).await {
+                                    log::error!("Failed to delete default transform: {}", e);
+                                }
+                            }
+                        }
+                    }
+
+                    self.update_transform_data(
+                        transform.id,
+                        TransformData::Match {
+                            has_default: new_has_default,
                         },
                         gx,
                     )

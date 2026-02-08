@@ -377,6 +377,22 @@ impl MigrationEditor {
         }
     }
 
+    /// Render a Match Default detail view.
+    pub(super) fn render_match_default_detail(&self) -> Element {
+        element! {
+            column (gap: 1) {
+                text (content: "Match Default") style (bold, fg: interact)
+                column {
+                    row (gap: 1) {
+                        text (content: "Type") style (fg: muted)
+                        text (content: "Default Branch")
+                    }
+                    text (content: "Add transforms to define the default output") style (fg: muted)
+                }
+            }
+        }
+    }
+
     /// Render a Chain wrapper detail view.
     pub(super) fn render_chain_detail(&self, parent_type: ParentType, _parent_id: i64) -> Element {
         let parent_desc = match parent_type {
@@ -384,6 +400,7 @@ impl MigrationEditor {
             ParentType::GuardFallback => "Guard Fallback",
             ParentType::CoalesceChain => "Coalesce Fallback",
             ParentType::FindCondition => "Find Condition",
+            ParentType::MatchDefault => "Match Default",
             _ => "Parent",
         };
 
