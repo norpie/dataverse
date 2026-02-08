@@ -121,6 +121,12 @@ impl FieldType {
     }
 }
 
+impl std::fmt::Display for FieldType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.display())
+    }
+}
+
 impl From<AttributeType> for FieldType {
     fn from(attr: AttributeType) -> Self {
         if is_lookup_type(attr) {
@@ -258,6 +264,12 @@ impl ValueType {
                 names.join(" | ")
             }
         }
+    }
+}
+
+impl std::fmt::Display for ValueType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.display())
     }
 }
 
