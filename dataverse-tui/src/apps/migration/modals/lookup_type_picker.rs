@@ -166,9 +166,9 @@ impl LookupTypePickerModal {
                         }
                     }
 
-                    // Right: entity target picker
+                    // Right: entity picker (which entities this lookup can point to)
                     column (width: fill, height: fill, gap: 1) {
-                        text (content: "Target Entities") style (fg: muted)
+                        text (content: "Points To") style (fg: muted)
                         autocomplete (
                             state: self.entity_autocomplete,
                             id: "entity-autocomplete",

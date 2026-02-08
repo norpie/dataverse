@@ -17,7 +17,7 @@ use super::MigrationEditor;
 impl MigrationEditor {
     /// Add a new variable to an entity mapping.
     pub(super) async fn add_variable_impl(&self, entity_mapping_id: i64, gx: &GlobalContext) {
-        let client = self.target_client.get();
+        let client = self.source_client.get();
         let existing_names: Vec<String> = self
             .variables
             .get()
@@ -61,7 +61,7 @@ impl MigrationEditor {
 
     /// Edit an existing variable (name and type).
     pub(super) async fn edit_variable_impl(&self, variable: &Variable, gx: &GlobalContext) {
-        let client = self.target_client.get();
+        let client = self.source_client.get();
         let existing_names: Vec<String> = self
             .variables
             .get()
