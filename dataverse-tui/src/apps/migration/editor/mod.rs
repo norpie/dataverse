@@ -20,6 +20,7 @@ use crate::apps::migration::types::CoalesceChain;
 use crate::apps::migration::types::EntityMapping;
 use crate::apps::migration::types::FieldMapping;
 use crate::apps::migration::types::FindCondition;
+use crate::apps::migration::types::FindMode;
 use crate::apps::migration::types::MatchBranch;
 use crate::apps::migration::types::Migration;
 use crate::apps::migration::types::Mode;
@@ -293,6 +294,18 @@ impl MigrationEditor {
                 // Coalesce transform -> add fallback chain
                 self.add_coalesce_chain_impl(&tn.transform, gx).await;
             }
+            Some(MigrationTreeNode::Transform(ref tn))
+                if matches!(
+                    tn.transform.data,
+                    TransformData::Find {
+                        mode: FindMode::Where,
+                        ..
+                    }
+                ) =>
+            {
+                // Find (Where mode) -> add condition
+                self.add_find_condition_impl(&tn.transform, gx).await;
+            }
             Some(MigrationTreeNode::Transform(..)) => {
                 // Transform selected -> add transform after it in the chain
                 self.add_transform_impl(gx).await;
@@ -359,6 +372,9 @@ impl MigrationEditor {
             Some(MigrationTreeNode::CoalesceChain(cc)) => {
                 self.delete_coalesce_chain_impl(&cc, cx, gx).await;
             }
+            Some(MigrationTreeNode::FindCondition(fc)) => {
+                self.delete_find_condition_impl(&fc, cx, gx).await;
+            }
             // Other config nodes can't be deleted
             Some(_) | None => {}
         }
@@ -401,7 +417,10 @@ impl MigrationEditor {
             MigrationTreeNode::CoalesceChain(cc) => {
                 self.reorder_coalesce_chain_impl(&cc, direction, gx).await;
             }
-            // Other nodes don't support reordering (yet)
+            MigrationTreeNode::FindCondition(fc) => {
+                self.reorder_find_condition_impl(&fc, direction, gx).await;
+            }
+            // Other nodes don't support reordering
             _ => {}
         }
     }
@@ -461,9 +480,8 @@ impl MigrationEditor {
                 // Coalesce chains have no config - Enter adds a transform
                 self.add_transform_impl(gx).await;
             }
-            MigrationTreeNode::FindCondition(_fc) => {
-                // TODO: Open find condition editor (target_field edit)
-                gx.toast(Toast::info("Find condition editor not yet implemented"));
+            MigrationTreeNode::FindCondition(fc) => {
+                self.edit_find_condition_impl(&fc, gx).await;
             }
             MigrationTreeNode::MatchDefault { .. } => {
                 // MatchDefault is managed by the Match transform's has_default flag
@@ -497,6 +515,17 @@ impl MigrationEditor {
                 if matches!(tn.transform.data, TransformData::Coalesce) =>
             {
                 (true, "Add Fallback")
+            }
+            Some(MigrationTreeNode::Transform(tn))
+                if matches!(
+                    tn.transform.data,
+                    TransformData::Find {
+                        mode: FindMode::Where,
+                        ..
+                    }
+                ) =>
+            {
+                (true, "Add Condition")
             }
             Some(MigrationTreeNode::Transform(..)) => (true, "Add Transform"),
             Some(MigrationTreeNode::MatchBranch(_)) => (true, "Add Transform"),

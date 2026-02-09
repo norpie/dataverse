@@ -445,7 +445,7 @@ impl TreeItem for MigrationTreeNode {
             Self::FindCondition(fc) => {
                 let label = format!("Condition: {}", fc.target_field);
                 element! {
-                    text (content: {label}) style (fg: muted)
+                    text (content: {label}) style (fg: primary)
                 }
             }
             Self::Chain { .. } => element! {

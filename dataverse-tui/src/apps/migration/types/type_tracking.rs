@@ -35,9 +35,12 @@ impl TransformData {
                 input: None,
                 output: Some(ValueType::simple(AttributeType::Uniqueidentifier)),
             },
-            TransformData::Find { .. } => TransformSignature {
+            TransformData::Find { entity, .. } => TransformSignature {
                 input: None,
-                output: Some(ValueType::lookup(AttributeType::Lookup, vec![])),
+                output: Some(ValueType::lookup(
+                    AttributeType::Lookup,
+                    vec![entity.clone()],
+                )),
             },
 
             // String operations (expect String)

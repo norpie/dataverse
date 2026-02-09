@@ -11,6 +11,7 @@ use rafter::prelude::*;
 use crate::apps::migration::modals::ConstantTransformModal;
 use crate::apps::migration::modals::ConvertTransformModal;
 use crate::apps::migration::modals::CopyTransformModal;
+use crate::apps::migration::modals::FindConditionModal;
 use crate::apps::migration::modals::FindTransformModal;
 use crate::apps::migration::modals::FormatTransformModal;
 use crate::apps::migration::modals::GuardTransformModal;
@@ -25,8 +26,10 @@ use crate::apps::migration::modals::TransformType;
 use crate::apps::migration::modals::ValueMapTransformModal;
 use crate::apps::migration::repository::MigrationRepository;
 use crate::apps::migration::repository::NewCoalesceChain;
+use crate::apps::migration::repository::NewFindCondition;
 use crate::apps::migration::repository::NewMatchBranch;
 use crate::apps::migration::repository::NewTransform;
+use crate::apps::migration::repository::UpdateFindCondition;
 use crate::apps::migration::repository::UpdateMatchBranch;
 use crate::apps::migration::repository::UpdateTransform;
 use crate::apps::migration::types::CoalesceChain;
@@ -1698,6 +1701,274 @@ impl MigrationEditor {
             Err(e) => {
                 log::error!("Failed to reorder coalesce chains: {}", e);
                 gx.toast(Toast::error("Failed to reorder fallback chains"));
+            }
+        }
+    }
+
+    // =========================================================================
+    // Find Condition Operations
+    // =========================================================================
+
+    /// Add a new find condition to a find transform.
+    pub(super) async fn add_find_condition_impl(
+        &self,
+        transform: &Transform,
+        gx: &GlobalContext,
+    ) {
+        // Get the find entity from the transform data
+        let entity = match &transform.data {
+            TransformData::Find { entity, .. } => entity.clone(),
+            _ => {
+                log::error!("add_find_condition_impl called on non-Find transform");
+                return;
+            }
+        };
+
+        // Fetch field names from the find entity
+        let Some(field_options) = self.fetch_find_entity_fields(&entity, gx).await else {
+            return;
+        };
+
+        let Some(target_field) = gx.modal(FindConditionModal::new_modal(field_options)).await
+        else {
+            return;
+        };
+
+        // Determine order (append at end)
+        let order = self
+            .find_conditions
+            .get()
+            .iter()
+            .filter(|fc| fc.transform_id == transform.id)
+            .count() as i32;
+
+        let repo = gx.data::<MigrationRepository>();
+        match repo
+            .create_find_condition(NewFindCondition {
+                transform_id: transform.id,
+                target_field,
+                order,
+            })
+            .await
+        {
+            Ok(_id) => {
+                gx.toast(Toast::info("Condition added"));
+                self.load_db_data(gx).await;
+            }
+            Err(e) => {
+                log::error!("Failed to create find condition: {}", e);
+                gx.toast(Toast::error("Failed to create condition"));
+            }
+        }
+    }
+
+    /// Edit a find condition's target field.
+    pub(super) async fn edit_find_condition_impl(
+        &self,
+        fc: &FindCondition,
+        gx: &GlobalContext,
+    ) {
+        // Get the find entity from the parent transform
+        let transform = self
+            .transforms
+            .get()
+            .iter()
+            .find(|t| t.id == fc.transform_id)
+            .cloned();
+
+        let Some(transform) = transform else {
+            log::error!("Parent transform not found for find condition");
+            return;
+        };
+
+        let entity = match &transform.data {
+            TransformData::Find { entity, .. } => entity.clone(),
+            _ => {
+                log::error!("Parent transform is not a Find");
+                return;
+            }
+        };
+
+        let Some(field_options) = self.fetch_find_entity_fields(&entity, gx).await else {
+            return;
+        };
+
+        let Some(new_field) = gx
+            .modal(FindConditionModal::edit_modal(
+                field_options,
+                &fc.target_field,
+            ))
+            .await
+        else {
+            return;
+        };
+
+        if new_field == fc.target_field {
+            return; // No change
+        }
+
+        let repo = gx.data::<MigrationRepository>();
+        match repo
+            .update_find_condition(
+                fc.id,
+                UpdateFindCondition {
+                    target_field: Some(new_field),
+                },
+            )
+            .await
+        {
+            Ok(()) => {
+                gx.toast(Toast::info("Condition updated"));
+                self.load_db_data(gx).await;
+            }
+            Err(e) => {
+                log::error!("Failed to update find condition: {}", e);
+                gx.toast(Toast::error("Failed to update condition"));
+            }
+        }
+    }
+
+    /// Delete a find condition and its child transforms.
+    pub(super) async fn delete_find_condition_impl(
+        &self,
+        fc: &FindCondition,
+        cx: &AppContext,
+        gx: &GlobalContext,
+    ) {
+        // Compute next focus before deletion
+        let conditions = self.find_conditions.get();
+        let siblings: Vec<_> = conditions
+            .iter()
+            .filter(|c| c.transform_id == fc.transform_id)
+            .collect();
+        let current_idx = siblings.iter().position(|c| c.id == fc.id);
+
+        let next_focus = current_idx.and_then(|idx| {
+            if idx > 0 {
+                siblings
+                    .get(idx - 1)
+                    .map(|c| format!("find-condition-{}", c.id))
+            } else if idx + 1 < siblings.len() {
+                siblings
+                    .get(idx + 1)
+                    .map(|c| format!("find-condition-{}", c.id))
+            } else {
+                Some(format!("transform-{}", fc.transform_id))
+            }
+        });
+
+        let confirmed = gx
+            .modal(ConfirmModal::with_message("Delete this condition?"))
+            .await;
+
+        if !confirmed {
+            return;
+        }
+
+        let repo = gx.data::<MigrationRepository>();
+        match repo.delete_find_condition(fc.id).await {
+            Ok(()) => {
+                // Reorder remaining siblings
+                if let Ok(remaining) = repo.get_find_conditions(fc.transform_id).await {
+                    let ordered_ids: Vec<i64> = remaining.iter().map(|c| c.id).collect();
+                    let _ = repo
+                        .reorder_find_conditions(fc.transform_id, ordered_ids)
+                        .await;
+                }
+
+                gx.toast(Toast::info("Condition deleted"));
+                self.load_db_data(gx).await;
+
+                if let Some(key) = next_focus {
+                    cx.focus(&format!("migration-tree-node-{}", key));
+                }
+            }
+            Err(e) => {
+                log::error!("Failed to delete find condition: {}", e);
+                gx.toast(Toast::error("Failed to delete condition"));
+            }
+        }
+    }
+
+    /// Reorder a find condition within its transform.
+    pub(super) async fn reorder_find_condition_impl(
+        &self,
+        fc: &FindCondition,
+        direction: i32,
+        gx: &GlobalContext,
+    ) {
+        let conditions = self.find_conditions.get();
+        let mut siblings: Vec<_> = conditions
+            .iter()
+            .filter(|c| c.transform_id == fc.transform_id)
+            .collect();
+        siblings.sort_by_key(|c| c.order);
+
+        let Some(current_idx) = siblings.iter().position(|c| c.id == fc.id) else {
+            return;
+        };
+
+        let new_idx = (current_idx as i32 + direction).max(0) as usize;
+        if new_idx >= siblings.len() || new_idx == current_idx {
+            return;
+        }
+
+        let mut ordered_ids: Vec<i64> = siblings.iter().map(|c| c.id).collect();
+        ordered_ids.remove(current_idx);
+        ordered_ids.insert(new_idx, fc.id);
+
+        let repo = gx.data::<MigrationRepository>();
+        match repo
+            .reorder_find_conditions(fc.transform_id, ordered_ids)
+            .await
+        {
+            Ok(()) => {
+                self.load_db_data(gx).await;
+            }
+            Err(e) => {
+                log::error!("Failed to reorder find conditions: {}", e);
+                gx.toast(Toast::error("Failed to reorder conditions"));
+            }
+        }
+    }
+
+    /// Fetch field options for the find entity (for condition target_field autocomplete).
+    async fn fetch_find_entity_fields(
+        &self,
+        entity: &str,
+        gx: &GlobalContext,
+    ) -> Option<Vec<(String, String)>> {
+        let client = self.target_client.get();
+        let entity_name = entity.to_string();
+        let attributes = gx
+            .modal(LoadingModal::run_with_default(
+                "Loading entity fields",
+                || Err(dataverse_lib::error::Error::Cancelled),
+                async move { client.metadata().attributes(entity_name).await },
+            ))
+            .await;
+
+        match attributes {
+            Ok(attrs) => {
+                let options: Vec<(String, String)> = attrs
+                    .iter()
+                    .map(|a| {
+                        let display_name = a.display_name.text_or(&a.logical_name);
+                        let display = if display_name == &a.logical_name {
+                            a.logical_name.clone()
+                        } else {
+                            format!("{} ({})", a.logical_name, display_name)
+                        };
+                        (a.logical_name.clone(), display)
+                    })
+                    .collect();
+                Some(options)
+            }
+            Err(e) if e.is_cancelled() => None,
+            Err(e) => {
+                log::error!("Failed to fetch fields for {}: {}", entity, e);
+                gx.toast(Toast::error("Failed to fetch entity fields"));
+                None
             }
         }
     }
