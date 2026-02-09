@@ -192,7 +192,8 @@ impl MigrationEditor {
                     .map(|path| TransformData::Copy { path })
             }
             TransformType::Constant => {
-                let modal = ConstantTransformModal::new_modal(Value::Null);
+                let modal =
+                    ConstantTransformModal::new_modal(self.target_client.get(), Value::Null);
                 gx.modal(modal)
                     .await
                     .map(|value| TransformData::Constant { value })
@@ -1001,7 +1002,8 @@ impl MigrationEditor {
                 }
             }
             TransformData::Constant { value } => {
-                let modal = ConstantTransformModal::new_modal(value.clone());
+                let modal =
+                    ConstantTransformModal::new_modal(self.target_client.get(), value.clone());
 
                 if let Some(new_value) = gx.modal(modal).await {
                     self.update_transform_data(
