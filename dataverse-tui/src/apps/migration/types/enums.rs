@@ -75,6 +75,8 @@ pub enum ParentType {
     CoalesceChain,
     /// Transform belongs to a find condition (where-clause mode).
     FindCondition,
+    /// Transform belongs to a find default chain (fallback when no match found).
+    FindDefault,
 }
 
 /// String operation type.
@@ -232,6 +234,7 @@ impl ParentType {
             ParentType::GuardFallback => "guard_fallback",
             ParentType::CoalesceChain => "coalesce_chain",
             ParentType::FindCondition => "find_condition",
+            ParentType::FindDefault => "find_default",
         }
     }
 
@@ -244,6 +247,7 @@ impl ParentType {
             "guard_fallback" => Some(ParentType::GuardFallback),
             "coalesce_chain" => Some(ParentType::CoalesceChain),
             "find_condition" => Some(ParentType::FindCondition),
+            "find_default" => Some(ParentType::FindDefault),
             _ => None,
         }
     }

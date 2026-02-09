@@ -313,6 +313,10 @@ impl MigrationEditor {
                 // Match default selected -> add transform to the default chain
                 self.add_transform_impl(gx).await;
             }
+            Some(MigrationTreeNode::FindDefault { .. }) => {
+                // Find default selected -> add transform to the default chain
+                self.add_transform_impl(gx).await;
+            }
             Some(MigrationTreeNode::Chain { .. }) => {
                 // Chain wrapper selected -> add transform to the chain
                 self.add_transform_impl(gx).await;
@@ -464,6 +468,9 @@ impl MigrationEditor {
             MigrationTreeNode::MatchDefault { .. } => {
                 // MatchDefault is managed by the Match transform's has_default flag
             }
+            MigrationTreeNode::FindDefault { .. } => {
+                // FindDefault is managed by the Find transform's fallback field
+            }
             MigrationTreeNode::Chain { .. } => {
                 // Chain wrappers don't have configuration - just add transforms under them
             }
@@ -496,6 +503,7 @@ impl MigrationEditor {
             Some(MigrationTreeNode::CoalesceChain(_)) => (true, "Add Transform"),
             Some(MigrationTreeNode::FindCondition(_)) => (true, "Add Transform"),
             Some(MigrationTreeNode::MatchDefault { .. }) => (true, "Add Transform"),
+            Some(MigrationTreeNode::FindDefault { .. }) => (true, "Add Transform"),
             Some(MigrationTreeNode::Chain { .. }) => (true, "Add Transform"),
             Some(_) => (false, "Add"), // Other config nodes - can't add
         };
@@ -611,6 +619,9 @@ impl MigrationEditor {
                             }
                             Some(MigrationTreeNode::MatchDefault { .. }) => {
                                 { self.render_match_default_detail() }
+                            }
+                            Some(MigrationTreeNode::FindDefault { .. }) => {
+                                { self.render_find_default_detail() }
                             }
                             Some(MigrationTreeNode::Chain { parent_type, parent_id }) => {
                                 { self.render_chain_detail(parent_type, parent_id) }

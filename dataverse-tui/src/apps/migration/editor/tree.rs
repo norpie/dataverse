@@ -22,6 +22,7 @@ use crate::apps::migration::types::EntityMapping;
 use crate::apps::migration::types::Expr;
 use crate::apps::migration::types::FieldMapping;
 use crate::apps::migration::types::FindCondition;
+use crate::apps::migration::types::FindFallback;
 use crate::apps::migration::types::MatchBranch;
 use crate::apps::migration::types::Mode;
 use crate::apps::migration::types::ParentType;
@@ -107,6 +108,8 @@ pub enum MigrationTreeNode {
     CoalesceChain(CoalesceChain),
     /// A condition within a find transform (where-clause mode).
     FindCondition(FindCondition),
+    /// The default chain of a find transform (transforms use ParentType::FindDefault).
+    FindDefault { transform_id: i64 },
     /// A wrapper for multi-transform nested chains.
     /// Used when a nested chain (guard fallback, coalesce chain, match branch, find condition)
     /// has more than one transform.
@@ -137,6 +140,7 @@ impl MigrationTreeNode {
             Self::MatchDefault { .. } => None, // Get via transform
             Self::CoalesceChain(_) => None,    // Get via transform
             Self::FindCondition(_) => None,    // Get via transform
+            Self::FindDefault { .. } => None,  // Get via transform
             Self::Chain { .. } => None,        // Get via parent
         }
     }
@@ -169,6 +173,7 @@ impl MigrationTreeNode {
                 | Self::MatchBranch(_)
                 | Self::CoalesceChain(_)
                 | Self::FindCondition(_)
+                | Self::FindDefault { .. }
                 | Self::Chain { .. }
         )
     }
@@ -299,6 +304,7 @@ impl TreeItem for MigrationTreeNode {
             Self::MatchDefault { transform_id } => format!("match-default-{}", transform_id),
             Self::CoalesceChain(cc) => format!("coalesce-chain-{}", cc.id),
             Self::FindCondition(fc) => format!("find-condition-{}", fc.id),
+            Self::FindDefault { transform_id } => format!("find-default-{}", transform_id),
             Self::Chain {
                 parent_type,
                 parent_id,
@@ -425,6 +431,9 @@ impl TreeItem for MigrationTreeNode {
                 }
             }
             Self::MatchDefault { .. } => element! {
+                text (content: "Default") style (fg: primary)
+            },
+            Self::FindDefault { .. } => element! {
                 text (content: "Default") style (fg: primary)
             },
             Self::CoalesceChain(cc) => {
@@ -1144,11 +1153,14 @@ fn build_transform_node(t: Transform, ctx: &mut TreeBuildContext) -> TreeNode<Mi
                 TreeNode::branch(node, children)
             }
         }
-        TransformData::Find { mode, .. } => {
+        TransformData::Find { mode, fallback, .. } => {
+            let has_default = matches!(fallback, FindFallback::Default);
             // Find in Where mode: conditions as children
             if matches!(mode, crate::apps::migration::types::FindMode::Where) {
                 let conditions = ctx.lookup.get_find_conditions(t.id);
-                if conditions.is_empty() {
+                let has_children = !conditions.is_empty() || has_default;
+
+                if !has_children {
                     TreeNode::leaf(make_transform_node(t, ctx))
                 } else {
                     // Compute types for each condition's chain
@@ -1162,16 +1174,41 @@ fn build_transform_node(t: Transform, ctx: &mut TreeBuildContext) -> TreeNode<Mi
                         }
                     }
 
+                    // Also compute types for default chain if present
+                    if has_default {
+                        let default_transforms =
+                            ctx.lookup.get_transforms(ParentType::FindDefault, t.id);
+                        if !default_transforms.is_empty() {
+                            let default_result =
+                                compute_chain_types(&default_transforms, &source_entity, ctx);
+                            ctx.types.merge(&default_result);
+                        }
+                    }
+
+                    let transform_id = t.id;
                     let node = make_transform_node(t, ctx);
-                    let children: Vec<TreeNode<MigrationTreeNode>> = conditions
+                    let mut children: Vec<TreeNode<MigrationTreeNode>> = conditions
                         .into_iter()
                         .map(|fc| build_find_condition_node(fc, ctx))
                         .collect();
+
+                    // Add default chain node if fallback is Default
+                    if has_default {
+                        children.push(build_find_default_node(transform_id, ctx));
+                    }
+
                     TreeNode::branch(node, children)
                 }
             } else {
-                // Lua mode - no children
-                TreeNode::leaf(make_transform_node(t, ctx))
+                // Lua mode - only default chain if present
+                if has_default {
+                    let transform_id = t.id;
+                    let node = make_transform_node(t, ctx);
+                    let children = vec![build_find_default_node(transform_id, ctx)];
+                    TreeNode::branch(node, children)
+                } else {
+                    TreeNode::leaf(make_transform_node(t, ctx))
+                }
             }
         }
         _ => {
@@ -1248,6 +1285,29 @@ fn build_find_condition_node(
         transforms,
         ctx,
     )
+}
+
+/// Build a tree node for the find default chain.
+/// Default chain transforms use ParentType::FindDefault with parent_id = find transform id.
+fn build_find_default_node(
+    find_transform_id: i64,
+    ctx: &mut TreeBuildContext,
+) -> TreeNode<MigrationTreeNode> {
+    let transforms = ctx
+        .lookup
+        .get_transforms(ParentType::FindDefault, find_transform_id);
+    let node = MigrationTreeNode::FindDefault {
+        transform_id: find_transform_id,
+    };
+    if transforms.is_empty() {
+        TreeNode::leaf(node)
+    } else {
+        let children: Vec<TreeNode<MigrationTreeNode>> = transforms
+            .into_iter()
+            .map(|t| build_transform_node(t, ctx))
+            .collect();
+        TreeNode::branch(node, children)
+    }
 }
 
 /// Build a nested chain node following the display rules:

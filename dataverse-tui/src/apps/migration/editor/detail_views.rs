@@ -251,6 +251,7 @@ impl MigrationEditor {
             ParentType::GuardFallback => "Guard Fallback",
             ParentType::CoalesceChain => "Coalesce Chain",
             ParentType::FindCondition => "Find Condition",
+            ParentType::FindDefault => "Find Default",
         };
         let order_str = format!("{}", transform.order + 1);
         let has_type = tn.output_type.is_some();
@@ -393,6 +394,22 @@ impl MigrationEditor {
         }
     }
 
+    /// Render a Find Default detail view.
+    pub(super) fn render_find_default_detail(&self) -> Element {
+        element! {
+            column (gap: 1) {
+                text (content: "Find Default") style (bold, fg: interact)
+                column {
+                    row (gap: 1) {
+                        text (content: "Type") style (fg: muted)
+                        text (content: "Default Chain")
+                    }
+                    text (content: "Add transforms to define the fallback output when no match is found") style (fg: muted)
+                }
+            }
+        }
+    }
+
     /// Render a Chain wrapper detail view.
     pub(super) fn render_chain_detail(&self, parent_type: ParentType, _parent_id: i64) -> Element {
         let parent_desc = match parent_type {
@@ -401,6 +418,7 @@ impl MigrationEditor {
             ParentType::CoalesceChain => "Coalesce Fallback",
             ParentType::FindCondition => "Find Condition",
             ParentType::MatchDefault => "Match Default",
+            ParentType::FindDefault => "Find Default",
             _ => "Parent",
         };
 

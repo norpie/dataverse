@@ -540,8 +540,8 @@ impl MigrationEditor {
                     insert_order: 0,
                 })
             }
-            ParentType::GuardFallback | ParentType::MatchDefault => {
-                // parent_id is the transform_id of the guard/match
+            ParentType::GuardFallback | ParentType::MatchDefault | ParentType::FindDefault => {
+                // parent_id is the transform_id of the guard/match/find
                 let parent_transform = self
                     .transforms
                     .get()
@@ -640,6 +640,23 @@ impl MigrationEditor {
                 Some(InsertTarget {
                     entity_mapping_id,
                     parent_type: ParentType::MatchDefault,
+                    parent_id: transform_id,
+                    insert_order: order,
+                })
+            }
+            MigrationTreeNode::FindDefault { transform_id } => {
+                // Add to end of find default chain
+                let order =
+                    self.transform_count_for_parent(ParentType::FindDefault, transform_id);
+                let entity_mapping_id = self
+                    .transforms
+                    .get()
+                    .iter()
+                    .find(|t| t.id == transform_id)
+                    .map(|t| t.entity_mapping_id)?;
+                Some(InsertTarget {
+                    entity_mapping_id,
+                    parent_type: ParentType::FindDefault,
                     parent_id: transform_id,
                     insert_order: order,
                 })
@@ -746,8 +763,8 @@ impl MigrationEditor {
                     .cloned()?;
                 self.entity_mapping_id_for_find_condition(&fc)
             }
-            ParentType::GuardFallback | ParentType::MatchDefault => {
-                // parent_id is the transform_id of the guard/match
+            ParentType::GuardFallback | ParentType::MatchDefault | ParentType::FindDefault => {
+                // parent_id is the transform_id of the guard/match/find
                 self.transforms
                     .get()
                     .iter()
@@ -840,6 +857,7 @@ impl MigrationEditor {
             ParentType::FindCondition => Some(format!("find-condition-{}", parent_id)),
             ParentType::GuardFallback => Some(format!("transform-{}", parent_id)),
             ParentType::MatchDefault => Some(format!("match-default-{}", parent_id)),
+            ParentType::FindDefault => Some(format!("find-default-{}", parent_id)),
         }
     }
 

@@ -100,6 +100,6 @@ pub enum FindFallback {
     Error,
     /// Use null value.
     Null,
-    /// Use specified default value.
-    Default { value: Value },
+    /// Execute the default chain (transforms stored as ParentType::FindDefault).
+    Default,
 }
