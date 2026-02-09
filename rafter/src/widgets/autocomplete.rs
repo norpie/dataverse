@@ -518,6 +518,7 @@ impl<'a, T: Clone + Eq + Hash + PartialEq + Send + Sync + ToString + 'static> Au
             let state_clone = state.clone();
             let on_select = handlers.get("on_select").cloned();
             let on_change = handlers.get("on_change").cloned();
+            let on_submit = handlers.get("on_submit").cloned();
             registry.register(
                 &id,
                 "on_submit",
@@ -552,6 +553,10 @@ impl<'a, T: Clone + Eq + Hash + PartialEq + Send + Sync + ToString + 'static> Au
                                     if let Some(ref handler) = on_change {
                                         handler(hx);
                                     }
+                                }
+                                // Fire user on_submit after selection is complete
+                                if let Some(ref handler) = on_submit {
+                                    handler(hx);
                                 }
                             }
                     }
