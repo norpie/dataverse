@@ -3,6 +3,7 @@
 use std::collections::HashMap;
 
 use dataverse_lib::model::FieldType;
+use dataverse_lib::model::Value;
 use dataverse_lib::model::ValueType;
 use rafter::element;
 use rafter::widgets::Text;
@@ -19,9 +20,11 @@ use crate::apps::migration::types::FieldMapping;
 use crate::apps::migration::types::FindCondition;
 use crate::apps::migration::types::MatchBranch;
 use crate::apps::migration::types::MatchCondition;
+use crate::apps::migration::types::MathOp;
 use crate::apps::migration::types::Mode;
 use crate::apps::migration::types::ParentType;
 use crate::apps::migration::types::Phase;
+use crate::apps::migration::types::StringOp;
 use crate::apps::migration::types::SystemVar;
 use crate::apps::migration::types::Transform;
 use crate::apps::migration::types::TransformData;
@@ -312,67 +315,68 @@ impl TreeItem for MigrationTreeNode {
     fn render(&self) -> Element {
         match self {
             Self::Phase(phase) => {
-                let mode_indicator = match phase.mode {
-                    Mode::Declarative => "",
-                    Mode::Lua => " [lua]",
-                };
-                let label = format!("{}{}", phase.name, mode_indicator);
-
+                let name = phase.name.clone();
+                let is_lua = matches!(phase.mode, Mode::Lua);
                 element! {
-                    text (content: {label})
+                    row {
+                        text (content: {name}) style (fg: interact)
+                        if is_lua {
+                            text (content: " [lua]") style (fg: muted)
+                        }
+                    }
                 }
             }
             Self::EntityMapping(em) => {
-                let mode_indicator = match em.mode {
-                    Mode::Declarative => "",
-                    Mode::Lua => " [lua]",
-                };
-                let label = format!(
-                    "{} ({} → {}){}",
-                    em.name, em.source_entity, em.target_entity, mode_indicator
-                );
-
+                let name = em.name.clone();
+                let entities = format!(" {} → {}", em.source_entity, em.target_entity);
+                let is_lua = matches!(em.mode, Mode::Lua);
                 element! {
-                    text (content: {label}) style (fg: muted)
+                    row {
+                        text (content: {name}) style (fg: accent)
+                        text (content: {entities}) style (fg: muted)
+                        if is_lua {
+                            text (content: " [lua]") style (fg: muted)
+                        }
+                    }
                 }
             }
             Self::MatchConfig { .. } => element! {
-                text (content: "Match Config") style (fg: muted)
+                text (content: "◦ Match Config") style (fg: muted)
             },
             Self::SourceFilter { .. } => element! {
-                text (content: "Source Filter") style (fg: muted)
+                text (content: "◦ Source Filter") style (fg: muted)
             },
             Self::TargetFilter { .. } => element! {
-                text (content: "Target Filter") style (fg: muted)
+                text (content: "◦ Target Filter") style (fg: muted)
             },
             Self::UnmatchedHandling { .. } => element! {
-                text (content: "Unmatched Handling") style (fg: muted)
+                text (content: "◦ Unmatched Handling") style (fg: muted)
             },
             Self::Passes { .. } => element! {
-                text (content: "Passes") style (fg: muted)
+                text (content: "◦ Passes") style (fg: muted)
             },
             Self::TestGuids { .. } => element! {
-                text (content: "Test GUIDs") style (fg: muted)
+                text (content: "◦ Test GUIDs") style (fg: muted)
             },
             Self::Variables { .. } => element! {
-                text (content: "Variables") style (fg: muted)
+                text (content: "◦ Variables") style (fg: muted)
             },
             Self::Variable(vn) => {
                 let label = format!("${}", vn.variable.name);
-                let type_label = format!(" ({})", vn.variable.declared_type.display());
+                let type_label = format!(" {}", vn.variable.declared_type.display());
                 let has_warning = vn.warning.is_some();
                 element! {
                     row {
-                        text (content: {label}) style (fg: primary)
+                        text (content: {label}) style (fg: success)
                         text (content: {type_label}) style (fg: muted)
                         if has_warning {
-                            text (content: " !") style (fg: warning)
+                            text (content: " ●") style (fg: warning)
                         }
                     }
                 }
             }
             Self::FieldMappings { .. } => element! {
-                text (content: "Field Mappings") style (fg: muted)
+                text (content: "◦ Field Mappings") style (fg: muted)
             },
             Self::FieldMapping(fmn) => {
                 let label = fmn.field_mapping.target_field.clone();
@@ -380,7 +384,7 @@ impl TreeItem for MigrationTreeNode {
                 let type_label = fmn
                     .target_type
                     .as_ref()
-                    .map(|t| format!(" ({})", t.display()))
+                    .map(|t| format!(" {}", t.display()))
                     .unwrap_or_default();
                 let has_type = fmn.target_type.is_some();
                 element! {
@@ -390,69 +394,93 @@ impl TreeItem for MigrationTreeNode {
                             text (content: {type_label}) style (fg: muted)
                         }
                         if has_warning {
-                            text (content: " !") style (fg: warning)
+                            text (content: " ●") style (fg: warning)
                         }
                     }
                 }
             }
             Self::Transform(tn) => {
-                let label = transform_display_text(&tn.transform.data);
-                let has_type = tn.output_type.is_some();
+                let type_name = transform_type_name(&tn.transform.data);
+                let config = transform_config_text(&tn.transform.data);
+                let has_config = !config.is_empty();
+                let config_label = format!(" {}", config);
+                let has_output = tn.output_type.is_some();
                 let is_null = matches!(&tn.output_type, Some(ValueType::Null));
-                let type_label = tn
+                let output_label = tn
                     .output_type
                     .as_ref()
-                    .map(|t| format!(" -> {}", t.display()))
+                    .map(|t| format!(" → {}", t.display()))
                     .unwrap_or_default();
                 let has_warning = tn.warning.is_some();
 
                 element! {
                     row {
-                        text (content: {label}) style (fg: primary)
-                        if has_type {
-                            text (content: {type_label}) style (fg: muted)
+                        text (content: {type_name}) style (fg: interact)
+                        if has_config {
+                            text (content: {config_label}) style (fg: secondary)
+                        }
+                        if has_output {
+                            text (content: {output_label}) style (fg: muted)
                         }
                         if is_null {
-                            text (content: " !") style (fg: error)
+                            text (content: " ●") style (fg: error)
                         }
                         if has_warning {
-                            text (content: " !") style (fg: warning)
+                            text (content: " ●") style (fg: warning)
                         }
                     }
                 }
             }
             Self::MatchBranch(mb) => {
-                let label = format!("Branch: {}", condition_summary(&mb.condition));
+                let label = condition_summary(&mb.condition);
                 element! {
-                    text (content: {label}) style (fg: primary)
+                    row {
+                        text (content: "● ") style (fg: accent)
+                        text (content: {label}) style (fg: primary)
+                    }
                 }
             }
             Self::MatchDefault { .. } => element! {
-                text (content: "Default") style (fg: primary)
+                row {
+                    text (content: "● ") style (fg: accent)
+                    text (content: "Default") style (fg: primary)
+                }
             },
             Self::FindDefault { .. } => element! {
-                text (content: "Default") style (fg: primary)
+                row {
+                    text (content: "● ") style (fg: accent)
+                    text (content: "Default") style (fg: primary)
+                }
             },
             Self::CoalesceChain(cc) => {
                 let label = format!("Fallback {}", cc.order + 1);
                 element! {
-                    text (content: {label}) style (fg: primary)
+                    row {
+                        text (content: "● ") style (fg: accent)
+                        text (content: {label}) style (fg: primary)
+                    }
                 }
             }
             Self::FindCondition(fc) => {
-                let label = format!("Condition: {}", fc.target_field);
+                let label = fc.target_field.clone();
                 element! {
-                    text (content: {label}) style (fg: primary)
+                    row {
+                        text (content: "● ") style (fg: accent)
+                        text (content: {label}) style (fg: primary)
+                    }
                 }
             }
             Self::MatchCondition(mc) => {
-                let label = format!("Condition: {}", mc.target_field);
+                let label = mc.target_field.clone();
                 element! {
-                    text (content: {label}) style (fg: primary)
+                    row {
+                        text (content: "● ") style (fg: accent)
+                        text (content: {label}) style (fg: primary)
+                    }
                 }
             }
             Self::Chain { .. } => element! {
-                text (content: "Chain") style (fg: muted)
+                text (content: "◦ Chain") style (fg: muted)
             },
         }
     }
@@ -461,6 +489,88 @@ impl TreeItem for MigrationTreeNode {
 // =============================================================================
 // Display text helpers
 // =============================================================================
+
+/// Get the type name keyword for a transform (used for tree rendering).
+fn transform_type_name(data: &TransformData) -> &'static str {
+    match data {
+        TransformData::Copy { .. } => "copy",
+        TransformData::Constant { .. } => "constant",
+        TransformData::Guid => "guid",
+        TransformData::Format { .. } => "format",
+        TransformData::Replace { .. } => "replace",
+        TransformData::StringOps { .. } => "string_ops",
+        TransformData::Convert { .. } => "convert",
+        TransformData::ParseInt => "parse_int",
+        TransformData::ParseDecimal => "parse_decimal",
+        TransformData::ParseDate { .. } => "parse_date",
+        TransformData::ValueMap { .. } => "value_map",
+        TransformData::Math { .. } => "math",
+        TransformData::Guard { .. } => "guard",
+        TransformData::Match { .. } => "match",
+        TransformData::Coalesce => "coalesce",
+        TransformData::Find { .. } => "find",
+    }
+}
+
+/// Get the config summary text for a transform (used for tree rendering).
+/// Returns empty string for transforms with no configuration to display.
+fn transform_config_text(data: &TransformData) -> String {
+    match data {
+        TransformData::Copy { path } => path.clone(),
+        TransformData::Constant { value } => match value {
+            Value::Null => "null".to_string(),
+            Value::Bool(b) => b.to_string(),
+            Value::Int(i) => i.to_string(),
+            Value::Float(f) => f.to_string(),
+            Value::Decimal(d) => d.to_string(),
+            Value::String(s) => {
+                if s.len() > 20 {
+                    format!("\"{}...\"", &s[..17])
+                } else {
+                    format!("\"{}\"", s)
+                }
+            }
+            Value::DateTime(_) => "[datetime]".to_string(),
+            Value::Guid(_) => "[guid]".to_string(),
+            _ => "[value]".to_string(),
+        },
+        TransformData::Guid => String::new(),
+        TransformData::Format { template } => {
+            if template.len() > 20 {
+                format!("\"{}...\"", &template[..17])
+            } else {
+                format!("\"{}\"", template)
+            }
+        }
+        TransformData::Replace { from, to, regex } => {
+            let prefix = if *regex { "r" } else { "" };
+            format!("{}\"{}\" → \"{}\"", prefix, from, to)
+        }
+        TransformData::StringOps { op } => match op {
+            StringOp::Uppercase => "uppercase".to_string(),
+            StringOp::Lowercase => "lowercase".to_string(),
+            StringOp::Trim => "trim".to_string(),
+            StringOp::TrimStart => "trim_start".to_string(),
+            StringOp::TrimEnd => "trim_end".to_string(),
+        },
+        TransformData::Convert { target_type } => target_type.clone(),
+        TransformData::ParseInt => String::new(),
+        TransformData::ParseDecimal => String::new(),
+        TransformData::ParseDate { format } => format!("\"{}\"", format),
+        TransformData::ValueMap { mappings, .. } => format!("{} mappings", mappings.len()),
+        TransformData::Math { operation } => match operation {
+            MathOp::Add(n) => format!("add {}", n),
+            MathOp::Subtract(n) => format!("subtract {}", n),
+            MathOp::Multiply(n) => format!("multiply {}", n),
+            MathOp::Divide(n) => format!("divide {}", n),
+            MathOp::Round(places) => format!("round {}", places),
+        },
+        TransformData::Guard { condition } => condition_summary(condition),
+        TransformData::Match { .. } => String::new(),
+        TransformData::Coalesce => String::new(),
+        TransformData::Find { entity, .. } => entity.clone(),
+    }
+}
 
 /// Generate display text for a transform.
 /// Format: `type (summary)` where summary is type-specific.
