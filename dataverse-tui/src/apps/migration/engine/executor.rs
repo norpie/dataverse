@@ -3,12 +3,25 @@
 //! This module handles executing a sequence of transforms, passing the result
 //! of each transform to the next via the `#value` system variable.
 
+use dataverse_lib::model::Value;
+
 use crate::apps::migration::types::Condition;
 use crate::apps::migration::types::TransformData;
 
 use super::transforms::execute_constant;
+use super::transforms::execute_convert;
 use super::transforms::execute_copy;
+use super::transforms::execute_format;
 use super::transforms::execute_guid;
+use super::transforms::execute_math;
+use super::transforms::execute_parse_date;
+use super::transforms::execute_parse_decimal;
+use super::transforms::execute_parse_int;
+use super::transforms::execute_replace;
+use super::transforms::execute_string_ops;
+use super::transforms::execute_value_map;
+use super::transforms::ConvertTarget;
+use super::transforms::ValueMapping;
 use super::types::TransformContext;
 use super::types::TransformError;
 use super::types::TransformResult;
@@ -196,27 +209,42 @@ fn execute_transform(item: &ChainItem, ctx: &mut TransformContext<'_>) -> Transf
         TransformData::Constant { value } => execute_constant(value),
         TransformData::Guid => execute_guid(),
 
-        // String transforms (Step 6)
-        TransformData::Format { .. } => not_implemented("format"),
-        TransformData::Replace { .. } => not_implemented("replace"),
-        TransformData::StringOps { .. } => not_implemented("string_ops"),
+        // String transforms
+        TransformData::Format { template } => {
+            execute_format(template, ctx.source_record, ctx.variables)
+        }
+        TransformData::Replace { from, to, regex } => {
+            execute_replace(&ctx.system_vars.value, from, to, *regex)
+        }
+        TransformData::StringOps { op } => execute_string_ops(&ctx.system_vars.value, &[*op]),
 
-        // Type conversions (Step 7)
-        TransformData::Convert { .. } => not_implemented("convert"),
-        TransformData::ParseInt => not_implemented("parse_int"),
-        TransformData::ParseDecimal => not_implemented("parse_decimal"),
-        TransformData::ParseDate { .. } => not_implemented("parse_date"),
+        // Type conversions
+        TransformData::Convert { target_type } => match ConvertTarget::from_str(target_type) {
+            Some(target) => execute_convert(&ctx.system_vars.value, target),
+            None => TransformResult::Error(TransformError::Other {
+                message: format!("Unknown convert target type: '{target_type}'"),
+            }),
+        },
+        TransformData::ParseInt => execute_parse_int(&ctx.system_vars.value),
+        TransformData::ParseDecimal => execute_parse_decimal(&ctx.system_vars.value),
+        TransformData::ParseDate { format } => execute_parse_date(&ctx.system_vars.value, format),
 
-        // Control flow (Step 8)
+        // Data transforms
+        TransformData::ValueMap { mappings, .. } => {
+            let value_mappings: Vec<ValueMapping> = mappings
+                .iter()
+                .map(|m| ValueMapping::new(Value::Int(m.from), Value::Int(m.to)))
+                .collect();
+            execute_value_map(&ctx.system_vars.value, &value_mappings)
+        }
+        TransformData::Math { operation } => execute_math(&ctx.system_vars.value, operation),
+
+        // Control flow (requires condition evaluator + children)
         TransformData::Guard { .. } => not_implemented("guard"),
         TransformData::Match { .. } => not_implemented("match"),
-
-        // Data transforms (Step 9)
-        TransformData::ValueMap { .. } => not_implemented("value_map"),
-        TransformData::Math { .. } => not_implemented("math"),
         TransformData::Coalesce => not_implemented("coalesce"),
 
-        // Find (Step 11)
+        // Find (requires target cache + children)
         TransformData::Find { .. } => not_implemented("find"),
     }
 }
