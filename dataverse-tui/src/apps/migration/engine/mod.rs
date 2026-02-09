@@ -3,6 +3,7 @@
 //! This module contains the core execution logic for running transforms
 //! on source records to produce target field values.
 
+pub mod condition;
 mod executor;
 mod paths;
 mod transforms;
