@@ -1,13 +1,18 @@
 //! Migration editor app for editing a migration's phases and entity mappings.
 
+mod child_operations;
 mod config_operations;
 mod detail_views;
 mod entity_operations;
 mod helpers;
+mod insert_target;
 mod item_operations;
 mod phase_operations;
 mod transform_operations;
 mod tree;
+mod tree_builder;
+mod tree_types;
+mod value_map_helpers;
 
 use dataverse_lib::DataverseClient;
 use rafter::page;
@@ -102,7 +107,7 @@ impl MigrationEditor {
         use helpers::collect_navigation_paths;
         use helpers::discover_navigation_entities;
         use helpers::fetch_entity_field_types;
-        use tree::build_tree_nodes;
+        use tree_builder::build_tree_nodes;
         use tree::FieldTypeCache;
 
         // 1. Read all dependencies (registers for change detection)
