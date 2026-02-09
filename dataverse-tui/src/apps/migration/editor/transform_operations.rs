@@ -11,6 +11,7 @@ use rafter::prelude::*;
 use crate::apps::migration::modals::ConstantTransformModal;
 use crate::apps::migration::modals::ConvertTransformModal;
 use crate::apps::migration::modals::CopyTransformModal;
+use crate::apps::migration::modals::FindTransformModal;
 use crate::apps::migration::modals::FormatTransformModal;
 use crate::apps::migration::modals::GuardTransformModal;
 use crate::apps::migration::modals::MatchTransformModal;
@@ -43,6 +44,7 @@ use crate::apps::migration::types::SystemVar;
 use crate::apps::migration::types::Transform;
 use crate::apps::migration::types::TransformData;
 use crate::modals::ConfirmModal;
+use crate::modals::LoadingModal;
 
 use super::tree::MigrationTreeNode;
 use super::MigrationEditor;
@@ -249,15 +251,48 @@ impl MigrationEditor {
                     .map(|condition| TransformData::Guard { condition })
             }
             TransformType::Find => {
-                // TODO: FindTransformModal — for now create with default
-                Some(TransformData::Find {
-                    entity: String::new(),
-                    fallback: FindFallback::Null,
-                    mode: FindMode::Where,
+                let target_entities = self.fetch_target_entities(gx).await?;
+                let modal = FindTransformModal::new_modal(target_entities);
+                gx.modal(modal).await.map(|r| TransformData::Find {
+                    entity: r.entity,
+                    fallback: r.fallback,
+                    mode: r.mode,
                 })
             }
             TransformType::ValueMap => {
                 self.create_value_map_data(target, gx).await
+            }
+        }
+    }
+
+    // =========================================================================
+    // Find Helpers
+    // =========================================================================
+
+    /// Fetch target entity names for autocomplete. Returns None if failed.
+    async fn fetch_target_entities(&self, gx: &GlobalContext) -> Option<Vec<String>> {
+        let client = self.target_client.get();
+        let result: Result<Vec<String>, _> = gx
+            .modal(LoadingModal::run_with_default(
+                "Loading target entities",
+                || Err(dataverse_lib::error::Error::Cancelled),
+                async move {
+                    client.metadata().all_entities().await.map(|entities| {
+                        entities
+                            .into_iter()
+                            .map(|e| e.logical_name)
+                            .collect::<Vec<_>>()
+                    })
+                },
+            ))
+            .await;
+
+        match result {
+            Ok(entities) => Some(entities),
+            Err(e) => {
+                log::error!("Failed to fetch target entities: {}", e);
+                gx.toast(Toast::error("Failed to fetch target entities"));
+                None
             }
         }
     }
@@ -1163,15 +1198,113 @@ impl MigrationEditor {
                     .await;
                 }
             }
+            TransformData::Find {
+                entity,
+                fallback,
+                mode,
+            } => {
+                let Some(target_entities) = self.fetch_target_entities(gx).await else {
+                    return;
+                };
+                let modal =
+                    FindTransformModal::edit_modal(target_entities, entity, fallback, mode);
+
+                if let Some(result) = gx.modal(modal).await {
+                    let old_had_default = *fallback == FindFallback::Default;
+                    let new_has_default = result.fallback == FindFallback::Default;
+
+                    // Disabling default: confirm + delete FindDefault chain transforms
+                    if old_had_default && !new_has_default {
+                        let repo = gx.data::<MigrationRepository>();
+                        let default_transforms = repo
+                            .get_transforms(ParentType::FindDefault, transform.id)
+                            .await
+                            .unwrap_or_default();
+
+                        if !default_transforms.is_empty() {
+                            let confirmed = gx
+                                .modal(ConfirmModal::with_message(format!(
+                                    "Removing the default fallback will delete {} transform(s). Continue?",
+                                    default_transforms.len()
+                                )))
+                                .await;
+
+                            if !confirmed {
+                                return;
+                            }
+
+                            for t in &default_transforms {
+                                if let Err(e) = repo.delete_transform(t.id).await {
+                                    log::error!(
+                                        "Failed to delete find default transform: {}",
+                                        e
+                                    );
+                                }
+                            }
+                        }
+                    }
+
+                    // Mode change from Where to Lua: delete find conditions
+                    let old_is_where = matches!(mode, FindMode::Where);
+                    let new_is_lua = matches!(result.mode, FindMode::Lua { .. });
+                    if old_is_where && new_is_lua {
+                        let repo = gx.data::<MigrationRepository>();
+                        let conditions = self
+                            .find_conditions
+                            .get()
+                            .iter()
+                            .filter(|fc| fc.transform_id == transform.id)
+                            .cloned()
+                            .collect::<Vec<_>>();
+
+                        if !conditions.is_empty() {
+                            let confirmed = gx
+                                .modal(ConfirmModal::with_message(format!(
+                                    "Switching to Lua will delete {} condition(s). Continue?",
+                                    conditions.len()
+                                )))
+                                .await;
+
+                            if !confirmed {
+                                return;
+                            }
+
+                            for fc in &conditions {
+                                // Delete condition's child transforms first
+                                let child_transforms = repo
+                                    .get_transforms(ParentType::FindCondition, fc.id)
+                                    .await
+                                    .unwrap_or_default();
+                                for ct in &child_transforms {
+                                    if let Err(e) = repo.delete_transform(ct.id).await {
+                                        log::error!(
+                                            "Failed to delete condition transform: {}",
+                                            e
+                                        );
+                                    }
+                                }
+                                if let Err(e) = repo.delete_find_condition(fc.id).await {
+                                    log::error!("Failed to delete find condition: {}", e);
+                                }
+                            }
+                        }
+                    }
+
+                    self.update_transform_data(
+                        transform.id,
+                        TransformData::Find {
+                            entity: result.entity,
+                            fallback: result.fallback,
+                            mode: result.mode,
+                        },
+                        gx,
+                    )
+                    .await;
+                }
+            }
             TransformData::Coalesce => {
                 // Coalesce has no config — Enter adds a fallback chain
                 self.add_coalesce_chain_impl(transform, gx).await;
-            }
-            // Other transform types - show toast for now
-            _ => {
-                gx.toast(Toast::info(
-                    "Editor for this transform type not yet implemented",
-                ));
             }
         }
     }
