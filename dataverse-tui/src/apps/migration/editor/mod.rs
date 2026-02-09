@@ -21,6 +21,7 @@ use crate::apps::migration::types::EntityMapping;
 use crate::apps::migration::types::FieldMapping;
 use crate::apps::migration::types::FindCondition;
 use crate::apps::migration::types::FindMode;
+use crate::apps::migration::types::MatchCondition;
 use crate::apps::migration::types::MatchBranch;
 use crate::apps::migration::types::Migration;
 use crate::apps::migration::types::Mode;
@@ -58,6 +59,8 @@ pub struct MigrationEditor {
     coalesce_chains: Vec<CoalesceChain>,
     /// All find conditions (for tree building).
     find_conditions: Vec<FindCondition>,
+    /// All match conditions (for tree building).
+    match_conditions: Vec<MatchCondition>,
 }
 
 impl MigrationEditor {
@@ -80,6 +83,7 @@ impl MigrationEditor {
             Vec::new(), // match_branches
             Vec::new(), // coalesce_chains
             Vec::new(), // find_conditions
+            Vec::new(), // match_conditions
         )
     }
 }
@@ -110,6 +114,7 @@ impl MigrationEditor {
         let match_branches = self.match_branches.get();
         let coalesce_chains = self.coalesce_chains.get();
         let find_conditions = self.find_conditions.get();
+        let match_conditions = self.match_conditions.get();
 
         // 2. Collect unique entity names
         let mut source_entities: Vec<String> = Vec::new();
@@ -203,6 +208,7 @@ impl MigrationEditor {
             match_branches,
             coalesce_chains,
             find_conditions,
+            match_conditions,
             &source_field_types,
             &target_field_types,
         );
@@ -334,6 +340,14 @@ impl MigrationEditor {
                 // Chain wrapper selected -> add transform to the chain
                 self.add_transform_impl(gx).await;
             }
+            Some(MigrationTreeNode::MatchConfig { entity_mapping_id }) => {
+                // MatchConfig (Find mode) -> add match condition
+                self.add_match_condition_impl(entity_mapping_id, gx).await;
+            }
+            Some(MigrationTreeNode::MatchCondition(_)) => {
+                // MatchCondition selected -> add transform to the condition's chain
+                self.add_transform_impl(gx).await;
+            }
             // Other config nodes don't support adding children
             Some(_) => {}
         }
@@ -374,6 +388,9 @@ impl MigrationEditor {
             }
             Some(MigrationTreeNode::FindCondition(fc)) => {
                 self.delete_find_condition_impl(&fc, cx, gx).await;
+            }
+            Some(MigrationTreeNode::MatchCondition(mc)) => {
+                self.delete_match_condition_impl(&mc, cx, gx).await;
             }
             // Other config nodes can't be deleted
             Some(_) | None => {}
@@ -420,6 +437,9 @@ impl MigrationEditor {
             MigrationTreeNode::FindCondition(fc) => {
                 self.reorder_find_condition_impl(&fc, direction, gx).await;
             }
+            MigrationTreeNode::MatchCondition(mc) => {
+                self.reorder_match_condition_impl(&mc, direction, gx).await;
+            }
             // Other nodes don't support reordering
             _ => {}
         }
@@ -439,8 +459,10 @@ impl MigrationEditor {
                 self.edit_entity_mapping_impl(&em, gx).await;
             }
             MigrationTreeNode::MatchConfig { entity_mapping_id } => {
-                // TODO: Open match config editor
-                let _ = entity_mapping_id;
+                self.edit_match_config_impl(entity_mapping_id, gx).await;
+            }
+            MigrationTreeNode::MatchCondition(mc) => {
+                self.edit_match_condition_impl(&mc, gx).await;
             }
             MigrationTreeNode::SourceFilter { entity_mapping_id } => {
                 self.edit_source_filter_impl(entity_mapping_id, gx).await;
@@ -533,6 +555,21 @@ impl MigrationEditor {
             Some(MigrationTreeNode::FindCondition(_)) => (true, "Add Transform"),
             Some(MigrationTreeNode::MatchDefault { .. }) => (true, "Add Transform"),
             Some(MigrationTreeNode::FindDefault { .. }) => (true, "Add Transform"),
+            Some(MigrationTreeNode::MatchCondition(_)) => (true, "Add Transform"),
+            Some(MigrationTreeNode::MatchConfig { entity_mapping_id }) => {
+                let is_find = self
+                    .entity_mappings
+                    .get()
+                    .iter()
+                    .find(|em| em.id == *entity_mapping_id)
+                    .map(|em| em.match_strategy == crate::apps::migration::types::MatchStrategy::Find)
+                    .unwrap_or(false);
+                if is_find {
+                    (true, "Add Condition")
+                } else {
+                    (false, "Add")
+                }
+            }
             Some(MigrationTreeNode::Chain { .. }) => (true, "Add Transform"),
             Some(_) => (false, "Add"), // Other config nodes - can't add
         };
@@ -605,7 +642,7 @@ impl MigrationEditor {
                                 }
                             }
                             Some(MigrationTreeNode::MatchConfig { entity_mapping_id }) => {
-                                { self.render_config_detail("Match Config", entity_mapping_id, "Configure how source records are matched to target records") }
+                                { self.render_match_config_detail(entity_mapping_id) }
                             }
                             Some(MigrationTreeNode::SourceFilter { entity_mapping_id }) => {
                                 { self.render_config_detail("Source Filter", entity_mapping_id, "Filter which source records to process") }
@@ -645,6 +682,9 @@ impl MigrationEditor {
                             }
                             Some(MigrationTreeNode::FindCondition(fc)) => {
                                 { self.render_find_condition_detail(&fc) }
+                            }
+                            Some(MigrationTreeNode::MatchCondition(mc)) => {
+                                { self.render_match_condition_detail(&mc) }
                             }
                             Some(MigrationTreeNode::MatchDefault { .. }) => {
                                 { self.render_match_default_detail() }

@@ -55,6 +55,10 @@ impl MigrationEditor {
         if let Ok(conditions) = repo.get_find_conditions_by_migration(migration_id).await {
             self.find_conditions.set(conditions);
         }
+
+        if let Ok(conditions) = repo.get_match_conditions_by_migration(migration_id).await {
+            self.match_conditions.set(conditions);
+        }
     }
 
     /// Get the currently focused tree node.

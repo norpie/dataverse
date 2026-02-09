@@ -13,6 +13,8 @@ use super::MigrationEditor;
 use crate::apps::migration::types::CoalesceChain;
 use crate::apps::migration::types::FindCondition;
 use crate::apps::migration::types::MatchBranch;
+use crate::apps::migration::types::MatchCondition;
+use crate::apps::migration::types::MatchStrategy;
 use crate::apps::migration::types::ParentType;
 
 impl MigrationEditor {
@@ -43,6 +45,63 @@ impl MigrationEditor {
                         text (content: {parent_name})
                     }
                     text (content: {description}) style (fg: muted)
+                }
+            }
+        }
+    }
+
+    /// Render the Match Config detail view.
+    pub(super) fn render_match_config_detail(&self, entity_mapping_id: i64) -> Element {
+        let em = self
+            .entity_mappings
+            .get()
+            .iter()
+            .find(|em| em.id == entity_mapping_id)
+            .cloned();
+
+        let parent_name = em
+            .as_ref()
+            .map(|e| e.name.clone())
+            .unwrap_or_else(|| "Unknown".to_string());
+
+        let strategy = em
+            .as_ref()
+            .map(|e| e.match_strategy)
+            .unwrap_or(MatchStrategy::SameId);
+
+        let strategy_label = match strategy {
+            MatchStrategy::SameId => "Same ID",
+            MatchStrategy::Find => "Find",
+        };
+
+        let strategy_desc = match strategy {
+            MatchStrategy::SameId => {
+                "Source and target records are matched by identical GUIDs".to_string()
+            }
+            MatchStrategy::Find => {
+                let count = self
+                    .match_conditions
+                    .get()
+                    .iter()
+                    .filter(|mc| mc.entity_mapping_id == entity_mapping_id)
+                    .count();
+                format!("Match using {} condition(s) on target fields", count)
+            }
+        };
+
+        element! {
+            column (gap: 1) {
+                text (content: "Match Config") style (bold, fg: interact)
+                column {
+                    row (gap: 1) {
+                        text (content: "Parent") style (fg: muted)
+                        text (content: {parent_name})
+                    }
+                    row (gap: 1) {
+                        text (content: "Strategy") style (fg: muted)
+                        text (content: {strategy_label.to_string()})
+                    }
+                    text (content: {strategy_desc}) style (fg: muted)
                 }
             }
         }
@@ -252,6 +311,7 @@ impl MigrationEditor {
             ParentType::CoalesceChain => "Coalesce Chain",
             ParentType::FindCondition => "Find Condition",
             ParentType::FindDefault => "Find Default",
+            ParentType::MatchCondition => "Match Condition",
         };
         let order_str = format!("{}", transform.order + 1);
         let has_type = tn.output_type.is_some();
@@ -378,6 +438,29 @@ impl MigrationEditor {
         }
     }
 
+    /// Render a Match Condition detail view.
+    pub(super) fn render_match_condition_detail(&self, condition: &MatchCondition) -> Element {
+        let target_field = condition.target_field.clone();
+        let order_str = format!("{}", condition.order + 1);
+
+        element! {
+            column (gap: 1) {
+                text (content: "Match Condition") style (bold, fg: interact)
+                column {
+                    row (gap: 1) {
+                        text (content: "Target Field") style (fg: muted)
+                        text (content: {target_field})
+                    }
+                    row (gap: 1) {
+                        text (content: "Order") style (fg: muted)
+                        text (content: {order_str})
+                    }
+                    text (content: "Press Enter to edit target field, add transforms to define the match value from the source record") style (fg: muted)
+                }
+            }
+        }
+    }
+
     /// Render a Match Default detail view.
     pub(super) fn render_match_default_detail(&self) -> Element {
         element! {
@@ -417,6 +500,7 @@ impl MigrationEditor {
             ParentType::GuardFallback => "Guard Fallback",
             ParentType::CoalesceChain => "Coalesce Fallback",
             ParentType::FindCondition => "Find Condition",
+            ParentType::MatchCondition => "Match Condition",
             ParentType::MatchDefault => "Match Default",
             ParentType::FindDefault => "Find Default",
             _ => "Parent",

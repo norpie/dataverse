@@ -77,6 +77,8 @@ pub enum ParentType {
     FindCondition,
     /// Transform belongs to a find default chain (fallback when no match found).
     FindDefault,
+    /// Transform belongs to a match condition (match config find mode).
+    MatchCondition,
 }
 
 /// String operation type.
@@ -235,6 +237,7 @@ impl ParentType {
             ParentType::CoalesceChain => "coalesce_chain",
             ParentType::FindCondition => "find_condition",
             ParentType::FindDefault => "find_default",
+            ParentType::MatchCondition => "match_condition",
         }
     }
 
@@ -248,6 +251,7 @@ impl ParentType {
             "coalesce_chain" => Some(ParentType::CoalesceChain),
             "find_condition" => Some(ParentType::FindCondition),
             "find_default" => Some(ParentType::FindDefault),
+            "match_condition" => Some(ParentType::MatchCondition),
             _ => None,
         }
     }

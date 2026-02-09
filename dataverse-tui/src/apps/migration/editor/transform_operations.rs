@@ -594,6 +594,10 @@ impl MigrationEditor {
                     insert_order: 0,
                 })
             }
+            ParentType::MatchCondition => {
+                // Match conditions produce match values, not mapped to a target field type
+                None
+            }
         }
     }
 
@@ -663,6 +667,17 @@ impl MigrationEditor {
                     entity_mapping_id,
                     parent_type: ParentType::FindCondition,
                     parent_id: fc.id,
+                    insert_order: order,
+                })
+            }
+            MigrationTreeNode::MatchCondition(mc) => {
+                // Add to end of match condition's chain
+                let order =
+                    self.transform_count_for_parent(ParentType::MatchCondition, mc.id);
+                Some(InsertTarget {
+                    entity_mapping_id: mc.entity_mapping_id,
+                    parent_type: ParentType::MatchCondition,
+                    parent_id: mc.id,
                     insert_order: order,
                 })
             }
@@ -810,6 +825,14 @@ impl MigrationEditor {
                     .find(|t| t.id == parent_id)
                     .map(|t| t.entity_mapping_id)
             }
+            ParentType::MatchCondition => {
+                // parent_id is the match_condition id
+                self.match_conditions
+                    .get()
+                    .iter()
+                    .find(|mc| mc.id == parent_id)
+                    .map(|mc| mc.entity_mapping_id)
+            }
         }
     }
 
@@ -897,6 +920,7 @@ impl MigrationEditor {
             ParentType::GuardFallback => Some(format!("transform-{}", parent_id)),
             ParentType::MatchDefault => Some(format!("match-default-{}", parent_id)),
             ParentType::FindDefault => Some(format!("find-default-{}", parent_id)),
+            ParentType::MatchCondition => Some(format!("match-condition-{}", parent_id)),
         }
     }
 

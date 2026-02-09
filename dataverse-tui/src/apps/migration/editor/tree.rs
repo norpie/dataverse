@@ -24,6 +24,8 @@ use crate::apps::migration::types::FieldMapping;
 use crate::apps::migration::types::FindCondition;
 use crate::apps::migration::types::FindFallback;
 use crate::apps::migration::types::MatchBranch;
+use crate::apps::migration::types::MatchCondition;
+use crate::apps::migration::types::MatchStrategy;
 use crate::apps::migration::types::Mode;
 use crate::apps::migration::types::ParentType;
 use crate::apps::migration::types::Phase;
@@ -110,6 +112,8 @@ pub enum MigrationTreeNode {
     FindCondition(FindCondition),
     /// The default chain of a find transform (transforms use ParentType::FindDefault).
     FindDefault { transform_id: i64 },
+    /// A condition within a match config (find mode).
+    MatchCondition(MatchCondition),
     /// A wrapper for multi-transform nested chains.
     /// Used when a nested chain (guard fallback, coalesce chain, match branch, find condition)
     /// has more than one transform.
@@ -141,7 +145,8 @@ impl MigrationTreeNode {
             Self::CoalesceChain(_) => None,    // Get via transform
             Self::FindCondition(_) => None,    // Get via transform
             Self::FindDefault { .. } => None,  // Get via transform
-            Self::Chain { .. } => None,        // Get via parent
+            Self::MatchCondition(mc) => Some(mc.entity_mapping_id),
+            Self::Chain { .. } => None, // Get via parent
         }
     }
 
@@ -174,6 +179,7 @@ impl MigrationTreeNode {
                 | Self::CoalesceChain(_)
                 | Self::FindCondition(_)
                 | Self::FindDefault { .. }
+                | Self::MatchCondition(_)
                 | Self::Chain { .. }
         )
     }
@@ -305,6 +311,7 @@ impl TreeItem for MigrationTreeNode {
             Self::CoalesceChain(cc) => format!("coalesce-chain-{}", cc.id),
             Self::FindCondition(fc) => format!("find-condition-{}", fc.id),
             Self::FindDefault { transform_id } => format!("find-default-{}", transform_id),
+            Self::MatchCondition(mc) => format!("match-condition-{}", mc.id),
             Self::Chain {
                 parent_type,
                 parent_id,
@@ -444,6 +451,12 @@ impl TreeItem for MigrationTreeNode {
             }
             Self::FindCondition(fc) => {
                 let label = format!("Condition: {}", fc.target_field);
+                element! {
+                    text (content: {label}) style (fg: primary)
+                }
+            }
+            Self::MatchCondition(mc) => {
+                let label = format!("Condition: {}", mc.target_field);
                 element! {
                     text (content: {label}) style (fg: primary)
                 }
@@ -649,6 +662,7 @@ struct TreeLookup<'a> {
     match_branches: &'a [MatchBranch],
     coalesce_chains: &'a [CoalesceChain],
     find_conditions: &'a [FindCondition],
+    match_conditions: &'a [MatchCondition],
 }
 
 impl<'a> TreeLookup<'a> {
@@ -699,6 +713,18 @@ impl<'a> TreeLookup<'a> {
         conditions.sort_by_key(|fc| fc.order);
         conditions
     }
+
+    /// Get match conditions for an entity mapping, sorted by order.
+    fn get_match_conditions(&self, entity_mapping_id: i64) -> Vec<MatchCondition> {
+        let mut conditions: Vec<_> = self
+            .match_conditions
+            .iter()
+            .filter(|mc| mc.entity_mapping_id == entity_mapping_id)
+            .cloned()
+            .collect();
+        conditions.sort_by_key(|mc| mc.order);
+        conditions
+    }
 }
 
 /// Context for building the tree, holding lookup data and mutable type accumulator.
@@ -747,6 +773,7 @@ pub fn build_tree_nodes(
     match_branches: Vec<MatchBranch>,
     coalesce_chains: Vec<CoalesceChain>,
     find_conditions: Vec<FindCondition>,
+    match_conditions: Vec<MatchCondition>,
     field_type_cache: &FieldTypeCache,
     target_field_cache: &FieldTypeCache,
 ) -> Vec<TreeNode<MigrationTreeNode>> {
@@ -756,6 +783,7 @@ pub fn build_tree_nodes(
             match_branches: &match_branches,
             coalesce_chains: &coalesce_chains,
             find_conditions: &find_conditions,
+            match_conditions: &match_conditions,
         },
         entity_mappings: &entity_mappings,
         field_type_cache,
@@ -811,9 +839,31 @@ fn build_entity_mapping_node(
         }));
     } else {
         // Declarative mode: all config nodes
-        children.push(TreeNode::leaf(MigrationTreeNode::MatchConfig {
-            entity_mapping_id: em_id,
-        }));
+        // MatchConfig is expandable when in Find mode (has match conditions)
+        if em.match_strategy == MatchStrategy::Find {
+            let mc_children: Vec<TreeNode<MigrationTreeNode>> = ctx
+                .lookup
+                .get_match_conditions(em_id)
+                .into_iter()
+                .map(|mc| build_match_condition_node(mc, ctx))
+                .collect();
+            if mc_children.is_empty() {
+                children.push(TreeNode::leaf(MigrationTreeNode::MatchConfig {
+                    entity_mapping_id: em_id,
+                }));
+            } else {
+                children.push(TreeNode::branch(
+                    MigrationTreeNode::MatchConfig {
+                        entity_mapping_id: em_id,
+                    },
+                    mc_children,
+                ));
+            }
+        } else {
+            children.push(TreeNode::leaf(MigrationTreeNode::MatchConfig {
+                entity_mapping_id: em_id,
+            }));
+        }
         children.push(TreeNode::leaf(MigrationTreeNode::SourceFilter {
             entity_mapping_id: em_id,
         }));
@@ -1310,6 +1360,28 @@ fn build_find_default_node(
     }
 }
 
+/// Build a tree node for a match condition with its transforms.
+fn build_match_condition_node(
+    mc: MatchCondition,
+    ctx: &mut TreeBuildContext,
+) -> TreeNode<MigrationTreeNode> {
+    let transforms = ctx.lookup.get_transforms(ParentType::MatchCondition, mc.id);
+
+    // Compute types for the condition's chain
+    if !transforms.is_empty() {
+        let source_entity = ctx.source_entity_for(mc.entity_mapping_id).to_string();
+        let chain_result = compute_chain_types(&transforms, &source_entity, ctx);
+        ctx.types.merge(&chain_result);
+    }
+
+    build_nested_chain_node(
+        MigrationTreeNode::MatchCondition(mc),
+        ParentType::MatchCondition,
+        transforms,
+        ctx,
+    )
+}
+
 /// Build a nested chain node following the display rules:
 /// - Single transform: show directly as child
 /// - Multiple transforms: wrap in a Chain node
@@ -1323,6 +1395,7 @@ fn build_nested_chain_node(
         MigrationTreeNode::MatchBranch(mb) => mb.id,
         MigrationTreeNode::CoalesceChain(cc) => cc.id,
         MigrationTreeNode::FindCondition(fc) => fc.id,
+        MigrationTreeNode::MatchCondition(mc) => mc.id,
         _ => return TreeNode::leaf(parent_node),
     };
 

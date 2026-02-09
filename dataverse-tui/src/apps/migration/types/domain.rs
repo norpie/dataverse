@@ -174,6 +174,21 @@ pub struct FindCondition {
 }
 
 // =============================================================================
+// Match Condition
+// =============================================================================
+
+/// A condition within a match config (find mode).
+/// Specifies a target field to match on, with a transform chain
+/// (stored as transforms with ParentType::MatchCondition) to compute the value.
+#[derive(Debug, Clone)]
+pub struct MatchCondition {
+    pub id: i64,
+    pub entity_mapping_id: i64,
+    pub target_field: String,
+    pub order: i32,
+}
+
+// =============================================================================
 // Phase Run
 // =============================================================================
 
