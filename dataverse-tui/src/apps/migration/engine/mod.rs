@@ -7,6 +7,7 @@ pub mod condition;
 mod executor;
 pub mod materializer;
 mod paths;
+pub mod record;
 mod transforms;
 mod types;
 pub mod variables;
