@@ -89,6 +89,8 @@ pub struct FindCacheSpec {
     pub entity: String,
     /// Fields to include in `$select`.
     pub select: HashSet<String>,
+    /// Navigation properties to `$expand` (for dotted target_field paths).
+    pub expands: Vec<ExpandSpec>,
 }
 
 /// A navigation property expansion with nested select/expand.
@@ -518,10 +520,12 @@ mod tests {
             FindCacheSpec {
                 entity: "contact".to_string(),
                 select: HashSet::new(),
+                expands: vec![],
             },
             FindCacheSpec {
                 entity: "capacity".to_string(),
                 select: HashSet::new(),
+                expands: vec![],
             },
         ];
 

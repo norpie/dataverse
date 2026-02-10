@@ -10,6 +10,7 @@ use dataverse_lib::model::Value;
 use mlua::Table;
 use uuid::Uuid;
 
+use crate::apps::migration::engine::util::traverse_path;
 use crate::apps::migration::engine::util::values_equal;
 use crate::apps::migration::engine::FindCache;
 use crate::apps::migration::engine::FindError;
@@ -59,7 +60,7 @@ impl FindCache for LiveFindCache {
 
         for record in records {
             let all_match = conditions.iter().all(|(field, expected)| {
-                match record.get(field) {
+                match traverse_path(record, field) {
                     Some(actual) => values_equal(actual, expected),
                     // Null field matches Null condition
                     None => matches!(expected, Value::Null),
@@ -499,5 +500,108 @@ mod tests {
 
         let result = cache.find_lua("contact", "return {}", &source);
         assert!(matches!(result, Err(FindError::NotCached(_))));
+    }
+
+    // ---- find_where with dotted paths ----
+
+    #[test]
+    fn find_where_dotted_path_traverses_nested_record() {
+        let nested_contact = Record::with_id(Entity::logical("contact"), id(100))
+            .set("emailaddress1", Value::from("alice@example.com"));
+
+        let mut cache = LiveFindCache::new();
+        cache.insert_records(
+            "account",
+            vec![
+                make_record(
+                    "account",
+                    id(1),
+                    vec![(
+                        "primarycontactid",
+                        Value::Record(Box::new(nested_contact.clone())),
+                    )],
+                ),
+                make_record("account", id(2), vec![("name", Value::from("NoContact"))]),
+            ],
+        );
+
+        let result = cache.find_where(
+            "account",
+            &[(
+                "primarycontactid.emailaddress1".into(),
+                Value::from("alice@example.com"),
+            )],
+        );
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().id(), Some(id(1)));
+    }
+
+    #[test]
+    fn find_where_dotted_path_no_match() {
+        let nested_contact = Record::with_id(Entity::logical("contact"), id(100))
+            .set("emailaddress1", Value::from("alice@example.com"));
+
+        let mut cache = LiveFindCache::new();
+        cache.insert_records(
+            "account",
+            vec![make_record(
+                "account",
+                id(1),
+                vec![("primarycontactid", Value::Record(Box::new(nested_contact)))],
+            )],
+        );
+
+        let result = cache.find_where(
+            "account",
+            &[(
+                "primarycontactid.emailaddress1".into(),
+                Value::from("bob@example.com"),
+            )],
+        );
+        assert!(matches!(result, Err(FindError::NotFound)));
+    }
+
+    #[test]
+    fn find_where_dotted_path_missing_nested_record() {
+        let mut cache = LiveFindCache::new();
+        cache.insert_records(
+            "account",
+            vec![make_record(
+                "account",
+                id(1),
+                vec![("name", Value::from("Acme"))],
+            )],
+        );
+
+        // Account has no "primarycontactid" field → traversal returns None → no match
+        let result = cache.find_where(
+            "account",
+            &[(
+                "primarycontactid.emailaddress1".into(),
+                Value::from("alice@example.com"),
+            )],
+        );
+        assert!(matches!(result, Err(FindError::NotFound)));
+    }
+
+    #[test]
+    fn find_where_dotted_path_null_condition_matches_missing() {
+        let mut cache = LiveFindCache::new();
+        cache.insert_records(
+            "account",
+            vec![make_record(
+                "account",
+                id(1),
+                vec![("name", Value::from("Acme"))],
+            )],
+        );
+
+        // Null condition on dotted path should match when nested record is missing
+        let result = cache.find_where(
+            "account",
+            &[("primarycontactid.emailaddress1".into(), Value::Null)],
+        );
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().id(), Some(id(1)));
     }
 }

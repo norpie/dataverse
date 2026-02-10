@@ -1,5 +1,6 @@
 //! Shared utility functions for the transform engine.
 
+use dataverse_lib::model::Record;
 use dataverse_lib::model::Value;
 
 /// Check equality between two values, with cross-type flexibility.
@@ -22,5 +23,134 @@ pub fn values_equal(a: &Value, b: &Value) -> bool {
         (Value::OptionSet(a), Value::Int(b)) => a.value == *b,
         (Value::Int(a), Value::OptionSet(b)) => *a == b.value,
         _ => false,
+    }
+}
+
+/// Traverse a dotted path through a record, returning the value at the end.
+///
+/// Simpler than `traverse_record` in resolve.rs — no TransformResult/entity tracking,
+/// just walks through `Value::Record(nested)` following each segment.
+///
+/// # Examples
+///
+/// - `traverse_path(record, "name")` → `record.get("name")`
+/// - `traverse_path(record, "contact.emailaddress1")` → walks into nested `contact` record
+pub fn traverse_path<'a>(record: &'a Record, path: &str) -> Option<&'a Value> {
+    let segments: Vec<&str> = path.split('.').collect();
+
+    if segments.is_empty() {
+        return None;
+    }
+
+    if segments.len() == 1 {
+        return record.get(segments[0]);
+    }
+
+    // Walk through nested records
+    let mut current_record = record;
+    for (i, segment) in segments.iter().enumerate() {
+        if i == segments.len() - 1 {
+            // Last segment — return the value
+            return current_record.get(segment);
+        }
+
+        // Intermediate segment — must be a nested Record
+        match current_record.get(segment) {
+            Some(Value::Record(nested)) => {
+                current_record = nested;
+            }
+            _ => return None,
+        }
+    }
+
+    None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dataverse_lib::model::Entity;
+
+    fn make_record(entity: &str, fields: Vec<(&str, Value)>) -> Record {
+        let mut record = Record::new(Entity::logical(entity));
+        for (field, value) in fields {
+            record = record.set(field, value);
+        }
+        record
+    }
+
+    #[test]
+    fn traverse_single_segment() {
+        let record = make_record("account", vec![("name", Value::from("Acme"))]);
+        assert_eq!(traverse_path(&record, "name"), Some(&Value::from("Acme")));
+    }
+
+    #[test]
+    fn traverse_single_segment_missing() {
+        let record = make_record("account", vec![]);
+        assert_eq!(traverse_path(&record, "name"), None);
+    }
+
+    #[test]
+    fn traverse_dotted_path() {
+        let nested = make_record(
+            "contact",
+            vec![("emailaddress1", Value::from("alice@example.com"))],
+        );
+        let record = make_record(
+            "account",
+            vec![("primarycontactid", Value::Record(Box::new(nested)))],
+        );
+        assert_eq!(
+            traverse_path(&record, "primarycontactid.emailaddress1"),
+            Some(&Value::from("alice@example.com"))
+        );
+    }
+
+    #[test]
+    fn traverse_dotted_path_missing_intermediate() {
+        let record = make_record("account", vec![("name", Value::from("Acme"))]);
+        assert_eq!(
+            traverse_path(&record, "primarycontactid.emailaddress1"),
+            None
+        );
+    }
+
+    #[test]
+    fn traverse_dotted_path_non_record_intermediate() {
+        let record = make_record("account", vec![("name", Value::from("Acme"))]);
+        // "name" is a string, not a record — can't traverse further
+        assert_eq!(traverse_path(&record, "name.something"), None);
+    }
+
+    #[test]
+    fn traverse_three_level_path() {
+        let inner = make_record("account", vec![("name", Value::from("ParentCo"))]);
+        let middle = make_record(
+            "contact",
+            vec![("parentcustomerid", Value::Record(Box::new(inner)))],
+        );
+        let record = make_record(
+            "account",
+            vec![("primarycontactid", Value::Record(Box::new(middle)))],
+        );
+        assert_eq!(
+            traverse_path(&record, "primarycontactid.parentcustomerid.name"),
+            Some(&Value::from("ParentCo"))
+        );
+    }
+
+    #[test]
+    fn traverse_dotted_path_missing_leaf() {
+        let nested = make_record("contact", vec![("fullname", Value::from("Alice"))]);
+        let record = make_record(
+            "account",
+            vec![("primarycontactid", Value::Record(Box::new(nested)))],
+        );
+        // Field exists on nested record but we're asking for a different field
+        assert_eq!(
+            traverse_path(&record, "primarycontactid.emailaddress1"),
+            None
+        );
     }
 }

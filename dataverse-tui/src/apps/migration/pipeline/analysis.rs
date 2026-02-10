@@ -232,9 +232,9 @@ impl ExpandBuilder {
     }
 }
 
-/// Builds `FindCacheSpec`s by accumulating fields per entity.
+/// Builds `FindCacheSpec`s by accumulating fields and expands per entity.
 struct FindCacheBuilder {
-    entities: HashMap<String, HashSet<String>>,
+    entities: HashMap<String, (HashSet<String>, HashMap<String, ExpandBuilder>)>,
 }
 
 impl FindCacheBuilder {
@@ -249,7 +249,29 @@ impl FindCacheBuilder {
         self.entities
             .entry(entity.to_string())
             .or_default()
+            .0
             .insert(field.to_string());
+    }
+
+    /// Add a field path to a find cache entity's fetch requirements.
+    ///
+    /// Single-segment paths go into `select`, multi-segment paths into `expands`.
+    fn add_field_path(&mut self, entity: &str, path: &FieldPath) {
+        if path.segments.is_empty() {
+            return;
+        }
+
+        if path.segments.len() == 1 {
+            self.add_field(entity, &path.segments[0].field);
+        } else {
+            // Multi-segment: first is nav property, rest goes into expand
+            let nav = &path.segments[0];
+            let (_, expands) = self.entities.entry(entity.to_string()).or_default();
+            let expand = expands
+                .entry(nav.field.clone())
+                .or_insert_with(|| ExpandBuilder::new(nav.field.clone()));
+            expand.add_remaining_segments(&path.segments[1..]);
+        }
     }
 
     /// Ensure an entity is tracked (even with no specific fields yet).
@@ -260,7 +282,14 @@ impl FindCacheBuilder {
     fn build(self) -> Vec<FindCacheSpec> {
         self.entities
             .into_iter()
-            .map(|(entity, select)| FindCacheSpec { entity, select })
+            .map(|(entity, (select, expands))| {
+                let expands = expands.into_values().map(|b| b.build()).collect();
+                FindCacheSpec {
+                    entity,
+                    select,
+                    expands,
+                }
+            })
             .collect()
     }
 }
@@ -295,7 +324,7 @@ fn analyze_item(
     {
         if let ChainChildren::FindConditions(conditions, _) = &item.children {
             for cond in conditions {
-                collector.find_caches.add_field(entity, &cond.target_field);
+                add_target_field_to_find_cache(&cond.target_field, entity, collector);
             }
         }
     }
@@ -558,13 +587,28 @@ fn find_entity_from_chain(chain: &[ChainItem]) -> Option<String> {
     None
 }
 
-/// Add field paths from a FieldPath to a find cache entity's select set.
+/// Add field paths from a FieldPath to a find cache entity's requirements.
+///
+/// Single-segment paths go into select, multi-segment paths into expands.
 fn add_field_path_to_find_cache(path: &FieldPath, entity: &str, collector: &mut Collector) {
-    // For find caches, we only need flat field names — no expand support.
-    // The first segment's field is what we need.
-    if let Some(first) = path.segments.first() {
-        collector.find_caches.add_field(entity, &first.field);
-    }
+    collector.find_caches.add_field_path(entity, path);
+}
+
+/// Parse a target_field string (potentially dotted) and add to find cache requirements.
+///
+/// Used for find condition `target_field` and match condition `target_field` values.
+fn add_target_field_to_find_cache(target_field: &str, entity: &str, collector: &mut Collector) {
+    // Parse as a simple dotted path (no $variables, just field segments)
+    let segments: Vec<FieldSegment> = target_field
+        .split('.')
+        .map(|s| FieldSegment {
+            field: s.to_string(),
+            target: None,
+            optional: false,
+        })
+        .collect();
+    let path = FieldPath { segments };
+    collector.find_caches.add_field_path(entity, &path);
 }
 
 // =============================================================================
@@ -1085,5 +1129,85 @@ mod tests {
             .unwrap();
         assert!(capacity_cache.select.contains("capacityid"));
         assert!(capacity_cache.select.contains("name"));
+    }
+
+    #[test]
+    fn find_where_dotted_target_field_creates_expand() {
+        // Find condition with target_field "contact.emailaddress1" should create
+        // an expand on the find cache for "account", not a flat select.
+        let variables = vec![(
+            "matched".to_string(),
+            vec![find_where(
+                "account",
+                vec![find_condition(
+                    "primarycontactid.emailaddress1",
+                    vec![copy("email")],
+                )],
+            )],
+        )];
+        let field_mappings = vec![];
+        let plan = analyze_mapping(&simple_input(&field_mappings, &variables));
+
+        let cache = plan
+            .find_caches
+            .iter()
+            .find(|c| c.entity == "account")
+            .unwrap();
+        // "primarycontactid" should NOT be in flat select
+        assert!(!cache.select.contains("primarycontactid"));
+        // Should have an expand for "primarycontactid"
+        assert_eq!(cache.expands.len(), 1);
+        assert_eq!(cache.expands[0].nav_property, "primarycontactid");
+        assert!(cache.expands[0].select.contains("emailaddress1"));
+    }
+
+    #[test]
+    fn find_where_flat_target_field_stays_in_select() {
+        // Single-segment target_field should remain in select (no expand)
+        let variables = vec![(
+            "matched".to_string(),
+            vec![find_where(
+                "contact",
+                vec![find_condition("fullname", vec![copy("name")])],
+            )],
+        )];
+        let field_mappings = vec![];
+        let plan = analyze_mapping(&simple_input(&field_mappings, &variables));
+
+        let cache = plan
+            .find_caches
+            .iter()
+            .find(|c| c.entity == "contact")
+            .unwrap();
+        assert!(cache.select.contains("fullname"));
+        assert!(cache.expands.is_empty());
+    }
+
+    #[test]
+    fn find_where_mixed_flat_and_dotted_target_fields() {
+        let variables = vec![(
+            "matched".to_string(),
+            vec![find_where(
+                "account",
+                vec![
+                    find_condition("name", vec![copy("name")]),
+                    find_condition("primarycontactid.emailaddress1", vec![copy("email")]),
+                ],
+            )],
+        )];
+        let field_mappings = vec![];
+        let plan = analyze_mapping(&simple_input(&field_mappings, &variables));
+
+        let cache = plan
+            .find_caches
+            .iter()
+            .find(|c| c.entity == "account")
+            .unwrap();
+        // Flat field in select
+        assert!(cache.select.contains("name"));
+        // Dotted path in expand
+        assert_eq!(cache.expands.len(), 1);
+        assert_eq!(cache.expands[0].nav_property, "primarycontactid");
+        assert!(cache.expands[0].select.contains("emailaddress1"));
     }
 }

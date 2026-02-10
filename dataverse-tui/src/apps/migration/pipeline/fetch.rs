@@ -118,6 +118,9 @@ pub fn build_find_cache_tasks(specs: &[FindCacheSpec]) -> Vec<QueryBuilder> {
             if !select_vec.is_empty() {
                 query = query.select(&select_vec);
             }
+            for expand_spec in &spec.expands {
+                query = apply_expand(query, expand_spec);
+            }
             query
         })
         .collect()
@@ -131,20 +134,45 @@ pub fn build_find_cache_tasks(specs: &[FindCacheSpec]) -> Vec<QueryBuilder> {
 ///
 /// Multiple mappings in the same phase may reference the same find entity
 /// (e.g., two mappings both doing `find(contact)`). This merges their
-/// `select` sets so we only fetch each entity once with the union of fields.
+/// `select` sets and `expands` so we only fetch each entity once with the
+/// union of fields.
 pub fn merge_find_cache_specs(all_specs: Vec<Vec<FindCacheSpec>>) -> Vec<FindCacheSpec> {
-    let mut merged: HashMap<String, HashSet<String>> = HashMap::new();
+    let mut merged: HashMap<String, (HashSet<String>, Vec<ExpandSpec>)> = HashMap::new();
 
     for specs in all_specs {
         for spec in specs {
-            merged.entry(spec.entity).or_default().extend(spec.select);
+            let entry = merged.entry(spec.entity).or_default();
+            entry.0.extend(spec.select);
+            merge_expands(&mut entry.1, spec.expands);
         }
     }
 
     merged
         .into_iter()
-        .map(|(entity, select)| FindCacheSpec { entity, select })
+        .map(|(entity, (select, expands))| FindCacheSpec {
+            entity,
+            select,
+            expands,
+        })
         .collect()
+}
+
+/// Merge a list of ExpandSpecs into an existing list.
+///
+/// For each incoming expand, if an expand with the same nav_property already exists,
+/// merge their selects and nested expands recursively. Otherwise, add the new expand.
+fn merge_expands(existing: &mut Vec<ExpandSpec>, incoming: Vec<ExpandSpec>) {
+    for inc in incoming {
+        if let Some(existing_expand) = existing
+            .iter_mut()
+            .find(|e| e.nav_property == inc.nav_property)
+        {
+            existing_expand.select.extend(inc.select);
+            merge_expands(&mut existing_expand.nested, inc.nested);
+        } else {
+            existing.push(inc);
+        }
+    }
 }
 
 /// Wrap a `QueryBuilder` into an `ODataFetchTask` with a label and client.
@@ -449,10 +477,12 @@ mod tests {
             FindCacheSpec {
                 entity: "contact".to_string(),
                 select: contact_select,
+                expands: vec![],
             },
             FindCacheSpec {
                 entity: "capacity".to_string(),
                 select: capacity_select,
+                expands: vec![],
             },
         ];
 
@@ -473,10 +503,12 @@ mod tests {
         let specs1 = vec![FindCacheSpec {
             entity: "contact".to_string(),
             select: select1,
+            expands: vec![],
         }];
         let specs2 = vec![FindCacheSpec {
             entity: "contact".to_string(),
             select: select2,
+            expands: vec![],
         }];
 
         let merged = merge_find_cache_specs(vec![specs1, specs2]);
@@ -497,10 +529,12 @@ mod tests {
         let specs1 = vec![FindCacheSpec {
             entity: "contact".to_string(),
             select: contact_select,
+            expands: vec![],
         }];
         let specs2 = vec![FindCacheSpec {
             entity: "capacity".to_string(),
             select: capacity_select,
+            expands: vec![],
         }];
 
         let merged = merge_find_cache_specs(vec![specs1, specs2]);
@@ -527,10 +561,12 @@ mod tests {
         let specs1 = vec![FindCacheSpec {
             entity: "contact".to_string(),
             select: select1,
+            expands: vec![],
         }];
         let specs2 = vec![FindCacheSpec {
             entity: "contact".to_string(),
             select: select2,
+            expands: vec![],
         }];
 
         let merged = merge_find_cache_specs(vec![specs1, specs2]);
@@ -572,5 +608,68 @@ mod tests {
         // Should build without error
         let selected = query.selected_fields();
         assert!(selected.contains(&"accountid".to_string()));
+    }
+
+    // ---- Merge Expands Tests ----
+
+    #[test]
+    fn merge_find_cache_specs_merges_expands() {
+        let specs1 = vec![FindCacheSpec {
+            entity: "account".to_string(),
+            select: HashSet::from(["name".to_string()]),
+            expands: vec![ExpandSpec {
+                nav_property: "primarycontactid".to_string(),
+                select: HashSet::from(["fullname".to_string()]),
+                nested: vec![],
+            }],
+        }];
+        let specs2 = vec![FindCacheSpec {
+            entity: "account".to_string(),
+            select: HashSet::from(["revenue".to_string()]),
+            expands: vec![ExpandSpec {
+                nav_property: "primarycontactid".to_string(),
+                select: HashSet::from(["emailaddress1".to_string()]),
+                nested: vec![],
+            }],
+        }];
+
+        let merged = merge_find_cache_specs(vec![specs1, specs2]);
+        assert_eq!(merged.len(), 1);
+
+        let spec = &merged[0];
+        assert!(spec.select.contains("name"));
+        assert!(spec.select.contains("revenue"));
+
+        assert_eq!(spec.expands.len(), 1);
+        let expand = &spec.expands[0];
+        assert_eq!(expand.nav_property, "primarycontactid");
+        assert!(expand.select.contains("fullname"));
+        assert!(expand.select.contains("emailaddress1"));
+    }
+
+    #[test]
+    fn merge_find_cache_specs_different_expands_kept_separate() {
+        let specs1 = vec![FindCacheSpec {
+            entity: "account".to_string(),
+            select: HashSet::new(),
+            expands: vec![ExpandSpec {
+                nav_property: "primarycontactid".to_string(),
+                select: HashSet::from(["fullname".to_string()]),
+                nested: vec![],
+            }],
+        }];
+        let specs2 = vec![FindCacheSpec {
+            entity: "account".to_string(),
+            select: HashSet::new(),
+            expands: vec![ExpandSpec {
+                nav_property: "ownerid".to_string(),
+                select: HashSet::from(["fullname".to_string()]),
+                nested: vec![],
+            }],
+        }];
+
+        let merged = merge_find_cache_specs(vec![specs1, specs2]);
+        assert_eq!(merged.len(), 1);
+        assert_eq!(merged[0].expands.len(), 2);
     }
 }
