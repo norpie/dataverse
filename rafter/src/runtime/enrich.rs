@@ -47,9 +47,10 @@ fn enrich_elements_inner(
 
     // 3. Inherit foreground from parent if not explicitly set
     if element.style.foreground.is_none()
-        && let Some(fg) = inherited_foreground {
-            element.style.foreground = Some(fg.clone());
-        }
+        && let Some(fg) = inherited_foreground
+    {
+        element.style.foreground = Some(fg.clone());
+    }
 
     // 4. For text inputs: populate cursor/selection from TextInputState
     if let Content::TextInput {

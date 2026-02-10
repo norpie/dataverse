@@ -36,7 +36,7 @@ pub fn execute_string_ops(value: &Value, ops: &[StringOp]) -> TransformResult {
             return TransformResult::Error(TransformError::type_mismatch(
                 "string",
                 other.type_name(),
-            ))
+            ));
         }
     };
 

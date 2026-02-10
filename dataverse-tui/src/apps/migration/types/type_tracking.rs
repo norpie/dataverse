@@ -2,9 +2,9 @@
 
 use std::collections::HashMap;
 
-use dataverse_lib::model::metadata::AttributeType;
 use dataverse_lib::model::FieldType;
 use dataverse_lib::model::ValueType;
+use dataverse_lib::model::metadata::AttributeType;
 
 use super::domain::Transform;
 use super::transform::TransformData;

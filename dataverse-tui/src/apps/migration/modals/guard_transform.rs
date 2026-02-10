@@ -1,7 +1,7 @@
 //! Modal for editing a Guard transform condition.
 
-use dataverse_lib::model::Value;
 use dataverse_lib::DataverseClient;
+use dataverse_lib::model::Value;
 use rafter::page;
 use rafter::prelude::*;
 use rafter::widgets::AutocompleteState;

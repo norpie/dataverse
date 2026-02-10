@@ -254,7 +254,7 @@ pub trait TargetCache: Send + Sync {
     ///
     /// Returns the matching record, or an error if not found / multiple found.
     fn find_where(&self, entity: &str, conditions: &[(String, Value)])
-        -> Result<Record, FindError>;
+    -> Result<Record, FindError>;
 
     /// Find a record using a Lua script.
     ///

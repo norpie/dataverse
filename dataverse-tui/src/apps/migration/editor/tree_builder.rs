@@ -8,7 +8,6 @@ use std::collections::HashMap;
 use dataverse_lib::model::ValueType;
 use rafter::widgets::TreeNode;
 
-use crate::apps::migration::types::resolve_branch_union;
 use crate::apps::migration::types::ChainOutputWarning;
 use crate::apps::migration::types::ChainTypeResult;
 use crate::apps::migration::types::CoalesceChain;
@@ -26,6 +25,7 @@ use crate::apps::migration::types::Transform;
 use crate::apps::migration::types::TransformData;
 use crate::apps::migration::types::TypeWarning;
 use crate::apps::migration::types::Variable;
+use crate::apps::migration::types::resolve_branch_union;
 
 use super::tree::FieldMappingNode;
 use super::tree::FieldTypeCache;

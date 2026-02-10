@@ -95,11 +95,11 @@ impl EditEntityMappingModal {
             .map(|name| (name.clone(), name))
             .collect();
 
-        let source_state = AutocompleteState::new(source_options)
-            .with_value(em.source_entity.clone());
+        let source_state =
+            AutocompleteState::new(source_options).with_value(em.source_entity.clone());
 
-        let target_state = AutocompleteState::new(target_options)
-            .with_value(em.target_entity.clone());
+        let target_state =
+            AutocompleteState::new(target_options).with_value(em.target_entity.clone());
 
         Self::new(
             em.id,
@@ -153,7 +153,9 @@ impl EditEntityMappingModal {
         // Switching from Lua to Declarative - confirm if script exists
         if self.lua_script.get().is_some() {
             let confirmed = gx
-                .modal(ConfirmModal::with_message("Switching to Declarative will clear the Lua script. Continue?"))
+                .modal(ConfirmModal::with_message(
+                    "Switching to Declarative will clear the Lua script. Continue?",
+                ))
                 .await;
             if !confirmed {
                 return;
@@ -183,7 +185,9 @@ impl EditEntityMappingModal {
             // TODO: Check child config nodes and confirm deletion
             // For now, just show generic confirmation
             let confirmed = gx
-                .modal(ConfirmModal::with_message("Switching to Lua will clear all declarative configuration. Continue?"))
+                .modal(ConfirmModal::with_message(
+                    "Switching to Lua will clear all declarative configuration. Continue?",
+                ))
                 .await;
             if !confirmed {
                 return;
@@ -207,8 +211,9 @@ impl EditEntityMappingModal {
                 let target = self.target_entity.with_ref(|s| s.value().cloned());
 
                 let (Some(source_entity), Some(target_entity)) = (source, target) else {
-                    self.error
-                        .set(Some("Please select both source and target entities".to_string()));
+                    self.error.set(Some(
+                        "Please select both source and target entities".to_string(),
+                    ));
                     return;
                 };
 
@@ -220,7 +225,8 @@ impl EditEntityMappingModal {
             }
             Page::Lua => {
                 let Some(lua_script) = self.lua_script.get() else {
-                    self.error.set(Some("Lua mode requires a script".to_string()));
+                    self.error
+                        .set(Some("Lua mode requires a script".to_string()));
                     return;
                 };
                 EntityMappingResult::Lua { name, lua_script }
@@ -266,7 +272,10 @@ impl EditEntityMappingModal {
         let mapping_name = self.name.get();
         let start_dir = paths::downloads_dir().unwrap_or_else(|| PathBuf::from("."));
         let Some(result) = gx
-            .modal(FileBrowserModal::browse(&start_dir, vec!["lua".to_string()]).with_filename(&mapping_name))
+            .modal(
+                FileBrowserModal::browse(&start_dir, vec!["lua".to_string()])
+                    .with_filename(&mapping_name),
+            )
             .await
         else {
             return;
@@ -297,7 +306,11 @@ impl EditEntityMappingModal {
         let current = self.page();
         let error = self.error.get();
         let is_new = self.entity_mapping_id == 0;
-        let title = if is_new { "New Entity Mapping" } else { "Edit Entity Mapping" };
+        let title = if is_new {
+            "New Entity Mapping"
+        } else {
+            "Edit Entity Mapping"
+        };
 
         page! {
             column (padding: (1, 2), gap: 1, width: fill, height: fill) style (bg: surface) {

@@ -102,7 +102,9 @@ impl EditPhaseModal {
         // Switching from Lua to Declarative - confirm if script exists
         if self.lua_script.get().is_some() {
             let confirmed = gx
-                .modal(ConfirmModal::with_message("Switching to Declarative will clear the Lua script. Continue?"))
+                .modal(ConfirmModal::with_message(
+                    "Switching to Declarative will clear the Lua script. Continue?",
+                ))
                 .await;
             if !confirmed {
                 return;
@@ -161,7 +163,8 @@ impl EditPhaseModal {
             Page::Declarative => EditPhaseResult::Declarative { name },
             Page::Lua => {
                 let Some(lua_script) = self.lua_script.get() else {
-                    self.error.set(Some("Lua mode requires a script".to_string()));
+                    self.error
+                        .set(Some("Lua mode requires a script".to_string()));
                     return;
                 };
                 EditPhaseResult::Lua { name, lua_script }
@@ -207,7 +210,10 @@ impl EditPhaseModal {
         let phase_name = self.name.get();
         let start_dir = paths::downloads_dir().unwrap_or_else(|| PathBuf::from("."));
         let Some(result) = gx
-            .modal(FileBrowserModal::browse(&start_dir, vec!["lua".to_string()]).with_filename(&phase_name))
+            .modal(
+                FileBrowserModal::browse(&start_dir, vec!["lua".to_string()])
+                    .with_filename(&phase_name),
+            )
             .await
         else {
             return;

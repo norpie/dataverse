@@ -49,9 +49,10 @@ fn visit_expr(expr: &Expr, deps: &mut Vec<String>) {
                 // Check if receiver is self.field
                 if let Expr::Field(ExprField { base, member, .. }) = &**receiver
                     && is_self_expr(base)
-                        && let syn::Member::Named(field_name) = member {
-                            deps.push(field_name.to_string());
-                        }
+                    && let syn::Member::Named(field_name) = member
+                {
+                    deps.push(field_name.to_string());
+                }
             }
             // Recurse into receiver and args
             visit_expr(receiver, deps);

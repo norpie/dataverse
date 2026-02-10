@@ -14,6 +14,19 @@ mod tree_builder;
 mod tree_types;
 mod value_map_helpers;
 
+use crate::apps::migration::types::CoalesceChain;
+use crate::apps::migration::types::EntityMapping;
+use crate::apps::migration::types::FieldMapping;
+use crate::apps::migration::types::FindCondition;
+use crate::apps::migration::types::FindMode;
+use crate::apps::migration::types::MatchBranch;
+use crate::apps::migration::types::MatchCondition;
+use crate::apps::migration::types::Migration;
+use crate::apps::migration::types::Mode;
+use crate::apps::migration::types::Phase;
+use crate::apps::migration::types::Transform;
+use crate::apps::migration::types::TransformData;
+use crate::apps::migration::types::Variable;
 use dataverse_lib::DataverseClient;
 use rafter::page;
 use rafter::prelude::*;
@@ -21,19 +34,6 @@ use rafter::widgets::Button;
 use rafter::widgets::Text;
 use rafter::widgets::Tree;
 use rafter::widgets::TreeState;
-use crate::apps::migration::types::CoalesceChain;
-use crate::apps::migration::types::EntityMapping;
-use crate::apps::migration::types::FieldMapping;
-use crate::apps::migration::types::FindCondition;
-use crate::apps::migration::types::FindMode;
-use crate::apps::migration::types::MatchCondition;
-use crate::apps::migration::types::MatchBranch;
-use crate::apps::migration::types::Migration;
-use crate::apps::migration::types::Mode;
-use crate::apps::migration::types::Phase;
-use crate::apps::migration::types::Transform;
-use crate::apps::migration::types::TransformData;
-use crate::apps::migration::types::Variable;
 
 use tree::MigrationTreeNode;
 
@@ -107,8 +107,8 @@ impl MigrationEditor {
         use helpers::collect_navigation_paths;
         use helpers::discover_navigation_entities;
         use helpers::fetch_entity_field_types;
-        use tree_builder::build_tree_nodes;
         use tree::FieldTypeCache;
+        use tree_builder::build_tree_nodes;
 
         // 1. Read all dependencies (registers for change detection)
         let phases = self.phases.get();
@@ -161,8 +161,7 @@ impl MigrationEditor {
                 nav_paths.len(),
             );
             loop {
-                let nav_entities =
-                    discover_navigation_entities(&nav_paths, &source_field_types);
+                let nav_entities = discover_navigation_entities(&nav_paths, &source_field_types);
                 if nav_entities.is_empty() {
                     break;
                 }
@@ -379,8 +378,13 @@ impl MigrationEditor {
                     .await;
             }
             Some(MigrationTreeNode::FieldMapping(fmn)) => {
-                self.delete_field_mapping_impl(fmn.field_mapping.id, fmn.field_mapping.entity_mapping_id, cx, gx)
-                    .await;
+                self.delete_field_mapping_impl(
+                    fmn.field_mapping.id,
+                    fmn.field_mapping.entity_mapping_id,
+                    cx,
+                    gx,
+                )
+                .await;
             }
             Some(MigrationTreeNode::Transform(tn)) => {
                 self.delete_transform_impl(&tn.transform, cx, gx).await;
@@ -423,15 +427,26 @@ impl MigrationEditor {
 
         match focused {
             MigrationTreeNode::Variable(vn) => {
-                self.reorder_variable_impl(vn.variable.id, vn.variable.entity_mapping_id, direction, gx)
-                    .await;
+                self.reorder_variable_impl(
+                    vn.variable.id,
+                    vn.variable.entity_mapping_id,
+                    direction,
+                    gx,
+                )
+                .await;
             }
             MigrationTreeNode::FieldMapping(fmn) => {
-                self.reorder_field_mapping_impl(fmn.field_mapping.id, fmn.field_mapping.entity_mapping_id, direction, gx)
-                    .await;
+                self.reorder_field_mapping_impl(
+                    fmn.field_mapping.id,
+                    fmn.field_mapping.entity_mapping_id,
+                    direction,
+                    gx,
+                )
+                .await;
             }
             MigrationTreeNode::Transform(tn) => {
-                self.reorder_transform_impl(&tn.transform, direction, gx).await;
+                self.reorder_transform_impl(&tn.transform, direction, gx)
+                    .await;
             }
             MigrationTreeNode::MatchBranch(mb) => {
                 self.reorder_match_branch_impl(&mb, direction, gx).await;
@@ -567,7 +582,9 @@ impl MigrationEditor {
                     .get()
                     .iter()
                     .find(|em| em.id == *entity_mapping_id)
-                    .map(|em| em.match_strategy == crate::apps::migration::types::MatchStrategy::Find)
+                    .map(|em| {
+                        em.match_strategy == crate::apps::migration::types::MatchStrategy::Find
+                    })
                     .unwrap_or(false);
                 if is_find {
                     (true, "Add Condition")

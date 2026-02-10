@@ -131,20 +131,19 @@ impl ODataPages {
 
         // Add page size preference if specified (only for first page)
         if let Some(size) = self.page_size
-            && let Ok(_value) = HeaderValue::from_str(&format!("odata.maxpagesize={}", size)) {
-                // Note: This overwrites the previous Prefer header
-                // In practice, we'd want to combine them, but for simplicity:
-                headers.insert(
-                    "Prefer",
-                    HeaderValue::from_str(&format!(
-                        "odata.include-annotations=\"*\",odata.maxpagesize={}",
-                        size
-                    ))
-                    .unwrap_or_else(|_| {
-                        HeaderValue::from_static("odata.include-annotations=\"*\"")
-                    }),
-                );
-            }
+            && let Ok(_value) = HeaderValue::from_str(&format!("odata.maxpagesize={}", size))
+        {
+            // Note: This overwrites the previous Prefer header
+            // In practice, we'd want to combine them, but for simplicity:
+            headers.insert(
+                "Prefer",
+                HeaderValue::from_str(&format!(
+                    "odata.include-annotations=\"*\",odata.maxpagesize={}",
+                    size
+                ))
+                .unwrap_or_else(|_| HeaderValue::from_static("odata.include-annotations=\"*\"")),
+            );
+        }
 
         // Make request
         let response: reqwest::Response =

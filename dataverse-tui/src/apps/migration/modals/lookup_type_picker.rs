@@ -1,7 +1,7 @@
 //! Modal for picking a Lookup field type (kind + target entities).
 
-use dataverse_lib::model::metadata::AttributeType;
 use dataverse_lib::model::FieldType;
+use dataverse_lib::model::metadata::AttributeType;
 use rafter::page;
 use rafter::prelude::*;
 use rafter::widgets::Autocomplete;
@@ -85,8 +85,7 @@ impl LookupTypePickerModal {
             .into_iter()
             .map(|name| (name.clone(), name))
             .collect();
-        let autocomplete =
-            AutocompleteState::new(options).with_selection(SelectionMode::Multi);
+        let autocomplete = AutocompleteState::new(options).with_selection(SelectionMode::Multi);
 
         Self::new(ListState::new(LookupKindEntry::all()), autocomplete)
     }

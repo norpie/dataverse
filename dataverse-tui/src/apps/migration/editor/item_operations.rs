@@ -194,17 +194,10 @@ impl MigrationEditor {
     }
 
     /// Add a new field mapping to an entity mapping.
-    pub(super) async fn add_field_mapping_impl(
-        &self,
-        entity_mapping_id: i64,
-        gx: &GlobalContext,
-    ) {
+    pub(super) async fn add_field_mapping_impl(&self, entity_mapping_id: i64, gx: &GlobalContext) {
         // Find the entity mapping to get target entity
         let entity_mappings = self.entity_mappings.get();
-        let Some(em) = entity_mappings
-            .iter()
-            .find(|em| em.id == entity_mapping_id)
-        else {
+        let Some(em) = entity_mappings.iter().find(|em| em.id == entity_mapping_id) else {
             return;
         };
 
@@ -362,7 +355,10 @@ impl MigrationEditor {
         ordered_ids.insert(new_idx, field_mapping_id);
 
         let repo = gx.data::<MigrationRepository>();
-        match repo.reorder_field_mappings(entity_mapping_id, ordered_ids).await {
+        match repo
+            .reorder_field_mappings(entity_mapping_id, ordered_ids)
+            .await
+        {
             Ok(()) => {
                 self.load_db_data(gx).await;
             }

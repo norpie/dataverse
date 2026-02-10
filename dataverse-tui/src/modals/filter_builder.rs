@@ -8,12 +8,12 @@ use rafter::widgets::Text;
 use rafter::widgets::Tree;
 use rafter::widgets::TreeState;
 
-use crate::widgets::filter_builder::build_tree;
 use crate::widgets::filter_builder::ConditionData;
 use crate::widgets::filter_builder::ConditionEditorModal;
 use crate::widgets::filter_builder::FilterNode;
 use crate::widgets::filter_builder::FilterTreeItem;
 use crate::widgets::filter_builder::FilterTreeKey;
+use crate::widgets::filter_builder::build_tree;
 
 /// Modal for building filter conditions.
 #[modal(size = Md)]

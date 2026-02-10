@@ -5,8 +5,8 @@ use chrono::Utc;
 use rusqlite::params;
 
 use super::super::types::*;
-use super::helpers::invalid_enum;
 use super::RepositoryError;
+use super::helpers::invalid_enum;
 
 /// Input for creating a new phase.
 pub struct NewPhase {

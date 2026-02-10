@@ -30,11 +30,7 @@ impl MigrationEditor {
     // =========================================================================
 
     /// Add a new match branch to a match transform.
-    pub(super) async fn add_match_branch_impl(
-        &self,
-        transform: &Transform,
-        gx: &GlobalContext,
-    ) {
+    pub(super) async fn add_match_branch_impl(&self, transform: &Transform, gx: &GlobalContext) {
         // Get entity mapping for source entity + variables
         let entity_mapping = self
             .entity_mappings
@@ -101,11 +97,7 @@ impl MigrationEditor {
     }
 
     /// Edit a match branch's condition.
-    pub(super) async fn edit_match_branch_impl(
-        &self,
-        branch: &MatchBranch,
-        gx: &GlobalContext,
-    ) {
+    pub(super) async fn edit_match_branch_impl(&self, branch: &MatchBranch, gx: &GlobalContext) {
         // Get entity mapping via the parent transform
         let transform = self
             .transforms
@@ -284,11 +276,7 @@ impl MigrationEditor {
     // =========================================================================
 
     /// Add a new fallback chain to a coalesce transform.
-    pub(super) async fn add_coalesce_chain_impl(
-        &self,
-        transform: &Transform,
-        gx: &GlobalContext,
-    ) {
+    pub(super) async fn add_coalesce_chain_impl(&self, transform: &Transform, gx: &GlobalContext) {
         let chains = self.coalesce_chains.get();
         let order = chains
             .iter()
@@ -423,11 +411,7 @@ impl MigrationEditor {
     // =========================================================================
 
     /// Add a new find condition to a find transform.
-    pub(super) async fn add_find_condition_impl(
-        &self,
-        transform: &Transform,
-        gx: &GlobalContext,
-    ) {
+    pub(super) async fn add_find_condition_impl(&self, transform: &Transform, gx: &GlobalContext) {
         // Get the find entity from the transform data
         let entity = match &transform.data {
             TransformData::Find { entity, .. } => entity.clone(),
@@ -476,11 +460,7 @@ impl MigrationEditor {
     }
 
     /// Edit a find condition's target field.
-    pub(super) async fn edit_find_condition_impl(
-        &self,
-        fc: &FindCondition,
-        gx: &GlobalContext,
-    ) {
+    pub(super) async fn edit_find_condition_impl(&self, fc: &FindCondition, gx: &GlobalContext) {
         // Get the find entity from the parent transform
         let transform = self
             .transforms

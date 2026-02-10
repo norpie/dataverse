@@ -78,8 +78,9 @@ impl WakeupHandle {
     /// Send a wakeup signal if a sender is installed.
     pub fn send(&self) {
         if let Ok(guard) = self.inner.lock()
-            && let Some(sender) = guard.as_ref() {
-                sender.send();
-            }
+            && let Some(sender) = guard.as_ref()
+        {
+            sender.send();
+        }
     }
 }

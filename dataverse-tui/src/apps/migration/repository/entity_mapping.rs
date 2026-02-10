@@ -144,13 +144,17 @@ impl super::MigrationRepository {
             .transpose()?;
         let source_filter_blob = serialize_filter_node(&mapping.source_filter)?;
         let target_filter_blob = serialize_filter_node(&mapping.target_filter)?;
-        let test_guids_csv = mapping.test_guids.as_ref().map(|g| {
-            if g.is_empty() {
-                Ok(String::new())
-            } else {
-                serialize_test_guids(g)
-            }
-        }).transpose()?;
+        let test_guids_csv = mapping
+            .test_guids
+            .as_ref()
+            .map(|g| {
+                if g.is_empty() {
+                    Ok(String::new())
+                } else {
+                    serialize_test_guids(g)
+                }
+            })
+            .transpose()?;
 
         let phase_id = mapping.phase_id;
         let order = mapping.order;
@@ -237,13 +241,17 @@ impl super::MigrationRepository {
             .map(|f| serialize_filter_node(&Some(f.clone())))
             .transpose()?
             .flatten();
-        let test_guids_csv = update.test_guids.as_ref().map(|g| {
-            if g.is_empty() {
-                Ok(String::new())
-            } else {
-                serialize_test_guids(g)
-            }
-        }).transpose()?;
+        let test_guids_csv = update
+            .test_guids
+            .as_ref()
+            .map(|g| {
+                if g.is_empty() {
+                    Ok(String::new())
+                } else {
+                    serialize_test_guids(g)
+                }
+            })
+            .transpose()?;
 
         let now = Utc::now().to_rfc3339();
         let client = self.client.clone();
@@ -406,12 +414,18 @@ impl super::MigrationRepository {
     }
 
     /// Delete all entity mappings for a phase.
-    pub async fn delete_entity_mappings_for_phase(&self, phase_id: i64) -> Result<(), RepositoryError> {
+    pub async fn delete_entity_mappings_for_phase(
+        &self,
+        phase_id: i64,
+    ) -> Result<(), RepositoryError> {
         let now = Utc::now().to_rfc3339();
         self.client
             .conn(move |conn| {
                 // Delete all entity mappings for this phase
-                conn.execute("DELETE FROM entity_mappings WHERE phase_id = ?1", [phase_id])?;
+                conn.execute(
+                    "DELETE FROM entity_mappings WHERE phase_id = ?1",
+                    [phase_id],
+                )?;
 
                 // Update parent migration timestamp
                 conn.execute(

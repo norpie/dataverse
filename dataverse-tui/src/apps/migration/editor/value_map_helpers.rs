@@ -3,11 +3,11 @@
 //! Handles option set metadata fetching, type resolution for source/target
 //! option sets, and the ValueMap creation flow.
 
-use dataverse_lib::model::metadata::AttributeType;
+use dataverse_lib::DataverseClient;
 use dataverse_lib::model::FieldType;
 use dataverse_lib::model::OptionInfo;
 use dataverse_lib::model::ValueType;
-use dataverse_lib::DataverseClient;
+use dataverse_lib::model::metadata::AttributeType;
 use rafter::prelude::*;
 
 use crate::apps::migration::modals::ValueMapTransformModal;
@@ -15,8 +15,8 @@ use crate::apps::migration::types::OptionSetContext;
 use crate::apps::migration::types::ParentType;
 use crate::apps::migration::types::TransformData;
 
-use super::insert_target::InsertTarget;
 use super::MigrationEditor;
+use super::insert_target::InsertTarget;
 
 /// Extracted option set kind + name for ValueMap resolution.
 pub(super) struct OptionSetInfo {
@@ -154,11 +154,13 @@ impl MigrationEditor {
             vec![],
         );
 
-        gx.modal(modal).await.map(|mappings| TransformData::ValueMap {
-            source: source_ctx,
-            target: target_ctx,
-            mappings,
-        })
+        gx.modal(modal)
+            .await
+            .map(|mappings| TransformData::ValueMap {
+                source: source_ctx,
+                target: target_ctx,
+                mappings,
+            })
     }
 
     /// Get the input type at the insert position.

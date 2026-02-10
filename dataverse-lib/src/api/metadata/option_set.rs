@@ -50,10 +50,11 @@ impl<'a> GlobalOptionSetBuilder<'a> {
         // Check cache first (unless bypassed)
         if !self.bypass_cache
             && let Some(cache) = &self.client.inner.cache
-                && let Some(cached) = cache.get(&cache_key).await
-                    && let Ok(os) = cache::deserialize::<GlobalOptionSetMetadata>(&cached.data) {
-                        return Ok(os);
-                    }
+            && let Some(cached) = cache.get(&cache_key).await
+            && let Ok(os) = cache::deserialize::<GlobalOptionSetMetadata>(&cached.data)
+        {
+            return Ok(os);
+        }
 
         // Fetch from API
         let os = fetch_global_option_set_from_api(self.client, &self.name).await?;
@@ -110,12 +111,12 @@ impl<'a> AllGlobalOptionSetsBuilder<'a> {
         // Check cache first (unless bypassed)
         if !self.bypass_cache
             && let Some(cache) = &self.client.inner.cache
-                && let Some(cached) = cache.get(CACHE_KEY_ALL_GLOBAL_OPTIONSETS).await
-                    && let Ok(option_sets) =
-                        cache::deserialize::<Vec<GlobalOptionSetMetadata>>(&cached.data)
-                    {
-                        return Ok(option_sets);
-                    }
+            && let Some(cached) = cache.get(CACHE_KEY_ALL_GLOBAL_OPTIONSETS).await
+            && let Ok(option_sets) =
+                cache::deserialize::<Vec<GlobalOptionSetMetadata>>(&cached.data)
+        {
+            return Ok(option_sets);
+        }
 
         // Fetch from API
         let all = fetch_all_global_option_sets_from_api(self.client).await?;

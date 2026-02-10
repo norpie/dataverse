@@ -60,10 +60,11 @@ impl<'a> EntityMetadataBuilder<'a> {
         // Check cache first (unless bypassed)
         if !self.bypass_cache
             && let Some(cache) = &self.client.inner.cache
-                && let Some(cached) = cache.get(&cache_key_full).await
-                    && let Ok(metadata) = cache::deserialize::<EntityMetadata>(&cached.data) {
-                        return Ok(metadata);
-                    }
+            && let Some(cached) = cache.get(&cache_key_full).await
+            && let Ok(metadata) = cache::deserialize::<EntityMetadata>(&cached.data)
+        {
+            return Ok(metadata);
+        }
 
         // Fetch from API
         let metadata = fetch_entity_metadata_from_api(self.client, &logical_name).await?;
@@ -218,10 +219,11 @@ pub(crate) async fn fetch_entity_core(
     // Check cache first (unless bypassed)
     if !bypass_cache
         && let Some(cache) = &client.inner.cache
-            && let Some(cached) = cache.get(&cache_key).await
-                && let Ok(core) = cache::deserialize::<EntityCore>(&cached.data) {
-                    return Ok(core);
-                }
+        && let Some(cached) = cache.get(&cache_key).await
+        && let Ok(core) = cache::deserialize::<EntityCore>(&cached.data)
+    {
+        return Ok(core);
+    }
 
     // Fetch from API
     let core = fetch_entity_core_from_api(client, logical_name).await?;
@@ -294,14 +296,13 @@ async fn fetch_entity_metadata_from_api(
     logical_name: &str,
 ) -> Result<EntityMetadata, Error> {
     // Fetch base entity metadata and typed attributes with option sets in parallel
-    let (base_result, state_result, status_result, picklist_result, multi_picklist_result) =
-        tokio::join!(
-            fetch_base_entity_metadata(client, logical_name),
-            fetch_state_attributes(client, logical_name),
-            fetch_status_attributes(client, logical_name),
-            fetch_picklist_attributes(client, logical_name),
-            fetch_multi_select_picklist_attributes(client, logical_name),
-        );
+    let (base_result, state_result, status_result, picklist_result, multi_picklist_result) = tokio::join!(
+        fetch_base_entity_metadata(client, logical_name),
+        fetch_state_attributes(client, logical_name),
+        fetch_status_attributes(client, logical_name),
+        fetch_picklist_attributes(client, logical_name),
+        fetch_multi_select_picklist_attributes(client, logical_name),
+    );
 
     // Base metadata is required
     let mut metadata = base_result?;
@@ -309,17 +310,29 @@ async fn fetch_entity_metadata_from_api(
     // Populate typed attributes (errors are logged but don't fail the request)
     match state_result {
         Ok(attrs) => metadata.state_attributes = attrs,
-        Err(e) => log::warn!("Failed to fetch state attributes for {}: {}", logical_name, e),
+        Err(e) => log::warn!(
+            "Failed to fetch state attributes for {}: {}",
+            logical_name,
+            e
+        ),
     }
 
     match status_result {
         Ok(attrs) => metadata.status_attributes = attrs,
-        Err(e) => log::warn!("Failed to fetch status attributes for {}: {}", logical_name, e),
+        Err(e) => log::warn!(
+            "Failed to fetch status attributes for {}: {}",
+            logical_name,
+            e
+        ),
     }
 
     match picklist_result {
         Ok(attrs) => metadata.picklist_attributes = attrs,
-        Err(e) => log::warn!("Failed to fetch picklist attributes for {}: {}", logical_name, e),
+        Err(e) => log::warn!(
+            "Failed to fetch picklist attributes for {}: {}",
+            logical_name,
+            e
+        ),
     }
 
     match multi_picklist_result {
@@ -532,7 +545,10 @@ async fn fetch_multi_select_picklist_attributes(
 
     let resp: Response = response.json().await.map_err(|e| {
         Error::Api(ApiError::Parse {
-            message: format!("Failed to parse MultiSelectPicklistAttributeMetadata list: {}", e),
+            message: format!(
+                "Failed to parse MultiSelectPicklistAttributeMetadata list: {}",
+                e
+            ),
             body: None,
         })
     })?;

@@ -12,14 +12,14 @@ use syn::{Attribute, Type, parse2};
 
 use super::impl_common::{
     ContextMenuMethod, DispatchContextType, EventHandlerMethod, HandlerArg, HandlerContexts,
-    HandlerInfo, KeybindScope, KeybindsMethod, LifecycleContext,
-    LifecycleHooksDefined, PageMethod, PartialImplBlock, RequestHandlerMethod, WatchMethod,
-    app_metadata_mod, extract_handler_info, extract_lifecycle_hook_info, generate_config_impl,
-    generate_context_menu_method, generate_element_impl, generate_event_dispatch,
-    generate_handler_wrappers, generate_keybinds_closures_impl, generate_lifecycle_hooks_impl,
-    generate_request_dispatch, generate_watch_checks, get_type_name,
-    parse_event_handler_metadata, parse_request_handler_metadata, parse_watch_metadata,
-    reconstruct_method, reconstruct_method_stripped, validate_lifecycle_hook_contexts,
+    HandlerInfo, KeybindScope, KeybindsMethod, LifecycleContext, LifecycleHooksDefined, PageMethod,
+    PartialImplBlock, RequestHandlerMethod, WatchMethod, app_metadata_mod, extract_handler_info,
+    extract_lifecycle_hook_info, generate_config_impl, generate_context_menu_method,
+    generate_element_impl, generate_event_dispatch, generate_handler_wrappers,
+    generate_keybinds_closures_impl, generate_lifecycle_hooks_impl, generate_request_dispatch,
+    generate_watch_checks, get_type_name, parse_event_handler_metadata,
+    parse_request_handler_metadata, parse_watch_metadata, reconstruct_method,
+    reconstruct_method_stripped, validate_lifecycle_hook_contexts,
 };
 
 /// Attributes for the #[app_impl] macro
@@ -97,8 +97,6 @@ fn extract_method_params(sig: &syn::Signature) -> Vec<HandlerArg> {
 
 /// Extract the contents of a `context_menu!` macro invocation from a method body.
 fn extract_context_menu_macro(body: &TokenStream) -> syn::Result<TokenStream> {
-    
-
     // Parse the body as a macro invocation
     // Expected: context_menu! { ... }
     let tokens = body.clone();
@@ -329,13 +327,14 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
     let mut seen_pages = std::collections::HashSet::new();
     for page in &page_methods {
         if let Some(ref name) = page.page_name
-            && !seen_pages.insert(name.clone()) {
-                return syn::Error::new_spanned(
-                    &partial_impl.self_ty,
-                    format!("Duplicate page name: {}", name),
-                )
-                .to_compile_error();
-            }
+            && !seen_pages.insert(name.clone())
+        {
+            return syn::Error::new_spanned(
+                &partial_impl.self_ty,
+                format!("Duplicate page name: {}", name),
+            )
+            .to_compile_error();
+        }
     }
 
     // Collect page methods with named variants for page routing
@@ -437,11 +436,11 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
     };
 
     // Generate watch checks
-    let watch_checks_impl =
-        generate_watch_checks(&watch_methods, DispatchContextType::App, None);
+    let watch_checks_impl = generate_watch_checks(&watch_methods, DispatchContextType::App, None);
 
     // Generate event/request dispatch methods
-    let event_dispatch_impl = generate_event_dispatch(&event_handlers, DispatchContextType::App, None);
+    let event_dispatch_impl =
+        generate_event_dispatch(&event_handlers, DispatchContextType::App, None);
     let request_dispatch_impl =
         generate_request_dispatch(&request_handlers, DispatchContextType::App);
 

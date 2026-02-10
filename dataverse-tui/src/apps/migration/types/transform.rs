@@ -1,8 +1,8 @@
 //! Transform types and related structures.
 
-use dataverse_lib::model::metadata::AttributeType;
 use dataverse_lib::model::OptionInfo;
 use dataverse_lib::model::Value;
+use dataverse_lib::model::metadata::AttributeType;
 use serde::Deserialize;
 use serde::Serialize;
 

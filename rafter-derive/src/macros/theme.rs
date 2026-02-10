@@ -104,11 +104,12 @@ pub fn expand(_attr: TokenStream, item: TokenStream) -> TokenStream {
     // Strip #[group] attributes from the output
     let mut output_item = input.clone();
     if let syn::Data::Struct(ref mut data) = output_item.data
-        && let Fields::Named(ref mut fields) = data.fields {
-            for field in fields.named.iter_mut() {
-                field.attrs.retain(|attr| !attr.path().is_ident("group"));
-            }
+        && let Fields::Named(ref mut fields) = data.fields
+    {
+        for field in fields.named.iter_mut() {
+            field.attrs.retain(|attr| !attr.path().is_ident("group"));
         }
+    }
 
     quote! {
         #output_item

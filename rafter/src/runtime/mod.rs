@@ -386,7 +386,8 @@ impl Runtime {
                                     result.panic_message()
                                 );
                             }
-                            should_reschedule = matches!(job.schedule, crate::job::Schedule::Every { .. });
+                            should_reschedule =
+                                matches!(job.schedule, crate::job::Schedule::Every { .. });
                         } else {
                             log::debug!(
                                 "[scheduler] Skipping job {:?}: instance {:?} is sleeping",
@@ -462,11 +463,12 @@ impl Runtime {
             {
                 let reg = registry.read().unwrap();
                 if let Some(instance) = reg.focused_instance()
-                    && let Ok(mut modals) = instance.modals().write() {
-                        while modals.last().map(|m| m.is_closed()).unwrap_or(false) {
-                            modals.pop();
-                        }
+                    && let Ok(mut modals) = instance.modals().write()
+                {
+                    while modals.last().map(|m| m.is_closed()).unwrap_or(false) {
+                        modals.pop();
                     }
+                }
             }
 
             // 3b. Process global modal requests and clean up closed global modals
@@ -484,10 +486,11 @@ impl Runtime {
             {
                 let reg = registry.read().unwrap();
                 if let Some(instance) = reg.focused_instance()
-                    && let Some(request) = instance.app_context().take_context_menu_request() {
-                        // Convert request to state
-                        *app_context_menu = Some(crate::ContextMenuState::from_request(request));
-                    }
+                    && let Some(request) = instance.app_context().take_context_menu_request()
+                {
+                    // Convert request to state
+                    *app_context_menu = Some(crate::ContextMenuState::from_request(request));
+                }
             }
 
             // 3d. Process global context menu requests
@@ -606,38 +609,9 @@ impl Runtime {
                     // Also dispatch on_layout to app modals
                     let modals = instance.modals().read().unwrap();
                     if let Some(modal) = modals.last()
-                        && !modal.is_closed() {
-                            let modal_handlers = modal.handlers();
-                            let mx = modal.modal_context();
-                            for (id, rect) in layout.iter_rects() {
-                                if let Some(handler) = modal_handlers.get(id, "on_layout") {
-                                    let hx = crate::HandlerContext::for_modal_any_with_event(
-                                        &cx,
-                                        gx,
-                                        mx,
-                                        crate::handler_context::EventData::Layout {
-                                            x: rect.x,
-                                            y: rect.y,
-                                            width: rect.width,
-                                            height: rect.height,
-                                        },
-                                    );
-                                    let _ = crate::handler_context::call_handler_for_app(
-                                        &handler,
-                                        &hx,
-                                        app_name,
-                                        instance_id,
-                                    );
-                                }
-                            }
-                        }
-                }
-
-                // Also dispatch on_layout to global modals
-                if let Some(modal) = global_modals.last()
-                    && !modal.is_closed() {
+                        && !modal.is_closed()
+                    {
                         let modal_handlers = modal.handlers();
-                        let cx = crate::AppContext::default();
                         let mx = modal.modal_context();
                         for (id, rect) in layout.iter_rects() {
                             if let Some(handler) = modal_handlers.get(id, "on_layout") {
@@ -652,10 +626,41 @@ impl Runtime {
                                         height: rect.height,
                                     },
                                 );
-                                let _ = crate::handler_context::call_handler(&handler, &hx);
+                                let _ = crate::handler_context::call_handler_for_app(
+                                    &handler,
+                                    &hx,
+                                    app_name,
+                                    instance_id,
+                                );
                             }
                         }
                     }
+                }
+
+                // Also dispatch on_layout to global modals
+                if let Some(modal) = global_modals.last()
+                    && !modal.is_closed()
+                {
+                    let modal_handlers = modal.handlers();
+                    let cx = crate::AppContext::default();
+                    let mx = modal.modal_context();
+                    for (id, rect) in layout.iter_rects() {
+                        if let Some(handler) = modal_handlers.get(id, "on_layout") {
+                            let hx = crate::HandlerContext::for_modal_any_with_event(
+                                &cx,
+                                gx,
+                                mx,
+                                crate::handler_context::EventData::Layout {
+                                    x: rect.x,
+                                    y: rect.y,
+                                    width: rect.width,
+                                    height: rect.height,
+                                },
+                            );
+                            let _ = crate::handler_context::call_handler(&handler, &hx);
+                        }
+                    }
+                }
             }
             let t_on_layout = Instant::now();
 
@@ -881,9 +886,10 @@ impl Runtime {
             // 17b. Scroll focused element into view
             for event in &events {
                 if let tuidom::Event::Focus { target } = event
-                    && let Some(change) = scroll_to_element(&root, layout, scroll, target) {
-                        focus_scroll_changes.push(change);
-                    }
+                    && let Some(change) = scroll_to_element(&root, layout, scroll, target)
+                {
+                    focus_scroll_changes.push(change);
+                }
             }
 
             // 17c. Update focused element rect in GlobalContext
@@ -1578,37 +1584,38 @@ impl Runtime {
                         let mut to_close = None;
 
                         if let Some(old_id) = old_focused
-                            && old_id != id {
-                                // Get blur policy
-                                let blur_policy = {
-                                    let reg = registry.read().unwrap();
-                                    reg.get(old_id).map(|i| i.config().on_blur)
-                                };
+                            && old_id != id
+                        {
+                            // Get blur policy
+                            let blur_policy = {
+                                let reg = registry.read().unwrap();
+                                reg.get(old_id).map(|i| i.config().on_blur)
+                            };
 
-                                // Call on_background lifecycle hook
-                                {
-                                    let reg = registry.read().unwrap();
-                                    if let Some(instance) = reg.get(old_id) {
-                                        let cx = instance.app_context();
-                                        let hx = HandlerContext::for_app(&cx, gx);
-                                        instance.lifecycle_hooks().call_on_background(&hx);
-                                    }
-                                }
-
-                                // Apply blur policy
-                                match blur_policy {
-                                    Some(BlurPolicy::Sleep) => {
-                                        let reg = registry.read().unwrap();
-                                        if let Some(instance) = reg.get(old_id) {
-                                            instance.set_sleeping(true);
-                                        }
-                                    }
-                                    Some(BlurPolicy::Close) => {
-                                        to_close = Some(old_id);
-                                    }
-                                    _ => {}
+                            // Call on_background lifecycle hook
+                            {
+                                let reg = registry.read().unwrap();
+                                if let Some(instance) = reg.get(old_id) {
+                                    let cx = instance.app_context();
+                                    let hx = HandlerContext::for_app(&cx, gx);
+                                    instance.lifecycle_hooks().call_on_background(&hx);
                                 }
                             }
+
+                            // Apply blur policy
+                            match blur_policy {
+                                Some(BlurPolicy::Sleep) => {
+                                    let reg = registry.read().unwrap();
+                                    if let Some(instance) = reg.get(old_id) {
+                                        instance.set_sleeping(true);
+                                    }
+                                }
+                                Some(BlurPolicy::Close) => {
+                                    to_close = Some(old_id);
+                                }
+                                _ => {}
+                            }
+                        }
 
                         // Call on_foreground for new instance
                         {
@@ -1691,37 +1698,38 @@ impl Runtime {
                     // Apply blur policy to old instance
                     let mut to_close = None;
                     if let Some(old_id) = old_focused
-                        && old_id != id {
-                            // Get blur policy
-                            let blur_policy = {
-                                let reg = registry.read().unwrap();
-                                reg.get(old_id).map(|i| i.config().on_blur)
-                            };
+                        && old_id != id
+                    {
+                        // Get blur policy
+                        let blur_policy = {
+                            let reg = registry.read().unwrap();
+                            reg.get(old_id).map(|i| i.config().on_blur)
+                        };
 
-                            // Call on_background lifecycle hook
-                            {
-                                let reg = registry.read().unwrap();
-                                if let Some(instance) = reg.get(old_id) {
-                                    let cx = instance.app_context();
-                                    let hx = HandlerContext::for_app(&cx, gx);
-                                    instance.lifecycle_hooks().call_on_background(&hx);
-                                }
-                            }
-
-                            // Apply blur policy
-                            match blur_policy {
-                                Some(BlurPolicy::Sleep) => {
-                                    let reg = registry.read().unwrap();
-                                    if let Some(instance) = reg.get(old_id) {
-                                        instance.set_sleeping(true);
-                                    }
-                                }
-                                Some(BlurPolicy::Close) => {
-                                    to_close = Some(old_id);
-                                }
-                                _ => {}
+                        // Call on_background lifecycle hook
+                        {
+                            let reg = registry.read().unwrap();
+                            if let Some(instance) = reg.get(old_id) {
+                                let cx = instance.app_context();
+                                let hx = HandlerContext::for_app(&cx, gx);
+                                instance.lifecycle_hooks().call_on_background(&hx);
                             }
                         }
+
+                        // Apply blur policy
+                        match blur_policy {
+                            Some(BlurPolicy::Sleep) => {
+                                let reg = registry.read().unwrap();
+                                if let Some(instance) = reg.get(old_id) {
+                                    instance.set_sleeping(true);
+                                }
+                            }
+                            Some(BlurPolicy::Close) => {
+                                to_close = Some(old_id);
+                            }
+                            _ => {}
+                        }
+                    }
 
                     // Wake new instance if it was sleeping and call on_foreground
                     {
@@ -1850,8 +1858,12 @@ impl Runtime {
                                             gx.clone(),
                                             instance.config().name,
                                         );
-                                        let handled =
-                                            modal.dispatch_event(event_type, event.as_ref(), &cx, gx);
+                                        let handled = modal.dispatch_event(
+                                            event_type,
+                                            event.as_ref(),
+                                            &cx,
+                                            gx,
+                                        );
                                         log::debug!(
                                             "[PublishEvent] dispatched to app modal in {}, handled={}",
                                             instance.config().name,

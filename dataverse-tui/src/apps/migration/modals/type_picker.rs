@@ -3,8 +3,8 @@
 //! Orchestrates the category picker and sub-pickers (simple, lookup, option set).
 //! Returns `Vec<FieldType>` — the caller converts: 1 item → `Known(ft)`, 2+ → `Union(vec)`.
 
-use dataverse_lib::model::FieldType;
 use dataverse_lib::DataverseClient;
+use dataverse_lib::model::FieldType;
 use rafter::page;
 use rafter::prelude::*;
 use rafter::widgets::Button;
@@ -113,79 +113,70 @@ impl TypePickerModal {
         };
 
         // Step 2: Dispatch to sub-picker based on category
-        let field_type = match category {
-            TypeCategory::Simple => gx.modal(SimpleTypePickerModal::new_modal()).await,
+        let field_type =
+            match category {
+                TypeCategory::Simple => gx.modal(SimpleTypePickerModal::new_modal()).await,
 
-            TypeCategory::Lookup => {
-                // Fetch entity names first
-                let client = self.client.clone();
-                let result = gx
-                    .modal(LoadingModal::run_with_default(
-                        "Loading entities...",
-                        || Err(dataverse_lib::error::Error::Cancelled),
-                        async move {
-                            client.metadata().all_entities().await.map(|entities| {
-                                let mut names: Vec<String> = entities
-                                    .into_iter()
-                                    .map(|e| e.logical_name)
-                                    .collect();
-                                names.sort();
-                                names
-                            })
-                        },
-                    ))
-                    .await;
-
-                match result {
-                    Ok(entities) => {
-                        gx.modal(LookupTypePickerModal::new_modal(entities)).await
-                    }
-                    Err(e) if e.is_cancelled() => return,
-                    Err(e) => {
-                        log::error!("Failed to fetch entities: {}", e);
-                        gx.toast(Toast::error("Failed to fetch entity list"));
-                        return;
-                    }
-                }
-            }
-
-            TypeCategory::OptionSet => {
-                // Fetch global option set names first
-                let client = self.client.clone();
-                let result = gx
-                    .modal(LoadingModal::run_with_default(
-                        "Loading option sets...",
-                        || Err(dataverse_lib::error::Error::Cancelled),
-                        async move {
-                            client
-                                .metadata()
-                                .all_global_option_sets()
-                                .await
-                                .map(|option_sets| {
-                                    let mut names: Vec<String> = option_sets
-                                        .into_iter()
-                                        .map(|os| os.name)
-                                        .collect();
+                TypeCategory::Lookup => {
+                    // Fetch entity names first
+                    let client = self.client.clone();
+                    let result = gx
+                        .modal(LoadingModal::run_with_default(
+                            "Loading entities...",
+                            || Err(dataverse_lib::error::Error::Cancelled),
+                            async move {
+                                client.metadata().all_entities().await.map(|entities| {
+                                    let mut names: Vec<String> =
+                                        entities.into_iter().map(|e| e.logical_name).collect();
                                     names.sort();
                                     names
                                 })
-                        },
-                    ))
-                    .await;
+                            },
+                        ))
+                        .await;
 
-                match result {
-                    Ok(names) => {
-                        gx.modal(OptionSetTypePickerModal::new_modal(names)).await
-                    }
-                    Err(e) if e.is_cancelled() => return,
-                    Err(e) => {
-                        log::error!("Failed to fetch option sets: {}", e);
-                        gx.toast(Toast::error("Failed to fetch option set list"));
-                        return;
+                    match result {
+                        Ok(entities) => gx.modal(LookupTypePickerModal::new_modal(entities)).await,
+                        Err(e) if e.is_cancelled() => return,
+                        Err(e) => {
+                            log::error!("Failed to fetch entities: {}", e);
+                            gx.toast(Toast::error("Failed to fetch entity list"));
+                            return;
+                        }
                     }
                 }
-            }
-        };
+
+                TypeCategory::OptionSet => {
+                    // Fetch global option set names first
+                    let client = self.client.clone();
+                    let result = gx
+                        .modal(LoadingModal::run_with_default(
+                            "Loading option sets...",
+                            || Err(dataverse_lib::error::Error::Cancelled),
+                            async move {
+                                client.metadata().all_global_option_sets().await.map(
+                                    |option_sets| {
+                                        let mut names: Vec<String> =
+                                            option_sets.into_iter().map(|os| os.name).collect();
+                                        names.sort();
+                                        names
+                                    },
+                                )
+                            },
+                        ))
+                        .await;
+
+                    match result {
+                        Ok(names) => gx.modal(OptionSetTypePickerModal::new_modal(names)).await,
+                        Err(e) if e.is_cancelled() => return,
+                        Err(e) => {
+                            log::error!("Failed to fetch option sets: {}", e);
+                            gx.toast(Toast::error("Failed to fetch option set list"));
+                            return;
+                        }
+                    }
+                }
+            };
 
         // Step 3: Add to list if a type was selected (skip duplicates)
         if let Some(ft) = field_type {
@@ -210,12 +201,8 @@ impl TypePickerModal {
 
         if let Some(key) = focused_key {
             self.types.update(|s| {
-                let new_items: Vec<_> = s
-                    .items
-                    .iter()
-                    .filter(|e| e.key() != key)
-                    .cloned()
-                    .collect();
+                let new_items: Vec<_> =
+                    s.items.iter().filter(|e| e.key() != key).cloned().collect();
                 s.set_items(new_items);
             });
         }

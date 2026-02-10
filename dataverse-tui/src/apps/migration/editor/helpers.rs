@@ -1,19 +1,19 @@
 //! Internal helper functions for the migration editor.
 
-use dataverse_lib::model::metadata::AttributeType;
+use dataverse_lib::DataverseClient;
 use dataverse_lib::model::FieldType;
 use dataverse_lib::model::ValueType;
-use dataverse_lib::DataverseClient;
+use dataverse_lib::model::metadata::AttributeType;
 use rafter::prelude::*;
 
-use crate::apps::migration::repository::MigrationRepository;
-use crate::apps::migration::types::TransformData;
-use crate::apps::migration::validation::parse_path;
-use crate::apps::migration::validation::FieldPath;
-use crate::apps::migration::validation::PathExpr;
+use super::MigrationEditor;
 use super::tree::FieldTypeCache;
 use super::tree::MigrationTreeNode;
-use super::MigrationEditor;
+use crate::apps::migration::repository::MigrationRepository;
+use crate::apps::migration::types::TransformData;
+use crate::apps::migration::validation::FieldPath;
+use crate::apps::migration::validation::PathExpr;
+use crate::apps::migration::validation::parse_path;
 
 impl MigrationEditor {
     /// Load all data from the repository.
@@ -237,7 +237,11 @@ pub(super) fn collect_navigation_paths(
                         });
                     }
                 }
-                Ok(PathExpr::VariableNavigation { name, target, path: field_path }) => {
+                Ok(PathExpr::VariableNavigation {
+                    name,
+                    target,
+                    path: field_path,
+                }) => {
                     // Variable navigation — resolve target entity from variable's declared type
                     let var = variables
                         .iter()
@@ -245,7 +249,9 @@ pub(super) fn collect_navigation_paths(
                         .find(|v| v.name == name);
 
                     if let Some(var) = var {
-                        if let Some(start_entity) = resolve_lookup_target_entity(&var.declared_type, target.as_deref()) {
+                        if let Some(start_entity) =
+                            resolve_lookup_target_entity(&var.declared_type, target.as_deref())
+                        {
                             paths.push(NavigationPath {
                                 start_entity,
                                 path: field_path,

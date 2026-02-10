@@ -535,12 +535,7 @@ impl ScrollState {
                         if let Some((element_id, hit)) =
                             self.check_any_scrollbar_hit(root, layout, x, y)
                         {
-                            log::debug!(
-                                "[scroll-drag] MouseDown at ({}, {}), hit={:?}",
-                                x,
-                                y,
-                                hit
-                            );
+                            log::debug!("[scroll-drag] MouseDown at ({}, {}), hit={:?}", x, y, hit);
 
                             // Calculate grab offset
                             let click_pos = if hit.is_vertical { y } else { x };
@@ -558,8 +553,7 @@ impl ScrollState {
 
                             // If clicked on track (not thumb), immediately scroll to that position
                             if hit.thumb_offset.is_none() {
-                                let scroll_pos =
-                                    hit.geom.scroll_from_drag(click_pos, grab_offset);
+                                let scroll_pos = hit.geom.scroll_from_drag(click_pos, grab_offset);
                                 let current = self.get(&element_id);
                                 let (new_x, new_y) = if hit.is_vertical {
                                     (current.x, scroll_pos)

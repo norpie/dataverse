@@ -126,8 +126,7 @@ impl FindTransformModal {
             .map(|name| (name.clone(), name))
             .collect();
 
-        let entity_state =
-            AutocompleteState::new(entity_options).with_value(entity.to_string());
+        let entity_state = AutocompleteState::new(entity_options).with_value(entity.to_string());
         let fallback_kind = FallbackKind::from_fallback(fallback);
         let fallback_select = SelectState::new(FallbackKind::all()).with_value(fallback_kind);
 
@@ -241,9 +240,7 @@ impl FindTransformModal {
     async fn import_script(&self, gx: &GlobalContext) {
         let start_dir = paths::downloads_dir().unwrap_or_else(|| PathBuf::from("."));
         let Some(result) = gx
-            .modal(
-                FileBrowserModal::browse(&start_dir, vec!["lua".to_string()]).require_existing(),
-            )
+            .modal(FileBrowserModal::browse(&start_dir, vec!["lua".to_string()]).require_existing())
             .await
         else {
             return;

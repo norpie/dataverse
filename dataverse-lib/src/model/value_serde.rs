@@ -18,6 +18,8 @@ use serde::Serialize;
 use serde::Serializer;
 use uuid::Uuid;
 
+use super::Record;
+use super::Value;
 use super::types::EntityBinding;
 use super::types::EntityReference;
 use super::types::FileReference;
@@ -25,8 +27,6 @@ use super::types::ImageReference;
 use super::types::Money;
 use super::types::MultiSelectOptionSetValue;
 use super::types::OptionSetValue;
-use super::Record;
-use super::Value;
 
 // =============================================================================
 // Serialization helpers

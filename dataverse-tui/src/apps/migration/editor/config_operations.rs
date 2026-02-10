@@ -26,10 +26,7 @@ impl MigrationEditor {
     pub(super) async fn edit_test_guids_impl(&self, entity_mapping_id: i64, gx: &GlobalContext) {
         // Find the entity mapping
         let entity_mappings = self.entity_mappings.get();
-        let Some(em) = entity_mappings
-            .iter()
-            .find(|em| em.id == entity_mapping_id)
-        else {
+        let Some(em) = entity_mappings.iter().find(|em| em.id == entity_mapping_id) else {
             return;
         };
 
@@ -83,10 +80,7 @@ impl MigrationEditor {
     pub(super) async fn edit_passes_impl(&self, entity_mapping_id: i64, gx: &GlobalContext) {
         // Find the entity mapping
         let entity_mappings = self.entity_mappings.get();
-        let Some(em) = entity_mappings
-            .iter()
-            .find(|em| em.id == entity_mapping_id)
-        else {
+        let Some(em) = entity_mappings.iter().find(|em| em.id == entity_mapping_id) else {
             return;
         };
 
@@ -149,10 +143,7 @@ impl MigrationEditor {
     ) {
         // Find the entity mapping
         let entity_mappings = self.entity_mappings.get();
-        let Some(em) = entity_mappings
-            .iter()
-            .find(|em| em.id == entity_mapping_id)
-        else {
+        let Some(em) = entity_mappings.iter().find(|em| em.id == entity_mapping_id) else {
             return;
         };
 
@@ -204,11 +195,7 @@ impl MigrationEditor {
     }
 
     /// Edit source filter for an entity mapping.
-    pub(super) async fn edit_source_filter_impl(
-        &self,
-        entity_mapping_id: i64,
-        gx: &GlobalContext,
-    ) {
+    pub(super) async fn edit_source_filter_impl(&self, entity_mapping_id: i64, gx: &GlobalContext) {
         let entity_mappings = self.entity_mappings.get();
         let Some(em) = entity_mappings.iter().find(|em| em.id == entity_mapping_id) else {
             return;
@@ -304,11 +291,7 @@ impl MigrationEditor {
     }
 
     /// Edit target filter for an entity mapping.
-    pub(super) async fn edit_target_filter_impl(
-        &self,
-        entity_mapping_id: i64,
-        gx: &GlobalContext,
-    ) {
+    pub(super) async fn edit_target_filter_impl(&self, entity_mapping_id: i64, gx: &GlobalContext) {
         let entity_mappings = self.entity_mappings.get();
         let Some(em) = entity_mappings.iter().find(|em| em.id == entity_mapping_id) else {
             return;
@@ -408,22 +391,17 @@ impl MigrationEditor {
     // =========================================================================
 
     /// Edit match config for an entity mapping.
-    pub(super) async fn edit_match_config_impl(
-        &self,
-        entity_mapping_id: i64,
-        gx: &GlobalContext,
-    ) {
+    pub(super) async fn edit_match_config_impl(&self, entity_mapping_id: i64, gx: &GlobalContext) {
         let entity_mappings = self.entity_mappings.get();
-        let Some(em) = entity_mappings
-            .iter()
-            .find(|em| em.id == entity_mapping_id)
-        else {
+        let Some(em) = entity_mappings.iter().find(|em| em.id == entity_mapping_id) else {
             return;
         };
 
         let current_strategy = em.match_strategy;
 
-        let Some(new_strategy) = gx.modal(MatchConfigModal::new_modal(current_strategy)).await
+        let Some(new_strategy) = gx
+            .modal(MatchConfigModal::new_modal(current_strategy))
+            .await
         else {
             return;
         };
@@ -557,10 +535,7 @@ impl MigrationEditor {
     ) {
         // Verify entity mapping is in Find mode
         let entity_mappings = self.entity_mappings.get();
-        let Some(em) = entity_mappings
-            .iter()
-            .find(|em| em.id == entity_mapping_id)
-        else {
+        let Some(em) = entity_mappings.iter().find(|em| em.id == entity_mapping_id) else {
             return;
         };
 
@@ -614,11 +589,7 @@ impl MigrationEditor {
     }
 
     /// Edit a match condition's target field.
-    pub(super) async fn edit_match_condition_impl(
-        &self,
-        mc: &MatchCondition,
-        gx: &GlobalContext,
-    ) {
+    pub(super) async fn edit_match_condition_impl(&self, mc: &MatchCondition, gx: &GlobalContext) {
         let Some(field_options) = self
             .fetch_target_entity_fields_for_match(mc.entity_mapping_id, gx)
             .await

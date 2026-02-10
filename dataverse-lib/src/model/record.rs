@@ -7,6 +7,8 @@ use chrono::Utc;
 use rust_decimal::Decimal;
 use uuid::Uuid;
 
+use super::Entity;
+use super::Value;
 use super::types::EntityBinding;
 use super::types::EntityReference;
 use super::types::FileReference;
@@ -14,8 +16,6 @@ use super::types::ImageReference;
 use super::types::Money;
 use super::types::MultiSelectOptionSetValue;
 use super::types::OptionSetValue;
-use super::Entity;
-use super::Value;
 use crate::api::ContentIdRef;
 use crate::error::FieldError;
 

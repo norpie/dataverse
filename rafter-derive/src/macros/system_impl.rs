@@ -8,13 +8,13 @@ use syn::parse2;
 
 use super::impl_common::{
     DispatchContextType, EventHandlerMethod, HandlerContexts, HandlerInfo, KeybindScope,
-    KeybindsMethod, LifecycleContext, LifecycleHooksDefined, PageMethod,
-    PartialImplBlock, RequestHandlerMethod, WatchMethod, extract_handler_info,
-    extract_lifecycle_hook_info, generate_event_dispatch, generate_handler_wrappers,
-    generate_keybinds_closures_impl, generate_lifecycle_hooks_impl, generate_request_dispatch,
-    generate_watch_checks, get_type_name, parse_event_handler_metadata,
-    parse_request_handler_metadata, parse_watch_metadata, reconstruct_method,
-    reconstruct_method_stripped, system_metadata_mod, validate_lifecycle_hook_contexts,
+    KeybindsMethod, LifecycleContext, LifecycleHooksDefined, PageMethod, PartialImplBlock,
+    RequestHandlerMethod, WatchMethod, extract_handler_info, extract_lifecycle_hook_info,
+    generate_event_dispatch, generate_handler_wrappers, generate_keybinds_closures_impl,
+    generate_lifecycle_hooks_impl, generate_request_dispatch, generate_watch_checks, get_type_name,
+    parse_event_handler_metadata, parse_request_handler_metadata, parse_watch_metadata,
+    reconstruct_method, reconstruct_method_stripped, system_metadata_mod,
+    validate_lifecycle_hook_contexts,
 };
 
 pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
@@ -98,32 +98,35 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
         let reconstructed = reconstruct_method(method);
         if let Ok(impl_item) = syn::parse2::<syn::ImplItemFn>(reconstructed.clone()) {
             if method.has_attr("event_handler")
-                && let Some(event_handler) = parse_event_handler_metadata(&impl_item) {
-                    event_handlers.push(event_handler);
-                }
+                && let Some(event_handler) = parse_event_handler_metadata(&impl_item)
+            {
+                event_handlers.push(event_handler);
+            }
             if method.has_attr("request_handler")
-                && let Some(request_handler) = parse_request_handler_metadata(&impl_item) {
-                    request_handlers.push(request_handler);
-                }
+                && let Some(request_handler) = parse_request_handler_metadata(&impl_item)
+            {
+                request_handlers.push(request_handler);
+            }
             if method.has_attr("watch")
-                && let Some(watch_method) = parse_watch_metadata(&impl_item) {
-                    // Validate: systems can only use GlobalContext in watches
-                    if watch_method.contexts.app_context {
-                        return syn::Error::new_spanned(
+                && let Some(watch_method) = parse_watch_metadata(&impl_item)
+            {
+                // Validate: systems can only use GlobalContext in watches
+                if watch_method.contexts.app_context {
+                    return syn::Error::new_spanned(
                             &method.sig,
                             "System #[watch] methods cannot use AppContext. Systems only have access to GlobalContext.",
                         )
                         .to_compile_error();
-                    }
-                    if watch_method.contexts.modal_context {
-                        return syn::Error::new_spanned(
-                            &method.sig,
-                            "System #[watch] methods cannot use ModalContext.",
-                        )
-                        .to_compile_error();
-                    }
-                    watch_methods.push(watch_method);
                 }
+                if watch_method.contexts.modal_context {
+                    return syn::Error::new_spanned(
+                        &method.sig,
+                        "System #[watch] methods cannot use ModalContext.",
+                    )
+                    .to_compile_error();
+                }
+                watch_methods.push(watch_method);
+            }
         }
 
         // Check for page method - systems don't support #[page]
@@ -250,7 +253,8 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
         generate_watch_checks(&watch_methods, DispatchContextType::System, None);
 
     // Generate event/request dispatch methods
-    let event_dispatch_impl = generate_event_dispatch(&event_handlers, DispatchContextType::System, None);
+    let event_dispatch_impl =
+        generate_event_dispatch(&event_handlers, DispatchContextType::System, None);
     let request_dispatch_impl =
         generate_request_dispatch(&request_handlers, DispatchContextType::System);
 

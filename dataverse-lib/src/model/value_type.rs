@@ -1,8 +1,8 @@
 //! Design-time value type for type tracking.
 
+use super::Value;
 use super::metadata::AttributeMetadata;
 use super::metadata::AttributeType;
-use super::Value;
 
 /// Lightweight option set value + label pair for design-time type tracking.
 ///

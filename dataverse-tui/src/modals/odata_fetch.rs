@@ -28,9 +28,9 @@ use rafter::{element, page};
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
+use dataverse_lib::DataverseClient;
 use dataverse_lib::api::query::odata::QueryBuilder;
 use dataverse_lib::model::Record;
-use dataverse_lib::DataverseClient;
 
 use crate::widgets::BrailleSpinner;
 
@@ -47,11 +47,7 @@ pub struct ODataFetchTask {
 
 impl ODataFetchTask {
     /// Create a new fetch task.
-    pub fn new(
-        label: impl Into<String>,
-        client: DataverseClient,
-        query: QueryBuilder,
-    ) -> Self {
+    pub fn new(label: impl Into<String>, client: DataverseClient, query: QueryBuilder) -> Self {
         Self {
             label: label.into(),
             client,
@@ -155,7 +151,7 @@ pub struct ODataFetchModal {
     /// Timestamp when fetching started (for ETA).
     #[state(skip)]
     start_time: Arc<std::sync::Mutex<Option<Instant>>>,
-    
+
     /// ETA display string (reactive).
     eta: String,
 }
@@ -208,15 +204,6 @@ impl ODataFetchModal {
 
         // Spawn all tasks
         let mut handles = Vec::new();
-        // We need to take the tasks out; they're in self.tasks which is #[state(skip)]
-        // but we can't move out of &self. We'll iterate by index and use references.
-        // Actually, ODataFetchTask isn't Clone, so we need to work around this.
-        // The tasks field is behind &self. We need to use unsafe or restructure.
-        // Let's use a different approach: store tasks in Arc<Mutex<Vec<Option<...>>>>
-        // Actually, looking at parallel_loading.rs, they use Arc<Mutex<Vec<ParallelTask>>>
-        // and take futures out with .take(). Let's do the same pattern but we need
-        // both client and query. Since DataverseClient is Clone and QueryBuilder is Clone,
-        // we can clone them out.
 
         for index in 0..task_count {
             let client = self.tasks[index].client.clone();
@@ -375,10 +362,7 @@ impl ODataFetchModal {
         let header = if eta_str.is_empty() {
             format!("Fetching data... ({}/{})", completed, total)
         } else {
-            format!(
-                "Fetching data... ({}/{})  ~{}",
-                completed, total, eta_str
-            )
+            format!("Fetching data... ({}/{})  ~{}", completed, total, eta_str)
         };
 
         let task_rows: Vec<Element> = infos
@@ -410,10 +394,7 @@ impl ODataFetchModal {
 
         let infos = self.task_infos.get();
         let total_fetched: usize = infos.iter().map(|i| i.records_fetched).sum();
-        let total_expected: usize = infos
-            .iter()
-            .filter_map(|i| i.total_count)
-            .sum();
+        let total_expected: usize = infos.iter().filter_map(|i| i.total_count).sum();
 
         if total_fetched == 0 || total_expected == 0 {
             self.eta.set(String::new());

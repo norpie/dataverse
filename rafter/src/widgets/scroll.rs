@@ -501,80 +501,79 @@ impl<'a, S: ScrollableWidgetState> Scrollbar<HasScrollState<'a, S>> {
                             max_offset,
                             current_offset,
                         )) = scroll_data
-                            && track_height > 0 {
-                                // Calculate thumb size and position
-                                let thumb_size = if content_size == 0 {
-                                    track_height
-                                } else {
-                                    let ratio = viewport as f32 / content_size as f32;
-                                    ((ratio * track_height as f32).round() as u16)
-                                        .clamp(1, track_height)
-                                };
+                            && track_height > 0
+                        {
+                            // Calculate thumb size and position
+                            let thumb_size = if content_size == 0 {
+                                track_height
+                            } else {
+                                let ratio = viewport as f32 / content_size as f32;
+                                ((ratio * track_height as f32).round() as u16)
+                                    .clamp(1, track_height)
+                            };
 
-                                let thumb_pos = if max_offset == 0 {
+                            let thumb_pos = if max_offset == 0 {
+                                0
+                            } else {
+                                let progress = current_offset as f32 / max_offset as f32;
+                                let available_space = track_height.saturating_sub(thumb_size);
+                                (progress * available_space as f32).round() as u16
+                            };
+
+                            let thumb_screen_start = track_y + thumb_pos;
+                            let thumb_screen_end = thumb_screen_start + thumb_size;
+
+                            if click_y >= thumb_screen_start && click_y < thumb_screen_end {
+                                // Clicked on thumb - store grab offset
+                                let grab_offset = click_y - thumb_screen_start;
+                                state_clone.update(|s| {
+                                    s.set_drag_grab_offset(Some(grab_offset));
+                                });
+                            } else {
+                                // Clicked on track - jump to position
+                                let relative_y = click_y.saturating_sub(track_y);
+                                let track_ratio = relative_y as f32 / track_height.max(1) as f32;
+                                let grab_offset = ((track_ratio * thumb_size as f32).round()
+                                    as u16)
+                                    .min(thumb_size.saturating_sub(1));
+
+                                let scroll_range = track_height.saturating_sub(thumb_size);
+                                let thumb_start = click_y.saturating_sub(grab_offset);
+                                let clamped_thumb_start =
+                                    thumb_start.clamp(track_y, track_y + scroll_range);
+                                let thumb_pos_in_track =
+                                    clamped_thumb_start.saturating_sub(track_y);
+
+                                let new_offset = if scroll_range == 0 {
                                     0
                                 } else {
-                                    let progress = current_offset as f32 / max_offset as f32;
-                                    let available_space = track_height.saturating_sub(thumb_size);
-                                    (progress * available_space as f32).round() as u16
+                                    ((thumb_pos_in_track as u32 * max_offset as u32
+                                        + scroll_range as u32 / 2)
+                                        / scroll_range as u32)
+                                        .min(max_offset as u32)
+                                        as u16
                                 };
 
-                                let thumb_screen_start = track_y + thumb_pos;
-                                let thumb_screen_end = thumb_screen_start + thumb_size;
+                                state_clone.update(|s| {
+                                    s.scroll_mut().offset = new_offset;
+                                    s.set_drag_grab_offset(Some(grab_offset));
+                                });
 
-                                if click_y >= thumb_screen_start && click_y < thumb_screen_end {
-                                    // Clicked on thumb - store grab offset
-                                    let grab_offset = click_y - thumb_screen_start;
-                                    state_clone.update(|s| {
-                                        s.set_drag_grab_offset(Some(grab_offset));
-                                    });
-                                } else {
-                                    // Clicked on track - jump to position
-                                    let relative_y = click_y.saturating_sub(track_y);
-                                    let track_ratio =
-                                        relative_y as f32 / track_height.max(1) as f32;
-                                    let grab_offset = ((track_ratio * thumb_size as f32).round()
-                                        as u16)
-                                        .min(thumb_size.saturating_sub(1));
-
-                                    let scroll_range = track_height.saturating_sub(thumb_size);
-                                    let thumb_start = click_y.saturating_sub(grab_offset);
-                                    let clamped_thumb_start =
-                                        thumb_start.clamp(track_y, track_y + scroll_range);
-                                    let thumb_pos_in_track =
-                                        clamped_thumb_start.saturating_sub(track_y);
-
-                                    let new_offset = if scroll_range == 0 {
-                                        0
-                                    } else {
-                                        ((thumb_pos_in_track as u32 * max_offset as u32
-                                            + scroll_range as u32 / 2)
-                                            / scroll_range as u32)
-                                            .min(max_offset as u32)
-                                            as u16
+                                // Call on_scroll handler with proper scroll event
+                                if let Some(ref handler) = on_scroll {
+                                    let scroll_event = crate::handler_context::EventData::Scroll {
+                                        offset_x: 0,
+                                        offset_y: new_offset,
+                                        content_width: 0,
+                                        content_height: content_size,
+                                        viewport_width: 0,
+                                        viewport_height: viewport,
                                     };
-
-                                    state_clone.update(|s| {
-                                        s.scroll_mut().offset = new_offset;
-                                        s.set_drag_grab_offset(Some(grab_offset));
-                                    });
-
-                                    // Call on_scroll handler with proper scroll event
-                                    if let Some(ref handler) = on_scroll {
-                                        let scroll_event =
-                                            crate::handler_context::EventData::Scroll {
-                                                offset_x: 0,
-                                                offset_y: new_offset,
-                                                content_width: 0,
-                                                content_height: content_size,
-                                                viewport_width: 0,
-                                                viewport_height: viewport,
-                                            };
-                                        let scroll_hx = hx.with_event(scroll_event);
-                                        handler(&scroll_hx);
-                                    }
+                                    let scroll_hx = hx.with_event(scroll_event);
+                                    handler(&scroll_hx);
                                 }
                             }
+                        }
                     }
                 }),
             );
@@ -612,50 +611,49 @@ impl<'a, S: ScrollableWidgetState> Scrollbar<HasScrollState<'a, S>> {
                             max_offset,
                             grab_offset,
                         )) = scroll_data
-                            && track_height > 0 {
-                                let thumb_size = if content_size == 0 {
-                                    track_height
-                                } else {
-                                    let ratio = viewport as f32 / content_size as f32;
-                                    ((ratio * track_height as f32).round() as u16)
-                                        .clamp(1, track_height)
+                            && track_height > 0
+                        {
+                            let thumb_size = if content_size == 0 {
+                                track_height
+                            } else {
+                                let ratio = viewport as f32 / content_size as f32;
+                                ((ratio * track_height as f32).round() as u16)
+                                    .clamp(1, track_height)
+                            };
+
+                            let scroll_range = track_height.saturating_sub(thumb_size);
+                            let thumb_start = drag_y.saturating_sub(grab_offset);
+                            let clamped_thumb_start =
+                                thumb_start.clamp(track_y, track_y + scroll_range);
+                            let thumb_pos_in_track = clamped_thumb_start.saturating_sub(track_y);
+
+                            let new_offset = if scroll_range == 0 {
+                                0
+                            } else {
+                                ((thumb_pos_in_track as u32 * max_offset as u32
+                                    + scroll_range as u32 / 2)
+                                    / scroll_range as u32)
+                                    .min(max_offset as u32) as u16
+                            };
+
+                            state_clone.update(|s| {
+                                s.scroll_mut().offset = new_offset;
+                            });
+
+                            // Call on_scroll handler with proper scroll event
+                            if let Some(ref handler) = on_scroll {
+                                let scroll_event = crate::handler_context::EventData::Scroll {
+                                    offset_x: 0,
+                                    offset_y: new_offset,
+                                    content_width: 0,
+                                    content_height: content_size,
+                                    viewport_width: 0,
+                                    viewport_height: viewport,
                                 };
-
-                                let scroll_range = track_height.saturating_sub(thumb_size);
-                                let thumb_start = drag_y.saturating_sub(grab_offset);
-                                let clamped_thumb_start =
-                                    thumb_start.clamp(track_y, track_y + scroll_range);
-                                let thumb_pos_in_track =
-                                    clamped_thumb_start.saturating_sub(track_y);
-
-                                let new_offset = if scroll_range == 0 {
-                                    0
-                                } else {
-                                    ((thumb_pos_in_track as u32 * max_offset as u32
-                                        + scroll_range as u32 / 2)
-                                        / scroll_range as u32)
-                                        .min(max_offset as u32)
-                                        as u16
-                                };
-
-                                state_clone.update(|s| {
-                                    s.scroll_mut().offset = new_offset;
-                                });
-
-                                // Call on_scroll handler with proper scroll event
-                                if let Some(ref handler) = on_scroll {
-                                    let scroll_event = crate::handler_context::EventData::Scroll {
-                                        offset_x: 0,
-                                        offset_y: new_offset,
-                                        content_width: 0,
-                                        content_height: content_size,
-                                        viewport_width: 0,
-                                        viewport_height: viewport,
-                                    };
-                                    let scroll_hx = hx.with_event(scroll_event);
-                                    handler(&scroll_hx);
-                                }
+                                let scroll_hx = hx.with_event(scroll_event);
+                                handler(&scroll_hx);
                             }
+                        }
                     }
                 }),
             );

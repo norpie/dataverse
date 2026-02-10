@@ -165,8 +165,6 @@ impl ParallelLoadingModal {
         self.fail_fast = fail_fast;
         self
     }
-
-
 }
 
 #[modal_impl(Result = ())]
@@ -275,7 +273,9 @@ impl ParallelLoadingModal {
                         element! { text (content: {label}) style (fg: muted) },
                     ),
                     TaskStatus::Running => (
-                        BrailleSpinner::new().id(format!("task-spinner-{}", idx)).build_standalone(),
+                        BrailleSpinner::new()
+                            .id(format!("task-spinner-{}", idx))
+                            .build_standalone(),
                         element! { text (content: {label}) style (fg: primary) },
                     ),
                     TaskStatus::Completed => (

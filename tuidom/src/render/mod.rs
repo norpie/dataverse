@@ -907,14 +907,14 @@ fn render_text_input(
             .map(|&c| display_char_width(c))
             .sum();
         let cursor_x = inner.x + width_to_cursor as u16;
-        if cursor_x < inner.right()
-            && clip.is_none_or(|c| cursor_x >= c.x && cursor_x < c.right()) {
-                buf.set(
-                    cursor_x,
-                    y,
-                    Cell::new(' ').with_fg(cursor_fg).with_bg(cursor_bg),
-                );
-            }
+        if cursor_x < inner.right() && clip.is_none_or(|c| cursor_x >= c.x && cursor_x < c.right())
+        {
+            buf.set(
+                cursor_x,
+                y,
+                Cell::new(' ').with_fg(cursor_fg).with_bg(cursor_bg),
+            );
+        }
     }
 }
 

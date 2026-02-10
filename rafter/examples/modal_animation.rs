@@ -90,10 +90,10 @@ impl LoadingModalWithOnStart {
     async fn on_start(&self) {
         log::info!("[LoadingModalWithOnStart] on_start called, about to sleep...");
         self.status.set("Starting...".to_string());
-        
+
         // Simulate async work in on_start
         tokio::time::sleep(Duration::from_secs(2)).await;
-        
+
         log::info!("[LoadingModalWithOnStart] on_start sleep complete");
         self.status.set("Ready!".to_string());
     }

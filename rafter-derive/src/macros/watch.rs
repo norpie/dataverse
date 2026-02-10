@@ -10,7 +10,7 @@
 
 use proc_macro2::TokenStream;
 use quote::quote;
-use syn::{parse2, ImplItemFn};
+use syn::{ImplItemFn, parse2};
 
 use super::dep_detection::find_dependencies;
 

@@ -36,7 +36,7 @@ pub fn execute_replace(value: &Value, from: &str, to: &str, use_regex: bool) -> 
             return TransformResult::Error(TransformError::type_mismatch(
                 "string",
                 other.type_name(),
-            ))
+            ));
         }
     };
 

@@ -45,10 +45,7 @@ impl ListItem for MappingDisplay {
                 Element::text(&format!("{} ({})", self.from_label, self.from))
                     .style(Style::new().foreground(Color::var("primary"))),
             )
-            .child(
-                Element::text("\u{2192}")
-                    .style(Style::new().foreground(Color::var("muted"))),
-            )
+            .child(Element::text("\u{2192}").style(Style::new().foreground(Color::var("muted"))))
             .child(
                 Element::text(&format!("{} ({})", self.to_label, self.to))
                     .style(Style::new().foreground(Color::var("primary"))),
@@ -267,10 +264,8 @@ impl ValueMapTransformModal {
             .mappings
             .with_ref(|m| m.items.iter().any(|d| d.from == from));
         if has_duplicate {
-            self.message.set(Some(format!(
-                "Source value {} is already mapped",
-                from
-            )));
+            self.message
+                .set(Some(format!("Source value {} is already mapped", from)));
             return;
         }
 

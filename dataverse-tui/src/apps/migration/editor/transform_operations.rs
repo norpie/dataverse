@@ -33,8 +33,8 @@ use crate::apps::migration::types::Transform;
 use crate::apps::migration::types::TransformData;
 use crate::modals::ConfirmModal;
 
-use super::insert_target::InsertTarget;
 use super::MigrationEditor;
+use super::insert_target::InsertTarget;
 
 impl MigrationEditor {
     /// Add a new transform based on the focused node.
@@ -188,8 +188,7 @@ impl MigrationEditor {
                     .map(|template| TransformData::Format { template })
             }
             TransformType::Replace => {
-                let modal =
-                    ReplaceTransformModal::new_modal(String::new(), String::new(), false);
+                let modal = ReplaceTransformModal::new_modal(String::new(), String::new(), false);
                 gx.modal(modal).await.map(|result| TransformData::Replace {
                     from: result.from,
                     to: result.to,
@@ -235,9 +234,7 @@ impl MigrationEditor {
                     mode: r.mode,
                 })
             }
-            TransformType::ValueMap => {
-                self.create_value_map_data(&target, gx).await
-            }
+            TransformType::ValueMap => self.create_value_map_data(&target, gx).await,
         }
     }
 
@@ -264,13 +261,9 @@ impl MigrationEditor {
 
         let next_focus = current_idx.and_then(|idx| {
             if idx > 0 {
-                siblings
-                    .get(idx - 1)
-                    .map(|t| format!("transform-{}", t.id))
+                siblings.get(idx - 1).map(|t| format!("transform-{}", t.id))
             } else if idx + 1 < siblings.len() {
-                siblings
-                    .get(idx + 1)
-                    .map(|t| format!("transform-{}", t.id))
+                siblings.get(idx + 1).map(|t| format!("transform-{}", t.id))
             } else {
                 self.parent_focus_key(transform.parent_type, transform.parent_id)
             }
@@ -640,8 +633,7 @@ impl MigrationEditor {
                 let Some(target_entities) = self.fetch_target_entities(gx).await else {
                     return;
                 };
-                let modal =
-                    FindTransformModal::edit_modal(target_entities, entity, fallback, mode);
+                let modal = FindTransformModal::edit_modal(target_entities, entity, fallback, mode);
 
                 if let Some(result) = gx.modal(modal).await {
                     let old_had_default = *fallback == FindFallback::Default;
@@ -669,10 +661,7 @@ impl MigrationEditor {
 
                             for t in &default_transforms {
                                 if let Err(e) = repo.delete_transform(t.id).await {
-                                    log::error!(
-                                        "Failed to delete find default transform: {}",
-                                        e
-                                    );
+                                    log::error!("Failed to delete find default transform: {}", e);
                                 }
                             }
                         }
@@ -711,10 +700,7 @@ impl MigrationEditor {
                                     .unwrap_or_default();
                                 for ct in &child_transforms {
                                     if let Err(e) = repo.delete_transform(ct.id).await {
-                                        log::error!(
-                                            "Failed to delete condition transform: {}",
-                                            e
-                                        );
+                                        log::error!("Failed to delete condition transform: {}", e);
                                     }
                                 }
                                 if let Err(e) = repo.delete_find_condition(fc.id).await {

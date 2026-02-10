@@ -356,14 +356,16 @@ fn parse_arg_expr(input: ParseStream) -> syn::Result<TokenStream> {
 
         // Parse other tokens
         let tt: proc_macro2::TokenTree = input.parse()?;
-        if let proc_macro2::TokenTree::Group(g) = &tt { match g.delimiter() {
-            proc_macro2::Delimiter::Parenthesis
-            | proc_macro2::Delimiter::Bracket
-            | proc_macro2::Delimiter::Brace => {
-                depth += 1;
+        if let proc_macro2::TokenTree::Group(g) = &tt {
+            match g.delimiter() {
+                proc_macro2::Delimiter::Parenthesis
+                | proc_macro2::Delimiter::Bracket
+                | proc_macro2::Delimiter::Brace => {
+                    depth += 1;
+                }
+                _ => {}
             }
-            _ => {}
-        } }
+        }
         tokens.extend(std::iter::once(tt));
     }
 
@@ -780,9 +782,10 @@ fn extract_message_type(method: &ImplItemFn) -> Option<String> {
 
             // Skip self
             if let syn::Pat::Ident(pat) = pat_type.pat.as_ref()
-                && pat.ident == "self" {
-                    continue;
-                }
+                && pat.ident == "self"
+            {
+                continue;
+            }
 
             return Some(ty_str);
         }
@@ -1718,7 +1721,9 @@ pub fn generate_request_dispatch(
         .collect();
 
     let sig = match context_type {
-        DispatchContextType::App | DispatchContextType::AppModal | DispatchContextType::SystemModal => quote! {
+        DispatchContextType::App
+        | DispatchContextType::AppModal
+        | DispatchContextType::SystemModal => quote! {
             fn dispatch_request(
                 &self,
                 request_type: std::any::TypeId,
@@ -1794,7 +1799,11 @@ fn generate_event_handler_call_and_clones(
         }
         DispatchContextType::AppModal => {
             // App modals have AppContext + GlobalContext, ModalContext accessed via mx parameter
-            let call = match (contexts.app_context, contexts.global_context, contexts.modal_context) {
+            let call = match (
+                contexts.app_context,
+                contexts.global_context,
+                contexts.modal_context,
+            ) {
                 (false, false, false) => quote! { this.#name(event).await; },
                 (true, false, false) => quote! { this.#name(event, &cx).await; },
                 (false, true, false) => quote! { this.#name(event, &gx).await; },
@@ -1804,15 +1813,27 @@ fn generate_event_handler_call_and_clones(
                 (false, true, true) => quote! { this.#name(event, &gx, &mx).await; },
                 (true, true, true) => quote! { this.#name(event, &cx, &gx, &mx).await; },
             };
-            let clones = match (contexts.app_context, contexts.global_context, contexts.modal_context) {
+            let clones = match (
+                contexts.app_context,
+                contexts.global_context,
+                contexts.modal_context,
+            ) {
                 (false, false, false) => quote! { let this = self.clone(); },
                 (true, false, false) => quote! { let this = self.clone(); let cx = cx.clone(); },
                 (false, true, false) => quote! { let this = self.clone(); let gx = gx.clone(); },
-                (true, true, false) => quote! { let this = self.clone(); let cx = cx.clone(); let gx = gx.clone(); },
+                (true, true, false) => {
+                    quote! { let this = self.clone(); let cx = cx.clone(); let gx = gx.clone(); }
+                }
                 (false, false, true) => quote! { let this = self.clone(); let mx = mx.clone(); },
-                (true, false, true) => quote! { let this = self.clone(); let cx = cx.clone(); let mx = mx.clone(); },
-                (false, true, true) => quote! { let this = self.clone(); let gx = gx.clone(); let mx = mx.clone(); },
-                (true, true, true) => quote! { let this = self.clone(); let cx = cx.clone(); let gx = gx.clone(); let mx = mx.clone(); },
+                (true, false, true) => {
+                    quote! { let this = self.clone(); let cx = cx.clone(); let mx = mx.clone(); }
+                }
+                (false, true, true) => {
+                    quote! { let this = self.clone(); let gx = gx.clone(); let mx = mx.clone(); }
+                }
+                (true, true, true) => {
+                    quote! { let this = self.clone(); let cx = cx.clone(); let gx = gx.clone(); let mx = mx.clone(); }
+                }
             };
             (call, clones)
         }
@@ -1828,7 +1849,9 @@ fn generate_event_handler_call_and_clones(
                 (false, false) => quote! { let this = self.clone(); },
                 (true, false) => quote! { let this = self.clone(); let gx = gx.clone(); },
                 (false, true) => quote! { let this = self.clone(); let mx = mx.clone(); },
-                (true, true) => quote! { let this = self.clone(); let gx = gx.clone(); let mx = mx.clone(); },
+                (true, true) => {
+                    quote! { let this = self.clone(); let gx = gx.clone(); let mx = mx.clone(); }
+                }
             };
             (call, clones)
         }
@@ -1923,15 +1946,9 @@ fn generate_request_handler_call_and_clones(
 /// }
 /// ```
 pub fn generate_handler_wrappers(handlers: &[HandlerInfo]) -> TokenStream {
-    let wrappers: Vec<TokenStream> = handlers
-        .iter()
-        .map(generate_single_wrapper)
-        .collect();
+    let wrappers: Vec<TokenStream> = handlers.iter().map(generate_single_wrapper).collect();
 
-    let handler_getters: Vec<TokenStream> = handlers
-        .iter()
-        .map(generate_handler_getter)
-        .collect();
+    let handler_getters: Vec<TokenStream> = handlers.iter().map(generate_handler_getter).collect();
 
     quote! {
         #(#wrappers)*
@@ -2124,10 +2141,7 @@ pub struct WatchMethod {
 /// Dependencies are detected by re-analyzing the method body using the same
 /// AST scanning as `#[derived]`.
 pub fn parse_watch_metadata(method: &ImplItemFn) -> Option<WatchMethod> {
-    let has_attr = method
-        .attrs
-        .iter()
-        .any(|a| a.path().is_ident("watch"));
+    let has_attr = method.attrs.iter().any(|a| a.path().is_ident("watch"));
 
     if !has_attr {
         return None;

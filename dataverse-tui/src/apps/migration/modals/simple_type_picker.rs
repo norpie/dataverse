@@ -1,7 +1,7 @@
 //! Modal for selecting a simple (scalar) AttributeType.
 
-use dataverse_lib::model::metadata::AttributeType;
 use dataverse_lib::model::FieldType;
+use dataverse_lib::model::metadata::AttributeType;
 use rafter::page;
 use rafter::prelude::*;
 use rafter::widgets::Button;

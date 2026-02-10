@@ -1,8 +1,8 @@
 use std::env;
 
+use dataverse_lib::DataverseClient;
 use dataverse_lib::auth::{AutoRefreshTokenProvider, PasswordFlow};
 use dataverse_lib::model::Entity;
-use dataverse_lib::DataverseClient;
 
 fn client_from_env() -> DataverseClient {
     let _ = dotenvy::dotenv();

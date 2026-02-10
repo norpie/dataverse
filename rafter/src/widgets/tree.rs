@@ -406,9 +406,10 @@ impl<T: TreeItem> TreeState<T> {
 
         if let Some(request) = self.scroll.process_request()
             && let ScrollRequest::IntoView(index) = request
-                && let Some(new_offset) = self.scroller.scroll_into_view(index, &self.scroll) {
-                    self.scroll.offset = new_offset;
-                }
+            && let Some(new_offset) = self.scroller.scroll_into_view(index, &self.scroll)
+        {
+            self.scroll.offset = new_offset;
+        }
 
         self.scroll.offset != old_offset
     }
@@ -716,20 +717,19 @@ impl<'a, T: TreeItem> Tree<HasTreeState<'a, T>> {
                     }
 
                     // Call user's on_scroll handler if scrolling occurred
-                    if scrolled
-                        && let Some(ref handler) = user_on_scroll {
-                            let current = state_clone.get();
-                            let scroll_event = crate::handler_context::EventData::Scroll {
-                                offset_x: 0,
-                                offset_y: current.scroll.offset,
-                                content_width: 0,
-                                content_height: current.scroll.content_height,
-                                viewport_width: 0,
-                                viewport_height: current.scroll.viewport,
-                            };
-                            let scroll_hx = hx.with_event(scroll_event);
-                            handler(&scroll_hx);
-                        }
+                    if scrolled && let Some(ref handler) = user_on_scroll {
+                        let current = state_clone.get();
+                        let scroll_event = crate::handler_context::EventData::Scroll {
+                            offset_x: 0,
+                            offset_y: current.scroll.offset,
+                            content_width: 0,
+                            content_height: current.scroll.content_height,
+                            viewport_width: 0,
+                            viewport_height: current.scroll.viewport,
+                        };
+                        let scroll_hx = hx.with_event(scroll_event);
+                        handler(&scroll_hx);
+                    }
                 }),
             );
         }

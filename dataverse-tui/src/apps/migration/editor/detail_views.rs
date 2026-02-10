@@ -4,12 +4,12 @@ use rafter::element;
 use rafter::widgets::Text;
 use tuidom::Element;
 
-use super::tree::condition_summary;
-use super::tree::transform_display_text;
+use super::MigrationEditor;
 use super::tree::FieldMappingNode;
 use super::tree::TransformNode;
 use super::tree::VariableNode;
-use super::MigrationEditor;
+use super::tree::condition_summary;
+use super::tree::transform_display_text;
 use crate::apps::migration::types::CoalesceChain;
 use crate::apps::migration::types::FindCondition;
 use crate::apps::migration::types::MatchBranch;

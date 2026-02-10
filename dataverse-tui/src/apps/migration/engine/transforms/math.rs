@@ -1,8 +1,8 @@
 //! Math transform - arithmetic operations.
 
 use dataverse_lib::model::Value;
-use rust_decimal::prelude::ToPrimitive;
 use rust_decimal::Decimal;
+use rust_decimal::prelude::ToPrimitive;
 
 use crate::apps::migration::engine::TransformError;
 use crate::apps::migration::engine::TransformResult;
@@ -50,7 +50,7 @@ fn execute_float_math(value: &Value, op: &MathOp) -> TransformResult {
             return TransformResult::Error(TransformError::type_mismatch(
                 "number",
                 value.type_name(),
-            ))
+            ));
         }
     };
 

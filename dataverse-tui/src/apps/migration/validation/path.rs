@@ -7,10 +7,10 @@
 
 use std::collections::HashMap;
 
-use dataverse_lib::model::metadata::AttributeType;
+use dataverse_lib::DataverseClient;
 use dataverse_lib::model::FieldType;
 use dataverse_lib::model::ValueType;
-use dataverse_lib::DataverseClient;
+use dataverse_lib::model::metadata::AttributeType;
 
 use crate::apps::migration::types::SystemVar;
 
@@ -171,7 +171,9 @@ fn parse_variable_path(input: &str) -> Result<PathExpr, ParseError> {
     };
 
     // Must have a dot followed by field path
-    let remainder = remainder.strip_prefix('.').ok_or(ParseError::EmptyFieldName)?;
+    let remainder = remainder
+        .strip_prefix('.')
+        .ok_or(ParseError::EmptyFieldName)?;
     if remainder.is_empty() {
         return Err(ParseError::EmptyFieldName);
     }
@@ -370,10 +372,7 @@ impl PathValidator {
         let var_type = match ctx.variable_types.get(name) {
             Some(vt) => vt,
             None => {
-                return ValidationResult::Invalid(format!(
-                    "Variable '{}' is not defined",
-                    name
-                ));
+                return ValidationResult::Invalid(format!("Variable '{}' is not defined", name));
             }
         };
 
@@ -419,9 +418,7 @@ impl PathValidator {
         };
 
         // Build path description prefix
-        let target_label = target
-            .map(|t| format!("[{}]", t))
-            .unwrap_or_default();
+        let target_label = target.map(|t| format!("[{}]", t)).unwrap_or_default();
         let mut path_parts = vec![format!("${}{} ({})", name, target_label, start_entity)];
 
         // Validate the field path starting from the resolved entity

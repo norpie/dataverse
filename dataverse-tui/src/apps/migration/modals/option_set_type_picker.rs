@@ -1,7 +1,7 @@
 //! Modal for picking an OptionSet field type (kind + option set name).
 
-use dataverse_lib::model::metadata::AttributeType;
 use dataverse_lib::model::FieldType;
+use dataverse_lib::model::metadata::AttributeType;
 use rafter::page;
 use rafter::prelude::*;
 use rafter::widgets::Autocomplete;
@@ -106,8 +106,7 @@ impl OptionSetTypePickerModal {
     }
 
     fn selected_name(&self) -> Option<String> {
-        self.name_autocomplete
-            .with_ref(|s| s.value().cloned())
+        self.name_autocomplete.with_ref(|s| s.value().cloned())
     }
 }
 

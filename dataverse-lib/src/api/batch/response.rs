@@ -174,13 +174,15 @@ impl BatchResults {
 /// Extracts the boundary from a Content-Type header.
 fn extract_boundary_from_header(header_section: &str) -> Option<String> {
     for line in header_section.lines() {
-        if line.to_lowercase().contains("content-type") && line.contains("boundary=")
-            && let Some(idx) = line.find("boundary=") {
-                let boundary = line[idx + 9..].trim();
-                // Remove quotes if present
-                let boundary = boundary.trim_matches('"');
-                return Some(boundary.to_string());
-            }
+        if line.to_lowercase().contains("content-type")
+            && line.contains("boundary=")
+            && let Some(idx) = line.find("boundary=")
+        {
+            let boundary = line[idx + 9..].trim();
+            // Remove quotes if present
+            let boundary = boundary.trim_matches('"');
+            return Some(boundary.to_string());
+        }
     }
     None
 }
@@ -318,18 +320,19 @@ fn parse_error_response(status: u16, body: &str, full_response: &str) -> BatchOp
 fn parse_odata_error(body: &str) -> (Option<String>, String) {
     // Try to parse as JSON
     if let Ok(json) = serde_json::from_str::<serde_json::Value>(body)
-        && let Some(error) = json.get("error") {
-            let code = error
-                .get("code")
-                .and_then(|v| v.as_str())
-                .map(|s| s.to_string());
-            let message = error
-                .get("message")
-                .and_then(|v| v.as_str())
-                .unwrap_or("Unknown error")
-                .to_string();
-            return (code, message);
-        }
+        && let Some(error) = json.get("error")
+    {
+        let code = error
+            .get("code")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+        let message = error
+            .get("message")
+            .and_then(|v| v.as_str())
+            .unwrap_or("Unknown error")
+            .to_string();
+        return (code, message);
+    }
     (None, body.to_string())
 }
 

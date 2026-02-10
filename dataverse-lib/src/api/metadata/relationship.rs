@@ -51,10 +51,11 @@ impl<'a> RelationshipMetadataBuilder<'a> {
         // Check cache first (unless bypassed)
         if !self.bypass_cache
             && let Some(cache) = &self.client.inner.cache
-                && let Some(cached) = cache.get(&cache_key).await
-                    && let Ok(rel) = cache::deserialize::<RelationshipMetadata>(&cached.data) {
-                        return Ok(rel);
-                    }
+            && let Some(cached) = cache.get(&cache_key).await
+            && let Ok(rel) = cache::deserialize::<RelationshipMetadata>(&cached.data)
+        {
+            return Ok(rel);
+        }
 
         // Fetch from API
         let rel = fetch_relationship_from_api(self.client, &self.schema_name).await?;

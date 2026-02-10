@@ -106,7 +106,7 @@ fn convert_to_int(value: &Value) -> TransformResult {
                             return TransformResult::Error(TransformError::type_mismatch(
                                 "int",
                                 format!("string '{}'", s),
-                            ))
+                            ));
                         }
                     }
                 }
@@ -114,7 +114,7 @@ fn convert_to_int(value: &Value) -> TransformResult {
         }
         Value::OptionSet(o) => o.value,
         other => {
-            return TransformResult::Error(TransformError::type_mismatch("int", other.type_name()))
+            return TransformResult::Error(TransformError::type_mismatch("int", other.type_name()));
         }
     };
     TransformResult::Value(Value::Int(result))
@@ -139,7 +139,7 @@ fn convert_to_decimal(value: &Value) -> TransformResult {
                 return TransformResult::Error(TransformError::type_mismatch(
                     "decimal",
                     format!("string '{}'", s),
-                ))
+                ));
             }
         },
         Value::Money(m) => m.value(),
@@ -147,7 +147,7 @@ fn convert_to_decimal(value: &Value) -> TransformResult {
             return TransformResult::Error(TransformError::type_mismatch(
                 "decimal",
                 other.type_name(),
-            ))
+            ));
         }
     };
     TransformResult::Value(Value::Decimal(result))
@@ -172,11 +172,14 @@ fn convert_to_bool(value: &Value) -> TransformResult {
                 return TransformResult::Error(TransformError::type_mismatch(
                     "bool",
                     format!("string '{}'", s),
-                ))
+                ));
             }
         },
         other => {
-            return TransformResult::Error(TransformError::type_mismatch("bool", other.type_name()))
+            return TransformResult::Error(TransformError::type_mismatch(
+                "bool",
+                other.type_name(),
+            ));
         }
     };
     TransformResult::Value(Value::Bool(result))

@@ -213,46 +213,49 @@ impl<'a> EventDispatcher<'a> {
                 // Enter key triggers on_activate on focused widget
                 if *key == Key::Enter
                     && let Some(target_id) = target
-                        && let Some(handler) = handlers.get(target_id, "on_activate") {
-                            let rect = self.layout.get(target_id).copied().unwrap_or_default();
-                            let hx = HandlerContext::for_modal_any_with_event(
-                                cx,
-                                self.gx,
-                                mx,
-                                EventData::Activate {
-                                    rect,
-                                    click_position: None,
-                                },
-                            );
-                            if let Some(panic_result) = call(&handler, &hx) {
-                                return Some(panic_result);
-                            }
-                            return Some(DispatchResult::HandledByModal);
-                        }
+                    && let Some(handler) = handlers.get(target_id, "on_activate")
+                {
+                    let rect = self.layout.get(target_id).copied().unwrap_or_default();
+                    let hx = HandlerContext::for_modal_any_with_event(
+                        cx,
+                        self.gx,
+                        mx,
+                        EventData::Activate {
+                            rect,
+                            click_position: None,
+                        },
+                    );
+                    if let Some(panic_result) = call(&handler, &hx) {
+                        return Some(panic_result);
+                    }
+                    return Some(DispatchResult::HandledByModal);
+                }
 
                 // Arrow keys dispatch to on_key_up/down/left/right handlers
                 // (Used by List/Tree widgets for boundary scrolling and expand/collapse)
                 if modifiers.none()
-                    && let Some(target_id) = target {
-                        let handler_name = match key {
-                            Key::Up => Some("on_key_up"),
-                            Key::Down => Some("on_key_down"),
-                            Key::Left => Some("on_key_left"),
-                            Key::Right => Some("on_key_right"),
-                            _ => None,
-                        };
-                        if let Some(name) = handler_name
-                            && let Some(handler) = handlers.get(target_id, name) {
-                                let hx = HandlerContext::for_modal_any(cx, self.gx, mx);
-                                if let Some(panic_result) = call(&handler, &hx) {
-                                    return Some(panic_result);
-                                }
-                                // For Left/Right, consume the event (don't let focus nav continue)
-                                if matches!(key, Key::Left | Key::Right) {
-                                    return Some(DispatchResult::HandledByModal);
-                                }
-                            }
+                    && let Some(target_id) = target
+                {
+                    let handler_name = match key {
+                        Key::Up => Some("on_key_up"),
+                        Key::Down => Some("on_key_down"),
+                        Key::Left => Some("on_key_left"),
+                        Key::Right => Some("on_key_right"),
+                        _ => None,
+                    };
+                    if let Some(name) = handler_name
+                        && let Some(handler) = handlers.get(target_id, name)
+                    {
+                        let hx = HandlerContext::for_modal_any(cx, self.gx, mx);
+                        if let Some(panic_result) = call(&handler, &hx) {
+                            return Some(panic_result);
+                        }
+                        // For Left/Right, consume the event (don't let focus nav continue)
+                        if matches!(key, Key::Left | Key::Right) {
+                            return Some(DispatchResult::HandledByModal);
+                        }
                     }
+                }
 
                 // Key event not handled by modal - fall through to system keybinds
                 return None;
@@ -260,22 +263,23 @@ impl<'a> EventDispatcher<'a> {
 
             Event::Click { target, x, y, .. } => {
                 if let Some(target_id) = target
-                    && let Some(handler) = handlers.get(target_id, "on_activate") {
-                        let rect = self.layout.get(target_id).copied().unwrap_or_default();
-                        let hx = HandlerContext::for_modal_any_with_event(
-                            cx,
-                            self.gx,
-                            mx,
-                            EventData::Activate {
-                                rect,
-                                click_position: Some((*x, *y)),
-                            },
-                        );
-                        if let Some(panic_result) = call(&handler, &hx) {
-                            return Some(panic_result);
-                        }
-                        return Some(DispatchResult::HandledByModal);
+                    && let Some(handler) = handlers.get(target_id, "on_activate")
+                {
+                    let rect = self.layout.get(target_id).copied().unwrap_or_default();
+                    let hx = HandlerContext::for_modal_any_with_event(
+                        cx,
+                        self.gx,
+                        mx,
+                        EventData::Activate {
+                            rect,
+                            click_position: Some((*x, *y)),
+                        },
+                    );
+                    if let Some(panic_result) = call(&handler, &hx) {
+                        return Some(panic_result);
                     }
+                    return Some(DispatchResult::HandledByModal);
+                }
             }
 
             Event::Change { target, text } => {
@@ -355,38 +359,40 @@ impl<'a> EventDispatcher<'a> {
                 ..
             } => {
                 if let Some(target_id) = target
-                    && let Some(handler) = handlers.get(target_id, "on_scroll") {
-                        let hx = HandlerContext::for_modal_any_with_event(
-                            cx,
-                            self.gx,
-                            mx,
-                            EventData::ScrollInput {
-                                delta_x: *delta_x,
-                                delta_y: *delta_y,
-                                action: *action,
-                            },
-                        );
-                        if let Some(panic_result) = call(&handler, &hx) {
-                            return Some(panic_result);
-                        }
-                        return Some(DispatchResult::HandledByModal);
+                    && let Some(handler) = handlers.get(target_id, "on_scroll")
+                {
+                    let hx = HandlerContext::for_modal_any_with_event(
+                        cx,
+                        self.gx,
+                        mx,
+                        EventData::ScrollInput {
+                            delta_x: *delta_x,
+                            delta_y: *delta_y,
+                            action: *action,
+                        },
+                    );
+                    if let Some(panic_result) = call(&handler, &hx) {
+                        return Some(panic_result);
                     }
+                    return Some(DispatchResult::HandledByModal);
+                }
             }
 
             Event::Drag { target, x, y, .. } => {
                 if let Some(target_id) = target
-                    && let Some(handler) = handlers.get(target_id, "on_drag") {
-                        let hx = HandlerContext::for_modal_any_with_event(
-                            cx,
-                            self.gx,
-                            mx,
-                            EventData::Drag { x: *x, y: *y },
-                        );
-                        if let Some(panic_result) = call(&handler, &hx) {
-                            return Some(panic_result);
-                        }
-                        return Some(DispatchResult::HandledByModal);
+                    && let Some(handler) = handlers.get(target_id, "on_drag")
+                {
+                    let hx = HandlerContext::for_modal_any_with_event(
+                        cx,
+                        self.gx,
+                        mx,
+                        EventData::Drag { x: *x, y: *y },
+                    );
+                    if let Some(panic_result) = call(&handler, &hx) {
+                        return Some(panic_result);
                     }
+                    return Some(DispatchResult::HandledByModal);
+                }
             }
 
             // Other events are captured but not dispatched to widgets
@@ -471,31 +477,32 @@ impl<'a> EventDispatcher<'a> {
         } = event
         {
             if let Some(target_id) = target
-                && target_id.contains("_option_") {
-                    // Find the handler by navigating the menu path
-                    let handler = {
-                        let menu = self.global_context_menu.as_ref().unwrap();
-                        Self::find_handler_by_id(target_id, &menu.definition, &menu.open_submenus)
-                    };
+                && target_id.contains("_option_")
+            {
+                // Find the handler by navigating the menu path
+                let handler = {
+                    let menu = self.global_context_menu.as_ref().unwrap();
+                    Self::find_handler_by_id(target_id, &menu.definition, &menu.open_submenus)
+                };
 
-                    if let Some(handler) = handler {
-                        // Invoke handler with system context (global menus are system-scoped)
-                        let rect = self.layout.get(target_id).copied().unwrap_or_default();
-                        let hx = HandlerContext::for_system_with_event(
-                            self.gx,
-                            EventData::Activate {
-                                rect,
-                                click_position: None,
-                            },
-                        );
-                        if let Some(panic_result) = call_and_check(&handler, &hx) {
-                            *self.global_context_menu = None;
-                            return Some(panic_result);
-                        }
+                if let Some(handler) = handler {
+                    // Invoke handler with system context (global menus are system-scoped)
+                    let rect = self.layout.get(target_id).copied().unwrap_or_default();
+                    let hx = HandlerContext::for_system_with_event(
+                        self.gx,
+                        EventData::Activate {
+                            rect,
+                            click_position: None,
+                        },
+                    );
+                    if let Some(panic_result) = call_and_check(&handler, &hx) {
                         *self.global_context_menu = None;
-                        return Some(DispatchResult::HandledByContextMenu);
+                        return Some(panic_result);
                     }
+                    *self.global_context_menu = None;
+                    return Some(DispatchResult::HandledByContextMenu);
                 }
+            }
             return Some(DispatchResult::HandledByContextMenu);
         }
 
@@ -509,20 +516,21 @@ impl<'a> EventDispatcher<'a> {
                 } else {
                     // This is a main menu option
                     if let Some(parts) = target.rsplit_once("_option_")
-                        && let Ok(option_index) = parts.1.parse::<usize>() {
-                            let menu = self.global_context_menu.as_mut().unwrap();
-                            if menu.definition.has_submenu(option_index) {
-                                // Open submenu - calculate actual menu width
-                                let menu_width = menu.definition.calculate_width();
-                                menu.open_submenu(
-                                    option_index,
-                                    (menu.position.0 + menu_width, menu.position.1),
-                                );
-                            } else {
-                                // Not a submenu option - close any open submenus
-                                menu.close_submenus();
-                            }
+                        && let Ok(option_index) = parts.1.parse::<usize>()
+                    {
+                        let menu = self.global_context_menu.as_mut().unwrap();
+                        if menu.definition.has_submenu(option_index) {
+                            // Open submenu - calculate actual menu width
+                            let menu_width = menu.definition.calculate_width();
+                            menu.open_submenu(
+                                option_index,
+                                (menu.position.0 + menu_width, menu.position.1),
+                            );
+                        } else {
+                            // Not a submenu option - close any open submenus
+                            menu.close_submenus();
                         }
+                    }
                 }
             }
             return Some(DispatchResult::HandledByContextMenu);
@@ -536,10 +544,11 @@ impl<'a> EventDispatcher<'a> {
         {
             // If focus leaves the menu entirely, dismiss the whole menu
             if let Some(new_target) = new_target
-                && !new_target.contains("__global_context_menu__") {
-                    *self.global_context_menu = None;
-                    return Some(DispatchResult::HandledByContextMenu);
-                }
+                && !new_target.contains("__global_context_menu__")
+            {
+                *self.global_context_menu = None;
+                return Some(DispatchResult::HandledByContextMenu);
+            }
             return Some(DispatchResult::HandledByContextMenu);
         }
 
@@ -553,24 +562,25 @@ impl<'a> EventDispatcher<'a> {
 
             // Click on option - invoke handler and dismiss
             if let Some(target_id) = target.as_deref()
-                && target_id.contains("_option_") {
-                    // Find the handler by navigating the menu path
-                    let handler = {
-                        let menu = self.global_context_menu.as_ref().unwrap();
-                        Self::find_handler_by_id(target_id, &menu.definition, &menu.open_submenus)
-                    };
+                && target_id.contains("_option_")
+            {
+                // Find the handler by navigating the menu path
+                let handler = {
+                    let menu = self.global_context_menu.as_ref().unwrap();
+                    Self::find_handler_by_id(target_id, &menu.definition, &menu.open_submenus)
+                };
 
-                    if let Some(handler) = handler {
-                        // Invoke handler with system context (global menus are system-scoped)
-                        let hx = HandlerContext::for_system(self.gx);
-                        if let Some(panic_result) = call_and_check(&handler, &hx) {
-                            *self.global_context_menu = None;
-                            return Some(panic_result);
-                        }
+                if let Some(handler) = handler {
+                    // Invoke handler with system context (global menus are system-scoped)
+                    let hx = HandlerContext::for_system(self.gx);
+                    if let Some(panic_result) = call_and_check(&handler, &hx) {
                         *self.global_context_menu = None;
-                        return Some(DispatchResult::HandledByContextMenu);
+                        return Some(panic_result);
                     }
+                    *self.global_context_menu = None;
+                    return Some(DispatchResult::HandledByContextMenu);
                 }
+            }
 
             // Any other click inside menu - capture but don't dismiss
             return Some(DispatchResult::HandledByContextMenu);
@@ -609,36 +619,37 @@ impl<'a> EventDispatcher<'a> {
         } = event
         {
             if let Some(target_id) = target
-                && target_id.contains("_option_") {
-                    // Find the handler by navigating the menu path
-                    let handler = {
-                        let menu = self.app_context_menu.as_ref().unwrap();
-                        Self::find_handler_by_id(target_id, &menu.definition, &menu.open_submenus)
-                    };
+                && target_id.contains("_option_")
+            {
+                // Find the handler by navigating the menu path
+                let handler = {
+                    let menu = self.app_context_menu.as_ref().unwrap();
+                    Self::find_handler_by_id(target_id, &menu.definition, &menu.open_submenus)
+                };
 
-                    if let Some(handler) = handler {
-                        // Invoke handler with app context
-                        let rect = self.layout.get(target_id).copied().unwrap_or_default();
-                        let hx = HandlerContext::for_app_with_event(
-                            &cx,
-                            self.gx,
-                            EventData::Activate {
-                                rect,
-                                click_position: None,
-                            },
-                        );
-                        if let Some(panic_result) =
-                            call_app_and_check(&handler, &hx, instance.config().name, instance.id())
-                        {
-                            drop(reg);
-                            *self.app_context_menu = None;
-                            return Some(panic_result);
-                        }
+                if let Some(handler) = handler {
+                    // Invoke handler with app context
+                    let rect = self.layout.get(target_id).copied().unwrap_or_default();
+                    let hx = HandlerContext::for_app_with_event(
+                        &cx,
+                        self.gx,
+                        EventData::Activate {
+                            rect,
+                            click_position: None,
+                        },
+                    );
+                    if let Some(panic_result) =
+                        call_app_and_check(&handler, &hx, instance.config().name, instance.id())
+                    {
                         drop(reg);
                         *self.app_context_menu = None;
-                        return Some(DispatchResult::HandledByContextMenu);
+                        return Some(panic_result);
                     }
+                    drop(reg);
+                    *self.app_context_menu = None;
+                    return Some(DispatchResult::HandledByContextMenu);
                 }
+            }
             return Some(DispatchResult::HandledByContextMenu);
         }
 
@@ -652,20 +663,21 @@ impl<'a> EventDispatcher<'a> {
                 } else {
                     // This is a main menu option
                     if let Some(parts) = target.rsplit_once("_option_")
-                        && let Ok(option_index) = parts.1.parse::<usize>() {
-                            let menu = self.app_context_menu.as_mut().unwrap();
-                            if menu.definition.has_submenu(option_index) {
-                                // Open submenu - calculate actual menu width
-                                let menu_width = menu.definition.calculate_width();
-                                menu.open_submenu(
-                                    option_index,
-                                    (menu.position.0 + menu_width, menu.position.1),
-                                );
-                            } else {
-                                // Not a submenu option - close any open submenus
-                                menu.close_submenus();
-                            }
+                        && let Ok(option_index) = parts.1.parse::<usize>()
+                    {
+                        let menu = self.app_context_menu.as_mut().unwrap();
+                        if menu.definition.has_submenu(option_index) {
+                            // Open submenu - calculate actual menu width
+                            let menu_width = menu.definition.calculate_width();
+                            menu.open_submenu(
+                                option_index,
+                                (menu.position.0 + menu_width, menu.position.1),
+                            );
+                        } else {
+                            // Not a submenu option - close any open submenus
+                            menu.close_submenus();
                         }
+                    }
                 }
             }
             return Some(DispatchResult::HandledByContextMenu);
@@ -679,11 +691,12 @@ impl<'a> EventDispatcher<'a> {
         {
             // If focus leaves the menu entirely, dismiss the whole menu
             if let Some(new_target) = new_target
-                && !new_target.contains("__app_context_menu__") {
-                    drop(reg);
-                    *self.app_context_menu = None;
-                    return Some(DispatchResult::HandledByContextMenu);
-                }
+                && !new_target.contains("__app_context_menu__")
+            {
+                drop(reg);
+                *self.app_context_menu = None;
+                return Some(DispatchResult::HandledByContextMenu);
+            }
             return Some(DispatchResult::HandledByContextMenu);
         }
 
@@ -698,28 +711,29 @@ impl<'a> EventDispatcher<'a> {
 
             // Click on option - invoke handler and dismiss
             if let Some(target_id) = target.as_deref()
-                && target_id.contains("_option_") {
-                    // Find the handler by navigating the menu path
-                    let handler = {
-                        let menu = self.app_context_menu.as_ref().unwrap();
-                        Self::find_handler_by_id(target_id, &menu.definition, &menu.open_submenus)
-                    };
+                && target_id.contains("_option_")
+            {
+                // Find the handler by navigating the menu path
+                let handler = {
+                    let menu = self.app_context_menu.as_ref().unwrap();
+                    Self::find_handler_by_id(target_id, &menu.definition, &menu.open_submenus)
+                };
 
-                    if let Some(handler) = handler {
-                        // Invoke handler with app context
-                        let hx = HandlerContext::for_app(&cx, self.gx);
-                        if let Some(panic_result) =
-                            call_app_and_check(&handler, &hx, instance.config().name, instance.id())
-                        {
-                            drop(reg);
-                            *self.app_context_menu = None;
-                            return Some(panic_result);
-                        }
+                if let Some(handler) = handler {
+                    // Invoke handler with app context
+                    let hx = HandlerContext::for_app(&cx, self.gx);
+                    if let Some(panic_result) =
+                        call_app_and_check(&handler, &hx, instance.config().name, instance.id())
+                    {
                         drop(reg);
                         *self.app_context_menu = None;
-                        return Some(DispatchResult::HandledByContextMenu);
+                        return Some(panic_result);
                     }
+                    drop(reg);
+                    *self.app_context_menu = None;
+                    return Some(DispatchResult::HandledByContextMenu);
                 }
+            }
 
             // Any other click inside menu - capture but don't dismiss
             return Some(DispatchResult::HandledByContextMenu);
@@ -774,9 +788,10 @@ impl<'a> EventDispatcher<'a> {
         } else {
             // This is a main menu option
             if let Some(parts) = element_id.rsplit_once("_option_")
-                && let Ok(option_index) = parts.1.parse::<usize>() {
-                    return root_definition.get_handler(option_index).cloned();
-                }
+                && let Ok(option_index) = parts.1.parse::<usize>()
+            {
+                return root_definition.get_handler(option_index).cloned();
+            }
         }
 
         None
@@ -875,94 +890,95 @@ impl<'a> EventDispatcher<'a> {
                 target,
             } => {
                 // Enter key triggers on_activate on focused element (like click)
-                if *key == tuidom::Key::Enter && modifiers.none()
-                    && let Some(target_id) = target {
-                        let rect = self.layout.get(target_id).copied().unwrap_or_default();
-                        // First check app instance handlers
-                        if let Some(handler) = handlers.get(target_id, "on_activate") {
-                            let hx_with_event = HandlerContext::for_app_with_event(
-                                &cx,
+                if *key == tuidom::Key::Enter
+                    && modifiers.none()
+                    && let Some(target_id) = target
+                {
+                    let rect = self.layout.get(target_id).copied().unwrap_or_default();
+                    // First check app instance handlers
+                    if let Some(handler) = handlers.get(target_id, "on_activate") {
+                        let hx_with_event = HandlerContext::for_app_with_event(
+                            &cx,
+                            self.gx,
+                            EventData::Activate {
+                                rect,
+                                click_position: None,
+                            },
+                        );
+                        if let Some(panic_result) = call_app_and_check(
+                            &handler,
+                            &hx_with_event,
+                            instance.config().name,
+                            instance.id(),
+                        ) {
+                            return Some(panic_result);
+                        }
+                        return Some(DispatchResult::HandledByWidget(WidgetResult::Activated));
+                    }
+
+                    // Then check system handlers
+                    for system in self.systems {
+                        let system_handlers = system.handlers();
+                        if let Some(handler) = system_handlers.get(target_id, "on_activate") {
+                            let system_hx = HandlerContext::for_system_with_event(
                                 self.gx,
                                 EventData::Activate {
                                     rect,
                                     click_position: None,
                                 },
                             );
+                            if let Some(panic_result) = call_and_check(&handler, &system_hx) {
+                                return Some(panic_result);
+                            }
+                            return Some(DispatchResult::HandledByWidget(WidgetResult::Activated));
+                        }
+                    }
+                }
+
+                // Arrow keys dispatch to on_key_up/down/left/right handlers
+                // (Used by List/Tree widgets for boundary scrolling and expand/collapse)
+                if modifiers.none()
+                    && let Some(target_id) = target
+                {
+                    let handler_name = match key {
+                        tuidom::Key::Up => Some("on_key_up"),
+                        tuidom::Key::Down => Some("on_key_down"),
+                        tuidom::Key::Left => Some("on_key_left"),
+                        tuidom::Key::Right => Some("on_key_right"),
+                        _ => None,
+                    };
+                    if let Some(name) = handler_name {
+                        log::debug!(
+                            "dispatch_to_widgets: looking for {} handler on {}",
+                            name,
+                            target_id
+                        );
+                        if let Some(handler) = handlers.get(target_id, name) {
+                            log::debug!("dispatch_to_widgets: found {} handler, calling", name);
                             if let Some(panic_result) = call_app_and_check(
                                 &handler,
-                                &hx_with_event,
+                                &hx,
                                 instance.config().name,
                                 instance.id(),
                             ) {
                                 return Some(panic_result);
                             }
-                            return Some(DispatchResult::HandledByWidget(WidgetResult::Activated));
-                        }
-
-                        // Then check system handlers
-                        for system in self.systems {
-                            let system_handlers = system.handlers();
-                            if let Some(handler) = system_handlers.get(target_id, "on_activate") {
-                                let system_hx = HandlerContext::for_system_with_event(
-                                    self.gx,
-                                    EventData::Activate {
-                                        rect,
-                                        click_position: None,
-                                    },
-                                );
-                                if let Some(panic_result) = call_and_check(&handler, &system_hx) {
-                                    return Some(panic_result);
-                                }
+                            // For Left/Right, consume the event (don't let focus nav continue)
+                            // For Up/Down, let focus navigation continue after handler
+                            if matches!(key, tuidom::Key::Left | tuidom::Key::Right) {
                                 return Some(DispatchResult::HandledByWidget(
-                                    WidgetResult::Activated,
+                                    WidgetResult::Handled,
                                 ));
                             }
-                        }
-                    }
-
-                // Arrow keys dispatch to on_key_up/down/left/right handlers
-                // (Used by List/Tree widgets for boundary scrolling and expand/collapse)
-                if modifiers.none()
-                    && let Some(target_id) = target {
-                        let handler_name = match key {
-                            tuidom::Key::Up => Some("on_key_up"),
-                            tuidom::Key::Down => Some("on_key_down"),
-                            tuidom::Key::Left => Some("on_key_left"),
-                            tuidom::Key::Right => Some("on_key_right"),
-                            _ => None,
-                        };
-                        if let Some(name) = handler_name {
+                        } else {
                             log::debug!(
-                                "dispatch_to_widgets: looking for {} handler on {}",
+                                "dispatch_to_widgets: no {} handler found for {}",
                                 name,
                                 target_id
                             );
-                            if let Some(handler) = handlers.get(target_id, name) {
-                                log::debug!("dispatch_to_widgets: found {} handler, calling", name);
-                                if let Some(panic_result) = call_app_and_check(
-                                    &handler,
-                                    &hx,
-                                    instance.config().name,
-                                    instance.id(),
-                                ) {
-                                    return Some(panic_result);
-                                }
-                                // For Left/Right, consume the event (don't let focus nav continue)
-                                // For Up/Down, let focus navigation continue after handler
-                                if matches!(key, tuidom::Key::Left | tuidom::Key::Right) {
-                                    return Some(DispatchResult::HandledByWidget(
-                                        WidgetResult::Handled,
-                                    ));
-                                }
-                            } else {
-                                log::debug!(
-                                    "dispatch_to_widgets: no {} handler found for {}",
-                                    name,
-                                    target_id
-                                );
-                            }
                         }
                     }
+                }
 
                 // Dispatch to focused widget (if any)
                 if let Some(target_id) = target {

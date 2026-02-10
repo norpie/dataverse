@@ -74,8 +74,9 @@ impl NewMigrationModal {
         let target_id = self.target_env.with_ref(|s| s.value().cloned());
 
         let (Some(source_id), Some(target_id)) = (source_id, target_id) else {
-            self.error
-                .set(Some("Please select source and target environments".to_string()));
+            self.error.set(Some(
+                "Please select source and target environments".to_string(),
+            ));
             return;
         };
 
@@ -87,11 +88,7 @@ impl NewMigrationModal {
 
         let description = {
             let desc = self.description.get().trim().to_string();
-            if desc.is_empty() {
-                None
-            } else {
-                Some(desc)
-            }
+            if desc.is_empty() { None } else { Some(desc) }
         };
 
         mx.close(Some(NewMigrationResult {

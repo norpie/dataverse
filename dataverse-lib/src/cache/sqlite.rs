@@ -189,9 +189,7 @@ impl CacheProvider for SqliteCache {
         let now = Utc::now().timestamp();
 
         self.client
-            .conn(move |conn| {
-                conn.execute("DELETE FROM cache WHERE expires_at <= ?", [now])
-            })
+            .conn(move |conn| conn.execute("DELETE FROM cache WHERE expires_at <= ?", [now]))
             .await
             .unwrap_or(0)
     }
@@ -210,7 +208,10 @@ impl CacheProvider for SqliteCache {
                 for row in rows {
                     if let Ok((key, expires_at)) = row {
                         if let Some(dt) = Utc.timestamp_opt(expires_at, 0).single() {
-                            entries.push(super::CacheEntry { key, expires_at: dt });
+                            entries.push(super::CacheEntry {
+                                key,
+                                expires_at: dt,
+                            });
                         }
                     }
                 }

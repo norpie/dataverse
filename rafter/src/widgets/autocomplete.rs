@@ -169,9 +169,10 @@ impl<T: Clone + Eq + Hash> AutocompleteState<T> {
         T: PartialEq + ToString,
     {
         if self.selection.mode == SelectionMode::Single
-            && self.options.iter().any(|(v, _)| v == &value) {
-                self.text = value.to_string();
-            }
+            && self.options.iter().any(|(v, _)| v == &value)
+        {
+            self.text = value.to_string();
+        }
         self.selection.selected.insert(value);
         self
     }
@@ -402,7 +403,9 @@ impl<S> Autocomplete<S> {
     }
 }
 
-impl<'a, T: Clone + Eq + Hash + PartialEq + Send + Sync + ToString + 'static> Autocomplete<HasState<'a, T>> {
+impl<'a, T: Clone + Eq + Hash + PartialEq + Send + Sync + ToString + 'static>
+    Autocomplete<HasState<'a, T>>
+{
     /// Build the autocomplete element.
     ///
     /// Registers handlers for text input, option selection, and blur.
@@ -532,33 +535,34 @@ impl<'a, T: Clone + Eq + Hash + PartialEq + Send + Sync + ToString + 'static> Au
                         let cursor = current.cursor;
                         let is_multi = current.selection.mode == SelectionMode::Multi;
                         if let Some(filter_match) = current.filtered.get(cursor)
-                            && let Some((value, _label)) = current.options.get(filter_match.index) {
-                                let value = value.clone();
-                                let text_value = value.to_string();
-                                state_clone.update(|s| {
-                                    s.selection.toggle(value);
-                                    // In single-select mode, update text and close dropdown
-                                    if !is_multi {
-                                        s.text = text_value;
-                                        s.open = false;
-                                        s.refilter();
-                                    }
-                                    // In multi-select mode, stay open
-                                });
-                                if let Some(ref handler) = on_select {
-                                    handler(hx);
-                                }
-                                // Also trigger on_change since text was updated
+                            && let Some((value, _label)) = current.options.get(filter_match.index)
+                        {
+                            let value = value.clone();
+                            let text_value = value.to_string();
+                            state_clone.update(|s| {
+                                s.selection.toggle(value);
+                                // In single-select mode, update text and close dropdown
                                 if !is_multi {
-                                    if let Some(ref handler) = on_change {
-                                        handler(hx);
-                                    }
+                                    s.text = text_value;
+                                    s.open = false;
+                                    s.refilter();
                                 }
-                                // Fire user on_submit after selection is complete
-                                if let Some(ref handler) = on_submit {
+                                // In multi-select mode, stay open
+                            });
+                            if let Some(ref handler) = on_select {
+                                handler(hx);
+                            }
+                            // Also trigger on_change since text was updated
+                            if !is_multi {
+                                if let Some(ref handler) = on_change {
                                     handler(hx);
                                 }
                             }
+                            // Fire user on_submit after selection is complete
+                            if let Some(ref handler) = on_submit {
+                                handler(hx);
+                            }
+                        }
                     }
                 }),
             );
@@ -598,129 +602,129 @@ impl<'a, T: Clone + Eq + Hash + PartialEq + Send + Sync + ToString + 'static> Au
 
             for (pos_in_visible, i) in visible_range.enumerate() {
                 if let Some(filter_match) = current.filtered.get(i)
-                    && let Some((value, label)) = current.options.get(filter_match.index) {
-                        let opt_id = format!("{}-opt-{}", id, i);
-                        let is_cursor = i == current.cursor;
-                        let is_selected = current.selection.is_selected(value);
+                    && let Some((value, label)) = current.options.get(filter_match.index)
+                {
+                    let opt_id = format!("{}-opt-{}", id, i);
+                    let is_cursor = i == current.cursor;
+                    let is_selected = current.selection.is_selected(value);
 
-                        let mut text_elem = Element::text(label);
-                        if is_cursor {
-                            text_elem = text_elem.style(Style::new().bold());
-                        }
+                    let mut text_elem = Element::text(label);
+                    if is_cursor {
+                        text_elem = text_elem.style(Style::new().bold());
+                    }
 
-                        let mut opt_elem = Element::row()
-                            .id(&opt_id)
-                            .width(Size::Fill)
-                            .height(Size::Fixed(1))
-                            .focusable(true)
-                            .clickable(true)
-                            .style_focused(
-                                Style::new()
-                                    .background(Color::var("list.item_focused"))
-                                    .foreground(Color::var("text.inverted")),
-                            )
-                            .child(text_elem);
+                    let mut opt_elem = Element::row()
+                        .id(&opt_id)
+                        .width(Size::Fill)
+                        .height(Size::Fixed(1))
+                        .focusable(true)
+                        .clickable(true)
+                        .style_focused(
+                            Style::new()
+                                .background(Color::var("list.item_focused"))
+                                .foreground(Color::var("text.inverted")),
+                        )
+                        .child(text_elem);
 
-                        if is_selected {
-                            opt_elem = opt_elem.style(selected_style.clone());
-                        }
+                    if is_selected {
+                        opt_elem = opt_elem.style(selected_style.clone());
+                    }
 
-                        options_col = options_col.child(opt_elem);
+                    options_col = options_col.child(opt_elem);
 
-                        // Register option activate handler
-                        let state_clone = state.clone();
-                        let value_clone = value.clone();
-                        let text_value = value.to_string();
-                        let on_select = handlers.get("on_select").cloned();
-                        let on_change = handlers.get("on_change").cloned();
-                        registry.register(
-                            &opt_id,
-                            "on_activate",
-                            Arc::new(move |hx| {
-                                let is_multi =
-                                    state_clone.get().selection.mode == SelectionMode::Multi;
-                                let text_value = text_value.clone();
-                                state_clone.update(|s| {
-                                    s.selection.toggle(value_clone.clone());
-                                    if !is_multi {
-                                        s.text = text_value;
-                                        s.open = false;
-                                        s.refilter();
-                                    }
-                                });
-                                if let Some(ref handler) = on_select {
+                    // Register option activate handler
+                    let state_clone = state.clone();
+                    let value_clone = value.clone();
+                    let text_value = value.to_string();
+                    let on_select = handlers.get("on_select").cloned();
+                    let on_change = handlers.get("on_change").cloned();
+                    registry.register(
+                        &opt_id,
+                        "on_activate",
+                        Arc::new(move |hx| {
+                            let is_multi = state_clone.get().selection.mode == SelectionMode::Multi;
+                            let text_value = text_value.clone();
+                            state_clone.update(|s| {
+                                s.selection.toggle(value_clone.clone());
+                                if !is_multi {
+                                    s.text = text_value;
+                                    s.open = false;
+                                    s.refilter();
+                                }
+                            });
+                            if let Some(ref handler) = on_select {
+                                handler(hx);
+                            }
+                            // Also trigger on_change since text was updated
+                            if !is_multi {
+                                if let Some(ref handler) = on_change {
                                     handler(hx);
                                 }
-                                // Also trigger on_change since text was updated
-                                if !is_multi {
-                                    if let Some(ref handler) = on_change {
-                                        handler(hx);
-                                    }
-                                }
-                            }),
-                        );
+                            }
+                        }),
+                    );
 
-                        // Register blur handler
+                    // Register blur handler
+                    let state_clone = state.clone();
+                    let base_id = id.clone();
+                    registry.register(
+                        &opt_id,
+                        "on_blur",
+                        Arc::new(move |hx| {
+                            // Close if focus moved outside this widget or no new target (e.g. Escape)
+                            let should_close = match hx.event().blur_target() {
+                                Some(new_target) => !new_target.starts_with(&base_id),
+                                None => true,
+                            };
+                            if should_close {
+                                state_clone.update(|s| s.open = false);
+                            }
+                        }),
+                    );
+
+                    // Register boundary scroll handlers
+                    let is_at_top = pos_in_visible == 0 && i > 0;
+                    let is_at_bottom =
+                        pos_in_visible == visible_count - 1 && i < total_filtered - 1;
+
+                    if is_at_top {
                         let state_clone = state.clone();
-                        let base_id = id.clone();
+                        let id_clone = id.clone();
+                        let target_index = i.saturating_sub(1);
                         registry.register(
                             &opt_id,
-                            "on_blur",
+                            "on_key_up",
                             Arc::new(move |hx| {
-                                // Close if focus moved outside this widget or no new target (e.g. Escape)
-                                let should_close = match hx.event().blur_target() {
-                                    Some(new_target) => !new_target.starts_with(&base_id),
-                                    None => true,
-                                };
-                                if should_close {
-                                    state_clone.update(|s| s.open = false);
-                                }
+                                state_clone.update(|s| {
+                                    s.scroll
+                                        .apply_request(super::scroll::ScrollRequest::Delta(-1));
+                                    s.cursor = target_index;
+                                });
+                                let target_id = format!("{}-opt-{}", id_clone, target_index);
+                                hx.cx().focus(&target_id);
                             }),
                         );
-
-                        // Register boundary scroll handlers
-                        let is_at_top = pos_in_visible == 0 && i > 0;
-                        let is_at_bottom =
-                            pos_in_visible == visible_count - 1 && i < total_filtered - 1;
-
-                        if is_at_top {
-                            let state_clone = state.clone();
-                            let id_clone = id.clone();
-                            let target_index = i.saturating_sub(1);
-                            registry.register(
-                                &opt_id,
-                                "on_key_up",
-                                Arc::new(move |hx| {
-                                    state_clone.update(|s| {
-                                        s.scroll
-                                            .apply_request(super::scroll::ScrollRequest::Delta(-1));
-                                        s.cursor = target_index;
-                                    });
-                                    let target_id = format!("{}-opt-{}", id_clone, target_index);
-                                    hx.cx().focus(&target_id);
-                                }),
-                            );
-                        }
-
-                        if is_at_bottom {
-                            let state_clone = state.clone();
-                            let id_clone = id.clone();
-                            let target_index = i + 1;
-                            registry.register(
-                                &opt_id,
-                                "on_key_down",
-                                Arc::new(move |hx| {
-                                    state_clone.update(|s| {
-                                        s.scroll
-                                            .apply_request(super::scroll::ScrollRequest::Delta(1));
-                                        s.cursor = target_index;
-                                    });
-                                    let target_id = format!("{}-opt-{}", id_clone, target_index);
-                                    hx.cx().focus(&target_id);
-                                }),
-                            );
-                        }
                     }
+
+                    if is_at_bottom {
+                        let state_clone = state.clone();
+                        let id_clone = id.clone();
+                        let target_index = i + 1;
+                        registry.register(
+                            &opt_id,
+                            "on_key_down",
+                            Arc::new(move |hx| {
+                                state_clone.update(|s| {
+                                    s.scroll
+                                        .apply_request(super::scroll::ScrollRequest::Delta(1));
+                                    s.cursor = target_index;
+                                });
+                                let target_id = format!("{}-opt-{}", id_clone, target_index);
+                                hx.cx().focus(&target_id);
+                            }),
+                        );
+                    }
+                }
             }
 
             // Register scroll handler for mouse wheel and keyboard on body

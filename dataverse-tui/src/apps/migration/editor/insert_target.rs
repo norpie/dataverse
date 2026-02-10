@@ -8,8 +8,8 @@ use crate::apps::migration::types::FindCondition;
 use crate::apps::migration::types::MatchBranch;
 use crate::apps::migration::types::ParentType;
 
-use super::tree::MigrationTreeNode;
 use super::MigrationEditor;
+use super::tree::MigrationTreeNode;
 
 /// Information about where to insert a new transform.
 pub(super) struct InsertTarget {

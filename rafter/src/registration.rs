@@ -1,12 +1,12 @@
 //! Registration types for inventory-based auto-discovery.
 
+use crate::GlobalContext;
 use crate::app::App;
 use crate::instance::{AnyAppInstance, AppInstance};
 use crate::keybinds::KeybindClosures;
 use crate::lifecycle::LifecycleHooks;
 use crate::system::{Overlay, System};
 use crate::wakeup::WakeupSender;
-use crate::GlobalContext;
 
 /// App registration entry for inventory.
 pub struct AppRegistration {

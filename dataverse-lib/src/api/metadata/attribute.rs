@@ -53,10 +53,11 @@ impl<'a> AttributeMetadataBuilder<'a> {
         // Check cache first (unless bypassed)
         if !self.bypass_cache
             && let Some(cache) = &self.client.inner.cache
-                && let Some(cached) = cache.get(&cache_key).await
-                    && let Ok(attr) = cache::deserialize::<AttributeMetadata>(&cached.data) {
-                        return Ok(attr);
-                    }
+            && let Some(cached) = cache.get(&cache_key).await
+            && let Ok(attr) = cache::deserialize::<AttributeMetadata>(&cached.data)
+        {
+            return Ok(attr);
+        }
 
         // Fetch from API
         let attr =
@@ -122,10 +123,11 @@ impl<'a> AttributesBuilder<'a> {
         // Check cache first (unless bypassed)
         if !self.bypass_cache
             && let Some(cache) = &self.client.inner.cache
-                && let Some(cached) = cache.get(&cache_key).await
-                    && let Ok(attrs) = cache::deserialize::<Vec<AttributeMetadata>>(&cached.data) {
-                        return Ok(attrs);
-                    }
+            && let Some(cached) = cache.get(&cache_key).await
+            && let Ok(attrs) = cache::deserialize::<Vec<AttributeMetadata>>(&cached.data)
+        {
+            return Ok(attrs);
+        }
 
         // Fetch from API
         let attrs = fetch_attributes_from_api(self.client, &logical_name).await?;

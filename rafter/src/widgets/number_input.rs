@@ -145,13 +145,15 @@ impl NumberInputState {
     fn clamp(&self, value: f64) -> f64 {
         let mut v = value;
         if let Some(min) = self.min
-            && v < min {
-                v = min;
-            }
+            && v < min
+        {
+            v = min;
+        }
         if let Some(max) = self.max
-            && v > max {
-                v = max;
-            }
+            && v > max
+        {
+            v = max;
+        }
         v
     }
 
@@ -451,10 +453,9 @@ impl<'a> NumberInput<HasState<'a>> {
                             accepted = s.handle_text_change(text);
                         });
                         // Only call user handler if input was accepted
-                        if accepted
-                            && let Some(ref handler) = user_handler {
-                                handler(hx);
-                            }
+                        if accepted && let Some(ref handler) = user_handler {
+                            handler(hx);
+                        }
                     }
                 }),
             );

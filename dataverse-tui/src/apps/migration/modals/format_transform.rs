@@ -129,46 +129,45 @@ impl FormatTransformModal {
         let template = self.current_template();
 
         // Check if we're inside a placeholder
-        let suggestions = if let Some((prefix, path_so_far)) =
-            Self::find_placeholder_context(&template)
-        {
-            debug!(
-                "[FormatTransform] Inside placeholder. prefix={:?}, path_so_far={:?}",
-                prefix, path_so_far
-            );
+        let suggestions =
+            if let Some((prefix, path_so_far)) = Self::find_placeholder_context(&template) {
+                debug!(
+                    "[FormatTransform] Inside placeholder. prefix={:?}, path_so_far={:?}",
+                    prefix, path_so_far
+                );
 
-            // Generate path suggestions
-            let generator = PathSuggestionGenerator::new(
-                self.client.clone(),
-                self.source_entity.clone(),
-                self.variables.clone(),
-            );
-            let path_suggestions = generator.generate_suggestions(&path_so_far).await;
+                // Generate path suggestions
+                let generator = PathSuggestionGenerator::new(
+                    self.client.clone(),
+                    self.source_entity.clone(),
+                    self.variables.clone(),
+                );
+                let path_suggestions = generator.generate_suggestions(&path_so_far).await;
 
-            // Transform suggestions: value = prefix + {path}
-            // Label must start with full_template so fuzzy filter matches when user types "{f..."
-            path_suggestions
-                .into_iter()
-                .map(|(path_value, path_label)| {
-                    let full_template = format!("{}{{{}}}", prefix, path_value);
-                    // Extract type info from path_label (format: "fieldname (Type)")
-                    let type_info = path_label
-                        .rfind(" (")
-                        .map(|i| &path_label[i..])
-                        .unwrap_or("");
-                    let label = format!("{}{}", full_template, type_info);
-                    (full_template, label)
-                })
-                .collect()
-        } else {
-            debug!("[FormatTransform] Not inside placeholder, showing hint to start one");
-            // Not in a placeholder - show hint suggestions
-            // When user types `{`, they'll get real suggestions
-            vec![(
-                format!("{}{{", template),
-                "Type { to start a placeholder".to_string(),
-            )]
-        };
+                // Transform suggestions: value = prefix + {path}
+                // Label must start with full_template so fuzzy filter matches when user types "{f..."
+                path_suggestions
+                    .into_iter()
+                    .map(|(path_value, path_label)| {
+                        let full_template = format!("{}{{{}}}", prefix, path_value);
+                        // Extract type info from path_label (format: "fieldname (Type)")
+                        let type_info = path_label
+                            .rfind(" (")
+                            .map(|i| &path_label[i..])
+                            .unwrap_or("");
+                        let label = format!("{}{}", full_template, type_info);
+                        (full_template, label)
+                    })
+                    .collect()
+            } else {
+                debug!("[FormatTransform] Not inside placeholder, showing hint to start one");
+                // Not in a placeholder - show hint suggestions
+                // When user types `{`, they'll get real suggestions
+                vec![(
+                    format!("{}{{", template),
+                    "Type { to start a placeholder".to_string(),
+                )]
+            };
 
         debug!(
             "[FormatTransform] Generated {} suggestions",

@@ -1,10 +1,10 @@
 //! Modal for editing a Constant transform.
 
-use dataverse_lib::model::types::EntityReference;
-use dataverse_lib::model::types::OptionSetValue;
+use dataverse_lib::DataverseClient;
 use dataverse_lib::model::Entity;
 use dataverse_lib::model::Value;
-use dataverse_lib::DataverseClient;
+use dataverse_lib::model::types::EntityReference;
+use dataverse_lib::model::types::OptionSetValue;
 use rafter::page;
 use rafter::prelude::*;
 use rafter::widgets::Autocomplete;
@@ -163,8 +163,7 @@ impl ConstantTransformModal {
                 use rust_decimal::prelude::ToPrimitive;
                 DecomposedValue {
                     constant_type: ConstantType::Number,
-                    number_state: NumberInputState::new(n.to_f64().unwrap_or(0.0))
-                        .allow_negative(),
+                    number_state: NumberInputState::new(n.to_f64().unwrap_or(0.0)).allow_negative(),
                     ..defaults
                 }
             }
@@ -179,8 +178,11 @@ impl ConstantTransformModal {
             }
             Value::EntityReference(er) => DecomposedValue {
                 constant_type: ConstantType::Lookup,
-                lookup_entity: AutocompleteState::new(Vec::<(std::string::String, std::string::String)>::new())
-                    .with_value(er.entity.name().to_string()),
+                lookup_entity: AutocompleteState::new(Vec::<(
+                    std::string::String,
+                    std::string::String,
+                )>::new())
+                .with_value(er.entity.name().to_string()),
                 lookup_guid: er.id.to_string(),
                 ..defaults
             },
@@ -243,8 +245,8 @@ impl ConstantTransformModal {
                 if guid_str.is_empty() {
                     return Err("GUID is required".to_string());
                 }
-                let id = Uuid::parse_str(&guid_str)
-                    .map_err(|_| "Invalid GUID format".to_string())?;
+                let id =
+                    Uuid::parse_str(&guid_str).map_err(|_| "Invalid GUID format".to_string())?;
                 Ok(Value::EntityReference(EntityReference::new(
                     Entity::logical(entity),
                     id,
@@ -255,11 +257,9 @@ impl ConstantTransformModal {
                     return Err("Select an option set value".to_string());
                 };
                 // Get the label from the selected option
-                let label = self.option_set_value.with_ref(|s| {
-                    s.selected_labels()
-                        .first()
-                        .map(|l| l.to_string())
-                });
+                let label = self
+                    .option_set_value
+                    .with_ref(|s| s.selected_labels().first().map(|l| l.to_string()));
                 Ok(Value::OptionSet(match label {
                     Some(l) => OptionSetValue::with_label(value, l),
                     None => OptionSetValue::new(value),
@@ -357,8 +357,9 @@ impl ConstantTransformModal {
 
         let Some(os_name) = self.option_set_name.with_ref(|s| s.value().cloned()) else {
             // Cleared — reset value autocomplete
-            self.option_set_value
-                .set(AutocompleteState::new(Vec::<(i32, std::string::String)>::new()));
+            self.option_set_value.set(AutocompleteState::new(
+                Vec::<(i32, std::string::String)>::new(),
+            ));
             return;
         };
 
@@ -407,10 +408,8 @@ impl ConstantTransformModal {
                 || Err(dataverse_lib::error::Error::Cancelled),
                 async move {
                     client.metadata().all_entities().await.map(|entities| {
-                        let mut names: Vec<std::string::String> = entities
-                            .into_iter()
-                            .map(|e| e.logical_name)
-                            .collect();
+                        let mut names: Vec<std::string::String> =
+                            entities.into_iter().map(|e| e.logical_name).collect();
                         names.sort();
                         names
                     })
@@ -634,9 +633,14 @@ impl Default for DecomposedValue {
             number_state: NumberInputState::new(0.0).allow_negative(),
             bool_val: false,
             date_state: DatePickerState::new().with_time(),
-            lookup_entity: AutocompleteState::new(Vec::<(std::string::String, std::string::String)>::new()),
+            lookup_entity: AutocompleteState::new(
+                Vec::<(std::string::String, std::string::String)>::new(),
+            ),
             lookup_guid: std::string::String::new(),
-            option_set_name: AutocompleteState::new(Vec::<(std::string::String, std::string::String)>::new()),
+            option_set_name: AutocompleteState::new(Vec::<(
+                std::string::String,
+                std::string::String,
+            )>::new()),
             option_set_value: AutocompleteState::new(Vec::<(i32, std::string::String)>::new()),
         }
     }

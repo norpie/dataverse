@@ -1,13 +1,13 @@
 //! Shared path suggestion logic for Copy and Format transform modals.
 
-use dataverse_lib::model::metadata::AttributeType;
+use dataverse_lib::DataverseClient;
 use dataverse_lib::model::FieldType;
 use dataverse_lib::model::ValueType;
-use dataverse_lib::DataverseClient;
+use dataverse_lib::model::metadata::AttributeType;
 use log::debug;
 
-use crate::apps::migration::validation::parse_path;
 use crate::apps::migration::validation::PathExpr;
+use crate::apps::migration::validation::parse_path;
 
 /// A variable with its name and declared type, for path suggestions.
 #[derive(Clone, Debug)]
@@ -28,7 +28,11 @@ pub struct PathSuggestionGenerator {
 
 impl PathSuggestionGenerator {
     /// Create a new path suggestion generator.
-    pub fn new(client: DataverseClient, source_entity: String, variables: Vec<VariableInfo>) -> Self {
+    pub fn new(
+        client: DataverseClient,
+        source_entity: String,
+        variables: Vec<VariableInfo>,
+    ) -> Self {
         Self {
             client,
             source_entity,
@@ -239,8 +243,7 @@ impl PathSuggestionGenerator {
                     var_name
                 );
                 if let Some(var) = self.variables.iter().find(|v| v.name == var_name) {
-                    if let ValueType::Known(FieldType::Lookup { targets, .. }) =
-                        &var.declared_type
+                    if let ValueType::Known(FieldType::Lookup { targets, .. }) = &var.declared_type
                     {
                         return targets
                             .iter()
@@ -386,7 +389,9 @@ impl PathSuggestionGenerator {
                 let start_entity = self.resolve_variable_target_entity(&name, target.as_deref())?;
                 debug!(
                     "[PathSuggestions] Parsed variable navigation '{}' -> entity '{}', {} path segments",
-                    name, start_entity, path.segments.len()
+                    name,
+                    start_entity,
+                    path.segments.len()
                 );
                 (start_entity, path)
             }
@@ -520,7 +525,10 @@ impl PathSuggestionGenerator {
         };
 
         if targets.is_empty() {
-            debug!("[PathSuggestions] Variable '{}' Lookup has no targets", name);
+            debug!(
+                "[PathSuggestions] Variable '{}' Lookup has no targets",
+                name
+            );
             return None;
         }
 

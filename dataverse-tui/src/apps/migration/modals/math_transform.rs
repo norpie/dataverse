@@ -79,10 +79,7 @@ impl MathTransformModal {
 
     fn decompose_op(op: &MathOp) -> (MathOpKind, NumberInputState) {
         match op {
-            MathOp::Add(n) => (
-                MathOpKind::Add,
-                NumberInputState::new(*n).allow_negative(),
-            ),
+            MathOp::Add(n) => (MathOpKind::Add, NumberInputState::new(*n).allow_negative()),
             MathOp::Subtract(n) => (
                 MathOpKind::Subtract,
                 NumberInputState::new(*n).allow_negative(),

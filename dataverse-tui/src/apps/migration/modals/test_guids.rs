@@ -142,7 +142,8 @@ impl TestGuidsModal {
 
         if let Some(key) = focused_key {
             self.guids.update(|state| {
-                let new_items: Vec<_> = state.items
+                let new_items: Vec<_> = state
+                    .items
                     .iter()
                     .filter(|guid| **guid != key)
                     .cloned()

@@ -40,8 +40,8 @@ impl super::MigrationRepository {
                 )?;
                 let rows = stmt.query_map([entity_mapping_id], |row| {
                     let declared_type_blob: Vec<u8> = row.get(4)?;
-                    let declared_type =
-                        deserialize_value_type(&declared_type_blob).map_err(repo_err_to_rusqlite)?;
+                    let declared_type = deserialize_value_type(&declared_type_blob)
+                        .map_err(repo_err_to_rusqlite)?;
                     Ok(Variable {
                         id: row.get(0)?,
                         entity_mapping_id: row.get(1)?,
@@ -73,8 +73,8 @@ impl super::MigrationRepository {
                 )?;
                 let rows = stmt.query_map([migration_id], |row| {
                     let declared_type_blob: Vec<u8> = row.get(4)?;
-                    let declared_type =
-                        deserialize_value_type(&declared_type_blob).map_err(repo_err_to_rusqlite)?;
+                    let declared_type = deserialize_value_type(&declared_type_blob)
+                        .map_err(repo_err_to_rusqlite)?;
                     Ok(Variable {
                         id: row.get(0)?,
                         entity_mapping_id: row.get(1)?,
@@ -100,8 +100,8 @@ impl super::MigrationRepository {
                 )?;
                 stmt.query_row([id], |row| {
                     let declared_type_blob: Vec<u8> = row.get(4)?;
-                    let declared_type =
-                        deserialize_value_type(&declared_type_blob).map_err(repo_err_to_rusqlite)?;
+                    let declared_type = deserialize_value_type(&declared_type_blob)
+                        .map_err(repo_err_to_rusqlite)?;
                     Ok(Variable {
                         id: row.get(0)?,
                         entity_mapping_id: row.get(1)?,

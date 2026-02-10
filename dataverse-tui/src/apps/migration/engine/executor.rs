@@ -13,6 +13,8 @@ use crate::apps::migration::types::FindFallback;
 use crate::apps::migration::types::FindMode;
 use crate::apps::migration::types::TransformData;
 
+use super::transforms::ConvertTarget;
+use super::transforms::ValueMapping;
 use super::transforms::execute_constant;
 use super::transforms::execute_convert;
 use super::transforms::execute_copy;
@@ -25,8 +27,6 @@ use super::transforms::execute_parse_int;
 use super::transforms::execute_replace;
 use super::transforms::execute_string_ops;
 use super::transforms::execute_value_map;
-use super::transforms::ConvertTarget;
-use super::transforms::ValueMapping;
 use super::types::TransformContext;
 use super::types::TransformError;
 use super::types::TransformResult;
@@ -287,7 +287,7 @@ fn execute_guard(
             _ => {
                 return TransformResult::Error(TransformError::other(
                     "Guard missing fallback chain",
-                ))
+                ));
             }
         };
         match execute_scoped_chain(fallback, ctx) {
@@ -468,7 +468,7 @@ fn apply_find_fallback(
                 _ => {
                     return TransformResult::Error(TransformError::other(
                         "Find fallback is Default but no default chain provided",
-                    ))
+                    ));
                 }
             };
             execute_scoped_chain(default_chain, ctx)
