@@ -1,5 +1,6 @@
 //! Migration app for transferring data between Dataverse environments.
 
+pub mod comparison;
 mod editor;
 pub mod engine;
 mod list;

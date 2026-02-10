@@ -13,6 +13,7 @@ mod types;
 pub mod util;
 pub mod variables;
 
+pub use executor::execute_chain;
 pub use executor::BranchItem;
 pub use executor::ChainChildren;
 pub use executor::ChainItem;
