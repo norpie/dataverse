@@ -22,7 +22,7 @@ use super::variables::compute_variables;
 // =============================================================================
 
 /// Result of executing all transforms for a single source record.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct RecordResult {
     /// Successfully computed target field values.
     pub fields: HashMap<String, Value>,

@@ -36,11 +36,17 @@ use self::fetch::merge_find_cache_specs;
 use self::fetch::BuildError;
 use self::fetch::FetchTaskConfig;
 
+use super::comparison::compare_mapping;
+use super::comparison::CompareInput;
+use super::comparison::MappingComparison;
 use super::engine::record::execute_record;
 use super::engine::record::RecordResult;
 use super::engine::ChainItem;
 use super::engine::FindCache;
 use super::engine::SystemVars;
+use super::types::MatchStrategy;
+use super::types::NoMatchFallback;
+use super::types::OrphanStrategy;
 
 use crate::modals::odata_fetch::ODataFetchTask;
 use crate::widgets::filter_builder::FilterNode;
@@ -390,6 +396,65 @@ pub fn execute_mapping(
 }
 
 // =============================================================================
+// Comparison
+// =============================================================================
+
+/// Input for comparing a mapping's results against target records.
+pub struct ComparisonInput<'a> {
+    /// Source records (same order as MappingResult.record_results).
+    pub source_records: &'a [Record],
+    /// Transform results from `execute_mapping`.
+    pub mapping_result: &'a MappingResult,
+    /// Target records fetched from the target environment.
+    pub target_records: &'a [Record],
+    /// Match strategy from entity mapping config.
+    pub strategy: MatchStrategy,
+    /// Source entity primary key field name.
+    pub source_primary_key: &'a str,
+    /// Target entity primary key field name.
+    pub target_primary_key: &'a str,
+    /// Materialized match conditions: (target_field, source_chain).
+    pub match_conditions: &'a [(String, Vec<ChainItem>)],
+    /// Source entity logical name.
+    pub source_entity: &'a str,
+    /// Target entity logical name.
+    pub target_entity: &'a str,
+    /// Find cache for resolving find() in match condition chains.
+    pub find_cache: &'a dyn FindCache,
+    /// What to do when no target match is found.
+    pub no_match_fallback: NoMatchFallback,
+    /// What to do with orphaned target records.
+    pub orphan_strategy: OrphanStrategy,
+}
+
+/// Compare a mapping's transform results against target records.
+///
+/// Pairs source records with their transform results, then delegates to
+/// the comparison engine to determine operations per record.
+pub fn compare_mapping_results(input: &ComparisonInput<'_>) -> MappingComparison {
+    let record_results: Vec<(Record, RecordResult)> = input
+        .source_records
+        .iter()
+        .cloned()
+        .zip(input.mapping_result.record_results.iter().cloned())
+        .collect();
+
+    compare_mapping(&CompareInput {
+        record_results: &record_results,
+        target_records: input.target_records,
+        strategy: input.strategy,
+        source_primary_key: input.source_primary_key,
+        target_primary_key: input.target_primary_key,
+        match_conditions: input.match_conditions,
+        source_entity: input.source_entity,
+        target_entity: input.target_entity,
+        find_cache: input.find_cache,
+        no_match_fallback: input.no_match_fallback,
+        orphan_strategy: input.orphan_strategy,
+    })
+}
+
+// =============================================================================
 // Tests
 // =============================================================================
 
@@ -654,5 +719,62 @@ mod tests {
         assert_eq!(rr.error_count(), 1);
         assert_eq!(rr.fields.get("good"), Some(&Value::from("ok")));
         assert_eq!(rr.errors[0].0, "bad");
+    }
+
+    // ---- compare_mapping_results tests ----
+
+    #[test]
+    fn compare_mapping_results_end_to_end() {
+        // Execute transforms, then compare against targets
+        let field_mappings = vec![("name".to_string(), copy_chain("name"))];
+        let variables: Vec<(String, Vec<ChainItem>)> = vec![];
+
+        let source_records = vec![
+            make_record("account", id(1), vec![("name", Value::from("Same"))]),
+            make_record("account", id(2), vec![("name", Value::from("Changed"))]),
+            make_record("account", id(3), vec![("name", Value::from("New"))]),
+        ];
+
+        let target_records = vec![
+            make_record("account", id(1), vec![("name", Value::from("Same"))]),
+            make_record("account", id(2), vec![("name", Value::from("Old"))]),
+            make_record("account", id(99), vec![("name", Value::from("Orphan"))]),
+        ];
+
+        let cache = StubFindCache;
+        let mapping_result = execute_mapping(
+            &source_records,
+            &variables,
+            &field_mappings,
+            "account",
+            "account",
+            &cache,
+        );
+
+        let comparison_input = ComparisonInput {
+            source_records: &source_records,
+            mapping_result: &mapping_result,
+            target_records: &target_records,
+            strategy: MatchStrategy::SameId,
+            source_primary_key: "accountid",
+            target_primary_key: "accountid",
+            match_conditions: &[],
+            source_entity: "account",
+            target_entity: "account",
+            find_cache: &cache,
+            no_match_fallback: NoMatchFallback::Create,
+            orphan_strategy: OrphanStrategy::Delete,
+        };
+
+        let comparison = compare_mapping_results(&comparison_input);
+
+        use crate::apps::migration::comparison::OperationType;
+
+        assert_eq!(comparison.records.len(), 3);
+        assert_eq!(comparison.records[0].operation, OperationType::Skip);
+        assert_eq!(comparison.records[1].operation, OperationType::Update);
+        assert_eq!(comparison.records[2].operation, OperationType::Create);
+        assert_eq!(comparison.orphans.len(), 1);
+        assert_eq!(comparison.orphans[0].operation, OperationType::Delete);
     }
 }
