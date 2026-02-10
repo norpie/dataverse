@@ -13,5 +13,8 @@ mod types;
 pub mod variables;
 
 pub use paths::FieldPath;
+pub use types::StubTargetCache;
+pub use types::SystemVars;
+pub use types::TransformContext;
 pub use types::TransformError;
 pub use types::TransformResult;

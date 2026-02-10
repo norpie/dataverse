@@ -16,6 +16,7 @@ use crate::apps::migration::types::Transform;
 use crate::apps::migration::types::TransformData;
 
 use super::executor::BranchItem;
+use super::executor::ChainChildren;
 use super::executor::ChainItem;
 use super::executor::FindConditionItem;
 
@@ -124,7 +125,11 @@ fn materialize_item(transform: &Transform, data: &MaterializeData) -> ChainItem 
 
             let default_chain = if *has_default {
                 let chain = materialize_chain(ParentType::MatchDefault, transform.id, data);
-                if chain.is_empty() { None } else { Some(chain) }
+                if chain.is_empty() {
+                    None
+                } else {
+                    Some(chain)
+                }
             } else {
                 None
             };
@@ -169,7 +174,11 @@ fn materialize_item(transform: &Transform, data: &MaterializeData) -> ChainItem 
 
             let default_chain = if *fallback == FindFallback::Default {
                 let chain = materialize_chain(ParentType::FindDefault, transform.id, data);
-                if chain.is_empty() { None } else { Some(chain) }
+                if chain.is_empty() {
+                    None
+                } else {
+                    Some(chain)
+                }
             } else {
                 None
             };

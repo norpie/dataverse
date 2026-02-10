@@ -13,8 +13,6 @@ use crate::apps::migration::types::FindFallback;
 use crate::apps::migration::types::FindMode;
 use crate::apps::migration::types::TransformData;
 
-use super::transforms::ConvertTarget;
-use super::transforms::ValueMapping;
 use super::transforms::execute_constant;
 use super::transforms::execute_convert;
 use super::transforms::execute_copy;
@@ -27,6 +25,9 @@ use super::transforms::execute_parse_int;
 use super::transforms::execute_replace;
 use super::transforms::execute_string_ops;
 use super::transforms::execute_value_map;
+use super::transforms::resolve::ResolveContext;
+use super::transforms::ConvertTarget;
+use super::transforms::ValueMapping;
 use super::types::TransformContext;
 use super::types::TransformError;
 use super::types::TransformResult;
@@ -203,13 +204,27 @@ pub fn execute_scoped_chain(
 
 /// Execute a single transform.
 ///
+/// Build a `ResolveContext` from the current `TransformContext`.
+fn resolve_ctx<'a>(ctx: &'a TransformContext<'a>) -> ResolveContext<'a> {
+    ResolveContext {
+        source_record: ctx.source_record,
+        variables: ctx.variables,
+        value: &ctx.system_vars.value,
+        value_type: &ctx.system_vars.value_type,
+        index: ctx.system_vars.index,
+        source_entity: ctx.system_vars.source_entity.clone(),
+        target_entity: ctx.system_vars.target_entity.clone(),
+    }
+}
+
 /// Dispatches to the appropriate transform implementation based on the
 /// transform type. Transforms that need children access them via `item.children`.
 fn execute_transform(item: &ChainItem, ctx: &mut TransformContext<'_>) -> TransformResult {
     match &item.data {
         // Simple transforms (Step 4)
         TransformData::Copy { path } => {
-            let (result, value_type) = execute_copy(path, ctx.source_record);
+            let rctx = resolve_ctx(ctx);
+            let (result, value_type) = execute_copy(path, &rctx);
             // Update type annotation if copy extracted from a lookup
             if value_type.is_some() {
                 ctx.system_vars.value_type = value_type;
@@ -221,7 +236,8 @@ fn execute_transform(item: &ChainItem, ctx: &mut TransformContext<'_>) -> Transf
 
         // String transforms
         TransformData::Format { template } => {
-            execute_format(template, ctx.source_record, ctx.variables)
+            let rctx = resolve_ctx(ctx);
+            execute_format(template, &rctx)
         }
         TransformData::Replace { from, to, regex } => {
             execute_replace(&ctx.system_vars.value, from, to, *regex)

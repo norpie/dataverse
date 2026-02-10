@@ -1,7 +1,7 @@
 //! Value map transform - lookup table mapping.
 
-use dataverse_lib::model::Value;
 use dataverse_lib::model::types::MultiSelectOptionSetValue;
+use dataverse_lib::model::Value;
 
 use crate::apps::migration::engine::TransformError;
 use crate::apps::migration::engine::TransformResult;

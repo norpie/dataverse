@@ -7,7 +7,8 @@ use crate::apps::migration::types::Condition;
 use crate::apps::migration::types::Expr;
 use crate::apps::migration::types::SystemVar;
 
-use super::transforms::execute_copy;
+use super::transforms::resolve::resolve_path_str;
+use super::transforms::resolve::ResolveContext;
 use super::types::TransformContext;
 use super::types::TransformError;
 
@@ -19,7 +20,16 @@ use super::types::TransformError;
 pub fn resolve_expr(expr: &Expr, ctx: &TransformContext<'_>) -> Result<Value, TransformError> {
     match expr {
         Expr::Path(path) => {
-            let (result, _) = execute_copy(path, ctx.source_record);
+            let rctx = ResolveContext {
+                source_record: ctx.source_record,
+                variables: ctx.variables,
+                value: &ctx.system_vars.value,
+                value_type: &ctx.system_vars.value_type,
+                index: ctx.system_vars.index,
+                source_entity: ctx.system_vars.source_entity.clone(),
+                target_entity: ctx.system_vars.target_entity.clone(),
+            };
+            let (result, _) = resolve_path_str(path, &rctx);
             match result {
                 super::types::TransformResult::Value(v) => Ok(v),
                 super::types::TransformResult::Error(e) => Err(e),

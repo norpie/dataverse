@@ -1,20 +1,22 @@
 //! Format transform - template string interpolation.
 
-use std::collections::HashMap;
-
-use dataverse_lib::model::Record;
 use dataverse_lib::model::Value;
 
-use crate::apps::migration::engine::FieldPath;
+use super::resolve::resolve_path_str;
+use super::resolve::ResolveContext;
 use crate::apps::migration::engine::TransformError;
 use crate::apps::migration::engine::TransformResult;
+use crate::apps::migration::validation::parse_path;
+use crate::apps::migration::validation::FieldPath;
+use crate::apps::migration::validation::PathExpr;
 use crate::formatting::format_value;
 
 /// Execute the format transform.
 ///
 /// Interpolates placeholders in a template string:
 /// - `{field}` or `{field.path}` - resolved from source record
-/// - `{$var}` - resolved from variables
+/// - `{$var}` or `{$var.field}` - resolved from variables
+/// - `{#value}`, `{#index}`, etc. - resolved from system variables
 ///
 /// # Examples
 ///
@@ -27,24 +29,21 @@ use crate::formatting::format_value;
 /// // Variables: { "prefix": "ACCT" }
 /// // Source: { "accountnumber": "12345" }
 /// // Result: "ACCT_12345"
+///
+/// // Template: "{$capacity.name} - {name}"
+/// // Variables: { "capacity": Record(capacity) }
+/// // Source: { "name": "Contoso" }
+/// // Result: "Standard - Contoso"
 /// ```
-pub fn execute_format(
-    template: &str,
-    source_record: &Record,
-    variables: &HashMap<String, Value>,
-) -> TransformResult {
-    match interpolate(template, source_record, variables) {
+pub fn execute_format(template: &str, ctx: &ResolveContext<'_>) -> TransformResult {
+    match interpolate(template, ctx) {
         Ok(result) => TransformResult::Value(Value::String(result)),
         Err(e) => TransformResult::Error(e),
     }
 }
 
 /// Interpolate placeholders in a template string.
-fn interpolate(
-    template: &str,
-    source_record: &Record,
-    variables: &HashMap<String, Value>,
-) -> Result<String, TransformError> {
+fn interpolate(template: &str, ctx: &ResolveContext<'_>) -> Result<String, TransformError> {
     let mut result = String::with_capacity(template.len());
     let mut chars = template.chars().peekable();
 
@@ -70,10 +69,19 @@ fn interpolate(
                 // Empty placeholder {} - treat as literal
                 result.push_str("{}");
             } else {
-                // Resolve the placeholder
-                let value = resolve_placeholder(&placeholder, source_record, variables)?;
-                let formatted = format_value(&value);
-                result.push_str(&formatted.display);
+                // Resolve the placeholder using shared path resolution
+                let (resolve_result, _) = resolve_path_str(&placeholder, ctx);
+                match resolve_result {
+                    TransformResult::Value(value) => {
+                        let formatted = format_value(&value);
+                        result.push_str(&formatted.display);
+                    }
+                    TransformResult::Error(e) => return Err(e),
+                    TransformResult::Exit(value) => {
+                        let formatted = format_value(&value);
+                        result.push_str(&formatted.display);
+                    }
+                }
             }
         } else {
             result.push(ch);
@@ -83,69 +91,10 @@ fn interpolate(
     Ok(result)
 }
 
-/// Resolve a placeholder to its value.
-fn resolve_placeholder(
-    placeholder: &str,
-    source_record: &Record,
-    variables: &HashMap<String, Value>,
-) -> Result<Value, TransformError> {
-    if let Some(var_name) = placeholder.strip_prefix('$') {
-        // Variable reference
-        variables
-            .get(var_name)
-            .cloned()
-            .ok_or_else(|| TransformError::variable_not_found(var_name))
-    } else {
-        // Field path reference
-        resolve_field_path(placeholder, source_record)
-    }
-}
-
-/// Resolve a field path from the source record.
-fn resolve_field_path(path: &str, source_record: &Record) -> Result<Value, TransformError> {
-    let field_path = FieldPath::parse(path);
-
-    if field_path.is_empty() {
-        return Err(TransformError::path_not_found(path));
-    }
-
-    let mut current_record = source_record;
-
-    // Traverse through lookups
-    for segment in field_path.lookups() {
-        match current_record.get(segment.name()) {
-            Some(Value::Record(nested)) => {
-                current_record = nested;
-            }
-            Some(Value::Null) => {
-                if segment.is_optional() {
-                    return Ok(Value::Null);
-                } else {
-                    return Err(TransformError::null_in_path(segment.name()));
-                }
-            }
-            Some(_) => {
-                return Err(TransformError::path_not_found(path));
-            }
-            None => {
-                return Err(TransformError::path_not_found(path));
-            }
-        }
-    }
-
-    // Get the final value
-    match field_path.leaf() {
-        Some(segment) => current_record
-            .get(segment.name())
-            .cloned()
-            .ok_or_else(|| TransformError::path_not_found(path)),
-        None => Err(TransformError::path_not_found(path)),
-    }
-}
-
 /// Extract all field paths from a format template.
 ///
 /// Used for field requirement extraction to build `$expand`.
+/// Only returns field paths (not variables or system vars).
 pub fn extract_field_paths(template: &str) -> Vec<FieldPath> {
     let mut paths = Vec::new();
     let mut chars = template.chars().peekable();
@@ -163,9 +112,11 @@ pub fn extract_field_paths(template: &str) -> Vec<FieldPath> {
                 placeholder.push(inner);
             }
 
-            if found_close && !placeholder.is_empty() && !placeholder.starts_with('$') {
-                // It's a field path, not a variable
-                paths.push(FieldPath::parse(&placeholder));
+            if found_close && !placeholder.is_empty() {
+                // Only extract field paths (not variables or system vars)
+                if let Ok(PathExpr::Field(field_path)) = parse_path(&placeholder) {
+                    paths.push(field_path);
+                }
             }
         }
     }
@@ -175,6 +126,11 @@ pub fn extract_field_paths(template: &str) -> Vec<FieldPath> {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
+
+    use dataverse_lib::model::Entity;
+    use dataverse_lib::model::Record;
+
     use super::*;
 
     fn make_record() -> Record {
@@ -190,18 +146,41 @@ mod tests {
     }
 
     fn make_variables() -> HashMap<String, Value> {
+        let capacity = Record::new("capacity")
+            .set("name", "Standard")
+            .set("capacityid", "cap-123");
+
         let mut vars = HashMap::new();
         vars.insert("prefix".to_string(), Value::String("ACCT".to_string()));
         vars.insert("suffix".to_string(), Value::String("INC".to_string()));
+        vars.insert("capacity".to_string(), Value::Record(Box::new(capacity)));
         vars
+    }
+
+    fn make_ctx<'a>(
+        record: &'a Record,
+        vars: &'a HashMap<String, Value>,
+        value: &'a Value,
+    ) -> ResolveContext<'a> {
+        ResolveContext {
+            source_record: record,
+            variables: vars,
+            value,
+            value_type: &None,
+            index: 5,
+            source_entity: Entity::logical("account"),
+            target_entity: Entity::logical("contact"),
+        }
     }
 
     #[test]
     fn simple_field_interpolation() {
         let record = make_record();
         let vars = HashMap::new();
+        let value = Value::Null;
+        let ctx = make_ctx(&record, &vars, &value);
 
-        let result = execute_format("Hello, {name}!", &record, &vars);
+        let result = execute_format("Hello, {name}!", &ctx);
         assert!(
             matches!(result, TransformResult::Value(Value::String(s)) if s == "Hello, Contoso!")
         );
@@ -211,8 +190,10 @@ mod tests {
     fn multiple_fields() {
         let record = make_record();
         let vars = HashMap::new();
+        let value = Value::Null;
+        let ctx = make_ctx(&record, &vars, &value);
 
-        let result = execute_format("{name} - {accountnumber}", &record, &vars);
+        let result = execute_format("{name} - {accountnumber}", &ctx);
         assert!(
             matches!(result, TransformResult::Value(Value::String(s)) if s == "Contoso - 12345")
         );
@@ -222,8 +203,10 @@ mod tests {
     fn nested_field_path() {
         let record = make_record();
         let vars = HashMap::new();
+        let value = Value::Null;
+        let ctx = make_ctx(&record, &vars, &value);
 
-        let result = execute_format("Contact: {primarycontactid.fullname}", &record, &vars);
+        let result = execute_format("Contact: {primarycontactid.fullname}", &ctx);
         assert!(
             matches!(result, TransformResult::Value(Value::String(s)) if s == "Contact: John Smith")
         );
@@ -233,8 +216,10 @@ mod tests {
     fn variable_interpolation() {
         let record = make_record();
         let vars = make_variables();
+        let value = Value::Null;
+        let ctx = make_ctx(&record, &vars, &value);
 
-        let result = execute_format("{$prefix}_{accountnumber}", &record, &vars);
+        let result = execute_format("{$prefix}_{accountnumber}", &ctx);
         assert!(matches!(result, TransformResult::Value(Value::String(s)) if s == "ACCT_12345"));
     }
 
@@ -242,10 +227,38 @@ mod tests {
     fn mixed_fields_and_variables() {
         let record = make_record();
         let vars = make_variables();
+        let value = Value::Null;
+        let ctx = make_ctx(&record, &vars, &value);
 
-        let result = execute_format("{$prefix}-{name}-{$suffix}", &record, &vars);
+        let result = execute_format("{$prefix}-{name}-{$suffix}", &ctx);
         assert!(
             matches!(result, TransformResult::Value(Value::String(s)) if s == "ACCT-Contoso-INC")
+        );
+    }
+
+    #[test]
+    fn variable_navigation_in_template() {
+        let record = make_record();
+        let vars = make_variables();
+        let value = Value::Null;
+        let ctx = make_ctx(&record, &vars, &value);
+
+        let result = execute_format("{$capacity.name} - {name}", &ctx);
+        assert!(
+            matches!(result, TransformResult::Value(Value::String(s)) if s == "Standard - Contoso")
+        );
+    }
+
+    #[test]
+    fn system_var_in_template() {
+        let record = make_record();
+        let vars = HashMap::new();
+        let value = Value::String("current".to_string());
+        let ctx = make_ctx(&record, &vars, &value);
+
+        let result = execute_format("Value: {#value}, Index: {#index}", &ctx);
+        assert!(
+            matches!(result, TransformResult::Value(Value::String(s)) if s == "Value: current, Index: 5")
         );
     }
 
@@ -253,8 +266,10 @@ mod tests {
     fn missing_field_returns_error() {
         let record = make_record();
         let vars = HashMap::new();
+        let value = Value::Null;
+        let ctx = make_ctx(&record, &vars, &value);
 
-        let result = execute_format("Value: {nonexistent}", &record, &vars);
+        let result = execute_format("Value: {nonexistent}", &ctx);
         assert!(matches!(
             result,
             TransformResult::Error(TransformError::PathNotFound { .. })
@@ -265,8 +280,10 @@ mod tests {
     fn missing_variable_returns_error() {
         let record = make_record();
         let vars = HashMap::new();
+        let value = Value::Null;
+        let ctx = make_ctx(&record, &vars, &value);
 
-        let result = execute_format("Value: {$unknown}", &record, &vars);
+        let result = execute_format("Value: {$unknown}", &ctx);
         assert!(matches!(
             result,
             TransformResult::Error(TransformError::VariableNotFound { .. })
@@ -277,8 +294,10 @@ mod tests {
     fn null_lookup_without_optional_returns_error() {
         let record = make_record();
         let vars = HashMap::new();
+        let value = Value::Null;
+        let ctx = make_ctx(&record, &vars, &value);
 
-        let result = execute_format("Contact: {secondarycontactid.fullname}", &record, &vars);
+        let result = execute_format("Contact: {secondarycontactid.fullname}", &ctx);
         assert!(matches!(
             result,
             TransformResult::Error(TransformError::NullInPath { .. })
@@ -289,8 +308,10 @@ mod tests {
     fn null_lookup_with_optional_returns_empty() {
         let record = make_record();
         let vars = HashMap::new();
+        let value = Value::Null;
+        let ctx = make_ctx(&record, &vars, &value);
 
-        let result = execute_format("Contact: {secondarycontactid?.fullname}", &record, &vars);
+        let result = execute_format("Contact: {secondarycontactid?.fullname}", &ctx);
         // Null formats as empty string
         assert!(matches!(result, TransformResult::Value(Value::String(s)) if s == "Contact: "));
     }
@@ -299,13 +320,15 @@ mod tests {
     fn literal_braces_preserved() {
         let record = make_record();
         let vars = HashMap::new();
+        let value = Value::Null;
+        let ctx = make_ctx(&record, &vars, &value);
 
         // Unclosed brace
-        let result = execute_format("Value: {name", &record, &vars);
+        let result = execute_format("Value: {name", &ctx);
         assert!(matches!(result, TransformResult::Value(Value::String(s)) if s == "Value: {name"));
 
         // Empty braces
-        let result = execute_format("Empty: {}", &record, &vars);
+        let result = execute_format("Empty: {}", &ctx);
         assert!(matches!(result, TransformResult::Value(Value::String(s)) if s == "Empty: {}"));
     }
 
@@ -313,8 +336,10 @@ mod tests {
     fn no_placeholders() {
         let record = make_record();
         let vars = HashMap::new();
+        let value = Value::Null;
+        let ctx = make_ctx(&record, &vars, &value);
 
-        let result = execute_format("Just plain text", &record, &vars);
+        let result = execute_format("Just plain text", &ctx);
         assert!(
             matches!(result, TransformResult::Value(Value::String(s)) if s == "Just plain text")
         );
@@ -327,10 +352,10 @@ mod tests {
         );
 
         assert_eq!(paths.len(), 2); // Only field paths, not variables
-        assert_eq!(paths[0].segments().len(), 1);
-        assert_eq!(paths[0].leaf().unwrap().name(), "name");
-        assert_eq!(paths[1].segments().len(), 2);
-        assert_eq!(paths[1].lookups()[0].name(), "primarycontactid");
-        assert_eq!(paths[1].leaf().unwrap().name(), "fullname");
+        assert_eq!(paths[0].segments.len(), 1);
+        assert_eq!(paths[0].segments[0].field, "name");
+        assert_eq!(paths[1].segments.len(), 2);
+        assert_eq!(paths[1].segments[0].field, "primarycontactid");
+        assert_eq!(paths[1].segments[1].field, "fullname");
     }
 }
