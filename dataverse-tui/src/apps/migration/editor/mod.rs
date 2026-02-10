@@ -254,9 +254,10 @@ impl MigrationEditor {
         );
 
         // 6. Update tree
+        // Phases expanded, entity mappings collapsed, everything under entities expanded
         self.tree_state.update(|s| {
             s.set_roots(nodes);
-            s.expand_all();
+            s.expand_matching(|key| !key.starts_with("entity-"));
         });
     }
 
