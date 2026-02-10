@@ -1,6 +1,7 @@
 mod browser_auth;
 mod confirm;
 mod error;
+mod error_acknowledgment;
 mod file_browser;
 mod filter_builder;
 mod loading;
@@ -13,6 +14,7 @@ pub use browser_auth::BrowserAuthModal;
 pub use confirm::ConfirmModal;
 pub use dataverse_tui_derive::parallel_load;
 pub use error::ErrorModal;
+pub use error_acknowledgment::ErrorAcknowledgmentModal;
 pub use file_browser::FileBrowserModal;
 pub use filter_builder::FilterBuilderModal;
 pub use loading::LoadingModal;
