@@ -306,6 +306,7 @@ pub struct FetchTaskIndex {
 }
 
 /// Fetch results split by category.
+#[derive(Default)]
 pub struct PhaseFetchResults {
     /// Source records per mapping (same order as inputs).
     pub source_records: Vec<Vec<Record>>,
@@ -362,6 +363,7 @@ pub fn build_find_cache(
 // =============================================================================
 
 /// Result of executing all records for a single entity mapping.
+#[derive(Default)]
 pub struct MappingResult {
     /// Per-record transform results (same order as source records).
     pub record_results: Vec<RecordResult>,

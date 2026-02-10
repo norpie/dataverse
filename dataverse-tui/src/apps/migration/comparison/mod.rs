@@ -77,7 +77,7 @@ pub struct OrphanRecord {
 }
 
 /// Comparison results for an entire entity mapping.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct MappingComparison {
     /// Source entity logical name.
     pub source_entity: String,

@@ -24,6 +24,7 @@ use crate::lua::runtime::LuaRuntime;
 ///
 /// Records are indexed by entity name. Populated from fetch modal results
 /// before transform execution begins.
+#[derive(Default)]
 pub struct LiveFindCache {
     /// Records indexed by entity logical name.
     records: HashMap<String, Vec<Record>>,
