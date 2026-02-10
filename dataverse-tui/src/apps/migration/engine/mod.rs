@@ -5,6 +5,7 @@
 
 pub mod condition;
 mod executor;
+pub mod materializer;
 mod paths;
 mod transforms;
 mod types;
