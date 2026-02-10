@@ -4,6 +4,7 @@
 //! are stored and searched during transform execution.
 
 use std::collections::HashMap;
+use std::sync::Mutex;
 
 use dataverse_lib::model::Record;
 use dataverse_lib::model::Value;
@@ -20,14 +21,76 @@ use crate::lua::runtime::LuaRuntime;
 // LiveFindCache
 // =============================================================================
 
+/// Key for the single-field index: an owned Value that can be hashed.
+///
+/// We wrap the common matchable value types into a hashable key.
+/// Unsupported types fall back to linear scan.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+enum IndexKey {
+    Null,
+    Int(i32),
+    Long(i64),
+    Bool(bool),
+    String(String),
+    Guid(Uuid),
+    OptionSet(i32),
+}
+
+impl IndexKey {
+    fn from_value(value: &Value) -> Option<Self> {
+        match value {
+            Value::Null => Some(Self::Null),
+            Value::Int(v) => Some(Self::Int(*v)),
+            Value::Long(v) => Some(Self::Long(*v)),
+            Value::Bool(v) => Some(Self::Bool(*v)),
+            Value::String(v) => Some(Self::String(v.clone())),
+            Value::Guid(v) => Some(Self::Guid(*v)),
+            Value::OptionSet(v) => Some(Self::OptionSet(v.value)),
+            _ => None,
+        }
+    }
+
+    /// Check if this key matches a Value, including cross-type equality.
+    fn matches(&self, value: &Value) -> bool {
+        match (self, value) {
+            (Self::Null, Value::Null) => true,
+            (Self::Int(a), Value::Int(b)) => a == b,
+            (Self::Int(a), Value::OptionSet(b)) => *a == b.value,
+            (Self::Long(a), Value::Long(b)) => a == b,
+            (Self::Long(a), Value::Int(b)) => *a == (*b as i64),
+            (Self::Int(a), Value::Long(b)) => (*a as i64) == *b,
+            (Self::Bool(a), Value::Bool(b)) => a == b,
+            (Self::String(a), Value::String(b)) => a == b,
+            (Self::Guid(a), Value::Guid(b)) => a == b,
+            (Self::OptionSet(a), Value::OptionSet(b)) => *a == b.value,
+            (Self::OptionSet(a), Value::Int(b)) => *a == *b,
+            _ => false,
+        }
+    }
+}
+
+/// Lazily-built single-field index for an entity.
+type FieldIndex = HashMap<IndexKey, Vec<usize>>;
+
 /// In-memory find cache for resolving find() transforms against real data.
 ///
-/// Records are indexed by entity name. Populated from fetch modal results
-/// before transform execution begins.
-#[derive(Default)]
+/// Records are indexed by entity name with a secondary UUID index for O(1)
+/// lookups by ID and lazy single-field indexes for fast `find_where`.
+/// Populated from fetch modal results before transform execution begins.
 pub struct LiveFindCache {
     /// Records indexed by entity logical name.
     records: HashMap<String, Vec<Record>>,
+    /// Secondary index: entity → (UUID → index into records vec).
+    id_index: HashMap<String, HashMap<Uuid, usize>>,
+    /// Lazy single-field indexes: (entity, field) → (value → record indices).
+    /// Built on first `find_where` call for a given entity+field combo.
+    field_indexes: Mutex<HashMap<(String, String), FieldIndex>>,
+}
+
+impl Default for LiveFindCache {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl LiveFindCache {
@@ -35,14 +98,76 @@ impl LiveFindCache {
     pub fn new() -> Self {
         Self {
             records: HashMap::new(),
+            id_index: HashMap::new(),
+            field_indexes: Mutex::new(HashMap::new()),
         }
     }
 
     /// Insert records for an entity into the cache.
     ///
+    /// Builds a UUID index for O(1) lookups by ID.
+    /// Clears any lazily-built field indexes for this entity.
     /// If records already exist for this entity, they are replaced.
     pub fn insert_records(&mut self, entity: impl Into<String>, records: Vec<Record>) {
-        self.records.insert(entity.into(), records);
+        let entity = entity.into();
+        let mut index = HashMap::with_capacity(records.len());
+        for (i, record) in records.iter().enumerate() {
+            if let Some(id) = record.id() {
+                index.insert(id, i);
+            }
+        }
+        self.id_index.insert(entity.clone(), index);
+        // Clear stale field indexes for this entity
+        if let Ok(mut fi) = self.field_indexes.lock() {
+            fi.retain(|(e, _), _| e != &entity);
+        }
+        self.records.insert(entity, records);
+    }
+
+    /// Get or build a single-field index for an entity+field combination.
+    ///
+    /// Returns candidate record indices for the given value, or None if the
+    /// field contains non-indexable types (falls back to linear scan).
+    fn indexed_lookup(&self, entity: &str, field: &str, value: &Value) -> Option<Vec<usize>> {
+        let key = (entity.to_string(), field.to_string());
+        let mut fi = self.field_indexes.lock().ok()?;
+
+        if !fi.contains_key(&key) {
+            // Build the index
+            let records = self.records.get(entity)?;
+            let mut index: FieldIndex = HashMap::new();
+            for (i, record) in records.iter().enumerate() {
+                let val = record.get(field).unwrap_or(&Value::Null);
+                if let Some(ik) = IndexKey::from_value(val) {
+                    index.entry(ik).or_default().push(i);
+                } else {
+                    // Non-indexable value type in this field — abandon indexing
+                    return None;
+                }
+            }
+            fi.insert(key.clone(), index);
+        }
+
+        let index = fi.get(&key)?;
+        let lookup_key = IndexKey::from_value(value)?;
+
+        // Look for exact match first, then cross-type matches
+        if let Some(indices) = index.get(&lookup_key) {
+            return Some(indices.clone());
+        }
+
+        // Cross-type: scan index keys for matches (e.g., Int vs OptionSet)
+        let mut results = Vec::new();
+        for (ik, indices) in index {
+            if ik.matches(value) {
+                results.extend(indices);
+            }
+        }
+        if results.is_empty() {
+            None
+        } else {
+            Some(results)
+        }
     }
 }
 
@@ -57,25 +182,54 @@ impl FindCache for LiveFindCache {
             .get(entity)
             .ok_or_else(|| FindError::NotCached(entity.to_string()))?;
 
-        let mut matches: Vec<&Record> = Vec::new();
+        // Try to use a field index for the first simple (non-dotted) condition
+        let indexed_condition = conditions
+            .iter()
+            .position(|(field, _)| !field.contains('.'));
 
-        for record in records {
-            let all_match = conditions.iter().all(|(field, expected)| {
-                match traverse_path(record, field) {
-                    Some(actual) => values_equal(actual, expected),
-                    // Null field matches Null condition
-                    None => matches!(expected, Value::Null),
+        let candidate_indices: Option<Vec<usize>> = indexed_condition.and_then(|pos| {
+            let (field, value) = &conditions[pos];
+            self.indexed_lookup(entity, field, value)
+        });
+
+        let mut matches: Vec<usize> = Vec::new();
+
+        if let Some(candidates) = candidate_indices {
+            // Filter candidates against remaining conditions
+            for &idx in &candidates {
+                let record = &records[idx];
+                let all_match = conditions.iter().enumerate().all(|(i, (field, expected))| {
+                    if Some(i) == indexed_condition {
+                        return true; // already matched by index
+                    }
+                    match traverse_path(record, field) {
+                        Some(actual) => values_equal(actual, expected),
+                        None => matches!(expected, Value::Null),
+                    }
+                });
+                if all_match {
+                    matches.push(idx);
                 }
-            });
-
-            if all_match {
-                matches.push(record);
+            }
+        } else {
+            // No index available — full linear scan
+            for (i, record) in records.iter().enumerate() {
+                let all_match =
+                    conditions
+                        .iter()
+                        .all(|(field, expected)| match traverse_path(record, field) {
+                            Some(actual) => values_equal(actual, expected),
+                            None => matches!(expected, Value::Null),
+                        });
+                if all_match {
+                    matches.push(i);
+                }
             }
         }
 
         match matches.len() {
             0 => Err(FindError::NotFound),
-            1 => Ok(matches[0].clone()),
+            1 => Ok(records[matches[0]].clone()),
             n => Err(FindError::Multiple(n)),
         }
     }
@@ -153,10 +307,8 @@ impl FindCache for LiveFindCache {
     }
 
     fn get(&self, entity: &str, id: Uuid) -> Option<&Record> {
-        self.records
-            .get(entity)?
-            .iter()
-            .find(|r| r.id() == Some(id))
+        let idx = *self.id_index.get(entity)?.get(&id)?;
+        self.records.get(entity)?.get(idx)
     }
 }
 

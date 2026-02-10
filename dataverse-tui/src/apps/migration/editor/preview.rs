@@ -77,8 +77,7 @@ pub fn build_preview_table(comparison: &MappingComparison) -> (Vec<PreviewRow>, 
     // Build rows from source record comparisons
     for (i, record) in comparison.records.iter().enumerate() {
         let source_id = record
-            .source_record
-            .id()
+            .source_id
             .map(|id| format!("{}", id))
             .unwrap_or_else(|| "(no id)".to_string());
 
@@ -119,24 +118,16 @@ pub fn build_preview_table(comparison: &MappingComparison) -> (Vec<PreviewRow>, 
     let orphan_offset = comparison.records.len();
     for (i, orphan) in comparison.orphans.iter().enumerate() {
         let target_id = orphan
-            .record
-            .id()
+            .record_id
             .map(|id| format!("{}", id))
             .unwrap_or_else(|| "(no id)".to_string());
-
-        let mut fields = HashMap::new();
-        for (field, value) in orphan.record.fields() {
-            if field_names.contains(&field.to_string()) {
-                fields.insert(field.to_string(), format_value(value).display);
-            }
-        }
 
         rows.push(PreviewRow {
             key: orphan_offset + i,
             op: orphan.operation.clone(),
             source_id: format!("(orphan) {}", target_id),
             info: String::new(),
-            fields,
+            fields: HashMap::new(),
         });
     }
 

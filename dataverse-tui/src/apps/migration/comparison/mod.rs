@@ -15,6 +15,7 @@ use uuid::Uuid;
 
 use self::diff::diff_fields;
 use self::diff::FieldDiff;
+use self::matching::build_target_index;
 use self::matching::match_target;
 use self::matching::MatchInput;
 use self::matching::MatchResult;
@@ -55,11 +56,11 @@ pub enum OperationType {
 pub struct RecordComparison {
     /// The determined operation.
     pub operation: OperationType,
-    /// The original source record.
-    pub source_record: Record,
-    /// The matched target record, if any.
-    pub target_record: Option<Record>,
-    /// Transformed field values.
+    /// Source record ID.
+    pub source_id: Option<Uuid>,
+    /// Matched target record ID, if any.
+    pub target_id: Option<Uuid>,
+    /// Transformed field values (moved from RecordResult, not cloned).
     pub transformed: HashMap<String, Value>,
     /// Field-level diffs (only for Update operations).
     pub diffs: Vec<FieldDiff>,
@@ -72,8 +73,8 @@ pub struct RecordComparison {
 pub struct OrphanRecord {
     /// The determined operation (Delete, Deactivate, Ignore, or Error).
     pub operation: OperationType,
-    /// The orphaned target record.
-    pub record: Record,
+    /// The orphaned target record ID.
+    pub record_id: Option<Uuid>,
 }
 
 /// Comparison results for an entire entity mapping.
@@ -134,8 +135,10 @@ pub struct OperationTypeCounts {
 
 /// Input for comparing an entire entity mapping.
 pub struct CompareInput<'a> {
-    /// Source records and their transform results (paired).
-    pub record_results: &'a [(Record, RecordResult)],
+    /// Source records (borrowed for matching, IDs extracted).
+    pub source_records: &'a [Record],
+    /// Transform results per source record (owned — fields are moved into comparisons).
+    pub record_results: Vec<RecordResult>,
     /// Target records fetched from the target environment.
     pub target_records: &'a [Record],
     /// Match strategy.
@@ -170,11 +173,18 @@ pub struct CompareInput<'a> {
 /// 3. Determine operation (Create, Update, Skip, Error)
 ///
 /// Then detect orphaned target records and apply orphan strategy.
-pub fn compare_mapping(input: &CompareInput<'_>) -> MappingComparison {
-    let mut records = Vec::with_capacity(input.record_results.len());
+pub fn compare_mapping(input: CompareInput<'_>) -> MappingComparison {
+    let mut records = Vec::with_capacity(input.source_records.len());
     let mut matched_target_ids: HashSet<Uuid> = HashSet::new();
 
-    for (source_record, record_result) in input.record_results {
+    // Build target index once for O(1) SameId lookups
+    let target_index = build_target_index(input.target_records, input.target_primary_key);
+
+    for (source_record, record_result) in input
+        .source_records
+        .iter()
+        .zip(input.record_results.into_iter())
+    {
         let match_input = MatchInput {
             source_record,
             strategy: input.strategy,
@@ -187,28 +197,26 @@ pub fn compare_mapping(input: &CompareInput<'_>) -> MappingComparison {
         };
 
         let has_errors = !record_result.errors.is_empty();
-        let match_result = match_target(&match_input, input.target_records);
+        let match_result = match_target(&match_input, input.target_records, &target_index);
 
-        let (operation, target_record, diffs) = match match_result {
-            MatchResult::Found(target) => {
-                if let Some(tid) = target.id() {
+        let (operation, target_id, diffs) = match match_result {
+            MatchResult::Found(target_idx) => {
+                let target = &input.target_records[target_idx];
+                let tid = target.id();
+                if let Some(tid) = tid {
                     matched_target_ids.insert(tid);
                 }
 
                 if has_errors {
-                    (
-                        OperationType::Error("Transform errors".into()),
-                        Some(target),
-                        vec![],
-                    )
+                    (OperationType::Error("Transform errors".into()), tid, vec![])
                 } else {
-                    let diffs = diff_fields(&record_result.fields, &target);
+                    let diffs = diff_fields(&record_result.fields, target);
                     let op = if diffs.is_empty() {
                         OperationType::Skip
                     } else {
                         OperationType::Update
                     };
-                    (op, Some(target), diffs)
+                    (op, tid, diffs)
                 }
             }
             MatchResult::NotFound => {
@@ -237,13 +245,14 @@ pub fn compare_mapping(input: &CompareInput<'_>) -> MappingComparison {
             MatchResult::Error(msg) => (OperationType::Error(msg), None, vec![]),
         };
 
+        // Move fields and errors out of record_result — no cloning
         records.push(RecordComparison {
             operation,
-            source_record: source_record.clone(),
-            target_record,
-            transformed: record_result.fields.clone(),
+            source_id: source_record.id(),
+            target_id,
+            transformed: record_result.fields,
             diffs,
-            errors: record_result.errors.clone(),
+            errors: record_result.errors,
         });
     }
 
@@ -286,7 +295,7 @@ fn detect_orphans(
 
             orphans.push(OrphanRecord {
                 operation,
-                record: target.clone(),
+                record_id: Some(target_id),
             });
         }
     }
@@ -346,10 +355,12 @@ mod tests {
     static STUB: StubFindCache = StubFindCache;
 
     fn default_compare_input<'a>(
-        record_results: &'a [(Record, RecordResult)],
+        source_records: &'a [Record],
+        record_results: Vec<RecordResult>,
         target_records: &'a [Record],
     ) -> CompareInput<'a> {
         CompareInput {
+            source_records,
             record_results,
             target_records,
             strategy: MatchStrategy::SameId,
@@ -368,31 +379,43 @@ mod tests {
 
     #[test]
     fn matched_record_no_changes_is_skip() {
-        let source = make_record("account", id(1), vec![("name", Value::from("Acme"))]);
-        let target = make_record("account", id(1), vec![("name", Value::from("Acme"))]);
+        let sources = vec![make_record(
+            "account",
+            id(1),
+            vec![("name", Value::from("Acme"))],
+        )];
+        let results = vec![make_result(vec![("name", Value::from("Acme"))])];
+        let targets = vec![make_record(
+            "account",
+            id(1),
+            vec![("name", Value::from("Acme"))],
+        )];
 
-        let results = vec![(source, make_result(vec![("name", Value::from("Acme"))]))];
-        let targets = vec![target];
-
-        let input = default_compare_input(&results, &targets);
-        let comparison = compare_mapping(&input);
+        let input = default_compare_input(&sources, results, &targets);
+        let comparison = compare_mapping(input);
 
         assert_eq!(comparison.records.len(), 1);
         assert_eq!(comparison.records[0].operation, OperationType::Skip);
         assert!(comparison.records[0].diffs.is_empty());
-        assert!(comparison.records[0].target_record.is_some());
+        assert!(comparison.records[0].target_id.is_some());
     }
 
     #[test]
     fn matched_record_with_changes_is_update() {
-        let source = make_record("account", id(1), vec![("name", Value::from("Acme New"))]);
-        let target = make_record("account", id(1), vec![("name", Value::from("Acme Old"))]);
+        let sources = vec![make_record(
+            "account",
+            id(1),
+            vec![("name", Value::from("Acme New"))],
+        )];
+        let results = vec![make_result(vec![("name", Value::from("Acme New"))])];
+        let targets = vec![make_record(
+            "account",
+            id(1),
+            vec![("name", Value::from("Acme Old"))],
+        )];
 
-        let results = vec![(source, make_result(vec![("name", Value::from("Acme New"))]))];
-        let targets = vec![target];
-
-        let input = default_compare_input(&results, &targets);
-        let comparison = compare_mapping(&input);
+        let input = default_compare_input(&sources, results, &targets);
+        let comparison = compare_mapping(input);
 
         assert_eq!(comparison.records.len(), 1);
         assert_eq!(comparison.records[0].operation, OperationType::Update);
@@ -402,29 +425,31 @@ mod tests {
 
     #[test]
     fn no_match_with_create_fallback() {
-        let source = make_record("account", id(1), vec![("name", Value::from("New"))]);
+        let sources = vec![make_record(
+            "account",
+            id(1),
+            vec![("name", Value::from("New"))],
+        )];
+        let results = vec![make_result(vec![("name", Value::from("New"))])];
+        let targets = vec![];
 
-        let results = vec![(source, make_result(vec![("name", Value::from("New"))]))];
-        let targets = vec![]; // no targets to match
-
-        let mut input = default_compare_input(&results, &targets);
+        let mut input = default_compare_input(&sources, results, &targets);
         input.no_match_fallback = NoMatchFallback::Create;
-        let comparison = compare_mapping(&input);
+        let comparison = compare_mapping(input);
 
         assert_eq!(comparison.records[0].operation, OperationType::Create);
-        assert!(comparison.records[0].target_record.is_none());
+        assert!(comparison.records[0].target_id.is_none());
     }
 
     #[test]
     fn no_match_with_error_fallback() {
-        let source = make_record("account", id(1), vec![]);
-
-        let results = vec![(source, make_result(vec![]))];
+        let sources = vec![make_record("account", id(1), vec![])];
+        let results = vec![make_result(vec![])];
         let targets = vec![];
 
-        let mut input = default_compare_input(&results, &targets);
+        let mut input = default_compare_input(&sources, results, &targets);
         input.no_match_fallback = NoMatchFallback::Error;
-        let comparison = compare_mapping(&input);
+        let comparison = compare_mapping(input);
 
         assert!(matches!(
             comparison.records[0].operation,
@@ -434,24 +459,25 @@ mod tests {
 
     #[test]
     fn no_match_with_ignore_fallback() {
-        let source = make_record("account", id(1), vec![]);
-
-        let results = vec![(source, make_result(vec![]))];
+        let sources = vec![make_record("account", id(1), vec![])];
+        let results = vec![make_result(vec![])];
         let targets = vec![];
 
-        let mut input = default_compare_input(&results, &targets);
+        let mut input = default_compare_input(&sources, results, &targets);
         input.no_match_fallback = NoMatchFallback::Ignore;
-        let comparison = compare_mapping(&input);
+        let comparison = compare_mapping(input);
 
         assert_eq!(comparison.records[0].operation, OperationType::Ignore);
     }
 
     #[test]
     fn transform_errors_produce_error_operation() {
-        let source = make_record("account", id(1), vec![("name", Value::from("Acme"))]);
-        let target = make_record("account", id(1), vec![("name", Value::from("Acme"))]);
-
-        let result = make_error_result(
+        let sources = vec![make_record(
+            "account",
+            id(1),
+            vec![("name", Value::from("Acme"))],
+        )];
+        let results = vec![make_error_result(
             vec![("name", Value::from("Acme"))],
             vec![(
                 "bad_field",
@@ -459,52 +485,56 @@ mod tests {
                     segment: "bad".into(),
                 },
             )],
-        );
-        let results = vec![(source, result)];
-        let targets = vec![target];
+        )];
+        let targets = vec![make_record(
+            "account",
+            id(1),
+            vec![("name", Value::from("Acme"))],
+        )];
 
-        let input = default_compare_input(&results, &targets);
-        let comparison = compare_mapping(&input);
+        let input = default_compare_input(&sources, results, &targets);
+        let comparison = compare_mapping(input);
 
         assert!(matches!(
             comparison.records[0].operation,
             OperationType::Error(_)
         ));
-        // Still matched the target for preview info
-        assert!(comparison.records[0].target_record.is_some());
+        // Still matched the target
+        assert!(comparison.records[0].target_id.is_some());
     }
 
     // ---- Orphan tests ----
 
     #[test]
     fn orphan_strategy_delete() {
-        let source = make_record("account", id(1), vec![]);
-        let target_matched = make_record("account", id(1), vec![]);
-        let target_orphan = make_record("account", id(2), vec![]);
+        let sources = vec![make_record("account", id(1), vec![])];
+        let results = vec![make_result(vec![])];
+        let targets = vec![
+            make_record("account", id(1), vec![]),
+            make_record("account", id(2), vec![]),
+        ];
 
-        let results = vec![(source, make_result(vec![]))];
-        let targets = vec![target_matched, target_orphan];
-
-        let mut input = default_compare_input(&results, &targets);
+        let mut input = default_compare_input(&sources, results, &targets);
         input.orphan_strategy = OrphanStrategy::Delete;
-        let comparison = compare_mapping(&input);
+        let comparison = compare_mapping(input);
 
         assert_eq!(comparison.orphans.len(), 1);
         assert_eq!(comparison.orphans[0].operation, OperationType::Delete);
-        assert_eq!(comparison.orphans[0].record.id(), Some(id(2)));
+        assert_eq!(comparison.orphans[0].record_id, Some(id(2)));
     }
 
     #[test]
     fn orphan_strategy_deactivate() {
-        let source = make_record("account", id(1), vec![]);
-        let target_orphan = make_record("account", id(2), vec![]);
+        let sources = vec![make_record("account", id(1), vec![])];
+        let results = vec![make_result(vec![])];
+        let targets = vec![
+            make_record("account", id(1), vec![]),
+            make_record("account", id(2), vec![]),
+        ];
 
-        let results = vec![(source, make_result(vec![]))];
-        let targets = vec![make_record("account", id(1), vec![]), target_orphan];
-
-        let mut input = default_compare_input(&results, &targets);
+        let mut input = default_compare_input(&sources, results, &targets);
         input.orphan_strategy = OrphanStrategy::Deactivate;
-        let comparison = compare_mapping(&input);
+        let comparison = compare_mapping(input);
 
         assert_eq!(comparison.orphans.len(), 1);
         assert_eq!(comparison.orphans[0].operation, OperationType::Deactivate);
@@ -512,17 +542,16 @@ mod tests {
 
     #[test]
     fn orphan_strategy_ignore() {
-        let source = make_record("account", id(1), vec![]);
-
-        let results = vec![(source, make_result(vec![]))];
+        let sources = vec![make_record("account", id(1), vec![])];
+        let results = vec![make_result(vec![])];
         let targets = vec![
             make_record("account", id(1), vec![]),
             make_record("account", id(2), vec![]),
         ];
 
-        let mut input = default_compare_input(&results, &targets);
+        let mut input = default_compare_input(&sources, results, &targets);
         input.orphan_strategy = OrphanStrategy::Ignore;
-        let comparison = compare_mapping(&input);
+        let comparison = compare_mapping(input);
 
         assert_eq!(comparison.orphans.len(), 1);
         assert_eq!(comparison.orphans[0].operation, OperationType::Ignore);
@@ -530,12 +559,13 @@ mod tests {
 
     #[test]
     fn orphan_strategy_error() {
-        let results = vec![];
+        let sources: Vec<Record> = vec![];
+        let results: Vec<RecordResult> = vec![];
         let targets = vec![make_record("account", id(1), vec![])];
 
-        let mut input = default_compare_input(&results, &targets);
+        let mut input = default_compare_input(&sources, results, &targets);
         input.orphan_strategy = OrphanStrategy::Error;
-        let comparison = compare_mapping(&input);
+        let comparison = compare_mapping(input);
 
         assert_eq!(comparison.orphans.len(), 1);
         assert!(matches!(
@@ -548,25 +578,26 @@ mod tests {
 
     #[test]
     fn mixed_operations_in_one_mapping() {
-        let source1 = make_record("account", id(1), vec![("name", Value::from("Same"))]);
-        let source2 = make_record("account", id(2), vec![("name", Value::from("Changed"))]);
-        let source3 = make_record("account", id(3), vec![("name", Value::from("New"))]);
-
-        let target1 = make_record("account", id(1), vec![("name", Value::from("Same"))]);
-        let target2 = make_record("account", id(2), vec![("name", Value::from("Old"))]);
-        let target_orphan = make_record("account", id(99), vec![("name", Value::from("Orphan"))]);
-
-        let results = vec![
-            (source1, make_result(vec![("name", Value::from("Same"))])),
-            (source2, make_result(vec![("name", Value::from("Changed"))])),
-            (source3, make_result(vec![("name", Value::from("New"))])),
+        let sources = vec![
+            make_record("account", id(1), vec![("name", Value::from("Same"))]),
+            make_record("account", id(2), vec![("name", Value::from("Changed"))]),
+            make_record("account", id(3), vec![("name", Value::from("New"))]),
         ];
-        let targets = vec![target1, target2, target_orphan];
+        let results = vec![
+            make_result(vec![("name", Value::from("Same"))]),
+            make_result(vec![("name", Value::from("Changed"))]),
+            make_result(vec![("name", Value::from("New"))]),
+        ];
+        let targets = vec![
+            make_record("account", id(1), vec![("name", Value::from("Same"))]),
+            make_record("account", id(2), vec![("name", Value::from("Old"))]),
+            make_record("account", id(99), vec![("name", Value::from("Orphan"))]),
+        ];
 
-        let mut input = default_compare_input(&results, &targets);
+        let mut input = default_compare_input(&sources, results, &targets);
         input.no_match_fallback = NoMatchFallback::Create;
         input.orphan_strategy = OrphanStrategy::Delete;
-        let comparison = compare_mapping(&input);
+        let comparison = compare_mapping(input);
 
         assert_eq!(comparison.records[0].operation, OperationType::Skip);
         assert_eq!(comparison.records[1].operation, OperationType::Update);
@@ -591,8 +622,17 @@ mod tests {
 
     #[test]
     fn find_strategy_with_match_conditions() {
-        let source = make_record("account", id(1), vec![("name", Value::from("Acme"))]);
-        let target = make_record("account", id(10), vec![("name", Value::from("Acme"))]);
+        let sources = vec![make_record(
+            "account",
+            id(1),
+            vec![("name", Value::from("Acme"))],
+        )];
+        let results = vec![make_result(vec![("name", Value::from("Acme"))])];
+        let targets = vec![make_record(
+            "account",
+            id(10),
+            vec![("name", Value::from("Acme"))],
+        )];
 
         let conditions = vec![(
             "name".to_string(),
@@ -601,18 +641,12 @@ mod tests {
             })],
         )];
 
-        let results = vec![(source, make_result(vec![("name", Value::from("Acme"))]))];
-        let targets = vec![target];
-
-        let mut input = default_compare_input(&results, &targets);
+        let mut input = default_compare_input(&sources, results, &targets);
         input.strategy = MatchStrategy::Find;
         input.match_conditions = &conditions;
-        let comparison = compare_mapping(&input);
+        let comparison = compare_mapping(input);
 
         assert_eq!(comparison.records[0].operation, OperationType::Skip);
-        assert_eq!(
-            comparison.records[0].target_record.as_ref().unwrap().id(),
-            Some(id(10))
-        );
+        assert_eq!(comparison.records[0].target_id, Some(id(10)));
     }
 }

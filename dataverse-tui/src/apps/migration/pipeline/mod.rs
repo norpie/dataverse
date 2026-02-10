@@ -405,8 +405,8 @@ pub fn execute_mapping(
 pub struct ComparisonInput<'a> {
     /// Source records (same order as MappingResult.record_results).
     pub source_records: &'a [Record],
-    /// Transform results from `execute_mapping`.
-    pub mapping_result: &'a MappingResult,
+    /// Transform results from `execute_mapping` (owned — consumed by comparison).
+    pub mapping_result: MappingResult,
     /// Target records fetched from the target environment.
     pub target_records: &'a [Record],
     /// Match strategy from entity mapping config.
@@ -431,18 +431,12 @@ pub struct ComparisonInput<'a> {
 
 /// Compare a mapping's transform results against target records.
 ///
-/// Pairs source records with their transform results, then delegates to
-/// the comparison engine to determine operations per record.
-pub fn compare_mapping_results(input: &ComparisonInput<'_>) -> MappingComparison {
-    let record_results: Vec<(Record, RecordResult)> = input
-        .source_records
-        .iter()
-        .cloned()
-        .zip(input.mapping_result.record_results.iter().cloned())
-        .collect();
-
-    compare_mapping(&CompareInput {
-        record_results: &record_results,
+/// Consumes the mapping result, moving field data into comparisons
+/// instead of cloning.
+pub fn compare_mapping_results(input: ComparisonInput<'_>) -> MappingComparison {
+    compare_mapping(CompareInput {
+        source_records: input.source_records,
+        record_results: input.mapping_result.record_results,
         target_records: input.target_records,
         strategy: input.strategy,
         source_primary_key: input.source_primary_key,
@@ -755,7 +749,7 @@ mod tests {
 
         let comparison_input = ComparisonInput {
             source_records: &source_records,
-            mapping_result: &mapping_result,
+            mapping_result,
             target_records: &target_records,
             strategy: MatchStrategy::SameId,
             source_primary_key: "accountid",
@@ -768,7 +762,7 @@ mod tests {
             orphan_strategy: OrphanStrategy::Delete,
         };
 
-        let comparison = compare_mapping_results(&comparison_input);
+        let comparison = compare_mapping_results(comparison_input);
 
         use crate::apps::migration::comparison::OperationType;
 

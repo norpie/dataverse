@@ -5,9 +5,12 @@
 //! - **Find**: Execute match condition source chains, then scan target records
 //!   for matches using `values_equal` + `traverse_path`.
 
+use std::collections::HashMap;
+
 use dataverse_lib::model::Entity;
 use dataverse_lib::model::Record;
 use dataverse_lib::model::Value;
+use uuid::Uuid;
 
 use crate::apps::migration::engine::execute_chain;
 use crate::apps::migration::engine::util::traverse_path;
@@ -46,11 +49,35 @@ pub struct MatchInput<'a> {
     pub find_cache: &'a dyn FindCache,
 }
 
+/// Pre-built index for O(1) target matching by ID.
+///
+/// Built once before the matching loop, maps target record UUIDs to their
+/// index in the target records slice.
+pub type TargetIndex = HashMap<Uuid, usize>;
+
+/// Build a target index from target records for SameId matching.
+///
+/// Maps each target record's ID to its index in the slice.
+/// Records without IDs are skipped.
+pub fn build_target_index(target_records: &[Record], primary_key: &str) -> TargetIndex {
+    let mut index = HashMap::with_capacity(target_records.len());
+    for (i, target) in target_records.iter().enumerate() {
+        let id = target.id().or_else(|| match target.get(primary_key) {
+            Some(Value::Guid(id)) => Some(*id),
+            _ => None,
+        });
+        if let Some(id) = id {
+            index.insert(id, i);
+        }
+    }
+    index
+}
+
 /// Result of attempting to match a source record to a target record.
 #[derive(Debug)]
 pub enum MatchResult {
-    /// Exactly one target record matched.
-    Found(Record),
+    /// Exactly one target record matched (index into target_records slice).
+    Found(usize),
     /// No target record matched.
     NotFound,
     /// Multiple target records matched (ambiguous).
@@ -66,17 +93,21 @@ pub enum MatchResult {
 /// Match a source record to a target record.
 ///
 /// Uses the strategy specified in `input`:
-/// - **SameId**: Look up source primary key in target records.
+/// - **SameId**: O(1) lookup via pre-built `TargetIndex`.
 /// - **Find**: Execute match condition chains, scan targets for matches.
-pub fn match_target(input: &MatchInput<'_>, target_records: &[Record]) -> MatchResult {
+pub fn match_target(
+    input: &MatchInput<'_>,
+    target_records: &[Record],
+    target_index: &TargetIndex,
+) -> MatchResult {
     match input.strategy {
-        MatchStrategy::SameId => match_same_id(input, target_records),
+        MatchStrategy::SameId => match_same_id(input, target_index),
         MatchStrategy::Find => match_find(input, target_records),
     }
 }
 
-/// SameID matching: find a target record with the same primary key as the source.
-fn match_same_id(input: &MatchInput<'_>, target_records: &[Record]) -> MatchResult {
+/// SameID matching: O(1) lookup via pre-built target index.
+fn match_same_id(input: &MatchInput<'_>, target_index: &TargetIndex) -> MatchResult {
     // Get source record's primary key value
     let source_pk_value = match input.source_record.id() {
         Some(id) => id,
@@ -94,22 +125,11 @@ fn match_same_id(input: &MatchInput<'_>, target_records: &[Record]) -> MatchResu
         }
     };
 
-    // Scan target records for matching ID
-    for target in target_records {
-        let target_id = match target.id() {
-            Some(id) => id,
-            None => match target.get(input.target_primary_key) {
-                Some(Value::Guid(id)) => *id,
-                _ => continue,
-            },
-        };
-
-        if source_pk_value == target_id {
-            return MatchResult::Found(target.clone());
-        }
+    // O(1) HashMap lookup
+    match target_index.get(&source_pk_value) {
+        Some(&idx) => MatchResult::Found(idx),
+        None => MatchResult::NotFound,
     }
-
-    MatchResult::NotFound
 }
 
 /// Find-based matching: execute match condition chains, scan targets.
@@ -145,9 +165,9 @@ fn match_find(input: &MatchInput<'_>, target_records: &[Record]) -> MatchResult 
     }
 
     // Step 2: Scan target records, checking all conditions
-    let mut matches: Vec<&Record> = Vec::new();
+    let mut matches: Vec<usize> = Vec::new();
 
-    for target in target_records {
+    for (i, target) in target_records.iter().enumerate() {
         let all_match =
             conditions
                 .iter()
@@ -157,13 +177,13 @@ fn match_find(input: &MatchInput<'_>, target_records: &[Record]) -> MatchResult 
                 });
 
         if all_match {
-            matches.push(target);
+            matches.push(i);
         }
     }
 
     match matches.len() {
         0 => MatchResult::NotFound,
-        1 => MatchResult::Found(matches[0].clone()),
+        1 => MatchResult::Found(matches[0]),
         n => MatchResult::Multiple(n),
     }
 }
@@ -219,10 +239,11 @@ mod tests {
             make_record("account", id(1), vec![("name", Value::from("Acme Target"))]),
         ];
 
+        let index = build_target_index(&targets, "accountid");
         let input = default_input(&source, MatchStrategy::SameId, &[]);
-        let result = match_target(&input, &targets);
+        let result = match_target(&input, &targets, &index);
 
-        assert!(matches!(result, MatchResult::Found(ref r) if r.id() == Some(id(1))));
+        assert!(matches!(result, MatchResult::Found(idx) if targets[idx].id() == Some(id(1))));
     }
 
     #[test]
@@ -233,8 +254,9 @@ mod tests {
             make_record("account", id(3), vec![]),
         ];
 
+        let index = build_target_index(&targets, "accountid");
         let input = default_input(&source, MatchStrategy::SameId, &[]);
-        let result = match_target(&input, &targets);
+        let result = match_target(&input, &targets, &index);
 
         assert!(matches!(result, MatchResult::NotFound));
     }
@@ -242,8 +264,9 @@ mod tests {
     #[test]
     fn same_id_empty_targets() {
         let source = make_record("account", id(1), vec![]);
+        let index = build_target_index(&[], "accountid");
         let input = default_input(&source, MatchStrategy::SameId, &[]);
-        let result = match_target(&input, &[]);
+        let result = match_target(&input, &[], &index);
 
         assert!(matches!(result, MatchResult::NotFound));
     }
@@ -265,10 +288,11 @@ mod tests {
             })],
         )];
 
+        let index = build_target_index(&targets, "accountid");
         let input = default_input(&source, MatchStrategy::Find, &conditions);
-        let result = match_target(&input, &targets);
+        let result = match_target(&input, &targets, &index);
 
-        assert!(matches!(result, MatchResult::Found(ref r) if r.id() == Some(id(11))));
+        assert!(matches!(result, MatchResult::Found(idx) if targets[idx].id() == Some(id(11))));
     }
 
     #[test]
@@ -306,10 +330,11 @@ mod tests {
             ),
         ];
 
+        let index = build_target_index(&targets, "accountid");
         let input = default_input(&source, MatchStrategy::Find, &conditions);
-        let result = match_target(&input, &targets);
+        let result = match_target(&input, &targets, &index);
 
-        assert!(matches!(result, MatchResult::Found(ref r) if r.id() == Some(id(11))));
+        assert!(matches!(result, MatchResult::Found(idx) if targets[idx].id() == Some(id(11))));
     }
 
     #[test]
@@ -327,8 +352,9 @@ mod tests {
             })],
         )];
 
+        let index = build_target_index(&targets, "accountid");
         let input = default_input(&source, MatchStrategy::Find, &conditions);
-        let result = match_target(&input, &targets);
+        let result = match_target(&input, &targets, &index);
 
         assert!(matches!(result, MatchResult::NotFound));
     }
@@ -348,8 +374,9 @@ mod tests {
             })],
         )];
 
+        let index = build_target_index(&targets, "accountid");
         let input = default_input(&source, MatchStrategy::Find, &conditions);
-        let result = match_target(&input, &targets);
+        let result = match_target(&input, &targets, &index);
 
         assert!(matches!(result, MatchResult::Multiple(2)));
     }
@@ -387,10 +414,11 @@ mod tests {
             })],
         )];
 
+        let index = build_target_index(&targets, "accountid");
         let input = default_input(&source, MatchStrategy::Find, &conditions);
-        let result = match_target(&input, &targets);
+        let result = match_target(&input, &targets, &index);
 
-        assert!(matches!(result, MatchResult::Found(ref r) if r.id() == Some(id(11))));
+        assert!(matches!(result, MatchResult::Found(idx) if targets[idx].id() == Some(id(11))));
     }
 
     #[test]
@@ -409,10 +437,11 @@ mod tests {
             })],
         )];
 
+        let index = build_target_index(&targets, "accountid");
         let input = default_input(&source, MatchStrategy::Find, &conditions);
-        let result = match_target(&input, &targets);
+        let result = match_target(&input, &targets, &index);
 
-        assert!(matches!(result, MatchResult::Found(ref r) if r.id() == Some(id(11))));
+        assert!(matches!(result, MatchResult::Found(idx) if targets[idx].id() == Some(id(11))));
     }
 
     #[test]
@@ -427,8 +456,9 @@ mod tests {
             })],
         )];
 
+        let index = build_target_index(&[], "accountid");
         let input = default_input(&source, MatchStrategy::Find, &conditions);
-        let result = match_target(&input, &[]);
+        let result = match_target(&input, &[], &index);
 
         assert!(matches!(result, MatchResult::Error(_)));
     }
@@ -444,8 +474,9 @@ mod tests {
             })],
         )];
 
+        let index = build_target_index(&[], "accountid");
         let input = default_input(&source, MatchStrategy::Find, &conditions);
-        let result = match_target(&input, &[]);
+        let result = match_target(&input, &[], &index);
 
         assert!(matches!(result, MatchResult::NotFound));
     }

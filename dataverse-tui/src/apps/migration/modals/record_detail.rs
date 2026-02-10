@@ -11,6 +11,8 @@ use rafter::widgets::Text;
 use tuidom::Color;
 use tuidom::Element;
 
+use uuid::Uuid;
+
 use crate::apps::migration::comparison::OperationType;
 use crate::apps::migration::comparison::OrphanRecord;
 use crate::apps::migration::comparison::RecordComparison;
@@ -34,8 +36,8 @@ impl Default for RecordDetail {
     fn default() -> Self {
         Self::Record(RecordComparison {
             operation: OperationType::Skip,
-            source_record: dataverse_lib::model::Record::new(""),
-            target_record: None,
+            source_id: None,
+            target_id: None,
             transformed: Default::default(),
             diffs: Vec::new(),
             errors: Vec::new(),
@@ -108,22 +110,14 @@ impl RecordDetailModal {
         let (op_label, op_color, subtitle, lines) = match &detail {
             RecordDetail::Record(record) => {
                 let (label, color) = op_label_color(&record.operation);
-                let id = record
-                    .source_record
-                    .id()
-                    .map(|id| id.to_string())
-                    .unwrap_or_else(|| "(no id)".to_string());
+                let id = format_uuid(record.source_id);
                 let lines = build_record_lines(record);
                 (label.to_string(), color.to_string(), id, lines)
             }
             RecordDetail::Orphan(orphan) => {
                 let (label, color) = op_label_color(&orphan.operation);
                 let title = format!("Orphan {}", label);
-                let id = orphan
-                    .record
-                    .id()
-                    .map(|id| id.to_string())
-                    .unwrap_or_else(|| "(no id)".to_string());
+                let id = format_uuid(orphan.record_id);
                 let lines = build_orphan_lines(orphan);
                 (title, color.to_string(), id, lines)
             }
@@ -341,29 +335,24 @@ fn build_record_lines(record: &RecordComparison) -> Vec<DetailLine> {
 
 fn build_orphan_lines(orphan: &OrphanRecord) -> Vec<DetailLine> {
     let mut lines = Vec::new();
-    let mut key = 0;
 
     lines.push(DetailLine {
-        key,
-        text: "Target Record".to_string(),
+        key: 0,
+        text: format!("Target ID: {}", format_uuid(orphan.record_id)),
         color: "primary".to_string(),
         bold: true,
     });
-    key += 1;
-
-    let mut fields: Vec<(&String, &dataverse_lib::model::Value)> =
-        orphan.record.fields().into_iter().collect();
-    fields.sort_by_key(|(k, _)| k.to_string());
-    for (field, value) in fields {
-        let display = format_value(value).display;
-        lines.push(DetailLine {
-            key,
-            text: format!("  {}: {}", field, display),
-            color: "primary".to_string(),
-            bold: false,
-        });
-        key += 1;
-    }
+    lines.push(DetailLine {
+        key: 1,
+        text: format!("Operation: {:?}", orphan.operation),
+        color: "muted".to_string(),
+        bold: false,
+    });
 
     lines
+}
+
+fn format_uuid(id: Option<Uuid>) -> String {
+    id.map(|id| id.to_string())
+        .unwrap_or_else(|| "(no id)".to_string())
 }

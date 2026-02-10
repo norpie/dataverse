@@ -89,6 +89,10 @@ pub struct MigrationEditor {
     preview_results: Vec<MappingComparison>,
     /// Current entity index in the preview.
     preview_entity_index: usize,
+    /// Entity display names for the preview.
+    preview_entity_names: Vec<String>,
+    /// Operation counts for the currently-selected entity.
+    preview_counts: OperationTypeCounts,
     /// Table state for the preview record list.
     preview_table: TableState<PreviewRow>,
 }
@@ -115,9 +119,11 @@ impl MigrationEditor {
             Vec::new(), // find_conditions
             Vec::new(), // match_conditions
             String::new(),           // preview_phase_name
-            Vec::new(),              // preview_results
-            0,                       // preview_entity_index
-            TableState::default(),   // preview_table
+            Vec::new(),                    // preview_results
+            0,                             // preview_entity_index
+            Vec::new(),                    // preview_entity_names
+            OperationTypeCounts::default(),// preview_counts
+            TableState::default(),         // preview_table
         )
     }
 }
@@ -286,6 +292,10 @@ impl MigrationEditor {
     async fn back(&self, cx: &AppContext, gx: &GlobalContext) {
         match self.page() {
             Page::Preview => {
+                self.preview_results.set(Vec::new());
+                self.preview_table.set(TableState::default());
+                self.preview_entity_names.set(Vec::new());
+                self.preview_counts.set(OperationTypeCounts::default());
                 self.navigate(Page::Editor);
             }
             Page::Editor => {
@@ -309,8 +319,6 @@ impl MigrationEditor {
         use crate::apps::migration::engine::materializer::materialize_chain;
         use crate::apps::migration::modals::SelectPhaseModal;
         use crate::apps::migration::pipeline;
-        use crate::apps::migration::pipeline::cache::LiveFindCache;
-        use crate::apps::migration::types::MatchStrategy;
         use crate::apps::migration::types::ParentType;
         use crate::modals::ErrorAcknowledgmentModal;
         use crate::modals::odata_fetch::ODataFetchModal;
@@ -545,110 +553,95 @@ impl MigrationEditor {
             }
         };
 
-        use std::sync::Arc;
         use crate::modals::LoadingModal;
+        use crate::modals::LoadingUpdater;
 
-        // 4. Split results
-        let split = gx.modal(LoadingModal::run(
-            "Splitting fetch results...",
-            async move {
-                tokio::task::spawn_blocking(move || {
-                    pipeline::split_fetch_results(fetch_results, &index)
-                }).await.unwrap()
+        // 4-7: Split results, build cache, transform, compare — single modal
+        let comparisons: Vec<MappingComparison> = gx.modal(LoadingModal::run_with_updates(
+            "Processing...",
+            |updater: LoadingUpdater| async move {
+                // 4. Split results
+                updater.update("Splitting fetch results...");
+                let mut split = pipeline::split_fetch_results(fetch_results, &index);
+
+                // 5. Build find cache
+                updater.update("Building find cache...");
+                let find_cache = pipeline::build_find_cache(
+                    split.find_cache_records,
+                    &phase_plan.merged_find_caches,
+                );
+
+                // 6. Execute transforms + 7. Compare — per entity mapping
+                let mut comparisons: Vec<MappingComparison> = Vec::new();
+                for (i, em) in phase_mappings.iter().enumerate() {
+                    // Take ownership — records are dropped after this iteration
+                    let source_records = std::mem::take(&mut split.source_records[i]);
+                    let target_idx = split.target_records.iter().position(|(idx, _)| *idx == i);
+                    let target_records = target_idx
+                        .map(|pos| std::mem::take(&mut split.target_records[pos].1))
+                        .unwrap_or_default();
+
+                    let record_count = source_records.len();
+
+                    log::debug!(
+                        "[preview] Executing mapping[{}] {:?}: {} source records, {} target records",
+                        i, em.name, record_count, target_records.len(),
+                    );
+
+                    // Transform
+                    updater.update(format!(
+                        "Transforming {} ({} records)...",
+                        em.name, record_count
+                    ));
+                    let mapping_result = pipeline::execute_mapping(
+                        &source_records,
+                        &materialized_variables[i],
+                        &materialized_field_mappings[i],
+                        &em.source_entity,
+                        &em.target_entity,
+                        &find_cache,
+                    );
+
+                    // Compare — consumes mapping_result, borrows source/target
+                    updater.update(format!("Comparing {}...", em.name));
+                    let source_pk = primary_keys
+                        .get(&em.source_entity)
+                        .map(|s| s.as_str())
+                        .unwrap_or("id");
+                    let target_pk = primary_keys
+                        .get(&em.target_entity)
+                        .map(|s| s.as_str())
+                        .unwrap_or("id");
+
+                    let comparison = pipeline::compare_mapping_results(
+                        pipeline::ComparisonInput {
+                            source_records: &source_records,
+                            mapping_result,
+                            target_records: &target_records,
+                            strategy: em.match_strategy,
+                            source_primary_key: source_pk,
+                            target_primary_key: target_pk,
+                            match_conditions: &materialized_match_conditions[i],
+                            source_entity: &em.source_entity,
+                            target_entity: &em.target_entity,
+                            find_cache: &find_cache,
+                            no_match_fallback: em.no_match_fallback,
+                            orphan_strategy: em.orphan_strategy,
+                        },
+                    );
+
+                    comparisons.push(comparison);
+                    // source_records + target_records dropped HERE
+                }
+
+                comparisons
             },
         )).await;
 
-        // 5. Build find cache
-        let merged_specs = phase_plan.merged_find_caches;
-        let find_cache_records = split.find_cache_records;
-        let find_cache: Arc<LiveFindCache> = Arc::new(gx.modal(LoadingModal::run(
-            "Building find cache...",
-            async move {
-                tokio::task::spawn_blocking(move || {
-                    pipeline::build_find_cache(find_cache_records, &merged_specs)
-                }).await.unwrap()
-            },
-        )).await);
-
-        // 6. Execute transforms + 7. Compare — per entity mapping
-        let mut comparisons: Vec<MappingComparison> = Vec::new();
-        for (i, em) in phase_mappings.iter().enumerate() {
-            let source_records = split.source_records[i].clone();
-            let target_records: Vec<_> = split
-                .target_records
-                .iter()
-                .find(|(idx, _)| *idx == i)
-                .map(|(_, records)| records.clone())
-                .unwrap_or_default();
-
-            let variables = materialized_variables[i].clone();
-            let field_mappings = materialized_field_mappings[i].clone();
-            let source_entity = em.source_entity.clone();
-            let target_entity = em.target_entity.clone();
-            let fc = find_cache.clone();
-            let record_count = source_records.len();
-
-            log::debug!(
-                "[preview] Executing mapping[{}] {:?}: {} source records, {} target records",
-                i, em.name, record_count, target_records.len(),
-            );
-
-            // Transform
-            let mapping_result = gx.modal(LoadingModal::run(
-                format!("Transforming {} ({} records)...", em.name, record_count),
-                async move {
-                    tokio::task::spawn_blocking(move || {
-                        pipeline::execute_mapping(
-                            &source_records,
-                            &variables,
-                            &field_mappings,
-                            &source_entity,
-                            &target_entity,
-                            fc.as_ref(),
-                        )
-                    }).await.unwrap()
-                },
-            )).await;
-
-            // Compare
-            let source_records = split.source_records[i].clone();
-            let source_pk = primary_keys.get(&em.source_entity).cloned().unwrap_or_else(|| "id".to_string());
-            let target_pk = primary_keys.get(&em.target_entity).cloned().unwrap_or_else(|| "id".to_string());
-            let match_conds = materialized_match_conditions[i].clone();
-            let source_entity = em.source_entity.clone();
-            let target_entity = em.target_entity.clone();
-            let fc = find_cache.clone();
-            let strategy = em.match_strategy;
-            let no_match_fallback = em.no_match_fallback;
-            let orphan_strategy = em.orphan_strategy;
-
-            let comparison = gx.modal(LoadingModal::run(
-                format!("Comparing {}...", em.name),
-                async move {
-                    tokio::task::spawn_blocking(move || {
-                        pipeline::compare_mapping_results(&pipeline::ComparisonInput {
-                            source_records: &source_records,
-                            mapping_result: &mapping_result,
-                            target_records: &target_records,
-                            strategy,
-                            source_primary_key: &source_pk,
-                            target_primary_key: &target_pk,
-                            match_conditions: &match_conds,
-                            source_entity: &source_entity,
-                            target_entity: &target_entity,
-                            find_cache: fc.as_ref(),
-                            no_match_fallback,
-                            orphan_strategy,
-                        })
-                    }).await.unwrap()
-                },
-            )).await;
-
-            comparisons.push(comparison);
-        }
-
         // Store results and navigate
         self.preview_phase_name.set(phase_name);
+        self.preview_entity_names.set(preview::entity_names(&comparisons));
+        self.preview_counts.set(preview::entity_counts(&comparisons, 0));
         self.preview_results.set(comparisons);
         self.preview_entity_index.set(0);
         self.navigate(Page::Preview);
@@ -712,23 +705,6 @@ impl MigrationEditor {
     }
 
     // =========================================================================
-    // Preview derived values
-    // =========================================================================
-
-    #[derived]
-    fn preview_entity_names(&self) -> Vec<String> {
-        let results = self.preview_results.get();
-        preview::entity_names(&results)
-    }
-
-    #[derived]
-    fn preview_counts(&self) -> OperationTypeCounts {
-        let results = self.preview_results.get();
-        let index = self.preview_entity_index.get();
-        preview::entity_counts(&results, index)
-    }
-
-    // =========================================================================
     // Preview table rebuild
     // =========================================================================
 
@@ -737,19 +713,24 @@ impl MigrationEditor {
         use preview::build_preview_table;
         use rafter::widgets::SelectionMode;
 
-        let results = self.preview_results.get();
         let index = self.preview_entity_index.get();
 
-        if let Some(comparison) = results.get(index) {
-            let (rows, columns) = build_preview_table(comparison);
-            self.preview_table.set(
+        let table = self.preview_results.with_ref(|results| {
+            results.get(index).map(|comparison| {
+                let (rows, columns) = build_preview_table(comparison);
                 TableState::new(rows, columns)
                     .with_selection(SelectionMode::Single)
-                    .with_frozen(&["op", "source_id", "info"]),
-            );
-        } else {
-            self.preview_table.set(TableState::default());
-        }
+                    .with_frozen(&["op", "source_id", "info"])
+            })
+        });
+
+        self.preview_table.set(table.unwrap_or_default());
+
+        // Update counts for the current entity
+        let counts = self.preview_results.with_ref(|results| {
+            preview::entity_counts(results, index)
+        });
+        self.preview_counts.set(counts);
     }
 
     #[handler]
@@ -1242,8 +1223,8 @@ impl MigrationEditor {
     #[page(Preview)]
     fn preview_page(&self) -> Element {
         let phase_name = self.preview_phase_name.get();
-        let counts = self.preview_counts();
-        let entity_names = self.preview_entity_names();
+        let counts = self.preview_counts.get();
+        let entity_names = self.preview_entity_names.get();
         let entity_index = self.preview_entity_index.get();
         let has_entities = !entity_names.is_empty();
 
