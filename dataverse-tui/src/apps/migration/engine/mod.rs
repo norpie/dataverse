@@ -12,6 +12,10 @@ mod transforms;
 mod types;
 pub mod variables;
 
+pub use executor::BranchItem;
+pub use executor::ChainChildren;
+pub use executor::ChainItem;
+pub use executor::FindConditionItem;
 pub use paths::FieldPath;
 pub use types::StubTargetCache;
 pub use types::SystemVars;

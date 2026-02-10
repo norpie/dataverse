@@ -5,6 +5,7 @@ pub mod engine;
 mod list;
 pub mod migrations;
 pub mod modals;
+pub mod pipeline;
 pub mod repository;
 pub mod types;
 pub mod validation;
