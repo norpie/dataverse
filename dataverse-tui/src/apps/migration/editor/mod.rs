@@ -37,8 +37,16 @@ use rafter::widgets::TreeState;
 
 use tree::MigrationTreeNode;
 
+/// Page routing for the migration editor.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum Page {
+    #[default]
+    Editor,
+    Preview,
+}
+
 /// Migration editor app.
-#[app(name = "Migration Editor", on_blur = Continue)]
+#[app(name = "Migration Editor", on_blur = Continue, pages)]
 pub struct MigrationEditor {
     /// The migration being edited.
     migration: Migration,
@@ -94,6 +102,7 @@ impl MigrationEditor {
 }
 
 #[app_impl]
+#[allow(clippy::match_single_binding)]
 impl MigrationEditor {
     #[on_start]
     async fn on_start(&self, gx: &GlobalContext) {
@@ -233,25 +242,59 @@ impl MigrationEditor {
     // =========================================================================
 
     #[keybinds]
-    fn keybinds() {
-        bind("escape", close_app);
+    fn global_keybinds() {
+        bind("escape", back);
+        bind("f10", run_preview);
+    }
+
+    #[keybinds(page = Editor)]
+    fn editor_keybinds() {
         bind("a", add_item);
         bind("d", delete_item);
         bind("J", move_item_down);
         bind("K", move_item_up);
     }
 
-    #[handler]
-    async fn close_app(&self, cx: &AppContext, gx: &GlobalContext) {
-        let confirmed = gx
-            .modal(crate::modals::ConfirmModal::with_message(
-                "Close the migration editor?",
-            ))
-            .await;
+    #[keybinds(page = Preview)]
+    fn preview_keybinds() {
+        bind("[", prev_entity);
+        bind("]", next_entity);
+    }
 
-        if confirmed {
-            cx.close();
+    #[handler]
+    async fn back(&self, cx: &AppContext, gx: &GlobalContext) {
+        match self.page() {
+            Page::Preview => {
+                self.navigate(Page::Editor);
+            }
+            Page::Editor => {
+                let confirmed = gx
+                    .modal(crate::modals::ConfirmModal::with_message(
+                        "Close the migration editor?",
+                    ))
+                    .await;
+
+                if confirmed {
+                    cx.close();
+                }
+            }
         }
+    }
+
+    #[handler]
+    async fn run_preview(&self, gx: &GlobalContext) {
+        // TODO: determine phase from focused tree node, run pipeline, navigate to Preview
+        gx.toast(Toast::info("Preview not yet implemented"));
+    }
+
+    #[handler]
+    async fn prev_entity(&self, _gx: &GlobalContext) {
+        // TODO: cycle to previous entity in preview results
+    }
+
+    #[handler]
+    async fn next_entity(&self, _gx: &GlobalContext) {
+        // TODO: cycle to next entity in preview results
     }
 
     #[handler]
@@ -537,7 +580,8 @@ impl MigrationEditor {
         }
     }
 
-    fn element(&self) -> Element {
+    #[page(Editor)]
+    fn editor_page(&self) -> Element {
         let focused = self.focused_node();
         let has_selection = focused.is_some();
         let (can_add, add_label) = match &focused {
@@ -603,7 +647,10 @@ impl MigrationEditor {
 
         page! {
             column (padding: (1, 2), gap: 1, width: fill, height: fill) style (bg: background) {
-                text (content: {self.title()}) style (bold, fg: interact)
+                row (width: fill, justify: between) {
+                    text (content: {self.title()}) style (bold, fg: interact)
+                    button (label: "Preview", hint: "f10", id: "preview-btn") on_activate: run_preview()
+                }
 
                 row (width: fill, height: fill) {
                     row (width: {tuidom::Size::Flex(3)}, height: fill) {
@@ -722,7 +769,7 @@ impl MigrationEditor {
                 }
 
                 row (width: fill, justify: between) {
-                    button (label: "Close", hint: "esc", id: "close-btn") on_activate: close_app()
+                    button (label: "Close", hint: "esc", id: "close-btn") on_activate: back()
                     row (gap: 1) {
                         button (label: {add_label}, hint: "a", id: "add-btn", disabled: {!can_add}) on_activate: add_item()
                         if has_selection {
@@ -731,6 +778,27 @@ impl MigrationEditor {
                         if has_selection {
                             button (label: "Delete", hint: "d", id: "delete-btn") on_activate: delete_item()
                         }
+                    }
+                }
+            }
+        }
+    }
+
+    #[page(Preview)]
+    fn preview_page(&self) -> Element {
+        page! {
+            column (padding: (1, 2), gap: 1, width: fill, height: fill) style (bg: background) {
+                text (content: "Preview") style (bold, fg: interact)
+
+                column (width: fill, height: fill, justify: center, align: center) {
+                    text (content: "Preview not yet implemented") style (fg: muted)
+                }
+
+                row (width: fill, justify: between) {
+                    button (label: "Back", hint: "esc", id: "back-btn") on_activate: back()
+                    row (gap: 1) {
+                        button (label: "◄", hint: "[", id: "prev-entity-btn") on_activate: prev_entity()
+                        button (label: "►", hint: "]", id: "next-entity-btn") on_activate: next_entity()
                     }
                 }
             }
