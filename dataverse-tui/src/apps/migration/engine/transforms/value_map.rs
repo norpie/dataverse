@@ -112,25 +112,7 @@ fn map_multi_select(mos: &MultiSelectOptionSetValue, mappings: &[ValueMapping]) 
     }))
 }
 
-/// Compare two values for equality in the context of value mapping.
-fn values_equal(a: &Value, b: &Value) -> bool {
-    match (a, b) {
-        (Value::Null, Value::Null) => true,
-        (Value::Bool(a), Value::Bool(b)) => a == b,
-        (Value::Int(a), Value::Int(b)) => a == b,
-        (Value::Long(a), Value::Long(b)) => a == b,
-        (Value::Int(a), Value::Long(b)) => (*a as i64) == *b,
-        (Value::Long(a), Value::Int(b)) => *a == (*b as i64),
-        (Value::Float(a), Value::Float(b)) => (a - b).abs() < f64::EPSILON,
-        (Value::Decimal(a), Value::Decimal(b)) => a == b,
-        (Value::String(a), Value::String(b)) => a == b,
-        (Value::Guid(a), Value::Guid(b)) => a == b,
-        (Value::OptionSet(a), Value::OptionSet(b)) => a.value == b.value,
-        (Value::OptionSet(a), Value::Int(b)) => a.value == *b,
-        (Value::Int(a), Value::OptionSet(b)) => *a == b.value,
-        _ => false,
-    }
-}
+use crate::apps::migration::engine::util::values_equal;
 
 #[cfg(test)]
 mod tests {

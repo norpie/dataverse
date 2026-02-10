@@ -455,9 +455,7 @@ fn execute_find_lua(
     script: &str,
     ctx: &TransformContext<'_>,
 ) -> Result<Record, FindError> {
-    let id = ctx
-        .find_cache
-        .find_lua(entity, script, ctx.source_record)?;
+    let id = ctx.find_cache.find_lua(entity, script, ctx.source_record)?;
 
     ctx.find_cache.get(entity, id).cloned().ok_or_else(|| {
         FindError::Other(format!("Lua find returned ID {id} but record not in cache"))
