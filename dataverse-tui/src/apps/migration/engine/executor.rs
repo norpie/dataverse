@@ -5,6 +5,7 @@
 
 use dataverse_lib::model::Value;
 
+use super::condition::evaluate_condition;
 use crate::apps::migration::types::Condition;
 use crate::apps::migration::types::TransformData;
 
@@ -239,14 +240,113 @@ fn execute_transform(item: &ChainItem, ctx: &mut TransformContext<'_>) -> Transf
         }
         TransformData::Math { operation } => execute_math(&ctx.system_vars.value, operation),
 
-        // Control flow (requires condition evaluator + children)
-        TransformData::Guard { .. } => not_implemented("guard"),
-        TransformData::Match { .. } => not_implemented("match"),
-        TransformData::Coalesce => not_implemented("coalesce"),
+        // Control flow
+        TransformData::Guard { condition } => execute_guard(condition, &item.children, ctx),
+        TransformData::Match { .. } => execute_match(&item.children, ctx),
+        TransformData::Coalesce => execute_coalesce(&item.children, ctx),
 
         // Find (requires target cache + children)
         TransformData::Find { .. } => not_implemented("find"),
     }
+}
+
+// =============================================================================
+// Control Flow Transforms
+// =============================================================================
+
+/// Execute guard transform.
+///
+/// If condition is true, execute the fallback chain and return `Exit(result)`.
+/// If condition is false, pass through `#value` unchanged.
+fn execute_guard(
+    condition: &Condition,
+    children: &ChainChildren,
+    ctx: &mut TransformContext<'_>,
+) -> TransformResult {
+    let result = match evaluate_condition(condition, ctx) {
+        Ok(v) => v,
+        Err(e) => return TransformResult::Error(e),
+    };
+
+    if result {
+        let fallback = match children {
+            ChainChildren::Fallback(chain) => chain,
+            _ => {
+                return TransformResult::Error(TransformError::other(
+                    "Guard missing fallback chain",
+                ))
+            }
+        };
+        match execute_scoped_chain(fallback, ctx) {
+            TransformResult::Value(v) => TransformResult::Exit(v),
+            TransformResult::Error(e) => TransformResult::Error(e),
+            // scoped_chain already converts Exit→Value, so this shouldn't happen
+            TransformResult::Exit(v) => TransformResult::Exit(v),
+        }
+    } else {
+        TransformResult::Value(ctx.system_vars.value.clone())
+    }
+}
+
+/// Execute match transform.
+///
+/// Evaluate branch conditions in order. First matching branch executes its chain.
+/// If no branch matches and a default exists, execute the default chain.
+/// If no match and no default, return `NoMatchingBranch` error.
+fn execute_match(children: &ChainChildren, ctx: &mut TransformContext<'_>) -> TransformResult {
+    let (branches, default_chain) = match children {
+        ChainChildren::Branches(branches, default) => (branches, default),
+        _ => return TransformResult::Error(TransformError::other("Match missing branches")),
+    };
+
+    for branch in branches {
+        let matched = match evaluate_condition(&branch.condition, ctx) {
+            Ok(v) => v,
+            Err(e) => return TransformResult::Error(e),
+        };
+
+        if matched {
+            return execute_scoped_chain(&branch.chain, ctx);
+        }
+    }
+
+    // No branch matched — try default
+    if let Some(default) = default_chain {
+        return execute_scoped_chain(default, ctx);
+    }
+
+    TransformResult::Error(TransformError::NoMatchingBranch)
+}
+
+/// Execute coalesce transform.
+///
+/// Try each alternative chain in order. Return the first non-null result.
+/// If all alternatives produce null, return `CoalesceAllNull` error.
+fn execute_coalesce(children: &ChainChildren, ctx: &mut TransformContext<'_>) -> TransformResult {
+    let alternatives = match children {
+        ChainChildren::Alternatives(alts) => alts,
+        _ => return TransformResult::Error(TransformError::other("Coalesce missing alternatives")),
+    };
+
+    let saved_value = ctx.system_vars.value.clone();
+    let saved_type = ctx.system_vars.value_type.clone();
+
+    for alt in alternatives {
+        // Reset state for each attempt
+        ctx.system_vars.value = saved_value.clone();
+        ctx.system_vars.value_type = saved_type.clone();
+
+        match execute_scoped_chain(alt, ctx) {
+            TransformResult::Value(v) if !matches!(v, Value::Null) => {
+                return TransformResult::Value(v);
+            }
+            TransformResult::Error(e) => return TransformResult::Error(e),
+            // Null or Exit-turned-Value(Null) — try next alternative
+            _ => continue,
+        }
+    }
+
+    TransformResult::Error(TransformError::CoalesceAllNull)
 }
 
 /// Placeholder for unimplemented transforms.
