@@ -9,7 +9,7 @@ use rafter::widgets::Text;
 use tuidom::Element;
 
 /// Modal for selecting which phase to preview.
-#[modal(size = Sm)]
+#[modal(size = Auto)]
 pub struct SelectPhaseModal {
     phases: RadioState<i64>,
 }
