@@ -158,7 +158,7 @@ pub fn build_preview_table(comparison: &MappingComparison) -> (Vec<PreviewRow>, 
 // =============================================================================
 
 /// Get display label and color variable name for an operation type.
-fn op_label_color(op: &OperationType) -> (&'static str, &'static str) {
+pub fn op_label_color(op: &OperationType) -> (&'static str, &'static str) {
     match op {
         OperationType::Create => ("CREATE", "success"),
         OperationType::Update => ("UPDATE", "info"),

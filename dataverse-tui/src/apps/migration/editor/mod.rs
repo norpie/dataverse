@@ -8,7 +8,7 @@ mod helpers;
 mod insert_target;
 mod item_operations;
 mod phase_operations;
-mod preview;
+pub(crate) mod preview;
 mod transform_operations;
 mod tree;
 mod tree_builder;
@@ -639,6 +639,41 @@ impl MigrationEditor {
         self.preview_entity_index.set(next);
     }
 
+    #[handler]
+    async fn open_record_detail(&self, gx: &GlobalContext) {
+        use crate::apps::migration::modals::RecordDetail;
+        use crate::apps::migration::modals::RecordDetailModal;
+
+        let focused_key = self.preview_table.with_ref(|t| t.focused_key);
+        let key = match focused_key {
+            Some(k) => k,
+            None => return,
+        };
+
+        let detail = self.preview_results.with_ref(|results| {
+            let index = self.preview_entity_index.get();
+            let comparison = match results.get(index) {
+                Some(c) => c,
+                None => return None,
+            };
+
+            let record_count = comparison.records.len();
+            if key < record_count {
+                Some(RecordDetail::Record(comparison.records[key].clone()))
+            } else {
+                let orphan_index = key - record_count;
+                comparison
+                    .orphans
+                    .get(orphan_index)
+                    .map(|o| RecordDetail::Orphan(o.clone()))
+            }
+        });
+
+        if let Some(detail) = detail {
+            gx.modal(RecordDetailModal::with_detail(detail)).await;
+        }
+    }
+
     // =========================================================================
     // Preview derived values
     // =========================================================================
@@ -1205,7 +1240,7 @@ impl MigrationEditor {
                 // Record table
                 if has_entities {
                     box_ (id: "preview-table-container", height: fill, width: fill) style (bg: surface) {
-                        table (state: self.preview_table, id: "preview-table")
+                        table (state: self.preview_table, id: "preview-table") on_activate: open_record_detail()
                     }
                 }
                 if !has_entities {
