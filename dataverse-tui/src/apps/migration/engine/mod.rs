@@ -9,6 +9,7 @@ pub mod materializer;
 mod paths;
 mod transforms;
 mod types;
+pub mod variables;
 
 pub use executor::execute_chain;
 pub use executor::execute_scoped_chain;
