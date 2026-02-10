@@ -312,6 +312,7 @@ impl MigrationEditor {
         use crate::apps::migration::pipeline::cache::LiveFindCache;
         use crate::apps::migration::types::MatchStrategy;
         use crate::apps::migration::types::ParentType;
+        use crate::modals::ErrorAcknowledgmentModal;
         use crate::modals::odata_fetch::ODataFetchModal;
 
         let phases = self.phases.get();
@@ -378,10 +379,10 @@ impl MigrationEditor {
                             );
                         }
                         Err(e) => {
-                            gx.toast(Toast::error(format!(
-                                "Failed to fetch metadata for {}: {}",
-                                entity, e
-                            )));
+                            gx.modal(ErrorAcknowledgmentModal::new(
+                                "Metadata Fetch Failed".into(),
+                                format!("Failed to fetch metadata for {}: {}", entity, e),
+                            )).await;
                             return;
                         }
                     }
@@ -518,7 +519,10 @@ impl MigrationEditor {
         ) {
             Ok(tasks) => tasks,
             Err(e) => {
-                gx.toast(Toast::error(format!("Failed to build fetch tasks: {:?}", e)));
+                gx.modal(ErrorAcknowledgmentModal::new(
+                    "Fetch Task Error".into(),
+                    format!("Failed to build fetch tasks: {:?}", e),
+                )).await;
                 return;
             }
         };
@@ -533,7 +537,10 @@ impl MigrationEditor {
         let fetch_results = match gx.modal(ODataFetchModal::create(all_tasks)).await {
             Ok(results) => results,
             Err(e) => {
-                gx.toast(Toast::error(format!("Fetch failed: {}", e)));
+                gx.modal(ErrorAcknowledgmentModal::new(
+                    "Fetch Failed".into(),
+                    format!("Fetch failed: {}", e),
+                )).await;
                 return;
             }
         };
