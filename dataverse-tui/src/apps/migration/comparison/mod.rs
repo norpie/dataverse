@@ -51,7 +51,7 @@ pub enum OperationType {
 }
 
 /// Comparison result for a single source record.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct RecordComparison {
     /// The determined operation.
     pub operation: OperationType,
@@ -68,7 +68,7 @@ pub struct RecordComparison {
 }
 
 /// An orphaned target record (not matched by any source record).
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct OrphanRecord {
     /// The determined operation (Delete, Deactivate, Ignore, or Error).
     pub operation: OperationType,
@@ -77,7 +77,7 @@ pub struct OrphanRecord {
 }
 
 /// Comparison results for an entire entity mapping.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct MappingComparison {
     /// Source entity logical name.
     pub source_entity: String,
@@ -117,7 +117,7 @@ impl MappingComparison {
 }
 
 /// Aggregate operation counts.
-#[derive(Debug, Default, PartialEq)]
+#[derive(Debug, Default, Clone, PartialEq)]
 pub struct OperationTypeCounts {
     pub create: usize,
     pub update: usize,

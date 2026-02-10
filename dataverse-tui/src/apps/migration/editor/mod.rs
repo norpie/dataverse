@@ -8,6 +8,7 @@ mod helpers;
 mod insert_target;
 mod item_operations;
 mod phase_operations;
+mod preview;
 mod transform_operations;
 mod tree;
 mod tree_builder;
@@ -31,10 +32,15 @@ use dataverse_lib::DataverseClient;
 use rafter::page;
 use rafter::prelude::*;
 use rafter::widgets::Button;
+use rafter::widgets::Table;
+use rafter::widgets::TableState;
 use rafter::widgets::Text;
 use rafter::widgets::Tree;
 use rafter::widgets::TreeState;
 
+use crate::apps::migration::comparison::MappingComparison;
+use crate::apps::migration::comparison::OperationTypeCounts;
+use preview::PreviewRow;
 use tree::MigrationTreeNode;
 
 /// Page routing for the migration editor.
@@ -74,6 +80,17 @@ pub struct MigrationEditor {
     find_conditions: Vec<FindCondition>,
     /// All match conditions (for tree building).
     match_conditions: Vec<MatchCondition>,
+    // =========================================================================
+    // Preview state
+    // =========================================================================
+    /// Phase name shown in the preview header.
+    preview_phase_name: String,
+    /// Comparison results per entity mapping.
+    preview_results: Vec<MappingComparison>,
+    /// Current entity index in the preview.
+    preview_entity_index: usize,
+    /// Table state for the preview record list.
+    preview_table: TableState<PreviewRow>,
 }
 
 impl MigrationEditor {
@@ -97,6 +114,10 @@ impl MigrationEditor {
             Vec::new(), // coalesce_chains
             Vec::new(), // find_conditions
             Vec::new(), // match_conditions
+            String::new(),           // preview_phase_name
+            Vec::new(),              // preview_results
+            0,                       // preview_entity_index
+            TableState::default(),   // preview_table
         )
     }
 }
@@ -283,18 +304,99 @@ impl MigrationEditor {
 
     #[handler]
     async fn run_preview(&self, gx: &GlobalContext) {
-        // TODO: determine phase from focused tree node, run pipeline, navigate to Preview
-        gx.toast(Toast::info("Preview not yet implemented"));
+        use crate::apps::migration::modals::SelectPhaseModal;
+
+        let phases = self.phases.get();
+        if phases.is_empty() {
+            gx.toast(Toast::warning("No phases to preview"));
+            return;
+        }
+
+        let phase_options: Vec<(i64, String)> = phases
+            .iter()
+            .map(|p| (p.id, p.name.clone()))
+            .collect();
+
+        let Some(phase_id) = gx.modal(SelectPhaseModal::new_modal(phase_options)).await else {
+            return;
+        };
+
+        let phase_name = phases
+            .iter()
+            .find(|p| p.id == phase_id)
+            .map(|p| p.name.clone())
+            .unwrap_or_default();
+
+        // TODO: Run pipeline (analyze → fetch → transform → compare)
+        // For now, store empty results and navigate to preview
+        self.preview_phase_name.set(phase_name);
+        self.preview_results.set(Vec::new());
+        self.preview_entity_index.set(0);
+        self.navigate(Page::Preview);
+        gx.toast(Toast::info("Pipeline not yet wired — showing empty preview"));
     }
 
     #[handler]
     async fn prev_entity(&self, _gx: &GlobalContext) {
-        // TODO: cycle to previous entity in preview results
+        let count = self.preview_results.with_ref(|r| r.len());
+        if count == 0 {
+            return;
+        }
+        let current = self.preview_entity_index.get();
+        let next = if current == 0 { count - 1 } else { current - 1 };
+        self.preview_entity_index.set(next);
     }
 
     #[handler]
     async fn next_entity(&self, _gx: &GlobalContext) {
-        // TODO: cycle to next entity in preview results
+        let count = self.preview_results.with_ref(|r| r.len());
+        if count == 0 {
+            return;
+        }
+        let current = self.preview_entity_index.get();
+        let next = if current + 1 >= count { 0 } else { current + 1 };
+        self.preview_entity_index.set(next);
+    }
+
+    // =========================================================================
+    // Preview derived values
+    // =========================================================================
+
+    #[derived]
+    fn preview_entity_names(&self) -> Vec<String> {
+        let results = self.preview_results.get();
+        preview::entity_names(&results)
+    }
+
+    #[derived]
+    fn preview_counts(&self) -> OperationTypeCounts {
+        let results = self.preview_results.get();
+        let index = self.preview_entity_index.get();
+        preview::entity_counts(&results, index)
+    }
+
+    // =========================================================================
+    // Preview table rebuild
+    // =========================================================================
+
+    #[watch]
+    async fn rebuild_preview_table(&self) {
+        use preview::build_preview_table;
+        use rafter::widgets::SelectionMode;
+
+        let results = self.preview_results.get();
+        let index = self.preview_entity_index.get();
+
+        if let Some(comparison) = results.get(index) {
+            let (rows, columns) = build_preview_table(comparison);
+            self.preview_table.set(
+                TableState::new(rows, columns)
+                    .with_selection(SelectionMode::Single)
+                    .with_frozen(&["op", "source_id", "info"]),
+            );
+        } else {
+            self.preview_table.set(TableState::default());
+        }
     }
 
     #[handler]
@@ -786,18 +888,57 @@ impl MigrationEditor {
 
     #[page(Preview)]
     fn preview_page(&self) -> Element {
+        let phase_name = self.preview_phase_name.get();
+        let counts = self.preview_counts();
+        let entity_names = self.preview_entity_names();
+        let entity_index = self.preview_entity_index.get();
+        let has_entities = !entity_names.is_empty();
+
+        let current_entity_label = entity_names
+            .get(entity_index)
+            .cloned()
+            .unwrap_or_else(|| "No entities".to_string());
+
         page! {
             column (padding: (1, 2), gap: 1, width: fill, height: fill) style (bg: background) {
-                text (content: "Preview") style (bold, fg: interact)
+                // Header
+                text (content: {format!("Preview: {}", phase_name)}) style (bold, fg: interact)
 
-                column (width: fill, height: fill, justify: center, align: center) {
-                    text (content: "Preview not yet implemented") style (fg: muted)
+                // Stats row
+                row (gap: 2) {
+                    text (content: {format!("Create: {}", counts.create)}) style (fg: success)
+                    text (content: {format!("Update: {}", counts.update)}) style (fg: info)
+                    text (content: {format!("Skip: {}", counts.skip)}) style (fg: muted)
+                    text (content: {format!("Delete: {}", counts.delete)}) style (fg: error)
+                    if counts.deactivate > 0 {
+                        text (content: {format!("Deactivate: {}", counts.deactivate)}) style (fg: warning)
+                    }
+                    if counts.ignore > 0 {
+                        text (content: {format!("Ignore: {}", counts.ignore)}) style (fg: muted)
+                    }
+                    if counts.error > 0 {
+                        text (content: {format!("Error: {}", counts.error)}) style (fg: error)
+                    }
                 }
 
+                // Record table
+                if has_entities {
+                    box_ (id: "preview-table-container", height: fill, width: fill) style (bg: surface) {
+                        table (state: self.preview_table, id: "preview-table")
+                    }
+                }
+                if !has_entities {
+                    column (width: fill, height: fill, justify: center, align: center) {
+                        text (content: "No results") style (fg: muted)
+                    }
+                }
+
+                // Footer
                 row (width: fill, justify: between) {
                     button (label: "Back", hint: "esc", id: "back-btn") on_activate: back()
                     row (gap: 1) {
                         button (label: "◄", hint: "[", id: "prev-entity-btn") on_activate: prev_entity()
+                        text (content: {current_entity_label}) style (fg: primary)
                         button (label: "►", hint: "]", id: "next-entity-btn") on_activate: next_entity()
                     }
                 }
