@@ -304,7 +304,14 @@ impl MigrationEditor {
 
     #[handler]
     async fn run_preview(&self, gx: &GlobalContext) {
+        use crate::apps::migration::comparison::MappingComparison;
+        use crate::apps::migration::engine::materializer::MaterializeData;
+        use crate::apps::migration::engine::materializer::materialize_chain;
         use crate::apps::migration::modals::SelectPhaseModal;
+        use crate::apps::migration::pipeline;
+        use crate::apps::migration::types::MatchStrategy;
+        use crate::apps::migration::types::ParentType;
+        use crate::modals::odata_fetch::ODataFetchModal;
 
         let phases = self.phases.get();
         if phases.is_empty() {
@@ -327,13 +334,257 @@ impl MigrationEditor {
             .map(|p| p.name.clone())
             .unwrap_or_default();
 
-        // TODO: Run pipeline (analyze → fetch → transform → compare)
-        // For now, store empty results and navigate to preview
+        // Gather entity mappings for this phase
+        let entity_mappings = self.entity_mappings.get();
+        let phase_mappings: Vec<_> = entity_mappings
+            .iter()
+            .filter(|em| em.phase_id == phase_id)
+            .cloned()
+            .collect();
+
+        if phase_mappings.is_empty() {
+            gx.toast(Toast::warning("No entity mappings in this phase"));
+            return;
+        }
+
+        // Load all transforms/branches/chains/conditions
+        let all_transforms = self.transforms.get();
+        let all_match_branches = self.match_branches.get();
+        let all_coalesce_chains = self.coalesce_chains.get();
+        let all_find_conditions = self.find_conditions.get();
+        let all_field_mappings = self.field_mappings.get();
+        let all_variables = self.variables.get();
+        let all_match_conditions = self.match_conditions.get();
+
+        let source_client = self.source_client.get().clone();
+        let target_client = self.target_client.get().clone();
+
+        // Fetch primary keys for all source/target entities
+        let mut primary_keys: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+        for em in &phase_mappings {
+            for entity in [&em.source_entity, &em.target_entity] {
+                if !entity.is_empty() && !primary_keys.contains_key(entity.as_str()) {
+                    let client = if entity == &em.source_entity {
+                        &source_client
+                    } else {
+                        &target_client
+                    };
+                    match client.metadata().entity(entity.as_str()).await {
+                        Ok(meta) => {
+                            primary_keys.insert(
+                                entity.clone(),
+                                meta.primary_id_attribute().to_string(),
+                            );
+                        }
+                        Err(e) => {
+                            gx.toast(Toast::error(format!(
+                                "Failed to fetch metadata for {}: {}",
+                                entity, e
+                            )));
+                            return;
+                        }
+                    }
+                }
+            }
+        }
+
+        // Per-mapping: materialize chains and build MappingInputs
+        let mut materialized_field_mappings: Vec<Vec<(String, Vec<super::engine::ChainItem>)>> = Vec::new();
+        let mut materialized_variables: Vec<Vec<(String, Vec<super::engine::ChainItem>)>> = Vec::new();
+        let mut materialized_match_conditions: Vec<Vec<(String, Vec<super::engine::ChainItem>)>> = Vec::new();
+
+        for em in &phase_mappings {
+            // Filter data for this entity mapping
+            let em_transforms: Vec<_> = all_transforms
+                .iter()
+                .filter(|t| t.entity_mapping_id == em.id)
+                .cloned()
+                .collect();
+            let em_branches: Vec<_> = all_match_branches
+                .iter()
+                .filter(|b| em_transforms.iter().any(|t| t.id == b.transform_id))
+                .cloned()
+                .collect();
+            let em_coalesces: Vec<_> = all_coalesce_chains
+                .iter()
+                .filter(|c| em_transforms.iter().any(|t| t.id == c.transform_id))
+                .cloned()
+                .collect();
+            let em_find_conds: Vec<_> = all_find_conditions
+                .iter()
+                .filter(|f| em_transforms.iter().any(|t| t.id == f.transform_id))
+                .cloned()
+                .collect();
+
+            let mat_data = MaterializeData::new(
+                em_transforms,
+                em_branches,
+                em_coalesces,
+                em_find_conds,
+            );
+
+            // Materialize field mapping chains
+            let fm_chains: Vec<(String, Vec<_>)> = all_field_mappings
+                .iter()
+                .filter(|fm| fm.entity_mapping_id == em.id)
+                .map(|fm| {
+                    let chain = materialize_chain(ParentType::FieldMapping, fm.id, &mat_data);
+                    (fm.target_field.clone(), chain)
+                })
+                .collect();
+
+            // Materialize variable chains
+            let var_chains: Vec<(String, Vec<_>)> = all_variables
+                .iter()
+                .filter(|v| v.entity_mapping_id == em.id)
+                .map(|v| {
+                    let chain = materialize_chain(ParentType::Variable, v.id, &mat_data);
+                    (v.name.clone(), chain)
+                })
+                .collect();
+
+            // Materialize match condition chains (for Find strategy)
+            let mc_chains: Vec<(String, Vec<_>)> = all_match_conditions
+                .iter()
+                .filter(|mc| mc.entity_mapping_id == em.id)
+                .map(|mc| {
+                    let chain = materialize_chain(ParentType::MatchCondition, mc.id, &mat_data);
+                    (mc.target_field.clone(), chain)
+                })
+                .collect();
+
+            materialized_field_mappings.push(fm_chains);
+            materialized_variables.push(var_chains);
+            materialized_match_conditions.push(mc_chains);
+        }
+
+        // Build MappingInputs
+        let mapping_inputs: Vec<pipeline::MappingInput<'_>> = phase_mappings
+            .iter()
+            .enumerate()
+            .map(|(i, em)| {
+                let source_pk = primary_keys
+                    .get(&em.source_entity)
+                    .map(|s| s.as_str())
+                    .unwrap_or("id");
+                let target_pk = primary_keys
+                    .get(&em.target_entity)
+                    .map(|s| s.as_str())
+                    .unwrap_or("id");
+
+                pipeline::MappingInput {
+                    source_entity: &em.source_entity,
+                    target_entity: &em.target_entity,
+                    source_primary_key: source_pk,
+                    target_primary_key: target_pk,
+                    field_mappings: &materialized_field_mappings[i],
+                    variables: &materialized_variables[i],
+                    match_config_chain: None, // TODO: if needed for analysis
+                    source_filter: em.source_filter.as_ref(),
+                    target_filter: em.target_filter.as_ref(),
+                    test_guids: em.test_guids.as_deref(),
+                    mapping_name: &em.name,
+                }
+            })
+            .collect();
+
+        // 1. Analyze phase
+        let phase_plan = pipeline::analyze_phase(&mapping_inputs);
+
+        // 2. Build fetch tasks
+        let fetch_tasks = match pipeline::build_phase_fetch_tasks(
+            &phase_plan,
+            &mapping_inputs,
+            &source_client,
+            &target_client,
+        ) {
+            Ok(tasks) => tasks,
+            Err(e) => {
+                gx.toast(Toast::error(format!("Failed to build fetch tasks: {:?}", e)));
+                return;
+            }
+        };
+
+        // 3. Collect and execute fetches
+        let (all_tasks, index) = pipeline::collect_all_tasks(fetch_tasks);
+        if all_tasks.is_empty() {
+            gx.toast(Toast::warning("No data to fetch"));
+            return;
+        }
+
+        let fetch_results = match gx.modal(ODataFetchModal::create(all_tasks)).await {
+            Ok(results) => results,
+            Err(e) => {
+                gx.toast(Toast::error(format!("Fetch failed: {}", e)));
+                return;
+            }
+        };
+
+        // 4. Split results
+        let split = pipeline::split_fetch_results(fetch_results, &index);
+
+        // 5. Build find cache
+        let find_cache = pipeline::build_find_cache(
+            split.find_cache_records,
+            &phase_plan.merged_find_caches,
+        );
+
+        // 6. Execute transforms + 7. Compare — per entity mapping
+        let mut comparisons: Vec<MappingComparison> = Vec::new();
+        for (i, em) in phase_mappings.iter().enumerate() {
+            let source_records = &split.source_records[i];
+
+            // Find target records for this mapping
+            let target_records: Vec<_> = split
+                .target_records
+                .iter()
+                .find(|(idx, _)| *idx == i)
+                .map(|(_, records)| records.clone())
+                .unwrap_or_default();
+
+            // Execute transforms
+            let mapping_result = pipeline::execute_mapping(
+                source_records,
+                &materialized_variables[i],
+                &materialized_field_mappings[i],
+                &em.source_entity,
+                &em.target_entity,
+                &find_cache,
+            );
+
+            // Compare
+            let source_pk = primary_keys
+                .get(&em.source_entity)
+                .map(|s| s.as_str())
+                .unwrap_or("id");
+            let target_pk = primary_keys
+                .get(&em.target_entity)
+                .map(|s| s.as_str())
+                .unwrap_or("id");
+
+            let comparison = pipeline::compare_mapping_results(&pipeline::ComparisonInput {
+                source_records,
+                mapping_result: &mapping_result,
+                target_records: &target_records,
+                strategy: em.match_strategy,
+                source_primary_key: source_pk,
+                target_primary_key: target_pk,
+                match_conditions: &materialized_match_conditions[i],
+                source_entity: &em.source_entity,
+                target_entity: &em.target_entity,
+                find_cache: &find_cache,
+                no_match_fallback: em.no_match_fallback,
+                orphan_strategy: em.orphan_strategy,
+            });
+
+            comparisons.push(comparison);
+        }
+
+        // Store results and navigate
         self.preview_phase_name.set(phase_name);
-        self.preview_results.set(Vec::new());
+        self.preview_results.set(comparisons);
         self.preview_entity_index.set(0);
         self.navigate(Page::Preview);
-        gx.toast(Toast::info("Pipeline not yet wired — showing empty preview"));
     }
 
     #[handler]
