@@ -5,6 +5,7 @@ use rafter::prelude::*;
 use crate::apps::migration::modals::EditEntityMappingModal;
 use crate::apps::migration::repository::MigrationRepository;
 use crate::apps::migration::repository::NewEntityMapping;
+use crate::apps::migration::repository::Update;
 use crate::apps::migration::repository::UpdateEntityMapping;
 use crate::apps::migration::types::EntityMapping;
 use crate::apps::migration::types::MatchStrategy;
@@ -244,8 +245,8 @@ impl MigrationEditor {
                 deactivate_pass_enabled: None,
                 associate_pass_enabled: None,
                 disassociate_pass_enabled: None,
-                source_filter: None,
-                target_filter: None,
+                source_filter: Update::Keep,
+                target_filter: Update::Keep,
                 test_guids: None,
             },
             crate::apps::migration::modals::EntityMappingResult::Lua { name, lua_script } => {
@@ -265,8 +266,8 @@ impl MigrationEditor {
                     deactivate_pass_enabled: None,
                     associate_pass_enabled: None,
                     disassociate_pass_enabled: None,
-                    source_filter: None,
-                    target_filter: None,
+                    source_filter: Update::Keep,
+                    target_filter: Update::Keep,
                     test_guids: None,
                 }
             }

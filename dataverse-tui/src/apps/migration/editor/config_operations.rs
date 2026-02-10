@@ -10,6 +10,7 @@ use crate::apps::migration::modals::TestGuidsModal;
 use crate::apps::migration::modals::UnmatchedHandlingModal;
 use crate::apps::migration::repository::MigrationRepository;
 use crate::apps::migration::repository::NewMatchCondition;
+use crate::apps::migration::repository::Update;
 use crate::apps::migration::repository::UpdateEntityMapping;
 use crate::apps::migration::repository::UpdateMatchCondition;
 use crate::apps::migration::types::MatchCondition;
@@ -48,7 +49,7 @@ impl MigrationEditor {
             source_entity: None,
             target_entity: None,
             mode: None,
-            lua_script: crate::apps::migration::repository::Update::Keep,
+            lua_script: Update::Keep,
             match_strategy: None,
             match_find_config: None,
             no_match_fallback: None,
@@ -59,8 +60,8 @@ impl MigrationEditor {
             deactivate_pass_enabled: None,
             associate_pass_enabled: None,
             disassociate_pass_enabled: None,
-            source_filter: None,
-            target_filter: None,
+            source_filter: Update::Keep,
+            target_filter: Update::Keep,
             test_guids: Some(result),
         };
 
@@ -107,7 +108,7 @@ impl MigrationEditor {
             source_entity: None,
             target_entity: None,
             mode: None,
-            lua_script: crate::apps::migration::repository::Update::Keep,
+            lua_script: Update::Keep,
             match_strategy: None,
             match_find_config: None,
             no_match_fallback: None,
@@ -118,8 +119,8 @@ impl MigrationEditor {
             deactivate_pass_enabled: Some(result.deactivate_pass),
             associate_pass_enabled: Some(result.associate_pass),
             disassociate_pass_enabled: Some(result.disassociate_pass),
-            source_filter: None,
-            target_filter: None,
+            source_filter: Update::Keep,
+            target_filter: Update::Keep,
             test_guids: None,
         };
 
@@ -166,7 +167,7 @@ impl MigrationEditor {
             source_entity: None,
             target_entity: None,
             mode: None,
-            lua_script: crate::apps::migration::repository::Update::Keep,
+            lua_script: Update::Keep,
             match_strategy: None,
             match_find_config: None,
             no_match_fallback: Some(result.no_match_fallback),
@@ -177,8 +178,8 @@ impl MigrationEditor {
             deactivate_pass_enabled: None,
             associate_pass_enabled: None,
             disassociate_pass_enabled: None,
-            source_filter: None,
-            target_filter: None,
+            source_filter: Update::Keep,
+            target_filter: Update::Keep,
             test_guids: None,
         };
 
@@ -248,11 +249,11 @@ impl MigrationEditor {
             return;
         };
 
-        // Convert Empty to None for storage
-        let filter_to_store = if let FilterNode::Empty = filter {
-            None
+        // Convert to Update enum
+        let filter_update = if let FilterNode::Empty = filter {
+            Update::Clear
         } else {
-            Some(filter)
+            Update::Set(filter)
         };
 
         // Update entity mapping
@@ -262,7 +263,7 @@ impl MigrationEditor {
             source_entity: None,
             target_entity: None,
             mode: None,
-            lua_script: crate::apps::migration::repository::Update::Keep,
+            lua_script: Update::Keep,
             match_strategy: None,
             match_find_config: None,
             no_match_fallback: None,
@@ -273,8 +274,8 @@ impl MigrationEditor {
             deactivate_pass_enabled: None,
             associate_pass_enabled: None,
             disassociate_pass_enabled: None,
-            source_filter: filter_to_store,
-            target_filter: None,
+            source_filter: filter_update,
+            target_filter: Update::Keep,
             test_guids: None,
         };
 
@@ -344,11 +345,11 @@ impl MigrationEditor {
             return;
         };
 
-        // Convert Empty to None for storage
-        let filter_to_store = if let FilterNode::Empty = filter {
-            None
+        // Convert to Update enum
+        let filter_update = if let FilterNode::Empty = filter {
+            Update::Clear
         } else {
-            Some(filter)
+            Update::Set(filter)
         };
 
         // Update entity mapping
@@ -358,7 +359,7 @@ impl MigrationEditor {
             source_entity: None,
             target_entity: None,
             mode: None,
-            lua_script: crate::apps::migration::repository::Update::Keep,
+            lua_script: Update::Keep,
             match_strategy: None,
             match_find_config: None,
             no_match_fallback: None,
@@ -369,8 +370,8 @@ impl MigrationEditor {
             deactivate_pass_enabled: None,
             associate_pass_enabled: None,
             disassociate_pass_enabled: None,
-            source_filter: None,
-            target_filter: filter_to_store,
+            source_filter: Update::Keep,
+            target_filter: filter_update,
             test_guids: None,
         };
 
@@ -449,7 +450,7 @@ impl MigrationEditor {
             source_entity: None,
             target_entity: None,
             mode: None,
-            lua_script: crate::apps::migration::repository::Update::Keep,
+            lua_script: Update::Keep,
             match_strategy: Some(new_strategy),
             match_find_config: None,
             no_match_fallback: None,
@@ -460,8 +461,8 @@ impl MigrationEditor {
             deactivate_pass_enabled: None,
             associate_pass_enabled: None,
             disassociate_pass_enabled: None,
-            source_filter: None,
-            target_filter: None,
+            source_filter: Update::Keep,
+            target_filter: Update::Keep,
             test_guids: None,
         };
 

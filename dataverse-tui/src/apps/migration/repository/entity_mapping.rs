@@ -50,8 +50,8 @@ pub struct UpdateEntityMapping {
     pub deactivate_pass_enabled: Option<bool>,
     pub associate_pass_enabled: Option<bool>,
     pub disassociate_pass_enabled: Option<bool>,
-    pub source_filter: Option<FilterNode>,
-    pub target_filter: Option<FilterNode>,
+    pub source_filter: super::Update<FilterNode>,
+    pub target_filter: super::Update<FilterNode>,
     pub test_guids: Option<Vec<String>>,
 }
 
@@ -228,18 +228,20 @@ impl super::MigrationRepository {
             .as_ref()
             .map(serialize_find_config)
             .transpose()?;
-        let source_filter_blob = update
-            .source_filter
-            .as_ref()
-            .map(|f| serialize_filter_node(&Some(f.clone())))
-            .transpose()?
-            .flatten();
-        let target_filter_blob = update
-            .target_filter
-            .as_ref()
-            .map(|f| serialize_filter_node(&Some(f.clone())))
-            .transpose()?
-            .flatten();
+        let source_filter_blob = match &update.source_filter {
+            super::Update::Keep => None,
+            super::Update::Clear => Some(None),
+            super::Update::Set(f) => {
+                Some(serialize_filter_node(&Some(f.clone()))?)
+            }
+        };
+        let target_filter_blob = match &update.target_filter {
+            super::Update::Keep => None,
+            super::Update::Clear => Some(None),
+            super::Update::Set(f) => {
+                Some(serialize_filter_node(&Some(f.clone()))?)
+            }
+        };
         let test_guids_csv = update
             .test_guids
             .as_ref()
@@ -335,6 +337,7 @@ impl super::MigrationRepository {
                     updates.push("target_filter = ?");
                     param_vals.push(Box::new(blob));
                 }
+
                 if let Some(csv) = test_guids_csv {
                     updates.push("test_guids = ?");
                     param_vals.push(Box::new(csv));
