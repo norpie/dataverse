@@ -20,8 +20,8 @@ pub struct TransformContext<'a> {
     pub variables: &'a HashMap<String, Value>,
     /// System variables.
     pub system_vars: SystemVars,
-    /// Target cache for find() resolution.
-    pub target_cache: &'a dyn TargetCache,
+    /// Find cache for find() resolution.
+    pub find_cache: &'a dyn FindCache,
 }
 
 /// System variables available in transforms and conditions.
@@ -245,11 +245,11 @@ pub enum FindError {
     Other(String),
 }
 
-/// Interface for resolving find() expressions against target data.
+/// Interface for resolving find() expressions against cached data.
 ///
-/// This trait abstracts the target data cache, allowing the transform engine
+/// This trait abstracts the find cache, allowing the transform engine
 /// to be tested without a real data pipeline.
-pub trait TargetCache: Send + Sync {
+pub trait FindCache: Send + Sync {
     /// Find a record by where-clause conditions.
     ///
     /// Returns the matching record, or an error if not found / multiple found.
@@ -277,12 +277,12 @@ pub trait TargetCache: Send + Sync {
 // Stub Target Cache (for testing)
 // =============================================================================
 
-/// A stub target cache that always returns errors.
+/// A stub find cache that always returns errors.
 ///
 /// Used during development and testing when no real cache is available.
-pub struct StubTargetCache;
+pub struct StubFindCache;
 
-impl TargetCache for StubTargetCache {
+impl FindCache for StubFindCache {
     fn find_where(
         &self,
         entity: &str,

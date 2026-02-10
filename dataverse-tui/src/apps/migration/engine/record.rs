@@ -11,7 +11,7 @@ use dataverse_lib::model::Value;
 use super::executor::execute_chain;
 use super::executor::ChainItem;
 use super::types::SystemVars;
-use super::types::TargetCache;
+use super::types::FindCache;
 use super::types::TransformContext;
 use super::types::TransformError;
 use super::types::TransformResult;
@@ -63,16 +63,16 @@ impl RecordResult {
 /// - `variables`: Variable definitions in computation order: `(name, chain)`.
 /// - `field_mappings`: Field mapping definitions: `(target_field, chain)`.
 /// - `system_vars`: System variables (index, source/target entity).
-/// - `target_cache`: Target data cache for find() resolution.
+/// - `find_cache`: Target data cache for find() resolution.
 pub fn execute_record(
     source: &Record,
     variables: &[(String, Vec<ChainItem>)],
     field_mappings: &[(String, Vec<ChainItem>)],
     system_vars: SystemVars,
-    target_cache: &dyn TargetCache,
+    find_cache: &dyn FindCache,
 ) -> RecordResult {
     // Step 1: Compute variables
-    let computed_vars = match compute_variables(variables, source, &system_vars, target_cache) {
+    let computed_vars = match compute_variables(variables, source, &system_vars, find_cache) {
         Ok(vars) => vars,
         Err((var_name, error)) => {
             // Variable computation failed — return a single error and no fields
@@ -96,7 +96,7 @@ pub fn execute_record(
                 value_type: None,
                 ..system_vars.clone()
             },
-            target_cache,
+            find_cache,
         };
 
         match execute_chain(chain, &mut ctx) {
@@ -124,7 +124,7 @@ pub fn execute_record(
 mod tests {
     use dataverse_lib::model::Entity;
 
-    use crate::apps::migration::engine::StubTargetCache;
+    use crate::apps::migration::engine::StubFindCache;
     use crate::apps::migration::types::CompareOp;
     use crate::apps::migration::types::Condition;
     use crate::apps::migration::types::Expr;
@@ -158,7 +158,7 @@ mod tests {
             ),
         ];
 
-        let cache = StubTargetCache;
+        let cache = StubFindCache;
         let result = execute_record(&source, &[], &field_mappings, test_system_vars(), &cache);
 
         assert!(result.is_ok());
@@ -187,7 +187,7 @@ mod tests {
             ],
         )];
 
-        let cache = StubTargetCache;
+        let cache = StubFindCache;
         let result = execute_record(&source, &[], &field_mappings, test_system_vars(), &cache);
 
         assert!(result.is_ok());
@@ -215,7 +215,7 @@ mod tests {
             })],
         )];
 
-        let cache = StubTargetCache;
+        let cache = StubFindCache;
         let result = execute_record(
             &source,
             &variables,
@@ -254,7 +254,7 @@ mod tests {
             ),
         ];
 
-        let cache = StubTargetCache;
+        let cache = StubFindCache;
         let result = execute_record(&source, &[], &field_mappings, test_system_vars(), &cache);
 
         assert!(!result.is_ok());
@@ -281,7 +281,7 @@ mod tests {
             })],
         )];
 
-        let cache = StubTargetCache;
+        let cache = StubFindCache;
         let result = execute_record(
             &source,
             &variables,
@@ -324,7 +324,7 @@ mod tests {
             ],
         )];
 
-        let cache = StubTargetCache;
+        let cache = StubFindCache;
         let result = execute_record(&source, &[], &field_mappings, test_system_vars(), &cache);
 
         assert!(result.is_ok());
@@ -364,7 +364,7 @@ mod tests {
             ],
         )];
 
-        let cache = StubTargetCache;
+        let cache = StubFindCache;
         let result = execute_record(&source, &[], &field_mappings, test_system_vars(), &cache);
 
         assert!(result.is_ok());
@@ -378,7 +378,7 @@ mod tests {
     #[test]
     fn empty_mappings() {
         let source = Record::new("account");
-        let cache = StubTargetCache;
+        let cache = StubFindCache;
         let result = execute_record(&source, &[], &[], test_system_vars(), &cache);
 
         assert!(result.is_ok());

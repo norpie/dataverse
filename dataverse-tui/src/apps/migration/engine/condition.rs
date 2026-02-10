@@ -226,7 +226,7 @@ mod tests {
     use dataverse_lib::model::Record;
     use dataverse_lib::model::Value;
 
-    use crate::apps::migration::engine::StubTargetCache;
+    use crate::apps::migration::engine::StubFindCache;
     use crate::apps::migration::engine::SystemVars;
     use crate::apps::migration::engine::TransformContext;
     use crate::apps::migration::types::CompareOp;
@@ -239,13 +239,13 @@ mod tests {
     fn make_context<'a>(
         source: &'a Record,
         variables: &'a HashMap<String, Value>,
-        cache: &'a StubTargetCache,
+        cache: &'a StubFindCache,
     ) -> TransformContext<'a> {
         TransformContext {
             source_record: source,
             variables,
             system_vars: SystemVars::new(Entity::logical("account"), Entity::logical("contact"), 5),
-            target_cache: cache,
+            find_cache: cache,
         }
     }
 
@@ -257,7 +257,7 @@ mod tests {
     fn resolve_path() {
         let source = Record::new("account").set("name", "Contoso");
         let variables = HashMap::new();
-        let cache = StubTargetCache;
+        let cache = StubFindCache;
         let ctx = make_context(&source, &variables, &cache);
 
         let result = resolve_expr(&Expr::Path("name".to_string()), &ctx).unwrap();
@@ -268,7 +268,7 @@ mod tests {
     fn resolve_path_missing_errors() {
         let source = Record::new("account");
         let variables = HashMap::new();
-        let cache = StubTargetCache;
+        let cache = StubFindCache;
         let ctx = make_context(&source, &variables, &cache);
 
         let result = resolve_expr(&Expr::Path("nonexistent".to_string()), &ctx);
@@ -283,7 +283,7 @@ mod tests {
             "owner_email".to_string(),
             Value::String("a@b.com".to_string()),
         );
-        let cache = StubTargetCache;
+        let cache = StubFindCache;
         let ctx = make_context(&source, &variables, &cache);
 
         let result = resolve_expr(&Expr::Variable("owner_email".to_string()), &ctx).unwrap();
@@ -294,7 +294,7 @@ mod tests {
     fn resolve_variable_missing_errors() {
         let source = Record::new("account");
         let variables = HashMap::new();
-        let cache = StubTargetCache;
+        let cache = StubFindCache;
         let ctx = make_context(&source, &variables, &cache);
 
         let result = resolve_expr(&Expr::Variable("missing".to_string()), &ctx);
@@ -308,7 +308,7 @@ mod tests {
     fn resolve_system_var_value() {
         let source = Record::new("account");
         let variables = HashMap::new();
-        let cache = StubTargetCache;
+        let cache = StubFindCache;
         let mut ctx = make_context(&source, &variables, &cache);
         ctx.system_vars.value = Value::Int(42);
 
@@ -320,7 +320,7 @@ mod tests {
     fn resolve_system_var_index() {
         let source = Record::new("account");
         let variables = HashMap::new();
-        let cache = StubTargetCache;
+        let cache = StubFindCache;
         let ctx = make_context(&source, &variables, &cache);
 
         let result = resolve_expr(&Expr::SystemVar(SystemVar::Index), &ctx).unwrap();
@@ -331,7 +331,7 @@ mod tests {
     fn resolve_system_var_source_entity() {
         let source = Record::new("account");
         let variables = HashMap::new();
-        let cache = StubTargetCache;
+        let cache = StubFindCache;
         let ctx = make_context(&source, &variables, &cache);
 
         let result = resolve_expr(&Expr::SystemVar(SystemVar::SourceEntity), &ctx).unwrap();
@@ -342,7 +342,7 @@ mod tests {
     fn resolve_system_var_type_none() {
         let source = Record::new("account");
         let variables = HashMap::new();
-        let cache = StubTargetCache;
+        let cache = StubFindCache;
         let ctx = make_context(&source, &variables, &cache);
 
         let result = resolve_expr(&Expr::SystemVar(SystemVar::Type), &ctx).unwrap();
@@ -353,7 +353,7 @@ mod tests {
     fn resolve_system_var_type_set() {
         let source = Record::new("account");
         let variables = HashMap::new();
-        let cache = StubTargetCache;
+        let cache = StubFindCache;
         let mut ctx = make_context(&source, &variables, &cache);
         ctx.system_vars.value_type = Some(Entity::logical("systemuser"));
 
@@ -365,7 +365,7 @@ mod tests {
     fn resolve_literal() {
         let source = Record::new("account");
         let variables = HashMap::new();
-        let cache = StubTargetCache;
+        let cache = StubFindCache;
         let ctx = make_context(&source, &variables, &cache);
 
         let result = resolve_expr(&Expr::Literal(Value::Int(99)), &ctx).unwrap();
@@ -380,7 +380,7 @@ mod tests {
     fn compare_equal_ints() {
         let source = Record::new("account").set("status", 1);
         let variables = HashMap::new();
-        let cache = StubTargetCache;
+        let cache = StubFindCache;
         let ctx = make_context(&source, &variables, &cache);
 
         let cond = Condition::Compare {
@@ -395,7 +395,7 @@ mod tests {
     fn compare_not_equal() {
         let source = Record::new("account").set("status", 1);
         let variables = HashMap::new();
-        let cache = StubTargetCache;
+        let cache = StubFindCache;
         let ctx = make_context(&source, &variables, &cache);
 
         let cond = Condition::Compare {
@@ -410,7 +410,7 @@ mod tests {
     fn compare_less_than() {
         let source = Record::new("account").set("revenue", 100);
         let variables = HashMap::new();
-        let cache = StubTargetCache;
+        let cache = StubFindCache;
         let ctx = make_context(&source, &variables, &cache);
 
         let cond = Condition::Compare {
@@ -425,7 +425,7 @@ mod tests {
     fn compare_strings() {
         let source = Record::new("account").set("name", "Contoso");
         let variables = HashMap::new();
-        let cache = StubTargetCache;
+        let cache = StubFindCache;
         let ctx = make_context(&source, &variables, &cache);
 
         let cond = Condition::Compare {
@@ -440,7 +440,7 @@ mod tests {
     fn is_null_true() {
         let source = Record::new("account").set("description", Value::Null);
         let variables = HashMap::new();
-        let cache = StubTargetCache;
+        let cache = StubFindCache;
         let ctx = make_context(&source, &variables, &cache);
 
         let cond = Condition::IsNull(Expr::Path("description".to_string()));
@@ -451,7 +451,7 @@ mod tests {
     fn is_null_false() {
         let source = Record::new("account").set("name", "Contoso");
         let variables = HashMap::new();
-        let cache = StubTargetCache;
+        let cache = StubFindCache;
         let ctx = make_context(&source, &variables, &cache);
 
         let cond = Condition::IsNull(Expr::Path("name".to_string()));
@@ -462,7 +462,7 @@ mod tests {
     fn is_not_null() {
         let source = Record::new("account").set("name", "Contoso");
         let variables = HashMap::new();
-        let cache = StubTargetCache;
+        let cache = StubFindCache;
         let ctx = make_context(&source, &variables, &cache);
 
         let cond = Condition::IsNotNull(Expr::Path("name".to_string()));
@@ -475,7 +475,7 @@ mod tests {
             .set("status", 1)
             .set("name", "Contoso");
         let variables = HashMap::new();
-        let cache = StubTargetCache;
+        let cache = StubFindCache;
         let ctx = make_context(&source, &variables, &cache);
 
         let cond = Condition::And(vec![
@@ -493,7 +493,7 @@ mod tests {
     fn and_short_circuits() {
         let source = Record::new("account").set("status", 2);
         let variables = HashMap::new();
-        let cache = StubTargetCache;
+        let cache = StubFindCache;
         let ctx = make_context(&source, &variables, &cache);
 
         let cond = Condition::And(vec![
@@ -512,7 +512,7 @@ mod tests {
     fn or_first_true() {
         let source = Record::new("account").set("status", 1);
         let variables = HashMap::new();
-        let cache = StubTargetCache;
+        let cache = StubFindCache;
         let ctx = make_context(&source, &variables, &cache);
 
         let cond = Condition::Or(vec![
@@ -534,7 +534,7 @@ mod tests {
     fn or_all_false() {
         let source = Record::new("account").set("status", 3);
         let variables = HashMap::new();
-        let cache = StubTargetCache;
+        let cache = StubFindCache;
         let ctx = make_context(&source, &variables, &cache);
 
         let cond = Condition::Or(vec![
@@ -556,7 +556,7 @@ mod tests {
     fn not_negates() {
         let source = Record::new("account").set("status", 1);
         let variables = HashMap::new();
-        let cache = StubTargetCache;
+        let cache = StubFindCache;
         let ctx = make_context(&source, &variables, &cache);
 
         let cond = Condition::Not(Box::new(Condition::Compare {
@@ -571,7 +571,7 @@ mod tests {
     fn contains_string() {
         let source = Record::new("account").set("name", "Contoso Ltd");
         let variables = HashMap::new();
-        let cache = StubTargetCache;
+        let cache = StubFindCache;
         let ctx = make_context(&source, &variables, &cache);
 
         let cond = Condition::Contains {
@@ -585,7 +585,7 @@ mod tests {
     fn starts_with_string() {
         let source = Record::new("account").set("name", "Contoso Ltd");
         let variables = HashMap::new();
-        let cache = StubTargetCache;
+        let cache = StubFindCache;
         let ctx = make_context(&source, &variables, &cache);
 
         let cond = Condition::StartsWith {
@@ -599,7 +599,7 @@ mod tests {
     fn ends_with_string() {
         let source = Record::new("account").set("name", "Contoso Ltd");
         let variables = HashMap::new();
-        let cache = StubTargetCache;
+        let cache = StubFindCache;
         let ctx = make_context(&source, &variables, &cache);
 
         let cond = Condition::EndsWith {
@@ -613,7 +613,7 @@ mod tests {
     fn contains_non_string_returns_false() {
         let source = Record::new("account").set("status", 1);
         let variables = HashMap::new();
-        let cache = StubTargetCache;
+        let cache = StubFindCache;
         let ctx = make_context(&source, &variables, &cache);
 
         let cond = Condition::Contains {
@@ -627,7 +627,7 @@ mod tests {
     fn compare_cross_type_int_long() {
         let source = Record::new("account").set("count", Value::Long(42));
         let variables = HashMap::new();
-        let cache = StubTargetCache;
+        let cache = StubFindCache;
         let ctx = make_context(&source, &variables, &cache);
 
         let cond = Condition::Compare {
@@ -642,7 +642,7 @@ mod tests {
     fn compare_incomparable_types_not_equal() {
         let source = Record::new("account").set("name", "test");
         let variables = HashMap::new();
-        let cache = StubTargetCache;
+        let cache = StubFindCache;
         let ctx = make_context(&source, &variables, &cache);
 
         // String vs Int — should not be equal
@@ -658,7 +658,7 @@ mod tests {
     fn compare_incomparable_types_less_than_false() {
         let source = Record::new("account").set("name", "test");
         let variables = HashMap::new();
-        let cache = StubTargetCache;
+        let cache = StubFindCache;
         let ctx = make_context(&source, &variables, &cache);
 
         // String vs Int ordering — incomparable, returns false
@@ -675,7 +675,7 @@ mod tests {
         let source = Record::new("account").set("status", 1);
         let mut variables = HashMap::new();
         variables.insert("expected_status".to_string(), Value::Int(1));
-        let cache = StubTargetCache;
+        let cache = StubFindCache;
         let ctx = make_context(&source, &variables, &cache);
 
         let cond = Condition::Compare {

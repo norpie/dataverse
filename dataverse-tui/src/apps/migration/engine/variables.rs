@@ -11,7 +11,7 @@ use dataverse_lib::model::Value;
 use super::executor::execute_chain;
 use super::executor::ChainItem;
 use super::types::SystemVars;
-use super::types::TargetCache;
+use super::types::FindCache;
 use super::types::TransformContext;
 use super::types::TransformError;
 use super::types::TransformResult;
@@ -31,7 +31,7 @@ pub fn compute_variables(
     variables: &[(String, Vec<ChainItem>)],
     source_record: &Record,
     system_vars: &SystemVars,
-    target_cache: &dyn TargetCache,
+    find_cache: &dyn FindCache,
 ) -> Result<HashMap<String, Value>, (String, TransformError)> {
     let mut computed: HashMap<String, Value> = HashMap::new();
 
@@ -44,7 +44,7 @@ pub fn compute_variables(
                 value_type: None,
                 ..system_vars.clone()
             },
-            target_cache,
+            find_cache,
         };
 
         match execute_chain(chain, &mut ctx) {
@@ -72,7 +72,7 @@ pub fn compute_variables(
 mod tests {
     use dataverse_lib::model::Entity;
 
-    use crate::apps::migration::engine::StubTargetCache;
+    use crate::apps::migration::engine::StubFindCache;
     use crate::apps::migration::types::TransformData;
 
     use super::*;
@@ -91,7 +91,7 @@ mod tests {
         )];
 
         let source = Record::new("account");
-        let cache = StubTargetCache;
+        let cache = StubFindCache;
         let sys = test_system_vars();
 
         let result = compute_variables(&variables, &source, &sys, &cache).unwrap();
@@ -123,7 +123,7 @@ mod tests {
         ];
 
         let source = Record::new("account").set("name", "world");
-        let cache = StubTargetCache;
+        let cache = StubFindCache;
         let sys = test_system_vars();
 
         let result = compute_variables(&variables, &source, &sys, &cache).unwrap();
@@ -148,7 +148,7 @@ mod tests {
         )];
 
         let source = Record::new("account");
-        let cache = StubTargetCache;
+        let cache = StubFindCache;
         let sys = test_system_vars();
 
         let err = compute_variables(&variables, &source, &sys, &cache).unwrap_err();
@@ -158,7 +158,7 @@ mod tests {
     #[test]
     fn empty_variables_returns_empty_map() {
         let source = Record::new("account");
-        let cache = StubTargetCache;
+        let cache = StubFindCache;
         let sys = test_system_vars();
 
         let result = compute_variables(&[], &source, &sys, &cache).unwrap();
@@ -177,7 +177,7 @@ mod tests {
         )];
 
         let source = Record::new("account");
-        let cache = StubTargetCache;
+        let cache = StubFindCache;
         let sys = test_system_vars();
 
         let result = compute_variables(&variables, &source, &sys, &cache).unwrap();

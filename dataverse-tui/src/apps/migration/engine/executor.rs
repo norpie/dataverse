@@ -446,7 +446,7 @@ fn execute_find_where(
     ctx.system_vars.value = saved_value;
     ctx.system_vars.value_type = saved_type;
 
-    ctx.target_cache.find_where(entity, &collected)
+    ctx.find_cache.find_where(entity, &collected)
 }
 
 /// Execute find in Lua mode.
@@ -456,10 +456,10 @@ fn execute_find_lua(
     ctx: &TransformContext<'_>,
 ) -> Result<Record, FindError> {
     let id = ctx
-        .target_cache
+        .find_cache
         .find_lua(entity, script, ctx.source_record)?;
 
-    ctx.target_cache.get(entity, id).cloned().ok_or_else(|| {
+    ctx.find_cache.get(entity, id).cloned().ok_or_else(|| {
         FindError::Other(format!("Lua find returned ID {id} but record not in cache"))
     })
 }
@@ -504,7 +504,7 @@ mod tests {
     use dataverse_lib::model::Record;
     use dataverse_lib::model::Value;
 
-    use crate::apps::migration::engine::StubTargetCache;
+    use crate::apps::migration::engine::StubFindCache;
     use crate::apps::migration::engine::SystemVars;
     use crate::apps::migration::engine::TransformContext;
 
@@ -513,7 +513,7 @@ mod tests {
     fn make_context<'a>(
         source: &'a Record,
         variables: &'a HashMap<String, Value>,
-        cache: &'a StubTargetCache,
+        cache: &'a StubFindCache,
     ) -> TransformContext<'a> {
         TransformContext {
             source_record: source,
@@ -523,7 +523,7 @@ mod tests {
                 Entity::logical("target_entity"),
                 0,
             ),
-            target_cache: cache,
+            find_cache: cache,
         }
     }
 
@@ -531,7 +531,7 @@ mod tests {
     fn empty_chain_returns_current_value() {
         let source = Record::default();
         let variables = HashMap::new();
-        let cache = StubTargetCache;
+        let cache = StubFindCache;
         let mut ctx = make_context(&source, &variables, &cache);
 
         // Set initial value
@@ -553,7 +553,7 @@ mod tests {
         // but we can at least verify the function exists and handles Value correctly
         let source = Record::default();
         let variables = HashMap::new();
-        let cache = StubTargetCache;
+        let cache = StubFindCache;
         let mut ctx = make_context(&source, &variables, &cache);
 
         ctx.system_vars.value = Value::String("test".to_string());
