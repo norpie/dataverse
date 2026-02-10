@@ -207,7 +207,7 @@ impl ODataFetchModal {
 
         for index in 0..task_count {
             let client = self.tasks[index].client.clone();
-            let query = self.tasks[index].query.clone();
+            let query = self.tasks[index].query.clone().page_size(1000);
             let tx = tx.clone();
             let token = cancel_token.clone();
             let results = self.results.clone();
