@@ -17,7 +17,7 @@ pub use error::ErrorModal;
 pub use error_acknowledgment::ErrorAcknowledgmentModal;
 pub use file_browser::FileBrowserModal;
 pub use filter_builder::FilterBuilderModal;
-pub use loading::LoadingModal;
+pub use loading::{LoadingModal, LoadingUpdater};
 pub use parallel_loading::{
     Checkable, ParallelLoadError, ParallelLoadingModal, ParallelTask, TaskInfo, TaskStatus,
 };

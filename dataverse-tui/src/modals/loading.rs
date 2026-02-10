@@ -14,6 +14,22 @@ use crate::widgets::Spinner;
 type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 type DefaultFn<T> = Arc<dyn Fn() -> T + Send + Sync>;
 
+/// A handle for updating the loading modal's message while the operation runs.
+///
+/// Obtained via [`LoadingModal::run_with_updates`] or
+/// [`LoadingModal::run_with_default_updates`].
+#[derive(Clone)]
+pub struct LoadingUpdater {
+    message: Arc<Mutex<String>>,
+}
+
+impl LoadingUpdater {
+    /// Update the loading message displayed in the modal.
+    pub fn update(&self, message: impl Into<String>) {
+        *self.message.lock().unwrap() = message.into();
+    }
+}
+
 /// Simple loading modal for a single operation.
 ///
 /// Shows a loading message with a spinner while executing an async operation.
@@ -34,11 +50,24 @@ type DefaultFn<T> = Arc<dyn Fn() -> T + Send + Sync>;
 ///     || Err(Error::Cancelled),
 ///     client.metadata().attributes(entity)
 /// )).await;
+///
+/// // With status updates:
+/// let result = gx.modal(LoadingModal::run_with_default_updates(
+///     "Loading...",
+///     || Err(Error::Cancelled),
+///     |updater| async move {
+///         updater.update("Fetching metadata...");
+///         let meta = fetch_metadata().await?;
+///         updater.update("Processing records...");
+///         let records = process(meta).await?;
+///         Ok(records)
+///     }
+/// )).await;
 /// ```
 #[modal]
 pub struct LoadingModal<T> {
     #[state(skip)]
-    message: String,
+    message: Arc<Mutex<String>>,
 
     #[state(skip)]
     shutdown_default_fn: DefaultFn<T>,
@@ -74,7 +103,50 @@ impl<T: Send + Sync + 'static> LoadingModal<T> {
         D: Fn() -> T + Send + Sync + 'static,
     {
         Self::new(
-            message.into(),
+            Arc::new(Mutex::new(message.into())),
+            Arc::new(shutdown_default),
+            Arc::new(Mutex::new(Some(Box::pin(operation)))),
+        )
+    }
+
+    /// Run an async operation with a loading modal that supports status updates.
+    ///
+    /// The closure receives a [`LoadingUpdater`] that can be used to change
+    /// the displayed message while the operation runs.
+    ///
+    /// Uses `T::default()` as the fallback value if the app shuts down
+    /// while the operation is in progress.
+    pub fn run_with_updates<F, C>(message: impl Into<String>, create_op: C) -> Self
+    where
+        T: Default,
+        F: Future<Output = T> + Send + 'static,
+        C: FnOnce(LoadingUpdater) -> F,
+    {
+        Self::run_with_default_updates(message, T::default, create_op)
+    }
+
+    /// Run an async operation with a loading modal that supports status updates
+    /// and an explicit shutdown fallback.
+    ///
+    /// The closure receives a [`LoadingUpdater`] that can be used to change
+    /// the displayed message while the operation runs.
+    pub fn run_with_default_updates<F, D, C>(
+        message: impl Into<String>,
+        shutdown_default: D,
+        create_op: C,
+    ) -> Self
+    where
+        F: Future<Output = T> + Send + 'static,
+        D: Fn() -> T + Send + Sync + 'static,
+        C: FnOnce(LoadingUpdater) -> F,
+    {
+        let message = Arc::new(Mutex::new(message.into()));
+        let updater = LoadingUpdater {
+            message: message.clone(),
+        };
+        let operation = create_op(updater);
+        Self::new(
+            message,
             Arc::new(shutdown_default),
             Arc::new(Mutex::new(Some(Box::pin(operation)))),
         )
@@ -103,9 +175,10 @@ impl<T: Send + Sync + 'static> LoadingModal::<T> {
     }
 
     fn element(&self) -> Element {
+        let message = self.message.lock().unwrap().clone();
         page! {
             column (padding: (1, 2), gap: 1, width: fill, height: fill) style (bg: surface) {
-                text (content: self.message.clone()) style (fg: primary)
+                text (content: message) style (fg: primary)
                 spinner (id: "loading-spinner")
             }
         }
