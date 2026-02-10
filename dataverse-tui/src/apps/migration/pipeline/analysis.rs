@@ -87,12 +87,18 @@ pub fn analyze_mapping(input: &AnalysisInput<'_>) -> FetchPlan {
         analyze_chain(chain, &variable_find_entities, &mut collector);
     }
 
+    // 4. Target always needs the primary key + all field mapping target fields
+    //    so comparison can diff transformed values against existing target records.
+    collector
+        .target
+        .select
+        .insert(input.target_primary_key.to_string());
+    for (target_field, _) in input.field_mappings {
+        collector.target.select.insert(target_field.clone());
+    }
+
     // Build the fetch plan
     let target = if collector.target.has_fields() {
-        collector
-            .target
-            .select
-            .insert(input.target_primary_key.to_string());
         Some(collector.target.build_target())
     } else {
         None
@@ -982,12 +988,25 @@ mod tests {
     }
 
     #[test]
-    fn no_target_spec_when_no_target_fields_needed() {
+    fn target_spec_includes_field_mapping_targets() {
         let field_mappings = vec![("name".to_string(), vec![copy("name")])];
         let variables = vec![];
         let plan = analyze_mapping(&simple_input(&field_mappings, &variables));
 
-        assert!(plan.target.is_none());
+        let target = plan.target.expect("target spec should be present");
+        assert!(target.select.contains("accountid")); // PK
+        assert!(target.select.contains("name")); // from field mapping
+    }
+
+    #[test]
+    fn no_target_spec_when_no_field_mappings() {
+        let field_mappings = vec![];
+        let variables = vec![];
+        let plan = analyze_mapping(&simple_input(&field_mappings, &variables));
+
+        // Only PK, which is always added — so target is present
+        let target = plan.target.expect("target spec should be present");
+        assert!(target.select.contains("accountid"));
     }
 
     #[test]

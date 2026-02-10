@@ -338,7 +338,7 @@ impl MigrationEditor {
         let entity_mappings = self.entity_mappings.get();
         let phase_mappings: Vec<_> = entity_mappings
             .iter()
-            .filter(|em| em.phase_id == phase_id)
+            .filter(|em| em.phase_id == phase_id && !em.source_entity.is_empty() && !em.target_entity.is_empty())
             .cloned()
             .collect();
 
@@ -489,7 +489,24 @@ impl MigrationEditor {
             .collect();
 
         // 1. Analyze phase
+        for (i, input) in mapping_inputs.iter().enumerate() {
+            log::debug!(
+                "[preview] MappingInput[{}]: name={:?} source={:?} target={:?} src_pk={:?} tgt_pk={:?} field_mappings={} variables={} test_guids={:?}",
+                i, input.mapping_name, input.source_entity, input.target_entity,
+                input.source_primary_key, input.target_primary_key,
+                input.field_mappings.len(), input.variables.len(), input.test_guids,
+            );
+        }
         let phase_plan = pipeline::analyze_phase(&mapping_inputs);
+        for (i, plan) in phase_plan.mapping_plans.iter().enumerate() {
+            log::debug!(
+                "[preview] FetchPlan[{}]: source_entity={:?} source_select={:?} expands={} target={:?} find_caches={}",
+                i, plan.source.entity, plan.source.select, plan.source.expands.len(),
+                plan.target.as_ref().map(|t| t.entity.as_str()),
+                plan.find_caches.len(),
+            );
+        }
+        log::debug!("[preview] merged_find_caches: {:?}", phase_plan.merged_find_caches.iter().map(|c| &c.entity).collect::<Vec<_>>());
 
         // 2. Build fetch tasks
         let fetch_tasks = match pipeline::build_phase_fetch_tasks(
@@ -543,6 +560,10 @@ impl MigrationEditor {
                 .unwrap_or_default();
 
             // Execute transforms
+            log::debug!(
+                "[preview] Executing mapping[{}] {:?}: {} source records, {} target records",
+                i, em.name, source_records.len(), target_records.len(),
+            );
             let mapping_result = pipeline::execute_mapping(
                 source_records,
                 &materialized_variables[i],
@@ -551,6 +572,15 @@ impl MigrationEditor {
                 &em.target_entity,
                 &find_cache,
             );
+            for (j, rr) in mapping_result.record_results.iter().enumerate() {
+                log::debug!(
+                    "[preview] mapping[{}] record[{}]: fields={:?} errors={:?}",
+                    i, j,
+                    rr.fields.iter().map(|(f, v)| format!("{}={:?}", f, v)).collect::<Vec<_>>(),
+                    rr.errors.iter().map(|(f, e)| format!("{}={}", f, e)).collect::<Vec<_>>(),
+                );
+                if j >= 2 { break; } // only log first 3 records
+            }
 
             // Compare
             let source_pk = primary_keys
