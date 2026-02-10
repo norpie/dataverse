@@ -180,8 +180,7 @@ impl MigrationEditor {
             .collect();
         siblings.sort_by_key(|t| t.order);
 
-        let prev_transform = siblings
-            .iter().rfind(|t| t.order < target.insert_order);
+        let prev_transform = siblings.iter().rfind(|t| t.order < target.insert_order);
 
         match prev_transform {
             Some(t) => {

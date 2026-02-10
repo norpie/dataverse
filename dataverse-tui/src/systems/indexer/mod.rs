@@ -498,9 +498,10 @@ impl IndexerSystem {
 
         // Clear repository data for this environment
         if let Some(repo) = self.repository.get()
-            && let Err(e) = repo.clear_env_sync(event.id).await {
-                log::error!("[Indexer] Failed to clear env sync for removed env: {}", e);
-            }
+            && let Err(e) = repo.clear_env_sync(event.id).await
+        {
+            log::error!("[Indexer] Failed to clear env sync for removed env: {}", e);
+        }
 
         self.publish_status(gx).await;
     }

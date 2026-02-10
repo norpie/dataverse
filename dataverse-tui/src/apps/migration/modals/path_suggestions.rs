@@ -53,33 +53,34 @@ impl PathSuggestionGenerator {
 
         // Case 1: Inside unclosed brackets - suggest polymorphic targets
         if let Some(bracket_pos) = input.rfind('[')
-            && !input[bracket_pos..].contains(']') {
-                let path_before_bracket = &input[..bracket_pos];
-                let prefix = &input[..=bracket_pos]; // e.g., "ownerid["
-                debug!(
-                    "[PathSuggestions] Case 1: Inside brackets. path_before_bracket={:?}, prefix={:?}",
-                    path_before_bracket, prefix
-                );
-                let targets = self.generate_polymorphic_targets(path_before_bracket).await;
-                debug!(
-                    "[PathSuggestions] Polymorphic targets returned: {:?}",
-                    targets
-                );
-                let result: Vec<_> = targets
-                    .into_iter()
-                    .map(|(target, _type_label)| {
-                        // Full path with closing bracket: "ownerid[systemuser]"
-                        let full_path = format!("{}{}]", prefix, target);
-                        // Label is also the full path (so fuzzy filter works)
-                        (full_path.clone(), full_path)
-                    })
-                    .collect();
-                debug!(
-                    "[PathSuggestions] Final suggestions for brackets: {:?}",
-                    result
-                );
-                return result;
-            }
+            && !input[bracket_pos..].contains(']')
+        {
+            let path_before_bracket = &input[..bracket_pos];
+            let prefix = &input[..=bracket_pos]; // e.g., "ownerid["
+            debug!(
+                "[PathSuggestions] Case 1: Inside brackets. path_before_bracket={:?}, prefix={:?}",
+                path_before_bracket, prefix
+            );
+            let targets = self.generate_polymorphic_targets(path_before_bracket).await;
+            debug!(
+                "[PathSuggestions] Polymorphic targets returned: {:?}",
+                targets
+            );
+            let result: Vec<_> = targets
+                .into_iter()
+                .map(|(target, _type_label)| {
+                    // Full path with closing bracket: "ownerid[systemuser]"
+                    let full_path = format!("{}{}]", prefix, target);
+                    // Label is also the full path (so fuzzy filter works)
+                    (full_path.clone(), full_path)
+                })
+                .collect();
+            debug!(
+                "[PathSuggestions] Final suggestions for brackets: {:?}",
+                result
+            );
+            return result;
+        }
 
         // Case 2: Has a dot - suggest fields of the resolved entity
         if let Some(dot_pos) = input.rfind('.') {
@@ -243,15 +244,15 @@ impl PathSuggestionGenerator {
                 );
                 if let Some(var) = self.variables.iter().find(|v| v.name == var_name)
                     && let ValueType::Known(FieldType::Lookup { targets, .. }) = &var.declared_type
-                    {
-                        return targets
-                            .iter()
-                            .map(|t| {
-                                let label = format!("{} (target)", t);
-                                (t.clone(), label)
-                            })
-                            .collect();
-                    }
+                {
+                    return targets
+                        .iter()
+                        .map(|t| {
+                            let label = format!("{} (target)", t);
+                            (t.clone(), label)
+                        })
+                        .collect();
+                }
                 return Vec::new();
             }
         }

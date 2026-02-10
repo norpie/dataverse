@@ -24,9 +24,10 @@ fn create_find(lua: &Lua) -> LuaResult<Function> {
         for pair in records.pairs::<Value, Table>() {
             if let Ok((_, record)) = pair
                 && let Ok(field_value) = record.get::<Value>(field.as_str())
-                    && values_equal(&field_value, &value) {
-                        return Ok(Value::Table(record));
-                    }
+                && values_equal(&field_value, &value)
+            {
+                return Ok(Value::Table(record));
+            }
         }
         Ok(Value::Nil)
     })
@@ -72,23 +73,24 @@ fn create_group_by(lua: &Lua) -> LuaResult<Function> {
 
         for pair in records.pairs::<Value, Table>() {
             if let Ok((_, record)) = pair
-                && let Ok(key) = record.get::<Value>(field.as_str()) {
-                    let key_str = value_to_string(&key);
+                && let Ok(key) = record.get::<Value>(field.as_str())
+            {
+                let key_str = value_to_string(&key);
 
-                    // Get or create the group
-                    let group: Table = match result.get::<Table>(key_str.as_str()) {
-                        Ok(g) => g,
-                        Err(_) => {
-                            let g = lua.create_table()?;
-                            result.set(key_str.as_str(), g.clone())?;
-                            g
-                        }
-                    };
+                // Get or create the group
+                let group: Table = match result.get::<Table>(key_str.as_str()) {
+                    Ok(g) => g,
+                    Err(_) => {
+                        let g = lua.create_table()?;
+                        result.set(key_str.as_str(), g.clone())?;
+                        g
+                    }
+                };
 
-                    // Add record to group
-                    let len = group.len()? + 1;
-                    group.set(len, record)?;
-                }
+                // Add record to group
+                let len = group.len()? + 1;
+                group.set(len, record)?;
+            }
         }
         Ok(result)
     })

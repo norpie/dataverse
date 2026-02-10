@@ -82,10 +82,11 @@ fn best_fuzzy_match(query: &str, candidates: &[OptionInfo]) -> Option<usize> {
         let mut buf = Vec::new();
         let haystack = Utf32Str::new(&opt.label, &mut buf);
         if let Some(score) = pattern.score(haystack, &mut matcher)
-            && score > best_score {
-                best_score = score;
-                best_idx = Some(idx);
-            }
+            && score > best_score
+        {
+            best_score = score;
+            best_idx = Some(idx);
+        }
     }
 
     if best_score >= FUZZY_THRESHOLD {

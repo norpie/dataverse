@@ -207,12 +207,13 @@ impl CacheProvider for SqliteCache {
                 let mut entries = Vec::new();
                 for row in rows {
                     if let Ok((key, expires_at)) = row
-                        && let Some(dt) = Utc.timestamp_opt(expires_at, 0).single() {
-                            entries.push(super::CacheEntry {
-                                key,
-                                expires_at: dt,
-                            });
-                        }
+                        && let Some(dt) = Utc.timestamp_opt(expires_at, 0).single()
+                    {
+                        entries.push(super::CacheEntry {
+                            key,
+                            expires_at: dt,
+                        });
+                    }
                 }
                 Ok(entries)
             })

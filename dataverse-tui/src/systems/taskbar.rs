@@ -27,13 +27,11 @@ pub enum StatusIndicator {
 }
 
 /// Queue status information.
-#[derive(Clone, Debug)]
-#[derive(Default)]
+#[derive(Clone, Debug, Default)]
 pub struct QueueStatus {
     pub is_running: bool,
     pub counts: crate::apps::queue::repository::StatusCounts,
 }
-
 
 /// Client connection information.
 #[derive(Clone, Debug, Default)]

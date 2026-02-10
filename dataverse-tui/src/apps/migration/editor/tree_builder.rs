@@ -225,8 +225,6 @@ pub fn build_tree_nodes(
         types: TypeAccumulator::default(),
     };
 
-    
-
     phases
         .into_iter()
         .map(|phase| {

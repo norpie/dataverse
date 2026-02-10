@@ -32,7 +32,6 @@ struct Options {
     fail_fast: Option<Expr>,
 }
 
-
 /// Full parallel_load! macro input.
 ///
 /// Format:
