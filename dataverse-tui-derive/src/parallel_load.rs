@@ -27,15 +27,11 @@ impl Parse for TaskDef {
 }
 
 /// Options for the parallel_load! macro.
+#[derive(Default)]
 struct Options {
     fail_fast: Option<Expr>,
 }
 
-impl Default for Options {
-    fn default() -> Self {
-        Self { fail_fast: None }
-    }
-}
 
 /// Full parallel_load! macro input.
 ///

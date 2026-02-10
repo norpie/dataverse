@@ -28,19 +28,12 @@ pub enum StatusIndicator {
 
 /// Queue status information.
 #[derive(Clone, Debug)]
+#[derive(Default)]
 pub struct QueueStatus {
     pub is_running: bool,
     pub counts: crate::apps::queue::repository::StatusCounts,
 }
 
-impl Default for QueueStatus {
-    fn default() -> Self {
-        Self {
-            is_running: false,
-            counts: Default::default(),
-        }
-    }
-}
 
 /// Client connection information.
 #[derive(Clone, Debug, Default)]
@@ -593,26 +586,26 @@ impl Taskbar {
         // Build condensed display with colored numbers: ready/running/done/failed (progress%)
         let numbers_row = Element::row()
             .child(
-                Element::text(&counts.ready.to_string())
+                Element::text(counts.ready.to_string())
                     .style(Style::new().foreground(Color::var("primary"))),
             )
             .child(Element::text("/").style(Style::new().foreground(Color::var("text.muted"))))
             .child(
-                Element::text(&counts.running.to_string())
+                Element::text(counts.running.to_string())
                     .style(Style::new().foreground(Color::var("warning"))),
             )
             .child(Element::text("/").style(Style::new().foreground(Color::var("text.muted"))))
             .child(
-                Element::text(&counts.done.to_string())
+                Element::text(counts.done.to_string())
                     .style(Style::new().foreground(Color::var("success"))),
             )
             .child(Element::text("/").style(Style::new().foreground(Color::var("text.muted"))))
             .child(
-                Element::text(&(counts.failed + counts.partially_failed).to_string())
+                Element::text((counts.failed + counts.partially_failed).to_string())
                     .style(Style::new().foreground(Color::var("error"))),
             )
             .child(
-                Element::text(&format!(" ({})", progress_pct))
+                Element::text(format!(" ({})", progress_pct))
                     .style(Style::new().foreground(Color::var("text.muted"))),
             );
 

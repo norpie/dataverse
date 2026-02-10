@@ -128,7 +128,7 @@ impl Queue {
                         });
                     }
                     BatchItem::Changeset(cs) => {
-                        for (_cs_idx, op) in cs.operations().iter().enumerate() {
+                        for op in cs.operations().iter() {
                             let op_label = format_operation(op);
                             let label_with_tx = format!("[tx] {}", op_label);
                             op_elements.push(element! {

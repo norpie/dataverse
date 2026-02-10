@@ -58,7 +58,7 @@ impl ReplaceTransformModal {
             mx.close(Some(ReplaceResult {
                 from,
                 to: self.to.get().clone(),
-                regex: self.regex.get().clone(),
+                regex: self.regex.get(),
             }));
         }
     }

@@ -253,8 +253,8 @@ where
             .insert(transform.id, current_type.clone());
 
         // Check input compatibility
-        if let Some(expected_input) = &sig.input {
-            if !current_type.is_compatible_with(expected_input) {
+        if let Some(expected_input) = &sig.input
+            && !current_type.is_compatible_with(expected_input) {
                 log::debug!(
                     "type_tracking: WARNING transform {} expected {:?} but got {:?}",
                     transform.id,
@@ -267,7 +267,6 @@ where
                     actual: current_type.clone(),
                 });
             }
-        }
 
         // Compute output type
         current_type = match sig.output {

@@ -553,11 +553,10 @@ impl<'a, T: Clone + Eq + Hash + PartialEq + Send + Sync + ToString + 'static>
                                 handler(hx);
                             }
                             // Also trigger on_change since text was updated
-                            if !is_multi {
-                                if let Some(ref handler) = on_change {
+                            if !is_multi
+                                && let Some(ref handler) = on_change {
                                     handler(hx);
                                 }
-                            }
                             // Fire user on_submit after selection is complete
                             if let Some(ref handler) = on_submit {
                                 handler(hx);
@@ -656,11 +655,10 @@ impl<'a, T: Clone + Eq + Hash + PartialEq + Send + Sync + ToString + 'static>
                                 handler(hx);
                             }
                             // Also trigger on_change since text was updated
-                            if !is_multi {
-                                if let Some(ref handler) = on_change {
+                            if !is_multi
+                                && let Some(ref handler) = on_change {
                                     handler(hx);
                                 }
-                            }
                         }),
                     );
 

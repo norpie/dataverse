@@ -508,7 +508,7 @@ impl MigrationEditor {
                     .iter()
                     .map(|a| {
                         let display_name = a.display_name.text_or(&a.logical_name);
-                        let display = if display_name == &a.logical_name {
+                        let display = if display_name == a.logical_name {
                             a.logical_name.clone()
                         } else {
                             format!("{} ({})", a.logical_name, display_name)
@@ -684,7 +684,7 @@ impl MigrationEditor {
                 self.load_db_data(gx).await;
 
                 if let Some(key) = next_focus {
-                    cx.focus(&format!("migration-tree-node-{}", key));
+                    cx.focus(format!("migration-tree-node-{}", key));
                 }
             }
             Err(e) => {

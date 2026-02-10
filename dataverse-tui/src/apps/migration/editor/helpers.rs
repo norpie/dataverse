@@ -248,8 +248,8 @@ pub(super) fn collect_navigation_paths(
                         .filter(|v| v.entity_mapping_id == t.entity_mapping_id)
                         .find(|v| v.name == name);
 
-                    if let Some(var) = var {
-                        if let Some(start_entity) =
+                    if let Some(var) = var
+                        && let Some(start_entity) =
                             resolve_lookup_target_entity(&var.declared_type, target.as_deref())
                         {
                             paths.push(NavigationPath {
@@ -257,7 +257,6 @@ pub(super) fn collect_navigation_paths(
                                 path: field_path,
                             });
                         }
-                    }
                 }
                 _ => {}
             }
@@ -272,11 +271,11 @@ fn resolve_lookup_target_entity(value_type: &ValueType, target: Option<&str>) ->
     let targets = match value_type {
         ValueType::Known(FieldType::Lookup { targets, .. }) => targets,
         ValueType::Union(types) => {
-            let lookup = types.iter().find_map(|ft| match ft {
+            
+            types.iter().find_map(|ft| match ft {
                 FieldType::Lookup { targets, .. } => Some(targets),
                 _ => None,
-            })?;
-            lookup
+            })?
         }
         _ => return None,
     };

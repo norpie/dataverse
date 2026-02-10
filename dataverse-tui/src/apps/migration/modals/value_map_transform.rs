@@ -42,12 +42,12 @@ impl ListItem for MappingDisplay {
         Element::row()
             .gap(1)
             .child(
-                Element::text(&format!("{} ({})", self.from_label, self.from))
+                Element::text(format!("{} ({})", self.from_label, self.from))
                     .style(Style::new().foreground(Color::var("primary"))),
             )
             .child(Element::text("\u{2192}").style(Style::new().foreground(Color::var("muted"))))
             .child(
-                Element::text(&format!("{} ({})", self.to_label, self.to))
+                Element::text(format!("{} ({})", self.to_label, self.to))
                     .style(Style::new().foreground(Color::var("primary"))),
             )
     }
@@ -81,12 +81,11 @@ fn best_fuzzy_match(query: &str, candidates: &[OptionInfo]) -> Option<usize> {
     for (idx, opt) in candidates.iter().enumerate() {
         let mut buf = Vec::new();
         let haystack = Utf32Str::new(&opt.label, &mut buf);
-        if let Some(score) = pattern.score(haystack, &mut matcher) {
-            if score > best_score {
+        if let Some(score) = pattern.score(haystack, &mut matcher)
+            && score > best_score {
                 best_score = score;
                 best_idx = Some(idx);
             }
-        }
     }
 
     if best_score >= FUZZY_THRESHOLD {

@@ -217,7 +217,7 @@ impl ConstantTransformModal {
         match self.selected_type() {
             ConstantType::Null => Ok(Value::Null),
             ConstantType::String => Ok(Value::String(self.string_value.get().clone())),
-            ConstantType::Bool => Ok(Value::Bool(self.bool_value.get().clone())),
+            ConstantType::Bool => Ok(Value::Bool(self.bool_value.get())),
             ConstantType::Number => {
                 let number_state = self.number_value.get();
                 let f = number_state.value();

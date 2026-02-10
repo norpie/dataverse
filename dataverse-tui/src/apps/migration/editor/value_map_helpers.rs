@@ -181,9 +181,7 @@ impl MigrationEditor {
         siblings.sort_by_key(|t| t.order);
 
         let prev_transform = siblings
-            .iter()
-            .filter(|t| t.order < target.insert_order)
-            .last();
+            .iter().rfind(|t| t.order < target.insert_order);
 
         match prev_transform {
             Some(t) => {

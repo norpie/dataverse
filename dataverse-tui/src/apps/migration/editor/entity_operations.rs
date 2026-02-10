@@ -336,7 +336,7 @@ impl MigrationEditor {
 
                 // Focus next item
                 if let Some(key) = next_focus {
-                    cx.focus(&format!("migration-tree-node-{}", key));
+                    cx.focus(format!("migration-tree-node-{}", key));
                 }
             }
             Err(e) => {

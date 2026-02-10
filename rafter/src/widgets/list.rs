@@ -833,7 +833,7 @@ impl ListItem for i32 {
     }
 
     fn render(&self) -> Element {
-        Element::text(&self.to_string())
+        Element::text(self.to_string())
     }
 }
 
@@ -845,7 +845,7 @@ impl ListItem for u32 {
     }
 
     fn render(&self) -> Element {
-        Element::text(&self.to_string())
+        Element::text(self.to_string())
     }
 }
 
@@ -857,7 +857,7 @@ impl ListItem for i64 {
     }
 
     fn render(&self) -> Element {
-        Element::text(&self.to_string())
+        Element::text(self.to_string())
     }
 }
 
@@ -869,7 +869,7 @@ impl ListItem for u64 {
     }
 
     fn render(&self) -> Element {
-        Element::text(&self.to_string())
+        Element::text(self.to_string())
     }
 }
 
@@ -881,7 +881,7 @@ impl ListItem for isize {
     }
 
     fn render(&self) -> Element {
-        Element::text(&self.to_string())
+        Element::text(self.to_string())
     }
 }
 
@@ -893,6 +893,6 @@ impl ListItem for usize {
     }
 
     fn render(&self) -> Element {
-        Element::text(&self.to_string())
+        Element::text(self.to_string())
     }
 }

@@ -52,8 +52,8 @@ impl PathSuggestionGenerator {
         );
 
         // Case 1: Inside unclosed brackets - suggest polymorphic targets
-        if let Some(bracket_pos) = input.rfind('[') {
-            if !input[bracket_pos..].contains(']') {
+        if let Some(bracket_pos) = input.rfind('[')
+            && !input[bracket_pos..].contains(']') {
                 let path_before_bracket = &input[..bracket_pos];
                 let prefix = &input[..=bracket_pos]; // e.g., "ownerid["
                 debug!(
@@ -80,7 +80,6 @@ impl PathSuggestionGenerator {
                 );
                 return result;
             }
-        }
 
         // Case 2: Has a dot - suggest fields of the resolved entity
         if let Some(dot_pos) = input.rfind('.') {
@@ -242,8 +241,8 @@ impl PathSuggestionGenerator {
                     "[PathSuggestions] Variable root polymorphic: var_name={:?}",
                     var_name
                 );
-                if let Some(var) = self.variables.iter().find(|v| v.name == var_name) {
-                    if let ValueType::Known(FieldType::Lookup { targets, .. }) = &var.declared_type
+                if let Some(var) = self.variables.iter().find(|v| v.name == var_name)
+                    && let ValueType::Known(FieldType::Lookup { targets, .. }) = &var.declared_type
                     {
                         return targets
                             .iter()
@@ -253,7 +252,6 @@ impl PathSuggestionGenerator {
                             })
                             .collect();
                     }
-                }
                 return Vec::new();
             }
         }

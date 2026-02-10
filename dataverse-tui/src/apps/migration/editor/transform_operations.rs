@@ -234,7 +234,7 @@ impl MigrationEditor {
                     mode: r.mode,
                 })
             }
-            TransformType::ValueMap => self.create_value_map_data(&target, gx).await,
+            TransformType::ValueMap => self.create_value_map_data(target, gx).await,
         }
     }
 
@@ -297,7 +297,7 @@ impl MigrationEditor {
                 self.load_db_data(gx).await;
 
                 if let Some(key) = next_focus {
-                    cx.focus(&format!("migration-tree-node-{}", key));
+                    cx.focus(format!("migration-tree-node-{}", key));
                 }
             }
             Err(e) => {
@@ -437,7 +437,7 @@ impl MigrationEditor {
                 }
             }
             TransformData::StringOps { op } => {
-                let modal = StringOpsTransformModal::new_modal(op.clone());
+                let modal = StringOpsTransformModal::new_modal(*op);
 
                 if let Some(new_op) = gx.modal(modal).await {
                     self.update_transform_data(

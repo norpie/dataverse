@@ -91,11 +91,11 @@ fn resolve_variable_navigation(
         ValueType::Known(FieldType::Lookup { targets, .. }) => targets,
         ValueType::Union(types) => {
             // Find the first lookup in the union
-            let lookup = types.iter().find_map(|ft| match ft {
+            
+            types.iter().find_map(|ft| match ft {
                 FieldType::Lookup { targets, .. } => Some(targets),
                 _ => None,
-            })?;
-            lookup
+            })?
         }
         _ => {
             log::debug!(

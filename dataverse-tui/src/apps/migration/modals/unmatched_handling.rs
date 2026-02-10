@@ -77,8 +77,8 @@ impl UnmatchedHandlingModal {
 
     #[handler]
     async fn submit(&self, mx: &ModalContext<Option<UnmatchedHandlingResult>>) {
-        let source = self.source_unmatched.with_ref(|s| s.value.clone());
-        let target = self.target_unmatched.with_ref(|s| s.value.clone());
+        let source = self.source_unmatched.with_ref(|s| s.value);
+        let target = self.target_unmatched.with_ref(|s| s.value);
 
         // Both should have values since we initialize with_value()
         if let (Some(no_match_fallback), Some(orphan_strategy)) = (source, target) {

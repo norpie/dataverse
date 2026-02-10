@@ -225,7 +225,9 @@ pub fn build_tree_nodes(
         types: TypeAccumulator::default(),
     };
 
-    let nodes = phases
+    
+
+    phases
         .into_iter()
         .map(|phase| {
             let phase_id = phase.id;
@@ -249,9 +251,7 @@ pub fn build_tree_nodes(
                 TreeNode::branch(MigrationTreeNode::Phase(phase), children)
             }
         })
-        .collect();
-
-    nodes
+        .collect()
 }
 
 // =============================================================================

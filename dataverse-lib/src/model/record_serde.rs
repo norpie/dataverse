@@ -295,9 +295,7 @@ impl<'de> Visitor<'de> for RecordVisitor {
 
         // Add lookup values that weren't overridden by expanded objects
         for (key, value) in processed_lookups {
-            if !record.fields.contains_key(&key) {
-                record.fields.insert(key, value);
-            }
+            record.fields.entry(key).or_insert(value);
         }
 
         // Set etag

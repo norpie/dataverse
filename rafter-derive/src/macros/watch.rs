@@ -22,7 +22,7 @@ pub fn expand(_attr: TokenStream, item: TokenStream) -> TokenStream {
 
     // Validate: must be async
     if func.sig.asyncness.is_none() {
-        return syn::Error::new_spanned(&func.sig.fn_token, "#[watch] functions must be async")
+        return syn::Error::new_spanned(func.sig.fn_token, "#[watch] functions must be async")
             .to_compile_error();
     }
 
@@ -30,7 +30,7 @@ pub fn expand(_attr: TokenStream, item: TokenStream) -> TokenStream {
     let deps = find_dependencies(&func);
     if deps.is_empty() {
         return syn::Error::new_spanned(
-            &func.sig.fn_token,
+            func.sig.fn_token,
             "#[watch] function has no State dependencies - it won't trigger",
         )
         .to_compile_error();

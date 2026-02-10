@@ -22,13 +22,11 @@ pub fn register(lua: &Lua, lib: &Table) -> LuaResult<()> {
 fn create_find(lua: &Lua) -> LuaResult<Function> {
     lua.create_function(|_, (records, field, value): (Table, String, Value)| {
         for pair in records.pairs::<Value, Table>() {
-            if let Ok((_, record)) = pair {
-                if let Ok(field_value) = record.get::<Value>(field.as_str()) {
-                    if values_equal(&field_value, &value) {
+            if let Ok((_, record)) = pair
+                && let Ok(field_value) = record.get::<Value>(field.as_str())
+                    && values_equal(&field_value, &value) {
                         return Ok(Value::Table(record));
                     }
-                }
-            }
         }
         Ok(Value::Nil)
     })
@@ -40,13 +38,11 @@ fn create_filter(lua: &Lua) -> LuaResult<Function> {
     lua.create_function(|lua, (records, predicate): (Table, Function)| {
         let result = lua.create_table()?;
         let mut idx = 1;
-        for pair in records.pairs::<Value, Value>() {
-            if let Ok((_, record)) = pair {
-                let keep: bool = predicate.call(record.clone())?;
-                if keep {
-                    result.set(idx, record)?;
-                    idx += 1;
-                }
+        for (_, record) in records.pairs::<Value, Value>().flatten() {
+            let keep: bool = predicate.call(record.clone())?;
+            if keep {
+                result.set(idx, record)?;
+                idx += 1;
             }
         }
         Ok(result)
@@ -59,12 +55,10 @@ fn create_map(lua: &Lua) -> LuaResult<Function> {
     lua.create_function(|lua, (records, transform): (Table, Function)| {
         let result = lua.create_table()?;
         let mut idx = 1;
-        for pair in records.pairs::<Value, Value>() {
-            if let Ok((_, record)) = pair {
-                let transformed: Value = transform.call(record)?;
-                result.set(idx, transformed)?;
-                idx += 1;
-            }
+        for (_, record) in records.pairs::<Value, Value>().flatten() {
+            let transformed: Value = transform.call(record)?;
+            result.set(idx, transformed)?;
+            idx += 1;
         }
         Ok(result)
     })
@@ -77,8 +71,8 @@ fn create_group_by(lua: &Lua) -> LuaResult<Function> {
         let result = lua.create_table()?;
 
         for pair in records.pairs::<Value, Table>() {
-            if let Ok((_, record)) = pair {
-                if let Ok(key) = record.get::<Value>(field.as_str()) {
+            if let Ok((_, record)) = pair
+                && let Ok(key) = record.get::<Value>(field.as_str()) {
                     let key_str = value_to_string(&key);
 
                     // Get or create the group
@@ -95,7 +89,6 @@ fn create_group_by(lua: &Lua) -> LuaResult<Function> {
                     let len = group.len()? + 1;
                     group.set(len, record)?;
                 }
-            }
         }
         Ok(result)
     })
