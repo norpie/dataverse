@@ -193,37 +193,7 @@ impl Taskbar {
     }
 
     #[on_start]
-    async fn on_start(&self, gx: &GlobalContext) {
-        // Queue status will be set when QueueReady event is received
-        // (Queue app starts after systems)
-
-        // Try to get initial client session state
-        use crate::systems::client_management::{ClientManagement, GetActiveSession};
-        match gx
-            .request_system::<ClientManagement, GetActiveSession>(GetActiveSession)
-            .await
-        {
-            Ok(Some(session)) => {
-                // ClientManagement already initialized with active session
-                self.client.set(ClientStatus {
-                    is_connected: true,
-                    account_name: Some(session.account_name),
-                    environment_name: Some(session.environment_name),
-                    environment_url: Some(session.environment_url),
-                });
-            }
-            Ok(None) | Err(_) => {
-                // ClientManagement not ready yet, or no active session
-                // Will be updated via SessionChanged event
-                self.client.set(ClientStatus {
-                    is_connected: false,
-                    account_name: None,
-                    environment_name: None,
-                    environment_url: None,
-                });
-            }
-        }
-
+    async fn on_start(&self) {
         // Indexer status will be set when IndexerReady event is received
         self.indexer.set(IndexerStatus {
             is_paused: false,
@@ -233,6 +203,28 @@ impl Taskbar {
             envs_ok: 0,
             envs_error: 0,
         });
+    }
+
+    #[event_handler]
+    async fn on_client_management_ready(
+        &self,
+        event: crate::systems::client_management::ClientManagementReady,
+    ) {
+        if let Some(session) = event.session {
+            self.client.set(ClientStatus {
+                is_connected: true,
+                account_name: Some(session.account_name),
+                environment_name: Some(session.environment_name),
+                environment_url: Some(session.environment_url),
+            });
+        } else {
+            self.client.set(ClientStatus {
+                is_connected: false,
+                account_name: None,
+                environment_name: None,
+                environment_url: None,
+            });
+        }
     }
 
     #[event_handler]

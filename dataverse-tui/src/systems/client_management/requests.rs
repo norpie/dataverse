@@ -89,6 +89,14 @@ pub struct GetAuthenticatedEnvironments;
 #[derive(Clone, Event)]
 pub struct OpenClientManagementModal;
 
+/// Event published once when ClientManagement has finished initializing.
+/// Systems that depend on ClientManagement should use this instead of
+/// requesting data in their own `on_start`.
+#[derive(Clone, Event)]
+pub struct ClientManagementReady {
+    pub session: Option<SessionInfo>,
+}
+
 /// Event published when the active session changes (connect/disconnect).
 #[derive(Clone, Event)]
 pub struct SessionChanged {

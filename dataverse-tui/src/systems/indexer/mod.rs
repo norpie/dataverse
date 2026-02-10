@@ -99,7 +99,14 @@ impl IndexerSystem {
                 return;
             }
         }
+    }
 
+    #[event_handler]
+    async fn on_client_management_ready(
+        &self,
+        _event: crate::systems::client_management::ClientManagementReady,
+        gx: &GlobalContext,
+    ) {
         // Skip initial tasks if paused
         if self.is_paused.get() {
             log::info!("[Indexer] Starting in paused state");

@@ -27,6 +27,9 @@ pub enum ClientManagerError {
     #[error("{entity} not found: {id}")]
     NotFound { entity: &'static str, id: i64 },
 
+    #[error("client manager not initialized")]
+    NotInitialized,
+
     #[error("no active session")]
     NoActiveSession,
 

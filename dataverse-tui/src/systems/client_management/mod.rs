@@ -29,8 +29,14 @@ impl ClientManagement {
         self.manager
             .set(Some(Arc::new(ClientManager::new(credentials))));
 
-        // Publish initial session state
-        if let Some(session) = self.handle_get_active_session(GetActiveSession, gx).await {
+        // Publish ready event so other systems know ClientManagement is initialized
+        let session = self.handle_get_active_session(GetActiveSession, gx).await;
+        gx.publish(ClientManagementReady {
+            session: session.clone(),
+        });
+
+        // Also publish initial session state
+        if let Some(session) = session {
             gx.publish(SessionChanged {
                 account_id: Some(session.account_id),
                 env_id: Some(session.env_id),
@@ -39,7 +45,6 @@ impl ClientManagement {
                 environment_url: Some(session.environment_url),
             });
         } else {
-            // No active session
             gx.publish(SessionChanged {
                 account_id: None,
                 env_id: None,
@@ -76,7 +81,11 @@ impl ClientManagement {
         gx: &GlobalContext,
     ) -> Result<ActiveClientInfo, ClientManagerError> {
         let manager_opt = self.manager.get();
-        let manager = manager_opt.as_ref().expect("ClientManager not initialized");
+        let Some(manager) = manager_opt.as_ref() else {
+            log::error!("ClientManager not initialized when handling GetActiveClient");
+            gx.toast(Toast::error("ClientManager not initialized"));
+            return Err(ClientManagerError::NotInitialized);
+        };
         let manager = Arc::clone(manager);
 
         let credentials = gx.data::<CredentialsProvider>();
@@ -139,12 +148,13 @@ impl ClientManagement {
         request: GetClient,
         gx: &GlobalContext,
     ) -> Result<ActiveClientInfo, ClientManagerError> {
-        let manager = self
-            .manager
-            .get()
-            .as_ref()
-            .expect("ClientManager not initialized")
-            .clone();
+        let manager_opt = self.manager.get();
+        let Some(manager) = manager_opt.as_ref() else {
+            log::error!("ClientManager not initialized when handling GetClient");
+            gx.toast(Toast::error("ClientManager not initialized"));
+            return Err(ClientManagerError::NotInitialized);
+        };
+        let manager = manager.clone();
 
         let credentials = gx.data::<CredentialsProvider>();
 
