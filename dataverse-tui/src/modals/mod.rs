@@ -4,7 +4,7 @@ mod error;
 mod file_browser;
 mod filter_builder;
 mod loading;
-mod odata_fetch;
+pub mod odata_fetch;
 mod parallel_loading;
 mod searchable_list;
 mod sheet_selector;
