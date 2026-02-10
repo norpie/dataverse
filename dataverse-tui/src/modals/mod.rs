@@ -16,7 +16,6 @@ pub use error::ErrorModal;
 pub use file_browser::FileBrowserModal;
 pub use filter_builder::FilterBuilderModal;
 pub use loading::LoadingModal;
-pub use odata_fetch::{ODataFetchError, ODataFetchModal, ODataFetchTask};
 pub use parallel_loading::{
     Checkable, ParallelLoadError, ParallelLoadingModal, ParallelTask, TaskInfo, TaskStatus,
 };

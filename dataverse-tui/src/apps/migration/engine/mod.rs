@@ -12,18 +12,6 @@ mod transforms;
 mod types;
 pub mod variables;
 
-pub use executor::BranchItem;
-pub use executor::ChainChildren;
-pub use executor::ChainItem;
-pub use executor::FindConditionItem;
-pub use executor::execute_chain;
-pub use executor::execute_scoped_chain;
 pub use paths::FieldPath;
-pub use paths::Segment;
-pub use types::FindError;
-pub use types::StubTargetCache;
-pub use types::SystemVars;
-pub use types::TargetCache;
-pub use types::TransformContext;
 pub use types::TransformError;
 pub use types::TransformResult;

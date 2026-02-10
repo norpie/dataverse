@@ -2,7 +2,7 @@
 
 mod parse;
 
-pub use parse::{ParseError, parse_bool, parse_datetime, parse_filter_value, string_to_value};
+pub use parse::{ParseError, parse_filter_value, string_to_value};
 
 use dataverse_lib::model::Value;
 use dataverse_lib::model::metadata::AttributeType;

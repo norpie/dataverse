@@ -19,7 +19,6 @@ pub use convert::ConvertTarget;
 pub use convert::execute_convert;
 pub use copy::execute_copy;
 pub use format::execute_format;
-pub use format::extract_field_paths;
 pub use guid::execute_guid;
 pub use math::execute_math;
 pub use parse::execute_parse_date;

@@ -8,7 +8,6 @@ use rafter::widgets::ListItem;
 use rafter::widgets::ListState;
 use rafter::widgets::Text;
 use tuidom::Element;
-use tuidom::Style;
 
 /// The three categories of field types.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

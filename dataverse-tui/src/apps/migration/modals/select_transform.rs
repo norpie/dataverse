@@ -197,7 +197,7 @@ impl SelectTransformModal {
         mx.focus("transform-list");
         // Select first actual transform (skip first category header)
         let items = self.list_state.with_ref(|s| s.items.clone());
-        if let Some((idx, item)) = items.iter().enumerate().find(|(_, item)| !item.is_header()) {
+        if let Some((_idx, item)) = items.iter().enumerate().find(|(_, item)| !item.is_header()) {
             self.list_state.update(|s| {
                 s.focused_key = Some(item.key());
             });

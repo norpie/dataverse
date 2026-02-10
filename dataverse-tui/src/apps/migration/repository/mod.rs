@@ -8,12 +8,11 @@ use thiserror::Error;
 // Re-export input types
 pub use coalesce_chain::NewCoalesceChain;
 pub use entity_mapping::{NewEntityMapping, UpdateEntityMapping};
-pub use field_mapping::{NewFieldMapping, UpdateFieldMapping};
+pub use field_mapping::NewFieldMapping;
 pub use find_condition::{NewFindCondition, UpdateFindCondition};
 pub use match_condition::{NewMatchCondition, UpdateMatchCondition};
-pub use migration::{NewMigration, UpdateMigration};
+pub use migration::NewMigration;
 pub use phase::{NewPhase, UpdatePhase};
-pub use phase_run::NewPhaseRun;
 pub use transform::{NewMatchBranch, NewTransform, UpdateMatchBranch, UpdateTransform};
 pub use variable::{NewVariable, UpdateVariable};
 

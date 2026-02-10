@@ -363,7 +363,7 @@ fn find_entity_for_expanded_key(
 fn json_object_to_record(
     obj: serde_json::Map<String, serde_json::Value>,
     entity: Entity,
-    parent_lookup_names: &HashMap<String, String>,
+    _parent_lookup_names: &HashMap<String, String>,
 ) -> Record {
     // Re-parse the object through our normal deserialization
     // This handles nested annotations properly

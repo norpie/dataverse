@@ -9,7 +9,6 @@ mod types;
 
 use mlua::Lua;
 use mlua::Result as LuaResult;
-use mlua::Table;
 
 /// Register the `lib` table with all standard library functions.
 pub fn register(lua: &Lua) -> LuaResult<()> {

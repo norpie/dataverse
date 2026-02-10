@@ -12,7 +12,6 @@ pub use sqlite::SqliteBackend;
 pub use types::Settings;
 
 // Re-export the macro
-pub use dataverse_tui_derive::settings;
 
 use thiserror::Error;
 

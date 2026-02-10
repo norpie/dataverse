@@ -165,7 +165,7 @@ impl EditEntityMappingModal {
 
         // Check if config nodes exist (only if editing)
         if self.entity_mapping_id != 0 {
-            let repo = gx.data::<MigrationRepository>();
+            let _repo = gx.data::<MigrationRepository>();
             // TODO: Check if any child config exists and confirm deletion
             // For now, just navigate
         }
@@ -181,7 +181,7 @@ impl EditEntityMappingModal {
 
         // Switching from Declarative to Lua - confirm if config exists
         if self.entity_mapping_id != 0 {
-            let repo = gx.data::<MigrationRepository>();
+            let _repo = gx.data::<MigrationRepository>();
             // TODO: Check child config nodes and confirm deletion
             // For now, just show generic confirmation
             let confirmed = gx

@@ -30,7 +30,7 @@ pub(super) fn compute_chain_types(
     ctx: &TreeBuildContext,
 ) -> ChainTypeResult {
     let variable_types = &ctx.types.variable_types;
-    let field_types = ctx.field_type_cache.get(source_entity);
+    let _field_types = ctx.field_type_cache.get(source_entity);
 
     propagate_chain_types(transforms, |data, current_type| {
         match data {

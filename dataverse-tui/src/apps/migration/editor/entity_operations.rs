@@ -294,7 +294,7 @@ impl MigrationEditor {
         let entity_mappings = self.entity_mappings.get();
         let current = entity_mappings.iter().find(|em| em.id == entity_id);
 
-        let (phase_id, next_focus) = if let Some(em) = current {
+        let (_phase_id, next_focus) = if let Some(em) = current {
             let phase_id = em.phase_id;
             let siblings: Vec<_> = entity_mappings
                 .iter()

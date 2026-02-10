@@ -1,6 +1,5 @@
 //! Field mapping CRUD operations.
 
-use async_sqlite::Client;
 use chrono::Utc;
 use rusqlite::params;
 

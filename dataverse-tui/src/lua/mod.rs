@@ -7,5 +7,3 @@ mod error;
 mod runtime;
 mod stdlib;
 
-pub use error::LuaError;
-pub use runtime::LuaRuntime;

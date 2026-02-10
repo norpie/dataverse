@@ -2,7 +2,7 @@ use dataverse_lib::api::query::Direction;
 use serde::{Deserialize, Serialize};
 
 // Re-export filter types from the shared module
-pub use crate::widgets::filter_builder::{CondOp, FilterNode};
+pub use crate::widgets::filter_builder::FilterNode;
 
 /// The complete query being built.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]

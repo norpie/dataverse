@@ -31,7 +31,7 @@ mod convert;
 mod tree;
 mod types;
 
-pub use condition_editor::{ConditionEditorModal, operators_for_type};
+pub use condition_editor::ConditionEditorModal;
 pub use convert::{ConvertError, convert_filter};
 pub use tree::{FilterTreeItem, FilterTreeKey, build_tree};
 pub use types::{CondOp, ConditionData, FilterNode};

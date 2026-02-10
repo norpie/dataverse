@@ -30,7 +30,7 @@ pub struct MatchConfigModal {
 impl MatchConfigModal {
     /// Create a modal for editing match config.
     pub fn new_modal(current_strategy: MatchStrategy) -> Self {
-        let mut modal = Self::new(None);
+        let modal = Self::new(None);
         if current_strategy == MatchStrategy::Find {
             modal.navigate(Page::Find);
         }
