@@ -492,6 +492,17 @@ impl DataverseClient {
         Ok(core.entity_set_name)
     }
 
+    /// Resolves an entity logical name to its entity set name and primary ID attribute.
+    /// TODO: REMOVE THIS FUNCTION
+    /// Returns `(entity_set_name, primary_id_attribute)` in a single metadata lookup.
+    pub async fn resolve_entity_core(
+        &self,
+        logical_name: &str,
+    ) -> Result<(String, String), Error> {
+        let core = fetch_entity_core(self, logical_name, false).await?;
+        Ok((core.entity_set_name, core.primary_id_attribute))
+    }
+
     /// Resolves an Entity to its logical name.
     ///
     /// - For `Entity::Logical`, returns the name directly.

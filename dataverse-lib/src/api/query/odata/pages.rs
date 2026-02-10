@@ -5,11 +5,14 @@ use reqwest::header::HeaderMap;
 use reqwest::header::HeaderValue;
 use serde::Deserialize;
 
+use uuid::Uuid;
+
 use crate::DataverseClient;
 use crate::api::query::Page;
 use crate::error::ApiError;
 use crate::error::Error;
 use crate::model::Record;
+use crate::model::Value;
 
 use super::builder::QueryBuilder;
 
@@ -43,6 +46,8 @@ pub struct ODataPages {
     done: bool,
     /// Whether we need to resolve the entity first.
     needs_resolution: Option<QueryBuilder>,
+    /// Primary ID attribute name, resolved on first call.
+    primary_id_attribute: Option<String>,
 }
 
 impl ODataPages {
@@ -56,6 +61,7 @@ impl ODataPages {
             next_url: None,
             done: false,
             needs_resolution: Some(builder),
+            primary_id_attribute: None,
         }
     }
 
@@ -77,7 +83,15 @@ impl ODataPages {
                         .resolve_entity_logical_name(&crate::model::Entity::Set(name.clone()))
                         .await
                     {
-                        Ok(logical_name) => (name, logical_name),
+                        Ok(logical_name) => {
+                            // Also resolve primary key from logical name
+                            if let Ok((_, primary_id)) =
+                                client.resolve_entity_core(&logical_name).await
+                            {
+                                self.primary_id_attribute = Some(primary_id);
+                            }
+                            (name, logical_name)
+                        }
                         Err(e) => {
                             self.done = true;
                             return Some(Err(e));
@@ -85,8 +99,11 @@ impl ODataPages {
                     }
                 }
                 crate::model::Entity::Logical(logical_name) => {
-                    match client.resolve_entity_set_name(&logical_name).await {
-                        Ok(name) => (name, logical_name),
+                    match client.resolve_entity_core(&logical_name).await {
+                        Ok((set_name, primary_id)) => {
+                            self.primary_id_attribute = Some(primary_id);
+                            (set_name, logical_name)
+                        }
                         Err(e) => {
                             self.done = true;
                             return Some(Err(e));
@@ -164,8 +181,24 @@ impl ODataPages {
             }
         };
 
+        // Populate record IDs from the primary key field
+        let mut records = odata_response.value;
+        if let Some(ref pk_field) = self.primary_id_attribute {
+            for record in &mut records {
+                if record.id().is_none() {
+                    if let Some(id) = record.get(pk_field).and_then(|v| match v {
+                        Value::Guid(id) => Some(*id),
+                        Value::String(s) => Uuid::parse_str(s).ok(),
+                        _ => None,
+                    }) {
+                        record.set_id(id);
+                    }
+                }
+            }
+        }
+
         // Build page
-        let mut page = Page::new(odata_response.value);
+        let mut page = Page::new(records);
 
         if let Some(count) = odata_response.count {
             page = page.with_total_count(count);
