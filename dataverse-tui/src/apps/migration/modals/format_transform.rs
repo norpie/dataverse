@@ -49,8 +49,11 @@ impl FormatTransformModal {
     /// Find the current placeholder context for autocomplete.
     ///
     /// Returns `Some((prefix, path_so_far))` if cursor is inside or just after `{`.
-    /// - `prefix` is everything before the `{`
-    /// - `path_so_far` is what's been typed inside the braces
+    /// - `prefix` is everything before the current path alternative being typed
+    /// - `path_so_far` is the current path being typed (after the last `??` if any)
+    ///
+    /// For coalesce syntax `{a ?? b ?? c`, prefix includes everything up to the last `??`
+    /// separator so autocomplete suggestions are built for the current alternative.
     ///
     /// Returns `None` if not in a placeholder context.
     fn find_placeholder_context(text: &str) -> Option<(String, String)> {
@@ -75,9 +78,24 @@ impl FormatTransformModal {
         }
 
         if let Some(brace_pos) = last_open_brace {
-            let prefix = text[..brace_pos].to_string();
-            let path_so_far = text[brace_pos + 1..].to_string();
-            Some((prefix, path_so_far))
+            let inside = &text[brace_pos + 1..];
+
+            // If there's a `??`, autocomplete applies to the last alternative
+            if let Some(last_sep) = inside.rfind("??") {
+                let after_sep = inside[last_sep + 2..].trim_start();
+                // Prefix includes opening `{` + prior alternatives + last `??`
+                let prefix = format!(
+                    "{}{{{} ?? ",
+                    &text[..brace_pos],
+                    inside[..last_sep].trim_end()
+                );
+                Some((prefix, after_sep.to_string()))
+            } else {
+                // Prefix includes opening `{`
+                let prefix = text[..=brace_pos].to_string();
+                let path_so_far = inside.to_string();
+                Some((prefix, path_so_far))
+            }
         } else {
             None
         }
@@ -144,12 +162,13 @@ impl FormatTransformModal {
                 );
                 let path_suggestions = generator.generate_suggestions(&path_so_far).await;
 
-                // Transform suggestions: value = prefix + {path}
+                // Transform suggestions: value = prefix + path + }
+                // Prefix always includes the opening `{` (and prior coalesce alternatives if any)
                 // Label must start with full_template so fuzzy filter matches when user types "{f..."
                 path_suggestions
                     .into_iter()
                     .map(|(path_value, path_label)| {
-                        let full_template = format!("{}{{{}}}", prefix, path_value);
+                        let full_template = format!("{}{}}}", prefix, path_value);
                         // Extract type info from path_label (format: "fieldname (Type)")
                         let type_info = path_label
                             .rfind(" (")
@@ -206,6 +225,7 @@ impl FormatTransformModal {
                     text (content: "  {field.nested}  - nested lookup") style (fg: muted)
                     text (content: "  {$variable}     - user variable") style (fg: muted)
                     text (content: "  {#value}        - pipeline value") style (fg: muted)
+                    text (content: "  {a ?? b ?? c}   - first non-null") style (fg: muted)
                 }
 
                 // Spacer

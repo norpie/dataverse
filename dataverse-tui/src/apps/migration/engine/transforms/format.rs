@@ -69,19 +69,9 @@ fn interpolate(template: &str, ctx: &ResolveContext<'_>) -> Result<String, Trans
                 // Empty placeholder {} - treat as literal
                 result.push_str("{}");
             } else {
-                // Resolve the placeholder using shared path resolution
-                let (resolve_result, _) = resolve_path_str(&placeholder, ctx);
-                match resolve_result {
-                    TransformResult::Value(value) => {
-                        let formatted = format_value(&value);
-                        result.push_str(&formatted.display);
-                    }
-                    TransformResult::Error(e) => return Err(e),
-                    TransformResult::Exit(value) => {
-                        let formatted = format_value(&value);
-                        result.push_str(&formatted.display);
-                    }
-                }
+                let value = resolve_placeholder(&placeholder, ctx)?;
+                let formatted = format_value(&value);
+                result.push_str(&formatted.display);
             }
         } else {
             result.push(ch);
@@ -91,12 +81,60 @@ fn interpolate(template: &str, ctx: &ResolveContext<'_>) -> Result<String, Trans
     Ok(result)
 }
 
-/// Extract all field paths from a format template.
+/// Resolve a placeholder, supporting coalesce syntax (`??`).
 ///
-/// Used for field requirement extraction to build `$expand`.
-/// Only returns field paths (not variables or system vars).
-pub fn extract_field_paths(template: &str) -> Vec<FieldPath> {
-    let mut paths = Vec::new();
+/// `{a ?? b ?? c}` tries each path left-to-right and returns the first non-null value.
+/// If all alternatives resolve to null, returns `Value::Null`.
+/// If any alternative fails with an error other than null/not-found, that error propagates.
+fn resolve_placeholder(
+    placeholder: &str,
+    ctx: &ResolveContext<'_>,
+) -> Result<Value, TransformError> {
+    if !placeholder.contains("??") {
+        // Fast path: no coalesce
+        let (resolve_result, _) = resolve_path_str(placeholder, ctx);
+        return match resolve_result {
+            TransformResult::Value(v) => Ok(v),
+            TransformResult::Exit(v) => Ok(v),
+            TransformResult::Error(e) => Err(e),
+        };
+    }
+
+    let alternatives: Vec<&str> = placeholder.split("??").map(|s| s.trim()).collect();
+    let mut last_error = None;
+
+    for alt in &alternatives {
+        if alt.is_empty() {
+            continue;
+        }
+        let (resolve_result, _) = resolve_path_str(alt, ctx);
+        match resolve_result {
+            TransformResult::Value(Value::Null) | TransformResult::Exit(Value::Null) => continue,
+            TransformResult::Value(v) => return Ok(v),
+            TransformResult::Exit(v) => return Ok(v),
+            TransformResult::Error(
+                TransformError::PathNotFound { .. }
+                | TransformError::NullInPath { .. }
+                | TransformError::VariableNotFound { .. },
+            ) => {
+                last_error = Some(resolve_result);
+                continue;
+            }
+            TransformResult::Error(e) => return Err(e),
+        }
+    }
+
+    // All alternatives were null or not-found — return Null (like coalesce semantics)
+    let _ = last_error;
+    Ok(Value::Null)
+}
+
+/// Extract raw placeholder strings from a format template.
+///
+/// Returns each non-empty string found between `{` and `}`.
+/// Unclosed braces and empty `{}` are skipped.
+pub fn extract_placeholders(template: &str) -> Vec<String> {
+    let mut placeholders = Vec::new();
     let mut chars = template.chars().peekable();
 
     while let Some(ch) = chars.next() {
@@ -113,10 +151,41 @@ pub fn extract_field_paths(template: &str) -> Vec<FieldPath> {
             }
 
             if found_close && !placeholder.is_empty() {
-                // Only extract field paths (not variables or system vars)
-                if let Ok(PathExpr::Field(field_path)) = parse_path(&placeholder) {
-                    paths.push(field_path);
-                }
+                placeholders.push(placeholder);
+            }
+        }
+    }
+
+    placeholders
+}
+
+/// Split a placeholder into individual path expressions, handling coalesce (`??`) syntax.
+///
+/// `"a ?? b ?? c"` → `["a", "b", "c"]`
+/// `"a"` → `["a"]`
+pub fn split_coalesce(placeholder: &str) -> Vec<&str> {
+    if placeholder.contains("??") {
+        placeholder
+            .split("??")
+            .map(|s| s.trim())
+            .filter(|s| !s.is_empty())
+            .collect()
+    } else {
+        vec![placeholder]
+    }
+}
+
+/// Extract all field paths from a format template.
+///
+/// Used for field requirement extraction to build `$expand`.
+/// Only returns field paths (not variables or system vars).
+pub fn extract_field_paths(template: &str) -> Vec<FieldPath> {
+    let mut paths = Vec::new();
+
+    for placeholder in extract_placeholders(template) {
+        for alt in split_coalesce(&placeholder) {
+            if let Ok(PathExpr::Field(field_path)) = parse_path(alt) {
+                paths.push(field_path);
             }
         }
     }
@@ -357,5 +426,108 @@ mod tests {
         assert_eq!(paths[1].segments.len(), 2);
         assert_eq!(paths[1].segments[0].field, "primarycontactid");
         assert_eq!(paths[1].segments[1].field, "fullname");
+    }
+
+    // === Coalesce tests ===
+
+    #[test]
+    fn coalesce_returns_first_non_null() {
+        let record = Record::new("account")
+            .set("email1", Value::Null)
+            .set("email2", "second@example.com")
+            .set("email3", "third@example.com");
+        let vars = HashMap::new();
+        let value = Value::Null;
+        let ctx = make_ctx(&record, &vars, &value);
+
+        let result = execute_format("{email1 ?? email2 ?? email3}", &ctx);
+        assert!(
+            matches!(result, TransformResult::Value(Value::String(s)) if s == "second@example.com")
+        );
+    }
+
+    #[test]
+    fn coalesce_returns_first_when_not_null() {
+        let record = Record::new("account")
+            .set("email1", "first@example.com")
+            .set("email2", "second@example.com");
+        let vars = HashMap::new();
+        let value = Value::Null;
+        let ctx = make_ctx(&record, &vars, &value);
+
+        let result = execute_format("{email1 ?? email2}", &ctx);
+        assert!(
+            matches!(result, TransformResult::Value(Value::String(s)) if s == "first@example.com")
+        );
+    }
+
+    #[test]
+    fn coalesce_all_null_returns_empty() {
+        let record = Record::new("account")
+            .set("email1", Value::Null)
+            .set("email2", Value::Null);
+        let vars = HashMap::new();
+        let value = Value::Null;
+        let ctx = make_ctx(&record, &vars, &value);
+
+        // All null → Value::Null → formats as ""
+        let result = execute_format("{email1 ?? email2}", &ctx);
+        assert!(matches!(result, TransformResult::Value(Value::String(s)) if s.is_empty()));
+    }
+
+    #[test]
+    fn coalesce_missing_field_skipped() {
+        let record = Record::new("account").set("email2", "found@example.com");
+        let vars = HashMap::new();
+        let value = Value::Null;
+        let ctx = make_ctx(&record, &vars, &value);
+
+        // nonexistent is PathNotFound → skipped, email2 resolves
+        let result = execute_format("{nonexistent ?? email2}", &ctx);
+        assert!(
+            matches!(result, TransformResult::Value(Value::String(s)) if s == "found@example.com")
+        );
+    }
+
+    #[test]
+    fn coalesce_with_variables() {
+        let record = Record::new("account").set("email", Value::Null);
+        let mut vars = HashMap::new();
+        vars.insert(
+            "fallback".to_string(),
+            Value::String("var@example.com".to_string()),
+        );
+        let value = Value::Null;
+        let ctx = make_ctx(&record, &vars, &value);
+
+        let result = execute_format("{email ?? $fallback}", &ctx);
+        assert!(
+            matches!(result, TransformResult::Value(Value::String(s)) if s == "var@example.com")
+        );
+    }
+
+    #[test]
+    fn coalesce_in_template_with_text() {
+        let record = Record::new("account")
+            .set("email1", Value::Null)
+            .set("email2", "found@example.com");
+        let vars = HashMap::new();
+        let value = Value::Null;
+        let ctx = make_ctx(&record, &vars, &value);
+
+        let result = execute_format("Contact: {email1 ?? email2}", &ctx);
+        assert!(
+            matches!(result, TransformResult::Value(Value::String(s)) if s == "Contact: found@example.com")
+        );
+    }
+
+    #[test]
+    fn extract_field_paths_with_coalesce() {
+        let paths = extract_field_paths("{email1 ?? email2 ?? $fallback}");
+
+        // Only field paths, not variables
+        assert_eq!(paths.len(), 2);
+        assert_eq!(paths[0].segments[0].field, "email1");
+        assert_eq!(paths[1].segments[0].field, "email2");
     }
 }

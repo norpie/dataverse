@@ -8,7 +8,7 @@ mod executor;
 pub mod materializer;
 mod paths;
 pub mod record;
-mod transforms;
+pub(crate) mod transforms;
 mod types;
 pub mod util;
 pub mod variables;

@@ -6,15 +6,19 @@
 //! - System variables: `#value`, `#index`, etc.
 
 use dataverse_lib::model::Entity;
+use dataverse_lib::model::Value;
 
+use super::format::split_coalesce;
 use super::resolve::resolve_path_str;
 use super::resolve::ResolveContext;
+use crate::apps::migration::engine::TransformError;
 use crate::apps::migration::engine::TransformResult;
 
 /// Execute the copy transform.
 ///
 /// Parses the path and resolves it against the context. Supports field paths,
-/// variable navigation (`$var.field`), and system variables (`#value`).
+/// variable navigation (`$var.field`), system variables (`#value`), and
+/// coalesce syntax (`path1 ?? path2 ?? path3`).
 ///
 /// # Returns
 ///
@@ -22,7 +26,32 @@ use crate::apps::migration::engine::TransformResult;
 /// - `(TransformResult::Value, None)` - value from top-level field or variable
 /// - `(TransformResult::Error, None)` - path resolution failed
 pub fn execute_copy(path: &str, ctx: &ResolveContext<'_>) -> (TransformResult, Option<Entity>) {
-    resolve_path_str(path, ctx)
+    if !path.contains("??") {
+        return resolve_path_str(path, ctx);
+    }
+
+    let alternatives = split_coalesce(path);
+    let mut last_error = None;
+
+    for alt in &alternatives {
+        let (result, entity) = resolve_path_str(alt, ctx);
+        match result {
+            TransformResult::Value(Value::Null) | TransformResult::Exit(Value::Null) => continue,
+            TransformResult::Value(_) | TransformResult::Exit(_) => return (result, entity),
+            TransformResult::Error(
+                TransformError::PathNotFound { .. }
+                | TransformError::NullInPath { .. }
+                | TransformError::VariableNotFound { .. },
+            ) => {
+                last_error = Some(result);
+                continue;
+            }
+            TransformResult::Error(_) => return (result, None),
+        }
+    }
+
+    let _ = last_error;
+    (TransformResult::Value(Value::Null), None)
 }
 
 #[cfg(test)]
@@ -251,6 +280,102 @@ mod tests {
 
         let (result, _) = execute_copy("#value", &ctx);
         assert!(matches!(result, TransformResult::Value(Value::String(s)) if s == "current-value"));
+    }
+
+    // =========================================================================
+    // Coalesce paths
+    // =========================================================================
+
+    #[test]
+    fn coalesce_returns_first_non_null() {
+        let record = Record::new("account")
+            .set("email1", Value::Null)
+            .set("email2", "second@example.com")
+            .set("email3", "third@example.com");
+        let vars = HashMap::new();
+        let value = Value::Null;
+        let ctx = make_ctx(&record, &vars, &value);
+
+        let (result, _) = execute_copy("email1 ?? email2 ?? email3", &ctx);
+        assert!(
+            matches!(result, TransformResult::Value(Value::String(s)) if s == "second@example.com")
+        );
+    }
+
+    #[test]
+    fn coalesce_returns_first_when_not_null() {
+        let record = Record::new("account")
+            .set("email1", "first@example.com")
+            .set("email2", "second@example.com");
+        let vars = HashMap::new();
+        let value = Value::Null;
+        let ctx = make_ctx(&record, &vars, &value);
+
+        let (result, _) = execute_copy("email1 ?? email2", &ctx);
+        assert!(
+            matches!(result, TransformResult::Value(Value::String(s)) if s == "first@example.com")
+        );
+    }
+
+    #[test]
+    fn coalesce_all_null_returns_null() {
+        let record = Record::new("account")
+            .set("email1", Value::Null)
+            .set("email2", Value::Null);
+        let vars = HashMap::new();
+        let value = Value::Null;
+        let ctx = make_ctx(&record, &vars, &value);
+
+        let (result, _) = execute_copy("email1 ?? email2", &ctx);
+        assert!(matches!(result, TransformResult::Value(Value::Null)));
+    }
+
+    #[test]
+    fn coalesce_missing_field_skipped() {
+        let record = Record::new("account").set("email2", "found@example.com");
+        let vars = HashMap::new();
+        let value = Value::Null;
+        let ctx = make_ctx(&record, &vars, &value);
+
+        let (result, _) = execute_copy("nonexistent ?? email2", &ctx);
+        assert!(
+            matches!(result, TransformResult::Value(Value::String(s)) if s == "found@example.com")
+        );
+    }
+
+    #[test]
+    fn coalesce_with_variable_fallback() {
+        let record = Record::new("account").set("email", Value::Null);
+        let mut vars = HashMap::new();
+        vars.insert(
+            "fallback".to_string(),
+            Value::String("var@example.com".to_string()),
+        );
+        let value = Value::Null;
+        let ctx = make_ctx(&record, &vars, &value);
+
+        let (result, _) = execute_copy("email ?? $fallback", &ctx);
+        assert!(
+            matches!(result, TransformResult::Value(Value::String(s)) if s == "var@example.com")
+        );
+    }
+
+    #[test]
+    fn coalesce_preserves_entity_type() {
+        let contact = Record::new("contact").set("fullname", "John");
+        let record = Record::new("account")
+            .set("primarycontactid", Value::Null)
+            .set("secondarycontactid", Value::Record(Box::new(contact)));
+        let vars = HashMap::new();
+        let value = Value::Null;
+        let ctx = make_ctx(&record, &vars, &value);
+
+        let (result, entity) = execute_copy(
+            "primarycontactid?.fullname ?? secondarycontactid.fullname",
+            &ctx,
+        );
+        assert!(matches!(result, TransformResult::Value(Value::String(s)) if s == "John"));
+        assert_eq!(entity, Some(Entity::logical("contact")));
     }
 
     #[test]

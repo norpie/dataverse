@@ -350,7 +350,10 @@ fn analyze_transform_data(
 ) {
     match data {
         TransformData::Copy { path } => {
-            analyze_path_string(path, var_find_entities, collector);
+            use crate::apps::migration::engine::transforms::split_coalesce;
+            for alt in split_coalesce(path) {
+                analyze_path_string(alt, var_find_entities, collector);
+            }
         }
         TransformData::Format { template } => {
             analyze_template(template, var_find_entities, collector);
@@ -476,24 +479,12 @@ fn analyze_template(
     var_find_entities: &HashMap<String, String>,
     collector: &mut Collector,
 ) {
-    let mut chars = template.chars().peekable();
+    use crate::apps::migration::engine::transforms::extract_placeholders;
+    use crate::apps::migration::engine::transforms::split_coalesce;
 
-    while let Some(ch) = chars.next() {
-        if ch == '{' {
-            let mut placeholder = String::new();
-            let mut found_close = false;
-
-            for inner in chars.by_ref() {
-                if inner == '}' {
-                    found_close = true;
-                    break;
-                }
-                placeholder.push(inner);
-            }
-
-            if found_close && !placeholder.is_empty() {
-                analyze_path_string(&placeholder, var_find_entities, collector);
-            }
+    for placeholder in extract_placeholders(template) {
+        for alt in split_coalesce(&placeholder) {
+            analyze_path_string(alt, var_find_entities, collector);
         }
     }
 }
