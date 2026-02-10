@@ -3,9 +3,9 @@
 use dataverse_lib::error::Error as DataverseError;
 use rafter::prelude::*;
 
-use crate::apps::migration::modals::MatchConditionModal;
 use crate::apps::migration::modals::MatchConfigModal;
 use crate::apps::migration::modals::PassesModal;
+use crate::apps::migration::modals::TargetFieldModal;
 use crate::apps::migration::modals::TestGuidsModal;
 use crate::apps::migration::modals::UnmatchedHandlingModal;
 use crate::apps::migration::repository::MigrationRepository;
@@ -546,15 +546,14 @@ impl MigrationEditor {
             return;
         }
 
-        let Some(field_options) = self
-            .fetch_target_entity_fields_for_match(entity_mapping_id, gx)
-            .await
-        else {
-            return;
-        };
-
+        let client = self.target_client.get();
         let Some(target_field) = gx
-            .modal(MatchConditionModal::new_modal(field_options))
+            .modal(TargetFieldModal::new_modal(
+                client,
+                em.target_entity.clone(),
+                "Match Condition",
+                "Select the field to match on in the target entity.",
+            ))
             .await
         else {
             return;
@@ -590,16 +589,21 @@ impl MigrationEditor {
 
     /// Edit a match condition's target field.
     pub(super) async fn edit_match_condition_impl(&self, mc: &MatchCondition, gx: &GlobalContext) {
-        let Some(field_options) = self
-            .fetch_target_entity_fields_for_match(mc.entity_mapping_id, gx)
-            .await
+        let entity_mappings = self.entity_mappings.get();
+        let Some(em) = entity_mappings
+            .iter()
+            .find(|em| em.id == mc.entity_mapping_id)
         else {
             return;
         };
 
+        let client = self.target_client.get();
         let Some(new_field) = gx
-            .modal(MatchConditionModal::edit_modal(
-                field_options,
+            .modal(TargetFieldModal::edit_modal(
+                client,
+                em.target_entity.clone(),
+                "Match Condition",
+                "Select the field to match on in the target entity.",
                 &mc.target_field,
             ))
             .await

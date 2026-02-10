@@ -2,7 +2,7 @@
 
 use rafter::prelude::*;
 
-use crate::apps::migration::modals::FindConditionModal;
+use crate::apps::migration::modals::TargetFieldModal;
 use crate::apps::migration::modals::GuardTransformModal;
 use crate::apps::migration::modals::VariableInfo;
 use crate::apps::migration::repository::MigrationRepository;
@@ -20,7 +20,6 @@ use crate::apps::migration::types::SystemVar;
 use crate::apps::migration::types::Transform;
 use crate::apps::migration::types::TransformData;
 use crate::modals::ConfirmModal;
-use crate::modals::LoadingModal;
 
 use super::MigrationEditor;
 
@@ -421,12 +420,15 @@ impl MigrationEditor {
             }
         };
 
-        // Fetch field names from the find entity
-        let Some(field_options) = self.fetch_find_entity_fields(&entity, gx).await else {
-            return;
-        };
-
-        let Some(target_field) = gx.modal(FindConditionModal::new_modal(field_options)).await
+        let client = self.target_client.get();
+        let Some(target_field) = gx
+            .modal(TargetFieldModal::new_modal(
+                client,
+                entity,
+                "Find Condition",
+                "Select the field to match on in the find entity.",
+            ))
+            .await
         else {
             return;
         };
@@ -482,13 +484,13 @@ impl MigrationEditor {
             }
         };
 
-        let Some(field_options) = self.fetch_find_entity_fields(&entity, gx).await else {
-            return;
-        };
-
+        let client = self.target_client.get();
         let Some(new_field) = gx
-            .modal(FindConditionModal::edit_modal(
-                field_options,
+            .modal(TargetFieldModal::edit_modal(
+                client,
+                entity,
+                "Find Condition",
+                "Select the field to match on in the find entity.",
                 &fc.target_field,
             ))
             .await
@@ -625,44 +627,4 @@ impl MigrationEditor {
         }
     }
 
-    /// Fetch field options for the find entity (for condition target_field autocomplete).
-    pub(super) async fn fetch_find_entity_fields(
-        &self,
-        entity: &str,
-        gx: &GlobalContext,
-    ) -> Option<Vec<(String, String)>> {
-        let client = self.target_client.get();
-        let entity_name = entity.to_string();
-        let attributes = gx
-            .modal(LoadingModal::run_with_default(
-                "Loading entity fields",
-                || Err(dataverse_lib::error::Error::Cancelled),
-                async move { client.metadata().attributes(entity_name).await },
-            ))
-            .await;
-
-        match attributes {
-            Ok(attrs) => {
-                let options: Vec<(String, String)> = attrs
-                    .iter()
-                    .map(|a| {
-                        let display_name = a.display_name.text_or(&a.logical_name);
-                        let display = if display_name == a.logical_name {
-                            a.logical_name.clone()
-                        } else {
-                            format!("{} ({})", a.logical_name, display_name)
-                        };
-                        (a.logical_name.clone(), display)
-                    })
-                    .collect();
-                Some(options)
-            }
-            Err(e) if e.is_cancelled() => None,
-            Err(e) => {
-                log::error!("Failed to fetch fields for {}: {}", entity, e);
-                gx.toast(Toast::error("Failed to fetch entity fields"));
-                None
-            }
-        }
-    }
 }
