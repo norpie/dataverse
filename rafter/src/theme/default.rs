@@ -112,6 +112,7 @@ pub struct RafterTheme {
 
     // Semantic colors
     pub success: Color,
+    pub info: Color,
     pub warning: Color,
     pub error: Color,
 
@@ -161,6 +162,7 @@ pub fn default_theme() -> RafterTheme {
 
         // Semantic colors
         success: Color::oklch(0.7, 0.15, 145.0), // green
+        info: Color::oklch(0.7, 0.15, 220.0),    // blue
         warning: Color::oklch(0.75, 0.15, 85.0), // yellow/orange
         error: Color::oklch(0.65, 0.2, 25.0),    // red
 
