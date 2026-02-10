@@ -112,6 +112,10 @@ pub struct FetchTaskInfo {
     pub total_count: Option<usize>,
     /// Records fetched so far.
     pub records_fetched: usize,
+    /// When this task started fetching (after count).
+    pub fetch_start: Option<Instant>,
+    /// Per-task ETA string.
+    pub eta: String,
 }
 
 /// Message sent from spawned tasks back to the modal.
@@ -147,13 +151,6 @@ pub struct ODataFetchModal {
 
     /// Per-task display info (reactive).
     task_infos: Vec<FetchTaskInfo>,
-
-    /// Timestamp when fetching started (for ETA).
-    #[state(skip)]
-    start_time: Arc<std::sync::Mutex<Option<Instant>>>,
-
-    /// ETA display string (reactive).
-    eta: String,
 }
 
 impl ODataFetchModal {
@@ -172,8 +169,6 @@ impl ODataFetchModal {
             tasks,
             Arc::new(std::sync::Mutex::new(result_slots)),
             task_infos,
-            Arc::new(std::sync::Mutex::new(None)),
-            String::new(),
         )
     }
 }
@@ -191,12 +186,6 @@ impl ODataFetchModal {
         if task_count == 0 {
             mx.close(Ok(Vec::new()));
             return;
-        }
-
-        // Record start time
-        {
-            let mut start = self.start_time.lock().unwrap();
-            *start = Some(Instant::now());
         }
 
         let (tx, mut rx) = mpsc::unbounded_channel::<TaskMessage>();
@@ -290,6 +279,7 @@ impl ODataFetchModal {
                     self.task_infos.update(|infos| {
                         infos[index].total_count = Some(count);
                         infos[index].status = FetchTaskStatus::Fetching;
+                        infos[index].fetch_start = Some(Instant::now());
                     });
                 }
                 TaskMessage::PageFetched {
@@ -298,15 +288,14 @@ impl ODataFetchModal {
                 } => {
                     self.task_infos.update(|infos| {
                         infos[index].records_fetched += records_in_page;
+                        infos[index].eta = compute_task_eta(&infos[index]);
                     });
-                    // Update ETA
-                    self.update_eta();
                 }
                 TaskMessage::Completed { index } => {
                     self.task_infos.update(|infos| {
                         infos[index].status = FetchTaskStatus::Completed;
+                        infos[index].eta = String::new();
                     });
-                    self.update_eta();
                 }
                 TaskMessage::Failed { index, error } => {
                     let label = self.task_infos.get()[index].label.clone();
@@ -358,12 +347,7 @@ impl ODataFetchModal {
             .count();
         let total = infos.len();
 
-        let eta_str = self.eta.get();
-        let header = if eta_str.is_empty() {
-            format!("Fetching data... ({}/{})", completed, total)
-        } else {
-            format!("Fetching data... ({}/{})  ~{}", completed, total, eta_str)
-        };
+        let header = format!("Fetching data... ({}/{})", completed, total);
 
         let task_rows: Vec<Element> = infos
             .iter()
@@ -383,43 +367,6 @@ impl ODataFetchModal {
 }
 
 impl ODataFetchModal {
-    fn update_eta(&self) {
-        let start_time = {
-            let guard = self.start_time.lock().unwrap();
-            match *guard {
-                Some(t) => t,
-                None => return,
-            }
-        };
-
-        let infos = self.task_infos.get();
-        let total_fetched: usize = infos.iter().map(|i| i.records_fetched).sum();
-        let total_expected: usize = infos.iter().filter_map(|i| i.total_count).sum();
-
-        if total_fetched == 0 || total_expected == 0 {
-            self.eta.set(String::new());
-            return;
-        }
-
-        let elapsed = start_time.elapsed();
-        let elapsed_secs = elapsed.as_secs_f64();
-
-        if elapsed_secs < 0.5 {
-            return; // Too early for meaningful ETA
-        }
-
-        let records_remaining = total_expected.saturating_sub(total_fetched);
-        let rate = total_fetched as f64 / elapsed_secs; // records per second
-
-        if rate < 0.001 {
-            self.eta.set(String::new());
-            return;
-        }
-
-        let remaining_secs = (records_remaining as f64 / rate).ceil() as u64;
-        self.eta.set(format_duration(remaining_secs));
-    }
-
     fn render_task_row(&self, idx: usize, info: &FetchTaskInfo) -> Element {
         let label = info.label.clone();
         let progress_text = format_progress(info);
@@ -454,12 +401,17 @@ impl ODataFetchModal {
                 let spinner = BrailleSpinner::new()
                     .id(format!("task-spinner-{}", idx))
                     .build_standalone();
+                let eta_text = if info.eta.is_empty() {
+                    progress_text
+                } else {
+                    format!("{}  ~{}", progress_text, info.eta)
+                };
                 element! {
                     row (gap: 1, width: fill) {
                         { spinner }
                         text (content: {label}) style (fg: primary)
                         row (flex_grow: 1, justify: end) {
-                            text (content: {progress_text}) style (fg: muted)
+                            text (content: {eta_text}) style (fg: muted)
                         }
                     }
                 }
@@ -496,6 +448,37 @@ impl ODataFetchModal {
             }
         }
     }
+}
+
+/// Compute ETA string for a single task based on its own fetch start time.
+fn compute_task_eta(info: &FetchTaskInfo) -> String {
+    let start = match info.fetch_start {
+        Some(t) => t,
+        None => return String::new(),
+    };
+    let total = match info.total_count {
+        Some(t) if t > 0 => t,
+        _ => return String::new(),
+    };
+
+    let fetched = info.records_fetched;
+    if fetched == 0 {
+        return String::new();
+    }
+
+    let elapsed_secs = start.elapsed().as_secs_f64();
+    if elapsed_secs < 0.5 {
+        return String::new(); // Too early for meaningful ETA
+    }
+
+    let remaining = total.saturating_sub(fetched);
+    let rate = fetched as f64 / elapsed_secs;
+    if rate < 0.001 {
+        return String::new();
+    }
+
+    let remaining_secs = (remaining as f64 / rate).ceil() as u64;
+    format_duration(remaining_secs)
 }
 
 /// Format a record count with thousand separators.
