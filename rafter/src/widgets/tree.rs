@@ -838,15 +838,17 @@ impl<'a, T: TreeItem> Tree<HasTreeState<'a, T>> {
         let mut row = Element::row()
             .id(&row_id)
             .width(Size::Fill)
+            .overflow_x(Overflow::Hidden)
             .focusable(true)
             .clickable(true)
-            .child(Element::text(&indent_str))
+            .child(Element::text(&indent_str).flex_shrink(0))
             .child(
                 Element::text(icon)
                     .id(&icon_id)
+                    .flex_shrink(0)
                     .clickable(flat_node.has_children),
             )
-            .child(Element::text(" ")) // Spacing between icon and content
+            .child(Element::text(" ").flex_shrink(0)) // Spacing between icon and content
             .child(node.value.render());
 
         // Apply base node style
