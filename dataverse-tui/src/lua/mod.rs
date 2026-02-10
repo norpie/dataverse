@@ -4,5 +4,5 @@
 //! Used by the migration app and potentially other Lua-based features.
 
 mod error;
-mod runtime;
+pub mod runtime;
 mod stdlib;

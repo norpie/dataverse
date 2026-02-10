@@ -18,6 +18,8 @@ pub use executor::ChainChildren;
 pub use executor::ChainItem;
 pub use executor::FindConditionItem;
 pub use paths::FieldPath;
+pub use types::FindCache;
+pub use types::FindError;
 pub use types::StubFindCache;
 pub use types::SystemVars;
 pub use types::TransformContext;

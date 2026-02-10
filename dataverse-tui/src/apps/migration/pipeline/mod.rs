@@ -7,6 +7,7 @@
 //! deduplication of find cache fetches.
 
 pub mod analysis;
+pub mod cache;
 pub mod fetch;
 
 use std::collections::HashSet;
