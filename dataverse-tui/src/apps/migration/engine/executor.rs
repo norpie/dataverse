@@ -3,10 +3,14 @@
 //! This module handles executing a sequence of transforms, passing the result
 //! of each transform to the next via the `#value` system variable.
 
+use dataverse_lib::model::Record;
 use dataverse_lib::model::Value;
 
 use super::condition::evaluate_condition;
+use super::types::FindError;
 use crate::apps::migration::types::Condition;
+use crate::apps::migration::types::FindFallback;
+use crate::apps::migration::types::FindMode;
 use crate::apps::migration::types::TransformData;
 
 use super::transforms::execute_constant;
@@ -80,11 +84,15 @@ impl ChainItem {
         }
     }
 
-    /// Creates a chain item with find conditions.
-    pub fn with_find_conditions(data: TransformData, conditions: Vec<FindConditionItem>) -> Self {
+    /// Creates a chain item with find conditions and an optional default chain.
+    pub fn with_find_conditions(
+        data: TransformData,
+        conditions: Vec<FindConditionItem>,
+        default_chain: Option<Vec<ChainItem>>,
+    ) -> Self {
         Self {
             data,
-            children: ChainChildren::FindConditions(conditions),
+            children: ChainChildren::FindConditions(conditions, default_chain),
         }
     }
 }
@@ -103,7 +111,8 @@ pub enum ChainChildren {
     /// Coalesce alternatives - first non-null wins.
     Alternatives(Vec<Vec<ChainItem>>),
     /// Find condition source chains - produce values to match against.
-    FindConditions(Vec<FindConditionItem>),
+    /// The optional second element is the default chain (for `FindFallback::Default`).
+    FindConditions(Vec<FindConditionItem>, Option<Vec<ChainItem>>),
 }
 
 /// A branch within a match transform.
@@ -245,8 +254,12 @@ fn execute_transform(item: &ChainItem, ctx: &mut TransformContext<'_>) -> Transf
         TransformData::Match { .. } => execute_match(&item.children, ctx),
         TransformData::Coalesce => execute_coalesce(&item.children, ctx),
 
-        // Find (requires target cache + children)
-        TransformData::Find { .. } => not_implemented("find"),
+        // Find
+        TransformData::Find {
+            entity,
+            fallback,
+            mode,
+        } => execute_find(entity, fallback, mode, &item.children, ctx),
     }
 }
 
@@ -349,11 +362,118 @@ fn execute_coalesce(children: &ChainChildren, ctx: &mut TransformContext<'_>) ->
     TransformResult::Error(TransformError::CoalesceAllNull)
 }
 
-/// Placeholder for unimplemented transforms.
-fn not_implemented(name: &str) -> TransformResult {
-    TransformResult::Error(TransformError::Other {
-        message: format!("Transform '{name}' not yet implemented"),
+/// Execute find transform.
+///
+/// Locates a record in the target environment. Returns `Value::Record` on success.
+/// Two modes: where-clause (declarative conditions) or Lua script.
+fn execute_find(
+    entity: &str,
+    fallback: &FindFallback,
+    mode: &FindMode,
+    children: &ChainChildren,
+    ctx: &mut TransformContext<'_>,
+) -> TransformResult {
+    let result = match mode {
+        FindMode::Where => execute_find_where(entity, children, ctx),
+        FindMode::Lua { script } => execute_find_lua(entity, script, ctx),
+    };
+
+    match result {
+        Ok(record) => {
+            ctx.system_vars.value_type = Some(record.entity().clone());
+            TransformResult::Value(Value::Record(Box::new(record)))
+        }
+        Err(find_err) => apply_find_fallback(find_err, entity, fallback, children, ctx),
+    }
+}
+
+/// Execute find in where-clause mode.
+///
+/// Evaluates each condition's source chain to produce a match value,
+/// then queries the target cache with collected conditions.
+fn execute_find_where(
+    entity: &str,
+    children: &ChainChildren,
+    ctx: &mut TransformContext<'_>,
+) -> Result<Record, FindError> {
+    let (conditions, _) = match children {
+        ChainChildren::FindConditions(conds, default) => (conds, default),
+        _ => return Err(FindError::Other("Find missing conditions".to_string())),
+    };
+
+    let saved_value = ctx.system_vars.value.clone();
+    let saved_type = ctx.system_vars.value_type.clone();
+    let mut collected: Vec<(String, Value)> = Vec::new();
+
+    for cond in conditions {
+        // Reset #value for each condition's source chain
+        ctx.system_vars.value = Value::Null;
+        ctx.system_vars.value_type = None;
+
+        match execute_chain(&cond.source_chain, ctx) {
+            TransformResult::Value(v) => {
+                collected.push((cond.target_field.clone(), v));
+            }
+            TransformResult::Error(e) => {
+                // Restore state before returning
+                ctx.system_vars.value = saved_value;
+                ctx.system_vars.value_type = saved_type;
+                return Err(FindError::Other(e.to_string()));
+            }
+            TransformResult::Exit(v) => {
+                collected.push((cond.target_field.clone(), v));
+            }
+        }
+    }
+
+    // Restore #value state after condition evaluation
+    ctx.system_vars.value = saved_value;
+    ctx.system_vars.value_type = saved_type;
+
+    ctx.target_cache.find_where(entity, &collected)
+}
+
+/// Execute find in Lua mode.
+fn execute_find_lua(
+    entity: &str,
+    script: &str,
+    ctx: &TransformContext<'_>,
+) -> Result<Record, FindError> {
+    let id = ctx
+        .target_cache
+        .find_lua(entity, script, ctx.source_record)?;
+
+    ctx.target_cache.get(entity, id).cloned().ok_or_else(|| {
+        FindError::Other(format!("Lua find returned ID {id} but record not in cache"))
     })
+}
+
+/// Apply fallback when find fails.
+fn apply_find_fallback(
+    find_err: FindError,
+    entity: &str,
+    fallback: &FindFallback,
+    children: &ChainChildren,
+    ctx: &mut TransformContext<'_>,
+) -> TransformResult {
+    match fallback {
+        FindFallback::Error => TransformResult::Error(TransformError::FindNotFound {
+            entity: entity.to_string(),
+            message: find_err.to_string(),
+        }),
+        FindFallback::Null => TransformResult::Value(Value::Null),
+        FindFallback::Default => {
+            let default_chain = match children {
+                ChainChildren::FindConditions(_, Some(chain)) => chain,
+                _ => {
+                    return TransformResult::Error(TransformError::other(
+                        "Find fallback is Default but no default chain provided",
+                    ))
+                }
+            };
+            execute_scoped_chain(default_chain, ctx)
+        }
+    }
 }
 
 // =============================================================================
