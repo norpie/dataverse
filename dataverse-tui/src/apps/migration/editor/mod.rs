@@ -4,6 +4,7 @@ mod child_operations;
 mod config_operations;
 mod detail_views;
 mod entity_operations;
+mod execute;
 mod helpers;
 mod insert_target;
 mod item_operations;
@@ -44,6 +45,7 @@ use crate::apps::migration::execution::ExecutionError;
 use crate::apps::migration::execution::ExecutionStatus;
 use crate::apps::migration::execution::ExecutionTreeNode;
 use crate::apps::migration::execution::PendingLookupUpdate;
+use crate::apps::migration::execution::SubPhase;
 use crate::apps::migration::execution::SubPhaseProgress;
 use dataverse_lib::model::metadata::ExecutionMetadata;
 use preview::PreviewRow;
@@ -129,6 +131,18 @@ pub struct MigrationEditor {
     exec_comparisons: Vec<MappingComparison>,
     /// Cached execution metadata per target entity.
     exec_metadata: std::collections::HashMap<String, ExecutionMetadata>,
+    /// Entity mappings for the executing phase (for pass-enabled flags).
+    exec_entity_mappings: Vec<EntityMapping>,
+    /// Current sub-phase being executed.
+    exec_current_sub_phase: Option<SubPhase>,
+    /// Map from queue item ID to entity name (for progress tracking).
+    exec_item_entity_map: std::collections::HashMap<i64, String>,
+    /// Map from queue item ID to operation count in that batch.
+    exec_item_op_counts: std::collections::HashMap<i64, usize>,
+    /// Target environment ID for queue submission.
+    exec_env_id: i64,
+    /// Account ID for queue submission.
+    exec_account_id: i64,
 }
 
 impl MigrationEditor {
@@ -170,6 +184,12 @@ impl MigrationEditor {
             TreeState::default(),                   // exec_tree
             Vec::new(),                             // exec_comparisons
             std::collections::HashMap::new(),       // exec_metadata
+            Vec::new(),                             // exec_entity_mappings
+            None,                                   // exec_current_sub_phase
+            std::collections::HashMap::new(),       // exec_item_entity_map
+            std::collections::HashMap::new(),       // exec_item_op_counts
+            0,                                      // exec_env_id
+            0,                                      // exec_account_id
         )
     }
 }
@@ -398,6 +418,12 @@ impl MigrationEditor {
         self.exec_tree.set(TreeState::default());
         self.exec_comparisons.set(Vec::new());
         self.exec_metadata.set(std::collections::HashMap::new());
+        self.exec_entity_mappings.set(Vec::new());
+        self.exec_current_sub_phase.set(None);
+        self.exec_item_entity_map.set(std::collections::HashMap::new());
+        self.exec_item_op_counts.set(std::collections::HashMap::new());
+        self.exec_env_id.set(0);
+        self.exec_account_id.set(0);
     }
 
     #[handler]
@@ -926,6 +952,15 @@ impl MigrationEditor {
             t.set_roots(roots);
             t.expand_all();
         });
+    }
+
+    // =========================================================================
+    // Execution Event Handler
+    // =========================================================================
+
+    #[event_handler]
+    async fn on_queue_item_completed(&self, event: crate::apps::queue::api::QueueItemCompleted, gx: &GlobalContext) {
+        self.handle_item_completed(&event, gx).await;
     }
 
     #[handler]
