@@ -83,6 +83,43 @@ impl OperationOptions {
 }
 
 // =============================================================================
+// Operation Kind
+// =============================================================================
+
+/// Lightweight discriminant for an [`Operation`], without any payload.
+///
+/// Used by the batch response parser to correctly classify HTTP responses
+/// (e.g., distinguishing a 204 Delete from a 204 Associate).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OperationKind {
+    Create,
+    Retrieve,
+    Update,
+    Delete,
+    Upsert,
+    Associate,
+    Disassociate,
+    SetLookup,
+    ClearLookup,
+}
+
+impl From<&Operation> for OperationKind {
+    fn from(op: &Operation) -> Self {
+        match op {
+            Operation::Create { .. } => OperationKind::Create,
+            Operation::Retrieve { .. } => OperationKind::Retrieve,
+            Operation::Update { .. } => OperationKind::Update,
+            Operation::Delete { .. } => OperationKind::Delete,
+            Operation::Upsert { .. } => OperationKind::Upsert,
+            Operation::Associate { .. } => OperationKind::Associate,
+            Operation::Disassociate { .. } => OperationKind::Disassociate,
+            Operation::SetLookup { .. } => OperationKind::SetLookup,
+            Operation::ClearLookup { .. } => OperationKind::ClearLookup,
+        }
+    }
+}
+
+// =============================================================================
 // Operation enum
 // =============================================================================
 
