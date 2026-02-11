@@ -47,6 +47,11 @@ use crate::apps::migration::execution::ExecutionTreeNode;
 use crate::apps::migration::execution::PendingLookupUpdate;
 use crate::apps::migration::execution::SubPhase;
 use crate::apps::migration::execution::SubPhaseProgress;
+use crate::apps::migration::types::PhaseRunStatus;
+use crate::apps::queue::api::DeleteItemsBySource;
+use crate::apps::queue::api::PauseQueue;
+use crate::apps::queue::Queue;
+use crate::modals::ConfirmModal;
 use dataverse_lib::model::metadata::ExecutionMetadata;
 use preview::PreviewRow;
 use tree::MigrationTreeNode;
@@ -1542,12 +1547,34 @@ impl MigrationEditor {
     }
 
     #[handler]
-    async fn cancel_execution(&self, _gx: &GlobalContext) {
-        // TODO: implement cancel logic (Step 5)
-        // - PauseQueue
-        // - DeleteItemsBySource
-        // - Update PhaseRun status to Cancelled
-        // - Navigate back
+    async fn cancel_execution(&self, gx: &GlobalContext) {
+        let confirmed = gx
+            .modal(ConfirmModal::with_message(
+                "Cancel execution? Pending operations will be removed.",
+            ))
+            .await;
+        if !confirmed {
+            return;
+        }
+
+        // Pause queue to stop picking up new items
+        let _ = gx.request::<Queue, PauseQueue>(PauseQueue).await;
+
+        // Delete all pending migration queue items
+        let _ = gx
+            .request::<Queue, DeleteItemsBySource>(DeleteItemsBySource {
+                source: "migration".to_string(),
+            })
+            .await;
+
+        // Update PhaseRun status to Cancelled
+        self.exec_status.set(ExecutionStatus::Cancelled);
+        self.finalize_execution(PhaseRunStatus::Cancelled, None, gx)
+            .await;
+
+        // Clear state and navigate back
+        self.clear_exec_state();
+        self.navigate(Page::Editor);
     }
 
     #[page(Preview)]

@@ -460,7 +460,7 @@ impl MigrationEditor {
     }
 
     /// Finalize execution by updating the PhaseRun in the DB.
-    async fn finalize_execution(
+    pub(super) async fn finalize_execution(
         &self,
         status: PhaseRunStatus,
         error: Option<String>,
