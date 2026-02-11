@@ -3,6 +3,8 @@
 use serde::Deserialize;
 use serde::Serialize;
 
+use std::collections::HashSet;
+
 use super::AttributeMetadata;
 use super::ManyToManyRelationship;
 use super::MultiSelectPicklistAttributeMetadata;
@@ -166,6 +168,26 @@ pub struct EntityMetadata {
     pub many_to_many_relationships: Vec<ManyToManyRelationship>,
 }
 
+/// Metadata needed for executing CRUD operations against an entity.
+///
+/// Contains the minimal information needed to build Create, Update, Delete,
+/// Associate, and Disassociate operations for batch execution.
+#[derive(Debug, Clone)]
+pub struct ExecutionMetadata {
+    /// The logical name of the entity (e.g., "account").
+    pub logical_name: String,
+    /// The entity set name for Web API URLs (e.g., "accounts").
+    pub entity_set_name: String,
+    /// The primary key attribute name (e.g., "accountid").
+    pub primary_key: String,
+    /// Logical names of all lookup attributes (Lookup, Customer, Owner).
+    pub lookup_attributes: HashSet<String>,
+    /// Whether this entity is an intersect (junction) entity.
+    pub is_intersect: bool,
+    /// For junction entities: the N:N relationship this entity backs.
+    pub junction_relationship: Option<ManyToManyRelationship>,
+}
+
 impl EntityMetadata {
     /// Returns a reference to the core entity metadata.
     pub fn core(&self) -> EntityCore {
@@ -257,6 +279,38 @@ impl EntityMetadata {
         self.many_to_many_relationships
             .iter()
             .find(|r| r.schema_name == schema_name)
+    }
+
+    /// Returns execution metadata for building CRUD/associate operations.
+    ///
+    /// For junction entities, finds the N:N relationship by scanning
+    /// `many_to_many_relationships` for one whose `intersect_entity_name`
+    /// matches this entity's logical name.
+    pub fn execution_metadata(&self) -> ExecutionMetadata {
+        let lookup_attributes = self
+            .attributes
+            .iter()
+            .filter(|a| a.is_lookup())
+            .map(|a| a.logical_name.clone())
+            .collect();
+
+        let junction_relationship = if self.is_intersect {
+            self.many_to_many_relationships
+                .iter()
+                .find(|r| r.intersect_entity_name == self.logical_name)
+                .cloned()
+        } else {
+            None
+        };
+
+        ExecutionMetadata {
+            logical_name: self.logical_name.clone(),
+            entity_set_name: self.entity_set_name.clone(),
+            primary_key: self.primary_id_attribute.clone(),
+            lookup_attributes,
+            is_intersect: self.is_intersect,
+            junction_relationship,
+        }
     }
 }
 
