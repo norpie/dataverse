@@ -27,7 +27,7 @@ url = "2"
 nucleo-matcher = "0.3"
 sha2 = "0.10"
 include_dir = "0.7"
-uuid = "1.19.0"
+uuid = { version = "1.19.0", features = ["v5"] }
 csv = "1.3"
 rust_xlsxwriter = "0.79"
 calamine = { version = "0.26", features = ["dates"] }
