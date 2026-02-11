@@ -52,6 +52,9 @@ use crate::apps::queue::api::DeleteItemsBySource;
 use crate::apps::queue::api::PauseQueue;
 use crate::apps::queue::Queue;
 use crate::modals::ConfirmModal;
+use crate::modals::LoadingModal;
+use crate::systems::client_management::ClientManagement;
+use crate::systems::client_management::GetAnyClient;
 use dataverse_lib::model::metadata::ExecutionMetadata;
 use preview::PreviewRow;
 use tree::MigrationTreeNode;
@@ -97,6 +100,8 @@ pub struct MigrationEditor {
     // =========================================================================
     // Preview state
     // =========================================================================
+    /// Phase ID of the previewed phase.
+    preview_phase_id: i64,
     /// Phase name shown in the preview header.
     preview_phase_name: String,
     /// Comparison results per entity mapping.
@@ -171,6 +176,7 @@ impl MigrationEditor {
             Vec::new(), // coalesce_chains
             Vec::new(), // find_conditions
             Vec::new(), // match_conditions
+            0,                             // preview_phase_id
             String::new(),                 // preview_phase_name
             Vec::new(),                    // preview_results
             0,                             // preview_entity_index
@@ -365,12 +371,14 @@ impl MigrationEditor {
     fn preview_keybinds() {
         bind("[", prev_entity);
         bind("]", next_entity);
+        bind("f10", run_execution);
     }
 
     #[handler]
     async fn back(&self, cx: &AppContext, gx: &GlobalContext) {
         match self.page() {
             Page::Preview => {
+                self.preview_phase_id.set(0);
                 self.preview_results.set(Vec::new());
                 self.preview_table.set(TableState::default());
                 self.preview_entity_names.set(Vec::new());
@@ -820,6 +828,7 @@ impl MigrationEditor {
         )).await;
 
         // Store results and navigate
+        self.preview_phase_id.set(phase_id);
         self.preview_phase_name.set(phase_name);
         self.preview_entity_names.set(preview::entity_names(&comparisons));
         self.preview_counts.set(preview::entity_counts(&comparisons, 0));
@@ -883,6 +892,145 @@ impl MigrationEditor {
         if let Some(detail) = detail {
             gx.modal(RecordDetailModal::with_detail(detail)).await;
         }
+    }
+
+    // =========================================================================
+    // Execute from Preview
+    // =========================================================================
+
+    #[handler]
+    async fn run_execution(&self, gx: &GlobalContext) {
+        let counts = self.preview_counts.get();
+        let phase_name = self.preview_phase_name.get();
+
+        let has_work = counts.create + counts.update + counts.associate
+            + counts.disassociate + counts.delete
+            > 0;
+        if !has_work {
+            gx.toast(Toast::warning("Nothing to execute"));
+            return;
+        }
+
+        // Confirm with operation summary
+        let mut summary_parts = Vec::new();
+        if counts.create > 0 {
+            summary_parts.push(format!("{} creates", counts.create));
+        }
+        if counts.update > 0 {
+            summary_parts.push(format!("{} updates", counts.update));
+        }
+        if counts.associate > 0 {
+            summary_parts.push(format!("{} associates", counts.associate));
+        }
+        if counts.disassociate > 0 {
+            summary_parts.push(format!("{} disassociates", counts.disassociate));
+        }
+        if counts.delete > 0 {
+            summary_parts.push(format!("{} deletes", counts.delete));
+        }
+
+        let confirm_msg = format!(
+            "Execute phase \"{}\"?\n{}",
+            phase_name,
+            summary_parts.join(", "),
+        );
+
+        if !gx.modal(ConfirmModal::with_message(confirm_msg)).await {
+            return;
+        }
+
+        // Gather comparisons and entity mappings from preview state
+        let comparisons = self.preview_results.get();
+        let phase_id = self.preview_phase_id.get();
+        let entity_mappings = self.entity_mappings.get();
+
+        // Filter entity mappings to the previewed phase
+        let phase_mappings: Vec<EntityMapping> = entity_mappings
+            .iter()
+            .filter(|em| em.phase_id == phase_id)
+            .cloned()
+            .collect();
+
+        // Resolve metadata and client info via LoadingModal
+        let target_client = self.target_client.get().clone();
+        let target_env_id = self.migration.get().target_environment_id;
+
+        let target_entities: Vec<String> = comparisons
+            .iter()
+            .map(|c| c.target_entity.clone())
+            .collect();
+
+        let metadata_result: Result<(std::collections::HashMap<String, ExecutionMetadata>, i64, i64), String> = gx
+            .modal(LoadingModal::run_with_default_updates(
+                "Preparing execution...",
+                || Err("Cancelled".to_string()),
+                |updater| {
+                    let target_client = target_client.clone();
+                    let target_entities = target_entities.clone();
+                    async move {
+                        // Resolve execution metadata for each target entity
+                        let mut metadata = std::collections::HashMap::new();
+                        for entity_name in &target_entities {
+                            updater.update(format!("Resolving metadata: {}", entity_name));
+                            match target_client.metadata().entity(entity_name.as_str()).await {
+                                Ok(em) => {
+                                    metadata.insert(entity_name.clone(), em.execution_metadata());
+                                }
+                                Err(e) => {
+                                    return Err(format!(
+                                        "Failed to fetch metadata for {}: {}",
+                                        entity_name, e
+                                    ));
+                                }
+                            }
+                        }
+
+                        Ok((metadata, target_env_id, 0i64))
+                    }
+                },
+            ))
+            .await;
+
+        let (metadata, env_id, _) = match metadata_result {
+            Ok(data) => data,
+            Err(e) => {
+                log::error!("[execution] Failed to prepare execution: {}", e);
+                gx.toast(Toast::error(format!("Failed to prepare: {}", e)));
+                return;
+            }
+        };
+
+        // Resolve account_id for the target environment
+        let account_id = match gx
+            .request_system::<ClientManagement, GetAnyClient>(GetAnyClient {
+                env_id,
+            })
+            .await
+        {
+            Ok(Ok(info)) => info.account_id,
+            Ok(Err(e)) => {
+                log::error!("[execution] Failed to get target account: {}", e);
+                gx.toast(Toast::error("Failed to resolve target account"));
+                return;
+            }
+            Err(e) => {
+                log::error!("[execution] Failed to request target client: {:?}", e);
+                gx.toast(Toast::error("Failed to resolve target account"));
+                return;
+            }
+        };
+
+        // Populate execution state
+        self.exec_phase_name.set(phase_name);
+        self.exec_comparisons.set(comparisons);
+        self.exec_metadata.set(metadata);
+        self.exec_entity_mappings.set(phase_mappings);
+        self.exec_env_id.set(env_id);
+        self.exec_account_id.set(account_id);
+
+        // Navigate and start
+        self.navigate(Page::Execute);
+        self.start_execution(gx).await;
     }
 
     // =========================================================================
@@ -1593,7 +1741,10 @@ impl MigrationEditor {
         page! {
             column (padding: (1, 2), gap: 1, width: fill, height: fill) style (bg: background) {
                 // Header
-                text (content: {format!("Preview: {}", phase_name)}) style (bold, fg: interact)
+                row (width: fill, justify: between) {
+                    text (content: {format!("Preview: {}", phase_name)}) style (bold, fg: interact)
+                    button (label: "Execute", hint: "f10", id: "exec-btn") on_activate: run_execution()
+                }
 
                 // Stats row
                 row (gap: 2) {
