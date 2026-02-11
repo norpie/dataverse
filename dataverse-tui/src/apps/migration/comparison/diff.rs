@@ -43,6 +43,18 @@ pub fn diff_fields(transformed: &HashMap<String, Value>, target: &Record) -> Vec
         match target.get(field) {
             Some(old_value) => {
                 if !values_equal(new_value, old_value) {
+                    log::debug!(
+                        "diff_fields: field={:?} new={:?} old={:?}",
+                        field,
+                        std::mem::discriminant(new_value),
+                        std::mem::discriminant(old_value)
+                    );
+                    log::debug!(
+                        "diff_fields: field={:?} new_val={:?} old_val={:?}",
+                        field,
+                        new_value,
+                        old_value
+                    );
                     diffs.push(FieldDiff {
                         field: field.clone(),
                         new_value: new_value.clone(),

@@ -4,11 +4,11 @@ use chrono::{DateTime, NaiveDateTime, Utc};
 use rust_decimal::Decimal;
 use uuid::Uuid;
 
-use dataverse_lib::model::Value;
 use dataverse_lib::model::metadata::AttributeType;
 use dataverse_lib::model::types::{
     EntityBinding, Money, MultiSelectOptionSetValue, OptionSetValue,
 };
+use dataverse_lib::model::Value;
 
 /// Error during string-to-value conversion.
 #[derive(Debug, thiserror::Error)]
