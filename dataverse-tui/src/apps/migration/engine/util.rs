@@ -22,6 +22,11 @@ pub fn values_equal(a: &Value, b: &Value) -> bool {
         (Value::OptionSet(a), Value::OptionSet(b)) => a.value == b.value,
         (Value::OptionSet(a), Value::Int(b)) => a.value == *b,
         (Value::Int(a), Value::OptionSet(b)) => *a == b.value,
+        // Lookup comparisons — compare by GUID regardless of read/write format
+        (Value::EntityReference(a), Value::EntityReference(b)) => a.id == b.id,
+        (Value::EntityBinding(a), Value::EntityBinding(b)) => a.id == b.id,
+        (Value::EntityReference(a), Value::EntityBinding(b)) => a.id == b.id,
+        (Value::EntityBinding(a), Value::EntityReference(b)) => a.id == b.id,
         _ => false,
     }
 }
