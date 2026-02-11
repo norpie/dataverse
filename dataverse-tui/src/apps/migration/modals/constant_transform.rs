@@ -221,10 +221,15 @@ impl ConstantTransformModal {
             ConstantType::Number => {
                 let number_state = self.number_value.get();
                 let f = number_state.value();
-                let text = format!("{}", f);
-                text.parse::<Decimal>()
-                    .map(Value::Decimal)
-                    .map_err(|_| format!("Invalid number: {}", text))
+                // Produce Int for whole numbers, Decimal for fractional
+                if f.fract() == 0.0 && f >= i32::MIN as f64 && f <= i32::MAX as f64 {
+                    Ok(Value::Int(f as i32))
+                } else {
+                    let text = format!("{}", f);
+                    text.parse::<Decimal>()
+                        .map(Value::Decimal)
+                        .map_err(|_| format!("Invalid number: {}", text))
+                }
             }
             ConstantType::Date => {
                 let date_state = self.date_value.get();
