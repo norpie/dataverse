@@ -178,7 +178,7 @@ fn operation_parts<'a>(
         } => {
             let entity_set = resolve_entity_set(entity);
             let target_set = resolve_entity_set(target_entity);
-            let url = format!("{}/{}({})/$ref/{}", base_url, entity_set, id, relationship);
+            let url = format!("{}/{}({})/{}/$ref", base_url, entity_set, id, relationship);
             let body = format!(
                 "{{\"@odata.id\":\"{}/{}({})\"}}",
                 base_url, target_set, target_id
@@ -195,7 +195,7 @@ fn operation_parts<'a>(
         } => {
             let entity_set = resolve_entity_set(entity);
             let url = format!(
-                "{}/{}({})/$ref/{}({})",
+                "{}/{}({})/{}({})/$ref",
                 base_url, entity_set, id, relationship, target_id
             );
             ("DELETE", url, None, options)
@@ -211,7 +211,7 @@ fn operation_parts<'a>(
         } => {
             let entity_set = resolve_entity_set(entity);
             let target_set = resolve_entity_set(target_entity);
-            let url = format!("{}/{}({})/$ref/{}", base_url, entity_set, id, nav_property);
+            let url = format!("{}/{}({})/{}/$ref", base_url, entity_set, id, nav_property);
             let body = format!(
                 "{{\"@odata.id\":\"{}/{}({})\"}}",
                 base_url, target_set, target_id
@@ -226,7 +226,7 @@ fn operation_parts<'a>(
             options,
         } => {
             let entity_set = resolve_entity_set(entity);
-            let url = format!("{}/{}({})/$ref/{}", base_url, entity_set, id, nav_property);
+            let url = format!("{}/{}({})/{}/$ref", base_url, entity_set, id, nav_property);
             ("DELETE", url, None, options)
         }
     }
