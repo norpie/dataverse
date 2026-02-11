@@ -8,6 +8,7 @@ use std::collections::HashMap;
 use dataverse_lib::model::ValueType;
 use rafter::widgets::TreeNode;
 
+use crate::apps::migration::types::resolve_branch_union;
 use crate::apps::migration::types::ChainOutputWarning;
 use crate::apps::migration::types::ChainTypeResult;
 use crate::apps::migration::types::CoalesceChain;
@@ -25,10 +26,11 @@ use crate::apps::migration::types::Transform;
 use crate::apps::migration::types::TransformData;
 use crate::apps::migration::types::TypeWarning;
 use crate::apps::migration::types::Variable;
-use crate::apps::migration::types::resolve_branch_union;
 
+use super::tree::EntityMappingNode;
 use super::tree::FieldMappingNode;
 use super::tree::FieldTypeCache;
+use super::tree::JunctionCache;
 use super::tree::MigrationTreeNode;
 use super::tree::TransformNode;
 use super::tree::VariableNode;
@@ -166,6 +168,8 @@ pub(super) struct TreeBuildContext<'a> {
     pub(super) field_type_cache: &'a FieldTypeCache,
     /// Cached field types per target entity (for target field type checking).
     pub(super) target_field_cache: &'a FieldTypeCache,
+    /// Cached junction (intersect) status per entity (source + target combined).
+    pub(super) junction_cache: &'a JunctionCache,
     /// Internal type accumulator, populated during tree building.
     pub(super) types: TypeAccumulator,
 }
@@ -187,6 +191,14 @@ impl<'a> TreeBuildContext<'a> {
             .find(|em| em.id == entity_mapping_id)
             .map(|em| em.target_entity.as_str())
             .unwrap_or("")
+    }
+
+    /// Check if an entity is a junction (intersect) entity.
+    pub(super) fn is_junction(&self, entity_name: &str) -> bool {
+        self.junction_cache
+            .get(entity_name)
+            .copied()
+            .unwrap_or(false)
     }
 }
 
@@ -210,6 +222,7 @@ pub fn build_tree_nodes(
     match_conditions: Vec<MatchCondition>,
     field_type_cache: &FieldTypeCache,
     target_field_cache: &FieldTypeCache,
+    junction_cache: &JunctionCache,
 ) -> Vec<TreeNode<MigrationTreeNode>> {
     let mut ctx = TreeBuildContext {
         lookup: TreeLookup {
@@ -222,6 +235,7 @@ pub fn build_tree_nodes(
         entity_mappings: &entity_mappings,
         field_type_cache,
         target_field_cache,
+        junction_cache,
         types: TypeAccumulator::default(),
     };
 
@@ -265,6 +279,8 @@ fn build_entity_mapping_node(
 ) -> TreeNode<MigrationTreeNode> {
     let em_id = em.id;
     let is_lua = em.mode == Mode::Lua;
+    let source_is_junction = ctx.is_junction(&em.source_entity);
+    let target_is_junction = ctx.is_junction(&em.target_entity);
 
     let mut children = Vec::new();
 
@@ -365,7 +381,12 @@ fn build_entity_mapping_node(
         }
     }
 
-    TreeNode::branch(MigrationTreeNode::EntityMapping(em), children)
+    let emn = EntityMappingNode {
+        entity_mapping: em,
+        source_is_junction,
+        target_is_junction,
+    };
+    TreeNode::branch(MigrationTreeNode::EntityMapping(emn), children)
 }
 
 // =============================================================================

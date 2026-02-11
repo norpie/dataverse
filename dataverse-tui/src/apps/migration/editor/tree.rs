@@ -35,6 +35,21 @@ use crate::apps::migration::types::Variable;
 /// Maps `source_entity_logical_name -> (field_logical_name -> FieldType)`.
 pub type FieldTypeCache = HashMap<String, HashMap<String, FieldType>>;
 
+/// Cache of junction (intersect) status per entity.
+/// Maps `entity_logical_name -> is_intersect`.
+pub type JunctionCache = HashMap<String, bool>;
+
+/// An entity mapping node in the tree, enriched with junction detection data.
+#[derive(Clone, Debug)]
+pub struct EntityMappingNode {
+    /// The underlying entity mapping data.
+    pub entity_mapping: EntityMapping,
+    /// Whether the source entity is a junction (intersect) entity.
+    pub source_is_junction: bool,
+    /// Whether the target entity is a junction (intersect) entity.
+    pub target_is_junction: bool,
+}
+
 /// A transform node in the tree, enriched with type tracking data.
 #[derive(Clone, Debug)]
 pub struct TransformNode {
@@ -71,8 +86,8 @@ pub struct VariableNode {
 pub enum MigrationTreeNode {
     /// A phase (top-level node).
     Phase(Phase),
-    /// An entity mapping (child of a phase).
-    EntityMapping(EntityMapping),
+    /// An entity mapping (child of a phase), with junction detection data.
+    EntityMapping(EntityMappingNode),
     /// Match configuration (child of entity mapping, Declarative only).
     MatchConfig { entity_mapping_id: i64 },
     /// Source filter (child of entity mapping, Declarative only).
@@ -121,7 +136,7 @@ impl MigrationTreeNode {
     pub fn entity_mapping_id(&self) -> Option<i64> {
         match self {
             Self::Phase(_) => None,
-            Self::EntityMapping(em) => Some(em.id),
+            Self::EntityMapping(emn) => Some(emn.entity_mapping.id),
             Self::MatchConfig { entity_mapping_id }
             | Self::SourceFilter { entity_mapping_id }
             | Self::TargetFilter { entity_mapping_id }
@@ -262,10 +277,18 @@ impl MigrationTreeNode {
         }
     }
 
+    /// Get the entity mapping node if this is an entity mapping node.
+    pub fn as_entity_mapping_node(&self) -> Option<&EntityMappingNode> {
+        match self {
+            Self::EntityMapping(emn) => Some(emn),
+            _ => None,
+        }
+    }
+
     /// Get the entity mapping if this is an entity mapping node.
     pub fn as_entity_mapping(&self) -> Option<&EntityMapping> {
         match self {
-            Self::EntityMapping(em) => Some(em),
+            Self::EntityMapping(emn) => Some(&emn.entity_mapping),
             _ => None,
         }
     }
@@ -277,7 +300,7 @@ impl TreeItem for MigrationTreeNode {
     fn key(&self) -> String {
         match self {
             Self::Phase(p) => format!("phase-{}", p.id),
-            Self::EntityMapping(em) => format!("entity-{}", em.id),
+            Self::EntityMapping(emn) => format!("entity-{}", emn.entity_mapping.id),
             Self::MatchConfig { entity_mapping_id } => {
                 format!("match-config-{}", entity_mapping_id)
             }
@@ -326,16 +349,21 @@ impl TreeItem for MigrationTreeNode {
                     }
                 }
             }
-            Self::EntityMapping(em) => {
+            Self::EntityMapping(emn) => {
+                let em = &emn.entity_mapping;
                 let name = em.name.clone();
                 let entities = format!(" {} → {}", em.source_entity, em.target_entity);
                 let is_lua = matches!(em.mode, Mode::Lua);
+                let has_junction = emn.source_is_junction || emn.target_is_junction;
                 element! {
                     row {
                         text (content: {name}) style (fg: accent)
                         text (content: {entities}) style (fg: muted)
                         if is_lua {
                             text (content: " [lua]") style (fg: muted)
+                        }
+                        if has_junction {
+                            text (content: " [junction]") style (fg: warning)
                         }
                     }
                 }

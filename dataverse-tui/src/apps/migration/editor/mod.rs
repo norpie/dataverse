@@ -144,6 +144,7 @@ impl MigrationEditor {
         use helpers::discover_navigation_entities;
         use helpers::fetch_entity_field_types;
         use tree::FieldTypeCache;
+        use tree::JunctionCache;
         use tree_builder::build_tree_nodes;
 
         // 1. Read all dependencies (registers for change detection)
@@ -173,6 +174,8 @@ impl MigrationEditor {
         let source_client = self.source_client.get().clone();
         let target_client = self.target_client.get().clone();
 
+        let mut junction_cache = JunctionCache::new();
+
         let mut source_field_types = if source_entities.is_empty() {
             FieldTypeCache::new()
         } else {
@@ -180,13 +183,14 @@ impl MigrationEditor {
                 "watch rebuild: fetching metadata for {} source entities",
                 source_entities.len(),
             );
-            let result: FieldTypeCache = gx
+            let (fields, junctions): (FieldTypeCache, JunctionCache) = gx
                 .modal(crate::modals::LoadingModal::run(
                     "Loading source entity metadata...",
                     fetch_entity_field_types(source_client.clone(), source_entities),
                 ))
                 .await;
-            result
+            junction_cache.extend(junctions);
+            fields
         };
 
         // 4. Discover and fetch navigation entities (dotted copy paths + variable navigation)
@@ -206,13 +210,14 @@ impl MigrationEditor {
                     nav_entities.len(),
                     nav_entities,
                 );
-                let result: FieldTypeCache = gx
+                let (result, nav_junctions): (FieldTypeCache, JunctionCache) = gx
                     .modal(crate::modals::LoadingModal::run(
                         "Loading navigation entity metadata...",
                         fetch_entity_field_types(source_client.clone(), nav_entities),
                     ))
                     .await;
                 let fetched_any = !result.is_empty();
+                junction_cache.extend(nav_junctions);
                 for (entity, fields) in result {
                     source_field_types.insert(entity, fields);
                 }
@@ -229,13 +234,14 @@ impl MigrationEditor {
                 "watch rebuild: fetching metadata for {} target entities",
                 target_entities.len(),
             );
-            let result: FieldTypeCache = gx
+            let (fields, target_junctions): (FieldTypeCache, JunctionCache) = gx
                 .modal(crate::modals::LoadingModal::run(
                     "Loading target entity metadata...",
                     fetch_entity_field_types(target_client, target_entities),
                 ))
                 .await;
-            result
+            junction_cache.extend(target_junctions);
+            fields
         };
 
         // 5. Build tree — type tracking is embedded in tree nodes
@@ -251,6 +257,7 @@ impl MigrationEditor {
             match_conditions,
             &source_field_types,
             &target_field_types,
+            &junction_cache,
         );
 
         // 6. Update tree
@@ -752,9 +759,9 @@ impl MigrationEditor {
                 // Phase selected -> add entity mapping under it
                 self.add_entity_mapping_impl(phase.id, gx).await;
             }
-            Some(MigrationTreeNode::EntityMapping(em)) => {
+            Some(MigrationTreeNode::EntityMapping(emn)) => {
                 // Entity mapping selected -> add sibling entity mapping
-                self.add_entity_mapping_impl(em.phase_id, gx).await;
+                self.add_entity_mapping_impl(emn.entity_mapping.phase_id, gx).await;
             }
             Some(MigrationTreeNode::Variables { entity_mapping_id }) => {
                 // Variables section -> add new variable
@@ -850,8 +857,8 @@ impl MigrationEditor {
             Some(MigrationTreeNode::Phase(phase)) => {
                 self.delete_phase_impl(phase.id, cx, gx).await;
             }
-            Some(MigrationTreeNode::EntityMapping(em)) => {
-                self.delete_entity_mapping_impl(em.id, cx, gx).await;
+            Some(MigrationTreeNode::EntityMapping(emn)) => {
+                self.delete_entity_mapping_impl(emn.entity_mapping.id, cx, gx).await;
             }
             Some(MigrationTreeNode::Variable(vn)) => {
                 self.delete_variable_impl(vn.variable.id, vn.variable.entity_mapping_id, cx, gx)
@@ -955,8 +962,8 @@ impl MigrationEditor {
             MigrationTreeNode::Phase(phase) => {
                 self.edit_phase_impl(&phase, gx).await;
             }
-            MigrationTreeNode::EntityMapping(em) => {
-                self.edit_entity_mapping_impl(&em, gx).await;
+            MigrationTreeNode::EntityMapping(emn) => {
+                self.edit_entity_mapping_impl(&emn.entity_mapping, gx).await;
             }
             MigrationTreeNode::MatchConfig { entity_mapping_id } => {
                 self.edit_match_config_impl(entity_mapping_id, gx).await;
@@ -1124,25 +1131,31 @@ impl MigrationEditor {
                                     }
                                 }
                             }
-                            Some(MigrationTreeNode::EntityMapping(em)) => {
+                            Some(MigrationTreeNode::EntityMapping(emn)) => {
                                 column (gap: 1) {
                                     text (content: "Entity Mapping") style (bold, fg: interact)
                                     column {
                                         row (gap: 1) {
                                             text (content: "Name") style (fg: muted)
-                                            text (content: {em.name.clone()})
+                                            text (content: {emn.entity_mapping.name.clone()})
                                         }
                                         row (gap: 1) {
                                             text (content: "Source") style (fg: muted)
-                                            text (content: {em.source_entity.clone()})
+                                            text (content: {emn.entity_mapping.source_entity.clone()})
+                                            if emn.source_is_junction {
+                                                text (content: " [junction]") style (fg: warning)
+                                            }
                                         }
                                         row (gap: 1) {
                                             text (content: "Target") style (fg: muted)
-                                            text (content: {em.target_entity.clone()})
+                                            text (content: {emn.entity_mapping.target_entity.clone()})
+                                            if emn.target_is_junction {
+                                                text (content: " [junction]") style (fg: warning)
+                                            }
                                         }
                                         row (gap: 1) {
                                             text (content: "Mode") style (fg: muted)
-                                            text (content: {if em.mode == Mode::Lua { "Lua" } else { "Declarative" }})
+                                            text (content: {if emn.entity_mapping.mode == Mode::Lua { "Lua" } else { "Declarative" }})
                                         }
                                     }
                                 }

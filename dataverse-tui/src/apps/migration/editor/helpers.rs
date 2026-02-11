@@ -8,6 +8,7 @@ use rafter::prelude::*;
 
 use super::MigrationEditor;
 use super::tree::FieldTypeCache;
+use super::tree::JunctionCache;
 use super::tree::MigrationTreeNode;
 use crate::apps::migration::repository::MigrationRepository;
 use crate::apps::migration::types::TransformData;
@@ -81,16 +82,26 @@ impl MigrationEditor {
     }
 }
 
-/// Fetch attribute types for multiple entities.
+/// Fetch attribute types and junction status for multiple entities.
 pub(super) async fn fetch_entity_field_types(
     client: DataverseClient,
     entities: Vec<String>,
-) -> FieldTypeCache {
-    let mut cache = FieldTypeCache::new();
+) -> (FieldTypeCache, JunctionCache) {
+    let mut field_cache = FieldTypeCache::new();
+    let mut junction_cache = JunctionCache::new();
 
     for entity_name in entities {
         match client.metadata().entity(entity_name.as_str()).await {
             Ok(metadata) => {
+                // Record junction (intersect) status
+                junction_cache.insert(entity_name.clone(), metadata.is_intersect);
+                if metadata.is_intersect {
+                    log::debug!(
+                        "type_tracking: entity '{}' is a junction (intersect) entity",
+                        entity_name,
+                    );
+                }
+
                 let fields: std::collections::HashMap<String, FieldType> = metadata
                     .attributes
                     .iter()
@@ -121,7 +132,7 @@ pub(super) async fn fetch_entity_field_types(
                     fields.len(),
                     entity_name,
                 );
-                cache.insert(entity_name, fields);
+                field_cache.insert(entity_name, fields);
             }
             Err(e) => {
                 log::warn!(
@@ -133,7 +144,7 @@ pub(super) async fn fetch_entity_field_types(
         }
     }
 
-    cache
+    (field_cache, junction_cache)
 }
 
 /// Resolve a picklist field to a `FieldType::OptionSet` using the typed attribute accessor.
