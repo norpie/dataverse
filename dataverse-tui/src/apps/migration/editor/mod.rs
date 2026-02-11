@@ -40,6 +40,12 @@ use rafter::widgets::TreeState;
 
 use crate::apps::migration::comparison::MappingComparison;
 use crate::apps::migration::comparison::OperationTypeCounts;
+use crate::apps::migration::execution::ExecutionError;
+use crate::apps::migration::execution::ExecutionStatus;
+use crate::apps::migration::execution::ExecutionTreeNode;
+use crate::apps::migration::execution::PendingLookupUpdate;
+use crate::apps::migration::execution::SubPhaseProgress;
+use dataverse_lib::model::metadata::ExecutionMetadata;
 use preview::PreviewRow;
 use tree::MigrationTreeNode;
 
@@ -49,6 +55,7 @@ pub enum Page {
     #[default]
     Editor,
     Preview,
+    Execute,
 }
 
 /// Migration editor app.
@@ -95,6 +102,33 @@ pub struct MigrationEditor {
     preview_counts: OperationTypeCounts,
     /// Table state for the preview record list.
     preview_table: TableState<PreviewRow>,
+    // =========================================================================
+    // Execution state
+    // =========================================================================
+    /// Phase name shown in the execution header.
+    exec_phase_name: String,
+    /// PhaseRun ID for DB tracking.
+    exec_phase_run_id: i64,
+    /// Overall execution status.
+    exec_status: ExecutionStatus,
+    /// Per sub-phase progress (one entry per active sub-phase, in order).
+    exec_sub_phase_progress: Vec<SubPhaseProgress>,
+    /// Pending lookup updates carried from Create pass to Update pass.
+    exec_pending_lookups: Vec<PendingLookupUpdate>,
+    /// Map of content_id (source UUID string) → created target UUID.
+    exec_captured_ids: std::collections::HashMap<String, uuid::Uuid>,
+    /// Queue item IDs for the current sub-phase (to correlate completion events).
+    exec_tracked_item_ids: Vec<i64>,
+    /// All queue item IDs for the entire run (for cancel cleanup).
+    exec_all_item_ids: Vec<i64>,
+    /// Errors collected during execution.
+    exec_errors: Vec<ExecutionError>,
+    /// Tree state for execution progress display.
+    exec_tree: TreeState<ExecutionTreeNode>,
+    /// Comparison data to generate operations from.
+    exec_comparisons: Vec<MappingComparison>,
+    /// Cached execution metadata per target entity.
+    exec_metadata: std::collections::HashMap<String, ExecutionMetadata>,
 }
 
 impl MigrationEditor {
@@ -118,12 +152,24 @@ impl MigrationEditor {
             Vec::new(), // coalesce_chains
             Vec::new(), // find_conditions
             Vec::new(), // match_conditions
-            String::new(),           // preview_phase_name
+            String::new(),                 // preview_phase_name
             Vec::new(),                    // preview_results
             0,                             // preview_entity_index
             Vec::new(),                    // preview_entity_names
             OperationTypeCounts::default(),// preview_counts
             TableState::default(),         // preview_table
+            String::new(),                          // exec_phase_name
+            0,                                      // exec_phase_run_id
+            ExecutionStatus::Idle,                  // exec_status
+            Vec::new(),                             // exec_sub_phase_progress
+            Vec::new(),                             // exec_pending_lookups
+            std::collections::HashMap::new(),       // exec_captured_ids
+            Vec::new(),                             // exec_tracked_item_ids
+            Vec::new(),                             // exec_all_item_ids
+            Vec::new(),                             // exec_errors
+            TreeState::default(),                   // exec_tree
+            Vec::new(),                             // exec_comparisons
+            std::collections::HashMap::new(),       // exec_metadata
         )
     }
 }
@@ -306,6 +352,24 @@ impl MigrationEditor {
                 self.preview_counts.set(OperationTypeCounts::default());
                 self.navigate(Page::Editor);
             }
+            Page::Execute => {
+                let status = self.exec_status.get();
+                match status {
+                    ExecutionStatus::Running => {
+                        // Block escape during execution — user must cancel explicitly
+                    }
+                    ExecutionStatus::Complete
+                    | ExecutionStatus::Failed
+                    | ExecutionStatus::Cancelled => {
+                        // Execution finished — clear state and return to editor
+                        self.clear_exec_state();
+                        self.navigate(Page::Editor);
+                    }
+                    ExecutionStatus::Idle => {
+                        self.navigate(Page::Editor);
+                    }
+                }
+            }
             Page::Editor => {
                 let confirmed = gx
                     .modal(crate::modals::ConfirmModal::with_message(
@@ -318,6 +382,22 @@ impl MigrationEditor {
                 }
             }
         }
+    }
+
+    /// Clear all execution state fields.
+    fn clear_exec_state(&self) {
+        self.exec_phase_name.set(String::new());
+        self.exec_phase_run_id.set(0);
+        self.exec_status.set(ExecutionStatus::Idle);
+        self.exec_sub_phase_progress.set(Vec::new());
+        self.exec_pending_lookups.set(Vec::new());
+        self.exec_captured_ids.set(std::collections::HashMap::new());
+        self.exec_tracked_item_ids.set(Vec::new());
+        self.exec_all_item_ids.set(Vec::new());
+        self.exec_errors.set(Vec::new());
+        self.exec_tree.set(TreeState::default());
+        self.exec_comparisons.set(Vec::new());
+        self.exec_metadata.set(std::collections::HashMap::new());
     }
 
     #[handler]
@@ -801,6 +881,51 @@ impl MigrationEditor {
             preview::entity_counts(results, index)
         });
         self.preview_counts.set(counts);
+    }
+
+    // =========================================================================
+    // Execution tree rebuild
+    // =========================================================================
+
+    #[watch]
+    async fn rebuild_exec_tree(&self) {
+        use crate::apps::migration::execution::ExecutionTreeNode;
+        use rafter::widgets::TreeNode;
+
+        let progress = self.exec_sub_phase_progress.get();
+
+        let roots: Vec<TreeNode<ExecutionTreeNode>> = progress
+            .iter()
+            .map(|sp| {
+                let children: Vec<TreeNode<ExecutionTreeNode>> = sp
+                    .entities
+                    .iter()
+                    .map(|ep| {
+                        TreeNode::leaf(ExecutionTreeNode::Entity {
+                            sub_phase: sp.sub_phase,
+                            entity: ep.entity.clone(),
+                            total: ep.total,
+                            completed: ep.completed,
+                            failed: ep.failed,
+                            parent_status: sp.status,
+                        })
+                    })
+                    .collect();
+
+                TreeNode::branch(
+                    ExecutionTreeNode::SubPhase {
+                        sub_phase: sp.sub_phase,
+                        status: sp.status,
+                    },
+                    children,
+                )
+            })
+            .collect();
+
+        self.exec_tree.update(|t| {
+            t.set_roots(roots);
+            t.expand_all();
+        });
     }
 
     #[handler]
@@ -1294,6 +1419,100 @@ impl MigrationEditor {
                 }
             }
         }
+    }
+
+    #[page(Execute)]
+    fn execute_page(&self) -> Element {
+        use rafter::element;
+        use tuidom::Color;
+
+        let phase_name = self.exec_phase_name.get();
+        let status = self.exec_status.get();
+        let progress = self.exec_sub_phase_progress.get();
+        let errors = self.exec_errors.get();
+        let is_running = status == ExecutionStatus::Running;
+        let is_finished = matches!(
+            status,
+            ExecutionStatus::Complete | ExecutionStatus::Failed | ExecutionStatus::Cancelled
+        );
+
+        let status_label = match status {
+            ExecutionStatus::Idle => "Idle",
+            ExecutionStatus::Running => "Running",
+            ExecutionStatus::Complete => "Complete",
+            ExecutionStatus::Failed => "Failed",
+            ExecutionStatus::Cancelled => "Cancelled",
+        };
+
+        let status_color = Color::var(match status {
+            ExecutionStatus::Complete => "success",
+            ExecutionStatus::Failed => "error",
+            ExecutionStatus::Cancelled => "warning",
+            _ => "primary",
+        });
+
+        // Build error elements
+        let error_elements: Vec<Element> = errors
+            .iter()
+            .take(20)
+            .map(|err| {
+                element! {
+                    text (content: {format!("[{}] {}: {}", err.sub_phase.label(), err.entity, err.message)}) style (fg: error)
+                }
+            })
+            .collect();
+
+        page! {
+            column (padding: (1, 2), gap: 1, width: fill, height: fill) style (bg: background) {
+                // Header
+                row (width: fill, justify: between) {
+                    text (content: {format!("Executing: {}", phase_name)}) style (bold, fg: interact)
+                    text (content: {status_label}) style (fg: {status_color})
+                }
+
+                // Sub-phase progress tree
+                if !progress.is_empty() {
+                    box_ (id: "exec-tree-container", height: fill, width: fill) style (bg: surface) {
+                        tree (state: self.exec_tree, id: "exec-tree", width: fill, height: fill)
+                    }
+                }
+                if progress.is_empty() {
+                    column (width: fill, height: fill, justify: center, align: center) style (bg: surface) {
+                        text (content: "Preparing...") style (fg: muted)
+                    }
+                }
+
+                // Errors section
+                if !errors.is_empty() {
+                    column (height: 6) {
+                        text (content: {format!("Errors: {}", errors.len())}) style (bold, fg: error)
+                        ...error_elements
+                        if errors.len() > 20 {
+                            text (content: {format!("... and {} more", errors.len() - 20)}) style (fg: muted)
+                        }
+                    }
+                }
+
+                // Footer
+                row (width: fill, justify: between) {
+                    if is_finished {
+                        button (label: "Back", hint: "esc", id: "exec-back-btn") on_activate: back()
+                    }
+                    if is_running {
+                        button (label: "Cancel", hint: "esc", id: "exec-cancel-btn") on_activate: cancel_execution()
+                    }
+                }
+            }
+        }
+    }
+
+    #[handler]
+    async fn cancel_execution(&self, _gx: &GlobalContext) {
+        // TODO: implement cancel logic (Step 5)
+        // - PauseQueue
+        // - DeleteItemsBySource
+        // - Update PhaseRun status to Cancelled
+        // - Navigate back
     }
 
     #[page(Preview)]

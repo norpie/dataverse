@@ -3,6 +3,7 @@
 pub mod comparison;
 mod editor;
 pub mod engine;
+pub mod execution;
 mod list;
 pub mod migrations;
 pub mod modals;
