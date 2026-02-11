@@ -46,6 +46,7 @@ pub struct QueryBuilder {
     page_size: Option<usize>,
     expands: Vec<ExpandBuilder>,
     include_count: bool,
+    bypass_cache: bool,
 }
 
 impl QueryBuilder {
@@ -60,6 +61,7 @@ impl QueryBuilder {
             page_size: None,
             expands: Vec::new(),
             include_count: false,
+            bypass_cache: false,
         }
     }
 
@@ -136,6 +138,16 @@ impl QueryBuilder {
         self
     }
 
+    /// Bypasses the query cache for this query.
+    ///
+    /// By default, OData query results are cached using the client's cache
+    /// provider with the configured `query_ttl`. Call this to force a fresh
+    /// fetch from the server.
+    pub fn bypass_cache(mut self) -> Self {
+        self.bypass_cache = true;
+        self
+    }
+
     /// Transforms lookup field names to OData format (`_fieldname_value`).
     ///
     /// This fetches entity metadata to identify lookup fields and transforms
@@ -187,8 +199,12 @@ impl QueryBuilder {
 
         let mut params = Vec::new();
 
+        // Sort select fields for deterministic URL generation (important for caching)
+        let mut sorted_select = self.select.clone();
+        sorted_select.sort();
+
         // $select and $expand (using shared helper)
-        let select_expand = build_select_expand_params(&self.select, &self.expands);
+        let select_expand = build_select_expand_params(&sorted_select, &self.expands);
         if !select_expand.is_empty() {
             params.push(select_expand);
         }
@@ -229,6 +245,11 @@ impl QueryBuilder {
     /// Returns the page size, if set.
     pub(crate) fn page_size_value(&self) -> Option<usize> {
         self.page_size
+    }
+
+    /// Returns whether caching is bypassed for this query.
+    pub(crate) fn bypass_cache_value(&self) -> bool {
+        self.bypass_cache
     }
 
     /// Returns a reference to the entity.

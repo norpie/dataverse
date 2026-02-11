@@ -45,7 +45,7 @@ pub struct CacheConfig {
 
     /// TTL for query results (OData, FetchXML).
     ///
-    /// Default: 5 minutes
+    /// Default: 15 minutes
     pub query_ttl: Duration,
 
     /// TTL for individual record retrievals.
@@ -62,7 +62,7 @@ impl Default for CacheConfig {
             attribute_metadata_ttl: Duration::from_secs(21600), // 6 hours
             global_optionset_ttl: Duration::from_secs(43200), // 12 hours
             relationship_ttl: Duration::from_secs(43200), // 12 hours
-            query_ttl: Duration::from_secs(300),         // 5 minutes
+            query_ttl: Duration::from_secs(900),         // 15 minutes
             record_ttl: Duration::from_secs(300),        // 5 minutes
         }
     }

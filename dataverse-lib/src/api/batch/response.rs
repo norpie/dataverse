@@ -123,8 +123,7 @@ impl BatchResults {
                         Some(BatchItemKinds::Changeset(ks)) => Some(ks.as_slice()),
                         _ => None,
                     };
-                    let changeset_result =
-                        parse_changeset(part, &nested_boundary, cs_kinds)?;
+                    let changeset_result = parse_changeset(part, &nested_boundary, cs_kinds)?;
                     results.push(BatchItemResult::Changeset(changeset_result));
                 }
             } else {

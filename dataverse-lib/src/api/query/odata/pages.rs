@@ -4,11 +4,15 @@ use reqwest::Method;
 use reqwest::header::HeaderMap;
 use reqwest::header::HeaderValue;
 use serde::Deserialize;
+use serde::Serialize;
+use sha2::Digest;
+use sha2::Sha256;
 
 use uuid::Uuid;
 
 use crate::DataverseClient;
 use crate::api::query::Page;
+use crate::cache::CachedValue;
 use crate::error::ApiError;
 use crate::error::Error;
 use crate::model::Record;
@@ -16,9 +20,13 @@ use crate::model::Value;
 
 use super::builder::QueryBuilder;
 
+/// Cache key prefix for OData query results.
+const QUERY_CACHE_PREFIX: &str = "query:";
+
 /// Async iterator that yields pages of OData query results.
 ///
 /// Automatically follows `@odata.nextLink` for pagination.
+/// Results are cached by default using the client's cache provider.
 ///
 /// # Example
 ///
@@ -48,12 +56,15 @@ pub struct ODataPages {
     needs_resolution: Option<QueryBuilder>,
     /// Primary ID attribute name, resolved on first call.
     primary_id_attribute: Option<String>,
+    /// Whether to bypass the cache for this query.
+    bypass_cache: bool,
 }
 
 impl ODataPages {
     /// Creates a new async iterator from a query builder.
     pub(crate) fn new(builder: QueryBuilder, _client: &DataverseClient) -> Self {
         let page_size = builder.page_size_value();
+        let bypass_cache = builder.bypass_cache_value();
 
         Self {
             initial_url: None,
@@ -62,6 +73,7 @@ impl ODataPages {
             done: false,
             needs_resolution: Some(builder),
             primary_id_attribute: None,
+            bypass_cache,
         }
     }
 
@@ -136,6 +148,29 @@ impl ODataPages {
             return None;
         };
 
+        // Build cache key from URL hash
+        let cache_key = make_cache_key(&url);
+        log::debug!("[ODataPages] URL for cache key {}: {}", cache_key, url);
+
+        // Try cache first
+        if !self.bypass_cache {
+            if let Some(cache) = client.cache() {
+                if let Some(cached) = cache.get(&cache_key).await {
+                    log::debug!("[ODataPages] Cache hit for {}", cache_key);
+                    match crate::cache::deserialize::<ODataResponse>(&cached.data) {
+                        Ok(odata_response) => {
+                            return Some(Ok(self.build_page(odata_response)));
+                        }
+                        Err(e) => {
+                            // Corrupted cache entry, remove it and fall through to fetch
+                            log::warn!("[ODataPages] Failed to deserialize cached response: {}", e);
+                            cache.remove(&cache_key).await;
+                        }
+                    }
+                }
+            }
+        }
+
         // Build headers
         let mut headers = HeaderMap::new();
         headers.insert("OData-MaxVersion", HeaderValue::from_static("4.0"));
@@ -172,7 +207,7 @@ impl ODataPages {
                 }
             };
 
-        // Parse response
+        // Parse JSON response
         let odata_response: ODataResponse = match response.json().await {
             Ok(resp) => resp,
             Err(e) => {
@@ -181,6 +216,33 @@ impl ODataPages {
             }
         };
 
+        // Cache as bincode (much faster to deserialize than JSON on cache hit)
+        if !self.bypass_cache {
+            if let Some(cache) = client.cache() {
+                let ttl = client.cache_config().query_ttl;
+                if !ttl.is_zero() {
+                    match crate::cache::serialize(&odata_response) {
+                        Ok(bytes) => {
+                            let cached_value = CachedValue::with_ttl(bytes, ttl);
+                            cache.set(&cache_key, cached_value).await;
+                            log::debug!("[ODataPages] Cached response for {}", cache_key);
+                        }
+                        Err(e) => {
+                            log::warn!(
+                                "[ODataPages] Failed to serialize response for cache: {}",
+                                e
+                            );
+                        }
+                    }
+                }
+            }
+        }
+
+        Some(Ok(self.build_page(odata_response)))
+    }
+
+    /// Builds a `Page` from an `ODataResponse`, populating record IDs and tracking pagination.
+    fn build_page(&mut self, odata_response: ODataResponse) -> Page {
         // Populate record IDs from the primary key field
         let mut records = odata_response.value;
         if let Some(ref pk_field) = self.primary_id_attribute {
@@ -211,12 +273,18 @@ impl ODataPages {
             self.done = true;
         }
 
-        Some(Ok(page))
+        page
     }
 }
 
+/// Builds a cache key from a URL by hashing it with SHA-256.
+fn make_cache_key(url: &str) -> String {
+    let hash = Sha256::digest(url.as_bytes());
+    format!("{}{:x}", QUERY_CACHE_PREFIX, hash)
+}
+
 /// OData response structure for collection queries.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 struct ODataResponse {
     /// The records in this page.
     value: Vec<Record>,
