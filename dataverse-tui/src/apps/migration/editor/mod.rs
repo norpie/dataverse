@@ -377,8 +377,10 @@ impl MigrationEditor {
         let source_client = self.source_client.get().clone();
         let target_client = self.target_client.get().clone();
 
-        // Fetch primary keys for all source/target entities
+        // Fetch primary keys and junction FK attributes for all source/target entities
         let mut primary_keys: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+        // For junction entities: maps entity_name -> (fk_attr1, fk_attr2)
+        let mut junction_fk_attrs: std::collections::HashMap<String, (String, String)> = std::collections::HashMap::new();
         for em in &phase_mappings {
             for entity in [&em.source_entity, &em.target_entity] {
                 if !entity.is_empty() && !primary_keys.contains_key(entity.as_str()) {
@@ -393,6 +395,26 @@ impl MigrationEditor {
                                 entity.clone(),
                                 meta.primary_id_attribute().to_string(),
                             );
+
+                            // For junction entities, extract the FK attribute names
+                            // from the ManyToManyRelationship metadata
+                            if meta.is_intersect {
+                                if let Some(m2m) = meta.many_to_many_relationships.first() {
+                                    if let (Some(fk1), Some(fk2)) = (
+                                        &m2m.entity1_intersect_attribute,
+                                        &m2m.entity2_intersect_attribute,
+                                    ) {
+                                        log::debug!(
+                                            "[preview] junction entity '{}': FK attrs = ({}, {})",
+                                            entity, fk1, fk2,
+                                        );
+                                        junction_fk_attrs.insert(
+                                            entity.clone(),
+                                            (fk1.clone(), fk2.clone()),
+                                        );
+                                    }
+                                }
+                            }
                         }
                         Err(e) => {
                             gx.modal(ErrorAcknowledgmentModal::new(
@@ -515,7 +537,32 @@ impl MigrationEditor {
                 input.field_mappings.len(), input.variables.len(), input.test_guids,
             );
         }
-        let phase_plan = pipeline::analyze_phase(&mapping_inputs);
+        let mut phase_plan = pipeline::analyze_phase(&mapping_inputs);
+
+        // Ensure junction FK attributes are included in target $select
+        // (needed for synthetic ID generation even if not explicitly mapped)
+        for (i, em) in phase_mappings.iter().enumerate() {
+            if let Some((fk1, fk2)) = junction_fk_attrs.get(&em.target_entity) {
+                if let Some(ref mut target) = phase_plan.mapping_plans[i].target {
+                    target.select.insert(fk1.clone());
+                    target.select.insert(fk2.clone());
+                    log::debug!(
+                        "[preview] added junction FK attrs to target $select for '{}': {}, {}",
+                        em.target_entity, fk1, fk2,
+                    );
+                }
+            }
+            // Also ensure source junction FK attrs are fetched (for source synthetic IDs)
+            if let Some((fk1, fk2)) = junction_fk_attrs.get(&em.source_entity) {
+                phase_plan.mapping_plans[i].source.select.insert(fk1.clone());
+                phase_plan.mapping_plans[i].source.select.insert(fk2.clone());
+                log::debug!(
+                    "[preview] added junction FK attrs to source $select for '{}': {}, {}",
+                    em.source_entity, fk1, fk2,
+                );
+            }
+        }
+
         for (i, plan) in phase_plan.mapping_plans.iter().enumerate() {
             log::debug!(
                 "[preview] FetchPlan[{}]: source_entity={:?} source_select={:?} expands={} target={:?} find_caches={}",
@@ -583,11 +630,19 @@ impl MigrationEditor {
                 let mut comparisons: Vec<MappingComparison> = Vec::new();
                 for (i, em) in phase_mappings.iter().enumerate() {
                     // Take ownership — records are dropped after this iteration
-                    let source_records = std::mem::take(&mut split.source_records[i]);
+                    let mut source_records = std::mem::take(&mut split.source_records[i]);
                     let target_idx = split.target_records.iter().position(|(idx, _)| *idx == i);
-                    let target_records = target_idx
+                    let mut target_records = target_idx
                         .map(|pos| std::mem::take(&mut split.target_records[pos].1))
                         .unwrap_or_default();
+
+                    // Apply synthetic IDs for junction entities (makes SameId matching work)
+                    if let Some((fk1, fk2)) = junction_fk_attrs.get(&em.source_entity) {
+                        pipeline::apply_junction_synthetic_ids(&mut source_records, fk1, fk2);
+                    }
+                    if let Some((fk1, fk2)) = junction_fk_attrs.get(&em.target_entity) {
+                        pipeline::apply_junction_synthetic_ids(&mut target_records, fk1, fk2);
+                    }
 
                     let record_count = source_records.len();
 

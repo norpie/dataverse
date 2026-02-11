@@ -451,6 +451,71 @@ pub fn compare_mapping_results(input: ComparisonInput<'_>) -> MappingComparison 
 }
 
 // =============================================================================
+// Junction Entity Synthetic ID
+// =============================================================================
+
+/// Namespace UUID for junction entity synthetic IDs (UUID v5).
+/// Generated once, arbitrary but fixed.
+const JUNCTION_NAMESPACE: uuid::Uuid = uuid::Uuid::from_bytes([
+    0x6a, 0x75, 0x6e, 0x63, 0x74, 0x69, 0x6f, 0x6e, // "junction"
+    0x2d, 0x65, 0x6e, 0x74, 0x69, 0x74, 0x79, 0x2d, // "-entity-"
+]);
+
+/// Compute a deterministic synthetic ID for a junction entity record.
+///
+/// Takes the two FK GUID values from the record, sorts them alphabetically,
+/// and produces a UUID v5. This makes `SameId` matching work for junction
+/// entities — the same FK pair in different environments produces the same
+/// synthetic ID, regardless of the meaningless junction primary key.
+///
+/// Returns `None` if either FK field is missing or not a GUID.
+pub fn junction_synthetic_id(
+    record: &Record,
+    fk_attr1: &str,
+    fk_attr2: &str,
+) -> Option<uuid::Uuid> {
+    let fk1 = match record.get(fk_attr1) {
+        Some(dataverse_lib::model::Value::Guid(g)) => g.to_string(),
+        _ => return None,
+    };
+    let fk2 = match record.get(fk_attr2) {
+        Some(dataverse_lib::model::Value::Guid(g)) => g.to_string(),
+        _ => return None,
+    };
+
+    // Sort alphabetically so (A, B) and (B, A) produce the same ID
+    let combined = if fk1 <= fk2 {
+        format!("{}_{}", fk1, fk2)
+    } else {
+        format!("{}_{}", fk2, fk1)
+    };
+
+    Some(uuid::Uuid::new_v5(&JUNCTION_NAMESPACE, combined.as_bytes()))
+}
+
+/// Apply synthetic IDs to all records in a junction entity result set.
+///
+/// Replaces each record's ID with a deterministic UUID derived from its
+/// two FK values. Records where either FK is missing are left unchanged
+/// (they'll fail to match, which is correct).
+pub fn apply_junction_synthetic_ids(records: &mut [Record], fk_attr1: &str, fk_attr2: &str) {
+    let mut applied = 0;
+    for record in records.iter_mut() {
+        if let Some(synthetic) = junction_synthetic_id(record, fk_attr1, fk_attr2) {
+            record.set_id(synthetic);
+            applied += 1;
+        }
+    }
+    log::debug!(
+        "junction: applied synthetic IDs to {}/{} records (fk1={}, fk2={})",
+        applied,
+        records.len(),
+        fk_attr1,
+        fk_attr2,
+    );
+}
+
+// =============================================================================
 // Tests
 // =============================================================================
 
