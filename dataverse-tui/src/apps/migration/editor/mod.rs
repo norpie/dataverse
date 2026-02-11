@@ -588,6 +588,13 @@ impl MigrationEditor {
                 .filter(|fm| fm.entity_mapping_id == em.id)
                 .map(|fm| {
                     let chain = materialize_chain(ParentType::FieldMapping, fm.id, &mat_data);
+                    log::debug!(
+                        "[preview] field_mapping {:?} (id={}) chain has {} items: {:?}",
+                        fm.target_field,
+                        fm.id,
+                        chain.len(),
+                        chain.iter().map(|c| format!("{:?}", std::mem::discriminant(&c.data))).collect::<Vec<_>>()
+                    );
                     (fm.target_field.clone(), chain)
                 })
                 .collect();

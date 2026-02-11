@@ -113,7 +113,14 @@ pub fn evaluate_condition(
         Condition::EndsWith { value, suffix } => {
             let val = resolve_expr(value, ctx)?;
             let sfx = resolve_expr(suffix, ctx)?;
-            Ok(string_ends_with(&val, &sfx))
+            let result = string_ends_with(&val, &sfx);
+            log::debug!(
+                "EndsWith: value={:?}, suffix={:?}, result={}",
+                val,
+                sfx,
+                result
+            );
+            Ok(result)
         }
     }
 }

@@ -160,16 +160,24 @@ pub fn execute_chain(chain: &[ChainItem], ctx: &mut TransformContext<'_>) -> Tra
         return TransformResult::Value(ctx.system_vars.value.clone());
     }
 
-    for item in chain {
+    for (i, item) in chain.iter().enumerate() {
+        log::debug!(
+            "execute_chain: step {} transform={:?}, #value={:?}",
+            i,
+            std::mem::discriminant(&item.data),
+            ctx.system_vars.value
+        );
         let result = execute_transform(item, ctx);
 
         match result {
-            TransformResult::Value(value) => {
+            TransformResult::Value(ref value) => {
+                log::debug!("execute_chain: step {} result=Value({:?})", i, value);
                 // Update #value for next transform
-                ctx.system_vars.value = value;
+                ctx.system_vars.value = value.clone();
             }
             // Exit and Error propagate immediately
             TransformResult::Exit(_) | TransformResult::Error(_) => {
+                log::debug!("execute_chain: step {} result={:?}", i, result);
                 return result;
             }
         }
@@ -328,17 +336,31 @@ fn execute_match(children: &ChainChildren, ctx: &mut TransformContext<'_>) -> Tr
         _ => return TransformResult::Error(TransformError::other("Match missing branches")),
     };
 
-    for branch in branches {
+    log::debug!(
+        "execute_match: #value={:?}, {} branches, has_default={}",
+        ctx.system_vars.value,
+        branches.len(),
+        default_chain.is_some()
+    );
+
+    for (i, branch) in branches.iter().enumerate() {
+        log::debug!(
+            "execute_match: evaluating branch {} condition={:?}",
+            i,
+            branch.condition
+        );
         let matched = match evaluate_condition(&branch.condition, ctx) {
             Ok(v) => v,
             Err(e) => return TransformResult::Error(e),
         };
 
+        log::debug!("execute_match: branch {} matched={}", i, matched);
         if matched {
             return execute_scoped_chain(&branch.chain, ctx);
         }
     }
 
+    log::debug!("execute_match: no branch matched, falling back to default");
     // No branch matched — try default
     if let Some(default) = default_chain {
         return execute_scoped_chain(default, ctx);

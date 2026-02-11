@@ -73,7 +73,7 @@ impl super::MigrationRepository {
                      INNER JOIN entity_mappings em ON t.entity_mapping_id = em.id
                      INNER JOIN phases p ON em.phase_id = p.id
                      WHERE p.migration_id = ?1
-                     ORDER BY t.id ASC",
+                     ORDER BY t.parent_type, t.parent_id, t.\"order\" ASC",
                 )?;
                 let rows = stmt.query_map([migration_id], row_to_transform)?;
                 rows.collect::<Result<Vec<_>, _>>()
