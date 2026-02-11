@@ -676,7 +676,7 @@ impl MigrationEditor {
                         .map(|s| s.as_str())
                         .unwrap_or("id");
 
-                    let comparison = pipeline::compare_mapping_results(
+                    let mut comparison = pipeline::compare_mapping_results(
                         pipeline::ComparisonInput {
                             source_records: &source_records,
                             mapping_result,
@@ -692,6 +692,13 @@ impl MigrationEditor {
                             orphan_strategy: em.orphan_strategy,
                         },
                     );
+
+                    // Remap operations for junction target entities
+                    if junction_fk_attrs.contains_key(&em.target_entity) {
+                        crate::apps::migration::comparison::remap_junction_operations(
+                            &mut comparison,
+                        );
+                    }
 
                     comparisons.push(comparison);
                     // source_records + target_records dropped HERE
@@ -1309,10 +1316,22 @@ impl MigrationEditor {
 
                 // Stats row
                 row (gap: 2) {
-                    text (content: {format!("Create: {}", counts.create)}) style (fg: success)
-                    text (content: {format!("Update: {}", counts.update)}) style (fg: info)
+                    if counts.create > 0 {
+                        text (content: {format!("Create: {}", counts.create)}) style (fg: success)
+                    }
+                    if counts.associate > 0 {
+                        text (content: {format!("Associate: {}", counts.associate)}) style (fg: success)
+                    }
+                    if counts.update > 0 {
+                        text (content: {format!("Update: {}", counts.update)}) style (fg: info)
+                    }
                     text (content: {format!("Skip: {}", counts.skip)}) style (fg: muted)
-                    text (content: {format!("Delete: {}", counts.delete)}) style (fg: error)
+                    if counts.delete > 0 {
+                        text (content: {format!("Delete: {}", counts.delete)}) style (fg: error)
+                    }
+                    if counts.disassociate > 0 {
+                        text (content: {format!("Disassociate: {}", counts.disassociate)}) style (fg: error)
+                    }
                     if counts.deactivate > 0 {
                         text (content: {format!("Deactivate: {}", counts.deactivate)}) style (fg: warning)
                     }

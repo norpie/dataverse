@@ -156,6 +156,8 @@ pub fn op_label_color(op: &OperationType) -> (&'static str, &'static str) {
         OperationType::Skip => ("SKIP", "muted"),
         OperationType::Delete => ("DELETE", "error"),
         OperationType::Deactivate => ("DEACTIVATE", "warning"),
+        OperationType::Associate => ("ASSOCIATE", "success"),
+        OperationType::Disassociate => ("DISASSOC", "error"),
         OperationType::Ignore => ("IGNORE", "muted"),
         OperationType::Error(_) => ("ERROR", "error"),
     }

@@ -45,6 +45,10 @@ pub enum OperationType {
     Delete,
     /// Orphaned target record should be deactivated.
     Deactivate,
+    /// Association should be created (junction entity target).
+    Associate,
+    /// Association should be removed (junction entity orphan).
+    Disassociate,
     /// Record should be ignored (per config).
     Ignore,
     /// An error occurred during processing.
@@ -99,6 +103,7 @@ impl MappingComparison {
                 OperationType::Create => counts.create += 1,
                 OperationType::Update => counts.update += 1,
                 OperationType::Skip => counts.skip += 1,
+                OperationType::Associate => counts.associate += 1,
                 OperationType::Ignore => counts.ignore += 1,
                 OperationType::Error(_) => counts.error += 1,
                 _ => {}
@@ -108,6 +113,7 @@ impl MappingComparison {
             match &o.operation {
                 OperationType::Delete => counts.delete += 1,
                 OperationType::Deactivate => counts.deactivate += 1,
+                OperationType::Disassociate => counts.disassociate += 1,
                 OperationType::Ignore => counts.ignore += 1,
                 OperationType::Error(_) => counts.error += 1,
                 _ => {}
@@ -125,6 +131,8 @@ pub struct OperationTypeCounts {
     pub skip: usize,
     pub delete: usize,
     pub deactivate: usize,
+    pub associate: usize,
+    pub disassociate: usize,
     pub ignore: usize,
     pub error: usize,
 }
@@ -301,6 +309,40 @@ fn detect_orphans(
     }
 
     orphans
+}
+
+// =============================================================================
+// Junction Entity Post-Processing
+// =============================================================================
+
+/// Remap operation types for a junction entity target.
+///
+/// Junction entities represent N:N associations — records are either associated
+/// or not. This remaps standard CRUD operations to junction-appropriate ones:
+/// - `Create` → `Associate` (create the association)
+/// - `Update` → `Skip` (associations are binary, no partial updates)
+/// - `Delete` → `Disassociate` (remove the association)
+/// - `Deactivate` → `Disassociate` (junctions can't be deactivated)
+/// - All other operations pass through unchanged.
+pub fn remap_junction_operations(comparison: &mut MappingComparison) {
+    for record in &mut comparison.records {
+        record.operation = match std::mem::replace(&mut record.operation, OperationType::Skip) {
+            OperationType::Create => OperationType::Associate,
+            OperationType::Update => {
+                // Associations are binary — if the FK pair matches, it's a skip.
+                // Clear diffs since there's nothing to update.
+                record.diffs.clear();
+                OperationType::Skip
+            }
+            other => other,
+        };
+    }
+    for orphan in &mut comparison.orphans {
+        orphan.operation = match std::mem::replace(&mut orphan.operation, OperationType::Skip) {
+            OperationType::Delete | OperationType::Deactivate => OperationType::Disassociate,
+            other => other,
+        };
+    }
 }
 
 // =============================================================================
