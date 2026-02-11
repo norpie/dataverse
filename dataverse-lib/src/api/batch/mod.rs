@@ -29,6 +29,7 @@ use serde::Deserialize;
 use serde::Serialize;
 
 use crate::api::crud::Operation;
+use crate::api::crud::OperationKind;
 use crate::error::Error;
 
 // =============================================================================
@@ -270,6 +271,32 @@ impl Batch {
     pub fn items(&self) -> &[BatchItem] {
         &self.items
     }
+
+    /// Returns the operation kinds in the order they appear in batch responses.
+    ///
+    /// Standalone operations produce one kind each. Changesets produce a
+    /// nested `Vec` of kinds (matching the changeset's operation order).
+    /// This mirrors the structure of [`BatchResults`] for correct 1:1 mapping.
+    pub fn operation_kinds(&self) -> Vec<BatchItemKinds> {
+        self.items
+            .iter()
+            .map(|item| match item {
+                BatchItem::Operation(op) => BatchItemKinds::Operation(OperationKind::from(op)),
+                BatchItem::Changeset(cs) => BatchItemKinds::Changeset(
+                    cs.operations.iter().map(OperationKind::from).collect(),
+                ),
+            })
+            .collect()
+    }
+}
+
+/// Mirrors [`BatchItemResult`] structure but carries only lightweight [`OperationKind`]s.
+#[derive(Debug, Clone)]
+pub enum BatchItemKinds {
+    /// A standalone operation kind.
+    Operation(OperationKind),
+    /// A changeset's operation kinds (in order).
+    Changeset(Vec<OperationKind>),
 }
 
 // =============================================================================

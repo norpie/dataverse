@@ -2,6 +2,8 @@
 
 use uuid::Uuid;
 
+use super::BatchItemKinds;
+use crate::api::crud::OperationKind;
 use crate::error::Error;
 use crate::model::Record;
 
@@ -90,7 +92,15 @@ pub struct BatchResults {
 
 impl BatchResults {
     /// Parses a multipart batch response.
-    pub fn parse(response_body: &str, boundary: &str) -> Result<Self, Error> {
+    ///
+    /// The `kinds` parameter carries the operation types from the original batch
+    /// request, enabling correct classification of ambiguous HTTP status codes
+    /// (e.g., distinguishing a 204 Delete from a 204 Associate).
+    pub fn parse(
+        response_body: &str,
+        boundary: &str,
+        kinds: &[BatchItemKinds],
+    ) -> Result<Self, Error> {
         let mut results = Vec::new();
         let boundary_marker = format!("--{}", boundary);
 
@@ -100,17 +110,30 @@ impl BatchResults {
             .filter(|s| !s.trim().is_empty() && !s.trim().starts_with("--"))
             .collect();
 
+        let mut kind_idx = 0;
         for part in parts {
+            let item_kinds = kinds.get(kind_idx);
+            kind_idx += 1;
+
             // Check if this is a changeset (nested multipart)
             if part.contains("multipart/mixed") {
                 // Extract nested boundary
                 if let Some(nested_boundary) = extract_boundary_from_header(part) {
-                    let changeset_result = parse_changeset(part, &nested_boundary)?;
+                    let cs_kinds = match item_kinds {
+                        Some(BatchItemKinds::Changeset(ks)) => Some(ks.as_slice()),
+                        _ => None,
+                    };
+                    let changeset_result =
+                        parse_changeset(part, &nested_boundary, cs_kinds)?;
                     results.push(BatchItemResult::Changeset(changeset_result));
                 }
             } else {
                 // Single operation
-                let op_result = parse_operation_response(part)?;
+                let kind = match item_kinds {
+                    Some(BatchItemKinds::Operation(k)) => Some(*k),
+                    _ => None,
+                };
+                let op_result = parse_operation_response(part, kind)?;
                 results.push(BatchItemResult::Operation(op_result));
             }
         }
@@ -191,6 +214,7 @@ fn extract_boundary_from_header(header_section: &str) -> Option<String> {
 fn parse_changeset(
     changeset_body: &str,
     boundary: &str,
+    kinds: Option<&[OperationKind]>,
 ) -> Result<Result<Vec<OperationResult>, BatchOperationError>, Error> {
     let boundary_marker = format!("--{}", boundary);
     let mut results = Vec::new();
@@ -200,13 +224,17 @@ fn parse_changeset(
         .filter(|s| !s.trim().is_empty() && !s.trim().starts_with("--"))
         .collect();
 
+    let mut kind_idx = 0;
     for part in parts {
         // Skip the Content-Type header part
         if part.contains("Content-Type: multipart/mixed") {
             continue;
         }
 
-        match parse_operation_response(part)? {
+        let kind = kinds.and_then(|ks| ks.get(kind_idx).copied());
+        kind_idx += 1;
+
+        match parse_operation_response(part, kind)? {
             Ok(result) => results.push(result),
             Err(e) => {
                 // If any operation in changeset fails, the whole changeset fails
@@ -221,6 +249,7 @@ fn parse_changeset(
 /// Parses a single operation's HTTP response.
 fn parse_operation_response(
     response: &str,
+    kind: Option<OperationKind>,
 ) -> Result<Result<OperationResult, BatchOperationError>, Error> {
     // Find the HTTP status line
     let lines: Vec<&str> = response.lines().collect();
@@ -243,7 +272,7 @@ fn parse_operation_response(
 
     // Check for success (2xx status codes)
     if (200..300).contains(&status) {
-        let result = parse_success_response(status, body)?;
+        let result = parse_success_response(status, body, kind)?;
         Ok(Ok(result))
     } else {
         let error = parse_error_response(status, body, response);
@@ -252,7 +281,11 @@ fn parse_operation_response(
 }
 
 /// Parses a successful operation response.
-fn parse_success_response(status: u16, body: &str) -> Result<OperationResult, Error> {
+fn parse_success_response(
+    status: u16,
+    body: &str,
+    kind: Option<OperationKind>,
+) -> Result<OperationResult, Error> {
     match status {
         201 => {
             // Created - try to extract ID from response or OData-EntityId header
@@ -286,8 +319,22 @@ fn parse_success_response(status: u16, body: &str) -> Result<OperationResult, Er
             }
         }
         204 => {
-            // No Content - successful delete, update without return, etc.
-            Ok(OperationResult::Deleted)
+            // No Content — use the operation kind to return the correct variant.
+            match kind {
+                Some(OperationKind::Associate) => Ok(OperationResult::Associated),
+                Some(OperationKind::Disassociate) => Ok(OperationResult::Disassociated),
+                Some(OperationKind::SetLookup) => Ok(OperationResult::LookupSet),
+                Some(OperationKind::ClearLookup) => Ok(OperationResult::LookupCleared),
+                Some(OperationKind::Update) => Ok(OperationResult::Updated { record: None }),
+                Some(OperationKind::Delete) => Ok(OperationResult::Deleted),
+                Some(OperationKind::Upsert) => Ok(OperationResult::Upserted {
+                    created: false,
+                    id: Uuid::nil(),
+                    record: None,
+                }),
+                // No kind available — fall back to legacy behavior
+                _ => Ok(OperationResult::Deleted),
+            }
         }
         _ => Ok(OperationResult::Updated { record: None }),
     }

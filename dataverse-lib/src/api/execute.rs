@@ -1214,7 +1214,8 @@ impl DataverseClient {
 
         let response_body = response.text().await.map_err(ApiError::from)?;
 
-        BatchResults::parse(&response_body, &response_boundary)
+        let kinds = batch.operation_kinds();
+        BatchResults::parse(&response_body, &response_boundary, &kinds)
     }
 }
 
