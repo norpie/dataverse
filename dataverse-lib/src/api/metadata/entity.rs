@@ -249,7 +249,7 @@ async fn fetch_entity_core_from_api(
     let url = metadata_url(
         client,
         &format!(
-            "EntityDefinitions(LogicalName='{}')?$select=LogicalName,EntitySetName,SchemaName,PrimaryIdAttribute,PrimaryNameAttribute,ObjectTypeCode",
+            "EntityDefinitions(LogicalName='{}')?$select=LogicalName,EntitySetName,SchemaName,PrimaryIdAttribute,PrimaryNameAttribute,ObjectTypeCode,IsIntersect",
             logical_name
         ),
     );

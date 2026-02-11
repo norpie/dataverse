@@ -37,6 +37,10 @@ pub struct EntityCore {
 
     /// The entity type code (object type code).
     pub object_type_code: i32,
+
+    /// Whether this entity is an intersect (junction) entity for an N:N relationship.
+    #[serde(default)]
+    pub is_intersect: bool,
 }
 
 /// Full entity metadata including attributes and relationships.
@@ -117,6 +121,10 @@ pub struct EntityMetadata {
     #[serde(default)]
     pub is_valid_for_advanced_find: bool,
 
+    /// Whether this entity is an intersect (junction) entity for an N:N relationship.
+    #[serde(default)]
+    pub is_intersect: bool,
+
     /// All attributes of this entity (base metadata without option sets).
     #[serde(default)]
     pub attributes: Vec<AttributeMetadata>,
@@ -168,6 +176,7 @@ impl EntityMetadata {
             primary_id_attribute: self.primary_id_attribute.clone(),
             primary_name_attribute: self.primary_name_attribute.clone(),
             object_type_code: self.object_type_code,
+            is_intersect: self.is_intersect,
         }
     }
 
