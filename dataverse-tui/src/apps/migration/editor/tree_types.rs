@@ -85,9 +85,12 @@ pub(super) fn compute_chain_types(
                         // Field path - resolve from metadata cache.
                         resolve_field_path(path, source_entity, ctx)
                     }
-                    Ok(PathExpr::EntityRef { .. }) => {
-                        // Entity ref always produces a Lookup
-                        Some(ValueType::simple(AttributeType::Lookup))
+                    Ok(PathExpr::EntityRef { entity, .. }) => {
+                        // Entity ref produces a Lookup targeting the specified entity
+                        Some(ValueType::lookup(
+                            AttributeType::Lookup,
+                            vec![entity.clone()],
+                        ))
                     }
                     Err(_) => None,
                 }
