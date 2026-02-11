@@ -103,9 +103,12 @@ impl ToString for GuardOp {
 /// Modal for editing a Guard transform condition.
 #[modal(size = Sm)]
 pub struct GuardTransformModal {
-    /// The Dataverse client for metadata lookups.
+    /// The source Dataverse client for metadata lookups.
     #[state(skip)]
     client: DataverseClient,
+    /// The target Dataverse client for entity ref suggestions.
+    #[state(skip)]
+    target_client: DataverseClient,
     /// The source entity logical name.
     #[state(skip)]
     source_entity: String,
@@ -129,6 +132,7 @@ impl GuardTransformModal {
     /// Create a new Guard transform modal with the given initial condition.
     pub fn new_modal(
         client: DataverseClient,
+        target_client: DataverseClient,
         source_entity: String,
         variables: Vec<VariableInfo>,
         condition: Condition,
@@ -145,6 +149,7 @@ impl GuardTransformModal {
 
         Self::new(
             client,
+            target_client,
             source_entity,
             variables,
             left,
@@ -291,6 +296,7 @@ impl GuardTransformModal {
         let path = self.left_text();
         let generator = PathSuggestionGenerator::new(
             self.client.clone(),
+            self.target_client.clone(),
             self.source_entity.clone(),
             self.variables.clone(),
         );
@@ -330,6 +336,7 @@ impl GuardTransformModal {
 
         let generator = PathSuggestionGenerator::new(
             self.client.clone(),
+            self.target_client.clone(),
             self.source_entity.clone(),
             self.variables.clone(),
         );

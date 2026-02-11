@@ -5,6 +5,7 @@
 
 use std::collections::HashMap;
 
+use dataverse_lib::model::types::EntityReference;
 use dataverse_lib::model::Entity;
 use dataverse_lib::model::Record;
 use dataverse_lib::model::Value;
@@ -100,6 +101,49 @@ pub fn resolve_path(
                 SystemVar::TargetEntity => Value::String(ctx.target_entity.name().to_string()),
             };
             (TransformResult::Value(value), None)
+        }
+
+        PathExpr::EntityRef { entity, inner } => {
+            // Resolve the inner path to get a UUID
+            let (inner_result, _) = resolve_path(inner, ctx);
+            match inner_result {
+                TransformResult::Value(Value::Null) => (TransformResult::Value(Value::Null), None),
+                TransformResult::Value(value) => {
+                    // Extract UUID from the resolved value
+                    let uuid = match &value {
+                        Value::Guid(id) => *id,
+                        Value::EntityReference(er) => er.id,
+                        Value::String(s) => match s.parse() {
+                            Ok(id) => id,
+                            Err(_) => {
+                                return (
+                                    TransformResult::Error(TransformError::type_mismatch(
+                                        "Guid",
+                                        format!("String({})", s),
+                                    )),
+                                    None,
+                                );
+                            }
+                        },
+                        other => {
+                            return (
+                                TransformResult::Error(TransformError::type_mismatch(
+                                    "Guid",
+                                    format!("{other:?}"),
+                                )),
+                                None,
+                            );
+                        }
+                    };
+
+                    let entity_ref = EntityReference::new(Entity::logical(entity), uuid);
+                    (
+                        TransformResult::Value(Value::EntityReference(entity_ref)),
+                        None,
+                    )
+                }
+                error => (error, None),
+            }
         }
     }
 }
@@ -420,6 +464,114 @@ mod tests {
 
         let (result, _) = resolve_path_str("#target_entity", &ctx);
         assert!(matches!(result, TransformResult::Value(Value::String(ref s)) if s == "contact"));
+    }
+
+    // =========================================================================
+    // Parse errors
+    // =========================================================================
+
+    // =========================================================================
+    // Entity ref paths
+    // =========================================================================
+
+    #[test]
+    fn entity_ref_from_guid_variable() {
+        let source = make_source_record();
+        let mut vars = make_variables();
+        let guid = uuid::Uuid::new_v4();
+        vars.insert("my_guid".to_string(), Value::Guid(guid));
+        let value = Value::Null;
+        let ctx = make_ctx(&source, &vars, &value);
+
+        let (result, _) = resolve_path_str("/contact($my_guid)", &ctx);
+        match result {
+            TransformResult::Value(Value::EntityReference(er)) => {
+                assert_eq!(er.id, guid);
+                assert_eq!(er.entity, Entity::logical("contact"));
+            }
+            other => panic!("Expected EntityReference, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn entity_ref_from_field_path() {
+        let source = make_source_record();
+        let vars = make_variables();
+        let value = Value::Null;
+        let ctx = make_ctx(&source, &vars, &value);
+
+        // revenue is an i64, should fail (not a Guid)
+        let (result, _) = resolve_path_str("/account(revenue)", &ctx);
+        assert!(matches!(
+            result,
+            TransformResult::Error(TransformError::TypeMismatch { .. })
+        ));
+    }
+
+    #[test]
+    fn entity_ref_from_string_guid() {
+        let source = make_source_record();
+        let mut vars = make_variables();
+        let guid = uuid::Uuid::new_v4();
+        vars.insert("str_guid".to_string(), Value::String(guid.to_string()));
+        let value = Value::Null;
+        let ctx = make_ctx(&source, &vars, &value);
+
+        let (result, _) = resolve_path_str("/account($str_guid)", &ctx);
+        match result {
+            TransformResult::Value(Value::EntityReference(er)) => {
+                assert_eq!(er.id, guid);
+                assert_eq!(er.entity, Entity::logical("account"));
+            }
+            other => panic!("Expected EntityReference, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn entity_ref_null_returns_null() {
+        let source = make_source_record();
+        let vars = make_variables();
+        let value = Value::Null;
+        let ctx = make_ctx(&source, &vars, &value);
+
+        let (result, _) = resolve_path_str("/contact($empty)", &ctx);
+        assert!(matches!(result, TransformResult::Value(Value::Null)));
+    }
+
+    #[test]
+    fn entity_ref_from_existing_entity_ref() {
+        let source = make_source_record();
+        let mut vars = make_variables();
+        let guid = uuid::Uuid::new_v4();
+        let er = EntityReference::new(Entity::logical("account"), guid);
+        vars.insert("lookup".to_string(), Value::EntityReference(er));
+        let value = Value::Null;
+        let ctx = make_ctx(&source, &vars, &value);
+
+        // Re-wrapping an EntityReference with a different entity
+        let (result, _) = resolve_path_str("/contact($lookup)", &ctx);
+        match result {
+            TransformResult::Value(Value::EntityReference(er)) => {
+                assert_eq!(er.id, guid);
+                assert_eq!(er.entity, Entity::logical("contact"));
+            }
+            other => panic!("Expected EntityReference, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn entity_ref_invalid_string_guid_errors() {
+        let source = make_source_record();
+        let vars = make_variables();
+        let value = Value::Null;
+        let ctx = make_ctx(&source, &vars, &value);
+
+        // $prefix is "ACCT" — not a valid UUID
+        let (result, _) = resolve_path_str("/contact($prefix)", &ctx);
+        assert!(matches!(
+            result,
+            TransformResult::Error(TransformError::TypeMismatch { .. })
+        ));
     }
 
     // =========================================================================

@@ -13,9 +13,12 @@ use super::path_suggestions::VariableInfo;
 /// Modal for editing a Format transform's template.
 #[modal(size = Md)]
 pub struct FormatTransformModal {
-    /// The Dataverse client for metadata lookups.
+    /// The source Dataverse client for metadata lookups.
     #[state(skip)]
     client: DataverseClient,
+    /// The target Dataverse client for entity ref suggestions.
+    #[state(skip)]
+    target_client: DataverseClient,
     /// The source entity logical name.
     #[state(skip)]
     source_entity: String,
@@ -31,6 +34,7 @@ impl FormatTransformModal {
     /// Create a new Format transform modal.
     pub fn new_modal(
         client: DataverseClient,
+        target_client: DataverseClient,
         source_entity: String,
         variables: Vec<VariableInfo>,
         current_template: String,
@@ -39,7 +43,7 @@ impl FormatTransformModal {
         autocomplete.text = current_template;
         autocomplete.cursor = autocomplete.text.len();
 
-        Self::new(client, source_entity, variables, autocomplete)
+        Self::new(client, target_client, source_entity, variables, autocomplete)
     }
 
     fn current_template(&self) -> String {
@@ -157,6 +161,7 @@ impl FormatTransformModal {
                 // Generate path suggestions
                 let generator = PathSuggestionGenerator::new(
                     self.client.clone(),
+                    self.target_client.clone(),
                     self.source_entity.clone(),
                     self.variables.clone(),
                 );

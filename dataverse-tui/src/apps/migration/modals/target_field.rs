@@ -102,6 +102,7 @@ impl TargetFieldModal {
         let path = self.current_path();
         let generator = PathSuggestionGenerator::new(
             self.client.clone(),
+            self.client.clone(),
             self.entity.clone(),
             Vec::new(),
         );
@@ -142,6 +143,7 @@ impl TargetFieldModal {
 
         let generator = PathSuggestionGenerator::new(
             self.client.clone(),
+            self.client.clone(),
             self.entity.clone(),
             Vec::new(),
         );
@@ -174,7 +176,7 @@ impl TargetFieldModal {
         // Validate as a field path rooted on the target entity.
         // We reuse PathValidator with the entity as "source_entity" and no variables,
         // since target-side paths are plain field paths only.
-        let validator = PathValidator::new(self.client.clone());
+        let validator = PathValidator::new(self.client.clone(), self.client.clone());
         let ctx = ValidationContext {
             source_entity: self.entity.clone(),
             variable_types: Default::default(),

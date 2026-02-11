@@ -184,8 +184,17 @@ pub fn extract_field_paths(template: &str) -> Vec<FieldPath> {
 
     for placeholder in extract_placeholders(template) {
         for alt in split_coalesce(&placeholder) {
-            if let Ok(PathExpr::Field(field_path)) = parse_path(alt) {
-                paths.push(field_path);
+            match parse_path(alt) {
+                Ok(PathExpr::Field(field_path)) => {
+                    paths.push(field_path);
+                }
+                Ok(PathExpr::EntityRef { inner, .. }) => {
+                    // Extract field path from inner if it's a field reference
+                    if let PathExpr::Field(field_path) = *inner {
+                        paths.push(field_path);
+                    }
+                }
+                _ => {}
             }
         }
     }

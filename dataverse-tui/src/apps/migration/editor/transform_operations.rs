@@ -155,6 +155,7 @@ impl MigrationEditor {
             TransformType::Copy => {
                 let modal = CopyTransformModal::new_modal(
                     self.source_client.get().clone(),
+                    self.target_client.get().clone(),
                     source_entity,
                     variables,
                     String::new(),
@@ -179,6 +180,7 @@ impl MigrationEditor {
             TransformType::Format => {
                 let modal = FormatTransformModal::new_modal(
                     self.source_client.get().clone(),
+                    self.target_client.get().clone(),
                     source_entity,
                     variables,
                     String::new(),
@@ -217,6 +219,7 @@ impl MigrationEditor {
                 let default_condition = Condition::IsNull(Expr::SystemVar(SystemVar::Value));
                 let modal = GuardTransformModal::new_modal(
                     self.source_client.get().clone(),
+                    self.target_client.get().clone(),
                     source_entity,
                     variables,
                     default_condition,
@@ -409,6 +412,7 @@ impl MigrationEditor {
             TransformData::Copy { path } => {
                 let modal = CopyTransformModal::new_modal(
                     self.source_client.get().clone(),
+                    self.target_client.get().clone(),
                     source_entity,
                     variables,
                     path.clone(),
@@ -451,6 +455,7 @@ impl MigrationEditor {
             TransformData::Format { template } => {
                 let modal = FormatTransformModal::new_modal(
                     self.source_client.get().clone(),
+                    self.target_client.get().clone(),
                     source_entity.clone(),
                     variables.clone(),
                     template.clone(),
@@ -563,6 +568,7 @@ impl MigrationEditor {
             TransformData::Guard { condition } => {
                 let modal = GuardTransformModal::new_modal(
                     self.source_client.get().clone(),
+                    self.target_client.get().clone(),
                     source_entity,
                     variables,
                     condition.clone(),

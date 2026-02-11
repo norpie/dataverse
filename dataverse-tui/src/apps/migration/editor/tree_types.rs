@@ -5,18 +5,18 @@
 
 use std::collections::HashMap;
 
+use dataverse_lib::model::metadata::AttributeType;
 use dataverse_lib::model::FieldType;
 use dataverse_lib::model::ValueType;
-use dataverse_lib::model::metadata::AttributeType;
 
+use crate::apps::migration::types::propagate_chain_types;
 use crate::apps::migration::types::ChainTypeResult;
 use crate::apps::migration::types::SystemVar;
 use crate::apps::migration::types::Transform;
 use crate::apps::migration::types::TransformData;
-use crate::apps::migration::types::propagate_chain_types;
+use crate::apps::migration::validation::parse_path;
 use crate::apps::migration::validation::FieldPath;
 use crate::apps::migration::validation::PathExpr;
-use crate::apps::migration::validation::parse_path;
 
 use super::tree_builder::TreeBuildContext;
 
@@ -64,6 +64,10 @@ pub(super) fn compute_chain_types(
                     Ok(PathExpr::Field(_)) => {
                         // Field path - resolve from metadata cache.
                         resolve_field_path(path, source_entity, ctx)
+                    }
+                    Ok(PathExpr::EntityRef { .. }) => {
+                        // Entity ref always produces a Lookup
+                        Some(ValueType::simple(AttributeType::Lookup))
                     }
                     Err(_) => None,
                 }

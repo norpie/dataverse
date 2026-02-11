@@ -36,6 +36,15 @@ pub enum PathExpr {
     },
     /// System variable: `#value`, `#type`, `#index`
     SystemVar(SystemVar),
+    /// Entity reference construction: `/contact($var)`, `/account(parentaccountid)`
+    ///
+    /// Resolves the inner path to a UUID and wraps it in an EntityReference.
+    EntityRef {
+        /// The target entity logical name.
+        entity: String,
+        /// The inner path expression that resolves to a UUID.
+        inner: Box<PathExpr>,
+    },
 }
 
 /// A field path with dot-separated segments.
@@ -76,6 +85,14 @@ pub enum ParseError {
     UnclosedBracket,
     /// Empty target in brackets.
     EmptyTarget,
+    /// Empty entity name in entity ref (after `/`).
+    EmptyEntityName,
+    /// Missing opening parenthesis in entity ref.
+    MissingOpenParen,
+    /// Missing closing parenthesis in entity ref.
+    UnclosedParen,
+    /// Empty inner path in entity ref.
+    EmptyInnerPath,
 }
 
 impl std::fmt::Display for ParseError {
@@ -90,6 +107,14 @@ impl std::fmt::Display for ParseError {
             ParseError::EmptyFieldName => write!(f, "Field name cannot be empty"),
             ParseError::UnclosedBracket => write!(f, "Unclosed bracket in target specifier"),
             ParseError::EmptyTarget => write!(f, "Target entity in brackets cannot be empty"),
+            ParseError::EmptyEntityName => write!(f, "Entity name cannot be empty after '/'"),
+            ParseError::MissingOpenParen => {
+                write!(f, "Expected '(' after entity name in entity ref")
+            }
+            ParseError::UnclosedParen => write!(f, "Unclosed parenthesis in entity ref"),
+            ParseError::EmptyInnerPath => {
+                write!(f, "Inner path cannot be empty in entity ref")
+            }
         }
     }
 }
@@ -119,6 +144,11 @@ pub fn parse_path(input: &str) -> Result<PathExpr, ParseError> {
         return Err(ParseError::Empty);
     }
 
+    // Entity reference: /entity(path)
+    if let Some(rest) = input.strip_prefix('/') {
+        return parse_entity_ref(rest);
+    }
+
     // Variable: $name, $name.field, $name[target].field
     if let Some(rest) = input.strip_prefix('$') {
         let rest = rest.trim();
@@ -141,6 +171,36 @@ pub fn parse_path(input: &str) -> Result<PathExpr, ParseError> {
     // Field path: field.field.field
     let segments = parse_field_path(input)?;
     Ok(PathExpr::Field(FieldPath { segments }))
+}
+
+/// Parse an entity reference: `entity(inner_path)`.
+///
+/// `input` is everything after the `/` prefix.
+fn parse_entity_ref(input: &str) -> Result<PathExpr, ParseError> {
+    let input = input.trim();
+
+    // Find opening paren
+    let paren_pos = input.find('(').ok_or(ParseError::MissingOpenParen)?;
+    let entity = input[..paren_pos].trim();
+    if entity.is_empty() {
+        return Err(ParseError::EmptyEntityName);
+    }
+
+    // Find closing paren (must be at the end)
+    let after_paren = &input[paren_pos + 1..];
+    let close_pos = after_paren.rfind(')').ok_or(ParseError::UnclosedParen)?;
+    let inner_str = after_paren[..close_pos].trim();
+    if inner_str.is_empty() {
+        return Err(ParseError::EmptyInnerPath);
+    }
+
+    // Parse the inner path recursively (supports $var, field, $var.field, etc.)
+    let inner = parse_path(inner_str)?;
+
+    Ok(PathExpr::EntityRef {
+        entity: entity.to_string(),
+        inner: Box::new(inner),
+    })
 }
 
 /// Parse a variable path: `name`, `name.field`, `name[target].field`.
@@ -301,12 +361,17 @@ pub struct ValidPath {
 /// Validator for path expressions.
 pub struct PathValidator {
     client: DataverseClient,
+    /// Target environment client for entity ref validation.
+    target_client: DataverseClient,
 }
 
 impl PathValidator {
     /// Create a new path validator.
-    pub fn new(client: DataverseClient) -> Self {
-        Self { client }
+    pub fn new(client: DataverseClient, target_client: DataverseClient) -> Self {
+        Self {
+            client,
+            target_client,
+        }
     }
 
     /// Validate a path expression.
@@ -325,6 +390,9 @@ impl PathValidator {
             }
             PathExpr::SystemVar(var) => self.validate_system_var(var),
             PathExpr::Field(field_path) => self.validate_field_path(&field_path, ctx).await,
+            PathExpr::EntityRef { entity, inner } => {
+                self.validate_entity_ref(&entity, &inner, ctx).await
+            }
         }
     }
 
@@ -424,6 +492,66 @@ impl PathValidator {
         // Validate the field path starting from the resolved entity
         self.validate_field_path_from(&start_entity, field_path, &mut path_parts)
             .await
+    }
+
+    /// Validate an entity reference: `/entity(inner_path)`.
+    async fn validate_entity_ref(
+        &self,
+        entity: &str,
+        inner: &PathExpr,
+        ctx: &ValidationContext,
+    ) -> ValidationResult {
+        // Validate the entity exists in the target environment
+        if let Err(e) = self.target_client.metadata().entity(entity).await {
+            return ValidationResult::Invalid(format!(
+                "Entity '{}' not found: {}",
+                entity, e
+            ));
+        }
+
+        // Validate the inner path
+        let inner_result = match inner {
+            PathExpr::Variable(name) => self.validate_variable(name, ctx),
+            PathExpr::VariableNavigation { name, target, path } => {
+                self.validate_variable_navigation(name, target.as_deref(), path, ctx)
+                    .await
+            }
+            PathExpr::SystemVar(var) => self.validate_system_var(*var),
+            PathExpr::Field(field_path) => self.validate_field_path(field_path, ctx).await,
+            PathExpr::EntityRef { entity: e, inner: i } => {
+                Box::pin(self.validate_entity_ref(e, i, ctx)).await
+            }
+        };
+
+        // Check the inner path resolved to a Guid-compatible type
+        match inner_result {
+            ValidationResult::Valid(valid_inner) => {
+                let is_guid_compatible = match valid_inner.value_type {
+                    Some(AttributeType::Uniqueidentifier) => true,
+                    Some(AttributeType::Lookup) => true,
+                    Some(AttributeType::Customer) => true,
+                    Some(AttributeType::Owner) => true,
+                    None => true, // Unknown type (variables, system vars) — allow
+                    _ => false,
+                };
+
+                if !is_guid_compatible {
+                    return ValidationResult::Invalid(format!(
+                        "Inner path resolves to {:?}, expected a Guid or Lookup type",
+                        valid_inner.value_type,
+                    ));
+                }
+
+                ValidationResult::Valid(ValidPath {
+                    description: format!(
+                        "EntityRef: /{} → {}",
+                        entity, valid_inner.description
+                    ),
+                    value_type: Some(AttributeType::Lookup),
+                })
+            }
+            other => other,
+        }
     }
 
     /// Validate a field path starting from the source entity in ctx.
@@ -759,5 +887,122 @@ mod tests {
     fn parse_empty_target_error() {
         let result = parse_path("field[].name");
         assert_eq!(result, Err(ParseError::EmptyTarget));
+    }
+
+    // =========================================================================
+    // Entity ref paths
+    // =========================================================================
+
+    #[test]
+    fn parse_entity_ref_with_variable() {
+        let result = parse_path("/contact($my_var)").unwrap();
+        assert_eq!(
+            result,
+            PathExpr::EntityRef {
+                entity: "contact".to_string(),
+                inner: Box::new(PathExpr::Variable("my_var".to_string())),
+            }
+        );
+    }
+
+    #[test]
+    fn parse_entity_ref_with_field() {
+        let result = parse_path("/account(parentaccountid)").unwrap();
+        assert_eq!(
+            result,
+            PathExpr::EntityRef {
+                entity: "account".to_string(),
+                inner: Box::new(PathExpr::Field(FieldPath {
+                    segments: vec![FieldSegment {
+                        field: "parentaccountid".to_string(),
+                        target: None,
+                        optional: false,
+                    }]
+                })),
+            }
+        );
+    }
+
+    #[test]
+    fn parse_entity_ref_with_dotted_field() {
+        let result = parse_path("/account(parentaccountid.accountid)").unwrap();
+        assert_eq!(
+            result,
+            PathExpr::EntityRef {
+                entity: "account".to_string(),
+                inner: Box::new(PathExpr::Field(FieldPath {
+                    segments: vec![
+                        FieldSegment {
+                            field: "parentaccountid".to_string(),
+                            target: None,
+                            optional: false,
+                        },
+                        FieldSegment {
+                            field: "accountid".to_string(),
+                            target: None,
+                            optional: false,
+                        },
+                    ]
+                })),
+            }
+        );
+    }
+
+    #[test]
+    fn parse_entity_ref_with_variable_navigation() {
+        let result = parse_path("/contact($found.contactid)").unwrap();
+        assert_eq!(
+            result,
+            PathExpr::EntityRef {
+                entity: "contact".to_string(),
+                inner: Box::new(PathExpr::VariableNavigation {
+                    name: "found".to_string(),
+                    target: None,
+                    path: FieldPath {
+                        segments: vec![FieldSegment {
+                            field: "contactid".to_string(),
+                            target: None,
+                            optional: false,
+                        }]
+                    },
+                }),
+            }
+        );
+    }
+
+    #[test]
+    fn parse_entity_ref_with_system_var() {
+        let result = parse_path("/contact(#value)").unwrap();
+        assert_eq!(
+            result,
+            PathExpr::EntityRef {
+                entity: "contact".to_string(),
+                inner: Box::new(PathExpr::SystemVar(SystemVar::Value)),
+            }
+        );
+    }
+
+    #[test]
+    fn parse_entity_ref_empty_entity_error() {
+        let result = parse_path("/(foo)");
+        assert_eq!(result, Err(ParseError::EmptyEntityName));
+    }
+
+    #[test]
+    fn parse_entity_ref_missing_paren_error() {
+        let result = parse_path("/contact");
+        assert_eq!(result, Err(ParseError::MissingOpenParen));
+    }
+
+    #[test]
+    fn parse_entity_ref_unclosed_paren_error() {
+        let result = parse_path("/contact($var");
+        assert_eq!(result, Err(ParseError::UnclosedParen));
+    }
+
+    #[test]
+    fn parse_entity_ref_empty_inner_error() {
+        let result = parse_path("/contact()");
+        assert_eq!(result, Err(ParseError::EmptyInnerPath));
     }
 }

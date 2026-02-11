@@ -470,6 +470,23 @@ fn analyze_path_string(
         PathExpr::SystemVar(_) => {
             // System vars don't require fetching
         }
+        PathExpr::EntityRef { inner, .. } => {
+            // The inner path may reference source fields that need fetching.
+            // Re-dispatch on the inner path expression.
+            match inner.as_ref() {
+                PathExpr::Field(field_path) => {
+                    collector.source.add_field_path(field_path);
+                }
+                PathExpr::VariableNavigation { name, path, .. } => {
+                    if let Some(find_entity) = var_find_entities.get(name) {
+                        add_field_path_to_find_cache(path, find_entity, collector);
+                    }
+                }
+                _ => {
+                    // Variable, SystemVar, nested EntityRef — no fields to fetch
+                }
+            }
+        }
     }
 }
 

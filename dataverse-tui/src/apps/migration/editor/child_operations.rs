@@ -59,6 +59,7 @@ impl MigrationEditor {
         let default_condition = Condition::IsNull(Expr::SystemVar(SystemVar::Value));
         let modal = GuardTransformModal::new_modal(
             self.source_client.get().clone(),
+            self.target_client.get().clone(),
             source_entity,
             variables,
             default_condition,
@@ -136,6 +137,7 @@ impl MigrationEditor {
 
         let modal = GuardTransformModal::new_modal(
             self.source_client.get().clone(),
+            self.target_client.get().clone(),
             source_entity,
             variables,
             branch.condition.clone(),

@@ -17,9 +17,12 @@ use crate::widgets::Spinner;
 /// Modal for editing a Copy transform's path.
 #[modal(size = Sm)]
 pub struct CopyTransformModal {
-    /// The Dataverse client for metadata lookups.
+    /// The source Dataverse client for metadata lookups.
     #[state(skip)]
     client: DataverseClient,
+    /// The target Dataverse client for entity ref validation.
+    #[state(skip)]
+    target_client: DataverseClient,
     /// The source entity logical name.
     #[state(skip)]
     source_entity: String,
@@ -37,6 +40,7 @@ impl CopyTransformModal {
     /// Create a new Copy transform modal.
     pub fn new_modal(
         client: DataverseClient,
+        target_client: DataverseClient,
         source_entity: String,
         variables: Vec<VariableInfo>,
         current_path: String,
@@ -48,6 +52,7 @@ impl CopyTransformModal {
 
         Self::new(
             client,
+            target_client,
             source_entity,
             variables,
             autocomplete,
@@ -80,6 +85,7 @@ impl CopyTransformModal {
         let path = self.current_path();
         let generator = PathSuggestionGenerator::new(
             self.client.clone(),
+            self.target_client.clone(),
             self.source_entity.clone(),
             self.variables.clone(),
         );
@@ -122,6 +128,7 @@ impl CopyTransformModal {
         // Generate new suggestions based on current input
         let generator = PathSuggestionGenerator::new(
             self.client.clone(),
+            self.target_client.clone(),
             self.source_entity.clone(),
             self.variables.clone(),
         );
@@ -155,7 +162,7 @@ impl CopyTransformModal {
         self.validation.set(ValidationResult::Loading);
 
         // Create validator and context
-        let validator = PathValidator::new(self.client.clone());
+        let validator = PathValidator::new(self.client.clone(), self.target_client.clone());
         let ctx = ValidationContext {
             source_entity: self.source_entity.clone(),
             variable_types: self

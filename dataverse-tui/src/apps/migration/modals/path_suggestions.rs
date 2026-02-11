@@ -22,6 +22,8 @@ pub struct VariableInfo {
 /// variables, and system variables.
 pub struct PathSuggestionGenerator {
     client: DataverseClient,
+    /// Target environment client for entity ref suggestions.
+    target_client: DataverseClient,
     source_entity: String,
     variables: Vec<VariableInfo>,
 }
@@ -30,11 +32,13 @@ impl PathSuggestionGenerator {
     /// Create a new path suggestion generator.
     pub fn new(
         client: DataverseClient,
+        target_client: DataverseClient,
         source_entity: String,
         variables: Vec<VariableInfo>,
     ) -> Self {
         Self {
             client,
+            target_client,
             source_entity,
             variables,
         }
@@ -51,6 +55,16 @@ impl PathSuggestionGenerator {
             input
         );
 
+        // Entity ref: /entity(inner_path) — handle suggestions inside the construct
+        if let Some(rest) = input.strip_prefix('/') {
+            return self.generate_entity_ref_suggestions(rest).await;
+        }
+
+        self.generate_path_suggestions(input).await
+    }
+
+    /// Generate suggestions for a regular path (not inside entity ref wrapper).
+    async fn generate_path_suggestions(&self, input: &str) -> Vec<(String, String)> {
         // Case 1: Inside unclosed brackets - suggest polymorphic targets
         if let Some(bracket_pos) = input.rfind('[')
             && !input[bracket_pos..].contains(']')
@@ -120,6 +134,60 @@ impl PathSuggestionGenerator {
             result.len()
         );
         result
+    }
+
+    /// Generate suggestions for entity ref syntax: `/entity(inner_path)`.
+    ///
+    /// `rest` is everything after the `/` prefix.
+    async fn generate_entity_ref_suggestions(&self, rest: &str) -> Vec<(String, String)> {
+        debug!(
+            "[PathSuggestions] Entity ref suggestions for rest: {:?}",
+            rest
+        );
+
+        // Check if we have an opening paren — entity name is complete
+        if let Some(paren_pos) = rest.find('(') {
+            let entity = &rest[..paren_pos];
+            let inner = &rest[paren_pos + 1..];
+
+            // Strip closing paren if present for inner path suggestions
+            let inner = inner.strip_suffix(')').unwrap_or(inner);
+
+            // Generate suggestions for the inner path, then wrap with /entity(...)
+            let inner_suggestions = self.generate_path_suggestions(inner).await;
+            return inner_suggestions
+                .into_iter()
+                .map(|(value, label)| {
+                    let full = format!("/{}({})", entity, value);
+                    let full_label = format!("/{}({}) — {}", entity, value, label);
+                    (full, full_label)
+                })
+                .collect();
+        }
+
+        // No paren yet — suggest target entity logical names
+        debug!("[PathSuggestions] Suggesting target entity names after /");
+        match self.target_client.metadata().all_entities().await {
+            Ok(entities) => {
+                let mut suggestions: Vec<_> = entities
+                    .iter()
+                    .map(|e| {
+                        let value = format!("/{}(", e.logical_name);
+                        let label = format!("/{}( — {}", e.logical_name, e.schema_name);
+                        (value, label)
+                    })
+                    .collect();
+                suggestions.sort_by(|a, b| a.0.cmp(&b.0));
+                suggestions
+            }
+            Err(e) => {
+                debug!(
+                    "[PathSuggestions] Failed to fetch all entities: {:?}",
+                    e
+                );
+                Vec::new()
+            }
+        }
     }
 
     /// Generate root-level suggestions: source fields, variables, system vars.
@@ -396,6 +464,10 @@ impl PathSuggestionGenerator {
             }
             PathExpr::SystemVar(_) => {
                 debug!("[PathSuggestions] System variables don't resolve to entities");
+                return None;
+            }
+            PathExpr::EntityRef { .. } => {
+                debug!("[PathSuggestions] Entity refs don't resolve to navigable entities");
                 return None;
             }
         };
