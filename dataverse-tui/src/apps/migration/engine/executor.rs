@@ -493,10 +493,19 @@ fn apply_find_fallback(
     ctx: &mut TransformContext<'_>,
 ) -> TransformResult {
     match fallback {
-        FindFallback::Error => TransformResult::Error(TransformError::FindNotFound {
-            entity: entity.to_string(),
-            message: find_err.to_string(),
-        }),
+        FindFallback::Error => {
+            let error = match find_err {
+                FindError::Multiple(count) => TransformError::FindMultiple {
+                    entity: entity.to_string(),
+                    count,
+                },
+                _ => TransformError::FindNotFound {
+                    entity: entity.to_string(),
+                    message: find_err.to_string(),
+                },
+            };
+            TransformResult::Error(error)
+        }
         FindFallback::Null => TransformResult::Value(Value::Null),
         FindFallback::Default => {
             let default_chain = match children {

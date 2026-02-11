@@ -56,6 +56,9 @@ impl IndexKey {
             (Self::Null, Value::Null) => true,
             (Self::Int(a), Value::Int(b)) => a == b,
             (Self::Int(a), Value::OptionSet(b)) => *a == b.value,
+            (Self::Int(a), Value::Decimal(b)) => {
+                b.is_integer() && rust_decimal::Decimal::from(*a) == *b
+            }
             (Self::Long(a), Value::Long(b)) => a == b,
             (Self::Long(a), Value::Int(b)) => *a == (*b as i64),
             (Self::Int(a), Value::Long(b)) => (*a as i64) == *b,
@@ -64,6 +67,9 @@ impl IndexKey {
             (Self::Guid(a), Value::Guid(b)) => a == b,
             (Self::OptionSet(a), Value::OptionSet(b)) => *a == b.value,
             (Self::OptionSet(a), Value::Int(b)) => *a == *b,
+            (Self::OptionSet(a), Value::Decimal(b)) => {
+                b.is_integer() && rust_decimal::Decimal::from(*a) == *b
+            }
             _ => false,
         }
     }
@@ -194,6 +200,17 @@ impl FindCache for LiveFindCache {
 
         let mut matches: Vec<usize> = Vec::new();
 
+        log::debug!(
+            "find_where: entity={}, conditions={:?}, indexed_condition={:?}, candidates={:?}",
+            entity,
+            conditions
+                .iter()
+                .map(|(f, v)| format!("{}={:?}", f, v))
+                .collect::<Vec<_>>(),
+            indexed_condition,
+            candidate_indices.as_ref().map(|c| c.len()),
+        );
+
         if let Some(candidates) = candidate_indices {
             // Filter candidates against remaining conditions
             for &idx in &candidates {
@@ -202,10 +219,18 @@ impl FindCache for LiveFindCache {
                     if Some(i) == indexed_condition {
                         return true; // already matched by index
                     }
-                    match traverse_path(record, field) {
+                    let actual = traverse_path(record, field);
+                    let eq = match actual {
                         Some(actual) => values_equal(actual, expected),
                         None => matches!(expected, Value::Null),
+                    };
+                    if !eq {
+                        log::debug!(
+                            "find_where: candidate {} field={} expected={:?} actual={:?} → mismatch",
+                            idx, field, expected, actual
+                        );
                     }
+                    eq
                 });
                 if all_match {
                     matches.push(idx);

@@ -17,6 +17,25 @@ pub fn values_equal(a: &Value, b: &Value) -> bool {
         (Value::Long(a), Value::Int(b)) => *a == (*b as i64),
         (Value::Float(a), Value::Float(b)) => (a - b).abs() < f64::EPSILON,
         (Value::Decimal(a), Value::Decimal(b)) => a == b,
+        // Decimal ↔ Int/Long coercion
+        (Value::Decimal(a), Value::Int(b)) => {
+            a.is_integer() && a == &rust_decimal::Decimal::from(*b)
+        }
+        (Value::Int(a), Value::Decimal(b)) => {
+            b.is_integer() && &rust_decimal::Decimal::from(*a) == b
+        }
+        (Value::Decimal(a), Value::Long(b)) => {
+            a.is_integer() && a == &rust_decimal::Decimal::from(*b)
+        }
+        (Value::Long(a), Value::Decimal(b)) => {
+            b.is_integer() && &rust_decimal::Decimal::from(*a) == b
+        }
+        (Value::Decimal(a), Value::OptionSet(b)) => {
+            a.is_integer() && a == &rust_decimal::Decimal::from(b.value)
+        }
+        (Value::OptionSet(a), Value::Decimal(b)) => {
+            b.is_integer() && &rust_decimal::Decimal::from(a.value) == b
+        }
         (Value::String(a), Value::String(b)) => a == b,
         (Value::Guid(a), Value::Guid(b)) => a == b,
         (Value::OptionSet(a), Value::OptionSet(b)) => a.value == b.value,
