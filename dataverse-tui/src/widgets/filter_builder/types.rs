@@ -6,10 +6,11 @@ use serde::{Deserialize, Serialize};
 /// A node in the filter tree.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub enum FilterNode {
-    /// A logical group (AND/OR) containing child nodes.
+    /// A logical group (AND/OR) containing child nodes, optionally negated (NOT).
     Group {
         id: usize,
         is_and: bool,
+        is_negated: bool,
         children: Vec<FilterNode>,
     },
     /// A leaf condition.
@@ -55,6 +56,7 @@ impl FilterNode {
             id,
             is_and,
             children,
+            ..
         } = self
         {
             if *id == target_id {
@@ -62,6 +64,25 @@ impl FilterNode {
             } else {
                 for child in children {
                     child.toggle_group(target_id);
+                }
+            }
+        }
+    }
+
+    /// Toggle NOT on the group with the given ID.
+    pub fn toggle_negation(&mut self, target_id: usize) {
+        if let Self::Group {
+            id,
+            is_negated,
+            children,
+            ..
+        } = self
+        {
+            if *id == target_id {
+                *is_negated = !*is_negated;
+            } else {
+                for child in children {
+                    child.toggle_negation(target_id);
                 }
             }
         }

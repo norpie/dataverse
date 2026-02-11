@@ -205,16 +205,22 @@ pub fn row_to_entity_mapping(row: &Row) -> Result<EntityMapping, rusqlite::Error
         .map_err(repo_err_to_rusqlite)?;
 
     let source_filter_blob: Option<Vec<u8>> = row.get(18)?;
-    let source_filter = source_filter_blob
-        .map(|b| deserialize_filter_node(&b))
-        .transpose()
-        .map_err(repo_err_to_rusqlite)?;
+    let source_filter = source_filter_blob.and_then(|b| match deserialize_filter_node(&b) {
+        Ok(node) => Some(node),
+        Err(e) => {
+            log::warn!("Failed to deserialize source filter, treating as empty: {e}");
+            None
+        }
+    });
 
     let target_filter_blob: Option<Vec<u8>> = row.get(19)?;
-    let target_filter = target_filter_blob
-        .map(|b| deserialize_filter_node(&b))
-        .transpose()
-        .map_err(repo_err_to_rusqlite)?;
+    let target_filter = target_filter_blob.and_then(|b| match deserialize_filter_node(&b) {
+        Ok(node) => Some(node),
+        Err(e) => {
+            log::warn!("Failed to deserialize target filter, treating as empty: {e}");
+            None
+        }
+    });
 
     let test_guids_json: Option<String> = row.get(20)?;
     let test_guids = test_guids_json

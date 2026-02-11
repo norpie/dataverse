@@ -106,6 +106,13 @@ pub fn filter_to_fetchxml(filter: &Filter) -> String {
             let conditions: Vec<_> = filters.iter().map(filter_to_fetchxml).collect();
             format!(r#"<filter type="or">{}</filter>"#, conditions.join(""))
         }
+        Filter::Not(inner) => {
+            // FetchXML doesn't have a general NOT wrapper; render as a negated filter group.
+            format!(
+                r#"<filter type="and" isnotof="1">{}</filter>"#,
+                filter_to_fetchxml(inner)
+            )
+        }
         Filter::Raw(raw) => raw.clone(),
     }
 }

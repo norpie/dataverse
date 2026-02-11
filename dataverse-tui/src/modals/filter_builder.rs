@@ -69,6 +69,7 @@ impl FilterBuilderModal {
         bind("escape", cancel);
         bind("a", add_condition);
         bind("g", add_group);
+        bind("n", toggle_not);
         bind("d", delete_item);
     }
 
@@ -117,6 +118,7 @@ impl FilterBuilderModal {
         let node = FilterNode::Group {
             id,
             is_and: true,
+            is_negated: false,
             children: Vec::new(),
         };
 
@@ -138,6 +140,19 @@ impl FilterBuilderModal {
 
         self.filter.update(|f| {
             f.remove_node(id);
+        });
+        self.rebuild_tree();
+    }
+
+    #[handler]
+    async fn toggle_not(&self) {
+        let focused = self.tree_state.with_ref(|s| s.focused_key.clone());
+        let Some(FilterTreeKey::Group(id)) = focused else {
+            return;
+        };
+
+        self.filter.update(|f| {
+            f.toggle_negation(id);
         });
         self.rebuild_tree();
     }
@@ -200,6 +215,7 @@ impl FilterBuilderModal {
                 *f = FilterNode::Group {
                     id: root_id,
                     is_and: true,
+                    is_negated: false,
                     children: vec![node],
                 };
                 return;
@@ -255,6 +271,10 @@ impl FilterBuilderModal {
                         row (gap: 1) {
                             text (content: "g") style (fg: primary)
                             text (content: "group") style (fg: muted)
+                        }
+                        row (gap: 1) {
+                            text (content: "n") style (fg: primary)
+                            text (content: "not") style (fg: muted)
                         }
                         row (gap: 1) {
                             text (content: "d") style (fg: primary)

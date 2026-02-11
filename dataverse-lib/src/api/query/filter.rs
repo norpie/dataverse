@@ -62,6 +62,8 @@ pub enum Filter {
     And(Vec<Filter>),
     /// Logical OR of multiple filters.
     Or(Vec<Filter>),
+    /// Logical NOT: `not (filter)`.
+    Not(Box<Filter>),
     /// Raw OData/FetchXML filter string (escape hatch).
     Raw(String),
 }

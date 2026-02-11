@@ -70,6 +70,7 @@ pub fn filter_to_odata(filter: &Filter) -> String {
             let parts: Vec<_> = filters.iter().map(filter_to_odata).collect();
             format!("({})", parts.join(" or "))
         }
+        Filter::Not(inner) => format!("not ({})", filter_to_odata(inner)),
         Filter::Raw(raw) => raw.clone(),
     }
 }

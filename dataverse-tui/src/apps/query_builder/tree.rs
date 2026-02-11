@@ -74,8 +74,12 @@ pub enum QueryTreeNode {
     EntityValue(String),
     /// A selected field in the Select section.
     SelectField { index: usize, name: String },
-    /// A filter group (AND/OR).
-    FilterGroup { id: usize, is_and: bool },
+    /// A filter group (AND/OR), optionally negated (NOT).
+    FilterGroup {
+        id: usize,
+        is_and: bool,
+        is_negated: bool,
+    },
     /// A filter condition leaf.
     FilterCondition {
         id: usize,
@@ -136,8 +140,15 @@ impl TreeItem for QueryTreeNode {
             Self::SelectField { name, .. } => Element::text(name)
                 .style(Style::new().foreground(Color::var("secondary")))
                 .style_focused(Style::new().foreground(Color::var("text.inverted"))),
-            Self::FilterGroup { is_and, .. } => {
-                let label = if *is_and { "AND" } else { "OR" };
+            Self::FilterGroup {
+                is_and, is_negated, ..
+            } => {
+                let label = match (*is_negated, *is_and) {
+                    (false, true) => "AND",
+                    (false, false) => "OR",
+                    (true, true) => "NOT AND",
+                    (true, false) => "NOT OR",
+                };
                 Element::text(label)
                     .style(Style::new().foreground(Color::var("accent")).bold())
                     .style_focused(Style::new().foreground(Color::var("text.inverted")).bold())
@@ -300,6 +311,7 @@ fn build_filter_node(node: &FilterNode) -> Option<TreeNode<QueryTreeNode>> {
         FilterNode::Group {
             id,
             is_and,
+            is_negated,
             children,
         } => {
             let child_nodes: Vec<TreeNode<QueryTreeNode>> =
@@ -308,6 +320,7 @@ fn build_filter_node(node: &FilterNode) -> Option<TreeNode<QueryTreeNode>> {
                 QueryTreeNode::FilterGroup {
                     id: *id,
                     is_and: *is_and,
+                    is_negated: *is_negated,
                 },
                 child_nodes,
             ))

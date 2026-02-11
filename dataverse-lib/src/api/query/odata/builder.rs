@@ -427,6 +427,9 @@ fn transform_filter(filter: &Filter, lookup_fields: &HashSet<String>) -> Filter 
                 .map(|f| transform_filter(f, lookup_fields))
                 .collect(),
         ),
+        Filter::Not(inner) => {
+            Filter::Not(Box::new(transform_filter(inner, lookup_fields)))
+        }
         Filter::Raw(s) => Filter::Raw(s.clone()),
     }
 }

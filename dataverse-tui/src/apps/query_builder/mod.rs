@@ -104,6 +104,7 @@ impl QueryBuilder {
         bind("a", add_node);
         bind("g", add_group);
         bind("t", toggle_group);
+        bind("n", toggle_not);
         bind("d", delete_node);
         bind("s", save_query);
         bind("l", load_query);
@@ -135,6 +136,20 @@ impl QueryBuilder {
         };
 
         self.query.update(|q| q.filter.toggle_group(id));
+    }
+
+    /// Toggle NOT on the focused filter group.
+    #[handler]
+    async fn toggle_not(&self) {
+        let Some(key) = self.focused_key() else {
+            return;
+        };
+
+        let tree::QueryTreeKey::FilterGroup(id) = key else {
+            return;
+        };
+
+        self.query.update(|q| q.filter.toggle_negation(id));
     }
 
     /// Delete the focused node.
@@ -281,6 +296,7 @@ impl QueryBuilder {
             let new_group = FilterNode::Group {
                 id,
                 is_and: true,
+                is_negated: false,
                 children: vec![],
             };
             match group_id {
@@ -293,6 +309,7 @@ impl QueryBuilder {
                     q.filter = FilterNode::Group {
                         id: root_id,
                         is_and: true,
+                        is_negated: false,
                         children: vec![new_group],
                     };
                 }
@@ -845,6 +862,7 @@ impl QueryBuilder {
                             q.filter = FilterNode::Group {
                                 id: root_id,
                                 is_and: true,
+                                is_negated: false,
                                 children: vec![node],
                             };
                         }

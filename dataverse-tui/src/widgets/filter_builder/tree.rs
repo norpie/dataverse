@@ -29,8 +29,12 @@ impl ToString for FilterTreeKey {
 /// A tree item for rendering filter nodes.
 #[derive(Clone, Debug)]
 pub enum FilterTreeItem {
-    /// A filter group (AND/OR).
-    Group { id: usize, is_and: bool },
+    /// A filter group (AND/OR), optionally negated (NOT).
+    Group {
+        id: usize,
+        is_and: bool,
+        is_negated: bool,
+    },
     /// A filter condition leaf.
     Condition {
         id: usize,
@@ -52,8 +56,15 @@ impl TreeItem for FilterTreeItem {
 
     fn render(&self) -> Element {
         match self {
-            Self::Group { is_and, .. } => {
-                let label = if *is_and { "AND" } else { "OR" };
+            Self::Group {
+                is_and, is_negated, ..
+            } => {
+                let label = match (*is_negated, *is_and) {
+                    (false, true) => "AND",
+                    (false, false) => "OR",
+                    (true, true) => "NOT AND",
+                    (true, false) => "NOT OR",
+                };
                 Element::text(label)
                     .style(Style::new().foreground(Color::var("accent")).bold())
                     .style_focused(Style::new().foreground(Color::var("text.inverted")).bold())
@@ -123,6 +134,7 @@ fn build_filter_node(node: &FilterNode) -> Option<TreeNode<FilterTreeItem>> {
         FilterNode::Group {
             id,
             is_and,
+            is_negated,
             children,
         } => {
             let child_nodes: Vec<TreeNode<FilterTreeItem>> =
@@ -131,6 +143,7 @@ fn build_filter_node(node: &FilterNode) -> Option<TreeNode<FilterTreeItem>> {
                 FilterTreeItem::Group {
                     id: *id,
                     is_and: *is_and,
+                    is_negated: *is_negated,
                 },
                 child_nodes,
             ))

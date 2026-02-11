@@ -33,7 +33,10 @@ pub fn convert_filter(node: &FilterNode) -> Result<Option<Filter>, ConvertError>
             Ok(Some(convert_condition(field, *operator, value)?))
         }
         FilterNode::Group {
-            is_and, children, ..
+            is_and,
+            is_negated,
+            children,
+            ..
         } => {
             let filters: Vec<Filter> = children
                 .iter()
@@ -44,15 +47,19 @@ pub fn convert_filter(node: &FilterNode) -> Result<Option<Filter>, ConvertError>
                 return Ok(None);
             }
 
-            if filters.len() == 1 {
-                return Ok(filters.into_iter().next());
-            }
-
-            Ok(Some(if *is_and {
+            let combined = if filters.len() == 1 {
+                filters.into_iter().next().unwrap()
+            } else if *is_and {
                 Filter::and(filters)
             } else {
                 Filter::or(filters)
-            }))
+            };
+
+            if *is_negated {
+                Ok(Some(Filter::Not(Box::new(combined))))
+            } else {
+                Ok(Some(combined))
+            }
         }
     }
 }
