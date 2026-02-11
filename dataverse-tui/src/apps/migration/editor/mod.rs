@@ -1382,7 +1382,7 @@ impl MigrationEditor {
                 self.add_transform_impl(gx).await;
             }
             MigrationTreeNode::Transform(tn) => {
-                self.edit_transform_impl(&tn.transform, gx).await;
+                self.edit_transform_impl(&tn, gx).await;
             }
             MigrationTreeNode::MatchBranch(mb) => {
                 self.edit_match_branch_impl(&mb, gx).await;

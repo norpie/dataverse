@@ -61,6 +61,26 @@ pub(super) fn compute_chain_types(
                             Some(ValueType::simple(AttributeType::String))
                         }
                     },
+                    Ok(PathExpr::SystemVarNavigation {
+                        var,
+                        path: field_path,
+                    }) => {
+                        // #value.field — navigate from #value's type
+                        if var != SystemVar::Value {
+                            return None;
+                        }
+                        // current_type is #value's type; resolve the entity then walk the path
+                        let targets = match current_type {
+                            ValueType::Known(FieldType::Lookup { targets, .. }) => targets,
+                            _ => return None,
+                        };
+                        let target_entity = if targets.len() == 1 {
+                            &targets[0]
+                        } else {
+                            return None;
+                        };
+                        resolve_variable_navigation_from_entity(target_entity, &field_path, ctx)
+                    }
                     Ok(PathExpr::Field(_)) => {
                         // Field path - resolve from metadata cache.
                         resolve_field_path(path, source_entity, ctx)
@@ -175,6 +195,34 @@ fn resolve_variable_navigation(
                     .join(".")
             ),
         )
+    }
+}
+
+/// Resolve a field path starting from a known entity.
+///
+/// Used for `#value.field` navigation where the starting entity is derived
+/// from `#value`'s type.
+fn resolve_variable_navigation_from_entity(
+    target_entity: &str,
+    field_path: &FieldPath,
+    ctx: &TreeBuildContext,
+) -> Option<ValueType> {
+    if field_path.segments.len() == 1 {
+        let segment = &field_path.segments[0];
+        let fields = ctx.field_type_cache.get(target_entity)?;
+        let field_type = fields.get(&segment.field)?;
+        Some(ValueType::Known(field_type.clone()))
+    } else {
+        let path_str = format!(
+            "#value.{}",
+            field_path
+                .segments
+                .iter()
+                .map(|s| s.field.as_str())
+                .collect::<Vec<_>>()
+                .join(".")
+        );
+        resolve_dotted_field_path(field_path, target_entity, ctx, &path_str)
     }
 }
 

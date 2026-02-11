@@ -470,6 +470,9 @@ fn analyze_path_string(
         PathExpr::SystemVar(_) => {
             // System vars don't require fetching
         }
+        PathExpr::SystemVarNavigation { .. } => {
+            // #value.field — #value is a pipeline value, no source fields to fetch
+        }
         PathExpr::EntityRef { inner, .. } => {
             // The inner path may reference source fields that need fetching.
             // Re-dispatch on the inner path expression.

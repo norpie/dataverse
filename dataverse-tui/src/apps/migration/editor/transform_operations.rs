@@ -35,6 +35,7 @@ use crate::modals::ConfirmModal;
 
 use super::MigrationEditor;
 use super::insert_target::InsertTarget;
+use super::tree::TransformNode;
 
 impl MigrationEditor {
     /// Add a new transform based on the focused node.
@@ -379,7 +380,9 @@ impl MigrationEditor {
     // =========================================================================
 
     /// Edit a transform by showing the appropriate modal based on its type.
-    pub(super) async fn edit_transform_impl(&self, transform: &Transform, gx: &GlobalContext) {
+    pub(super) async fn edit_transform_impl(&self, tn: &TransformNode, gx: &GlobalContext) {
+        let transform = &tn.transform;
+
         // Get the entity mapping for this transform
         let entity_mapping = self
             .entity_mappings
@@ -396,7 +399,7 @@ impl MigrationEditor {
         let source_entity = entity_mapping.source_entity;
 
         // Get variables with type info for this entity mapping
-        let variables: Vec<VariableInfo> = self
+        let mut variables: Vec<VariableInfo> = self
             .variables
             .get()
             .iter()
@@ -406,6 +409,14 @@ impl MigrationEditor {
                 declared_type: v.declared_type.clone(),
             })
             .collect();
+
+        // Add #value as a variable so autocomplete can navigate into it
+        if let Some(input_type) = &tn.input_type {
+            variables.push(VariableInfo {
+                name: "#value".to_string(),
+                declared_type: input_type.clone(),
+            });
+        }
 
         // Dispatch based on transform type
         match &transform.data {

@@ -4,8 +4,10 @@ use dataverse_lib::DataverseClient;
 use dataverse_lib::model::FieldType;
 use dataverse_lib::model::ValueType;
 use dataverse_lib::model::metadata::AttributeType;
+use dataverse_lib::model::metadata::EntityMetadata;
 use log::debug;
 
+use crate::apps::migration::types::SystemVar;
 use crate::apps::migration::validation::PathExpr;
 use crate::apps::migration::validation::parse_path;
 
@@ -41,6 +43,23 @@ impl PathSuggestionGenerator {
             target_client,
             source_entity,
             variables,
+        }
+    }
+
+    /// Fetch entity metadata, trying the source client first, then the target client.
+    ///
+    /// This handles entities that exist only in the target environment
+    /// (e.g., after a Find transform sets `#value` to a target entity record).
+    async fn fetch_metadata(&self, entity: &str) -> Option<EntityMetadata> {
+        match self.client.metadata().entity(entity).await {
+            Ok(m) => Some(m),
+            Err(_) => {
+                debug!(
+                    "[PathSuggestions] Entity '{}' not found on source, trying target client",
+                    entity
+                );
+                self.target_client.metadata().entity(entity).await.ok()
+            }
         }
     }
 
@@ -208,8 +227,11 @@ impl PathSuggestionGenerator {
             }
         }
 
-        // Add variables
+        // Add variables (skip #value — it's handled as a system variable below)
         for var in &self.variables {
+            if var.name.starts_with('#') {
+                continue;
+            }
             let value = format!("${}", var.name);
             let type_hint = format!("{}", var.declared_type);
             let label = format!("${} ({})", var.name, type_hint);
@@ -218,7 +240,6 @@ impl PathSuggestionGenerator {
 
         // Add system variables
         for sysvar in &[
-            ("value", "current pipeline value"),
             ("type", "value type"),
             ("index", "record index"),
             ("source_entity", "source entity name"),
@@ -227,6 +248,20 @@ impl PathSuggestionGenerator {
             let value = format!("#{}", sysvar.0);
             let label = format!("#{} ({})", sysvar.0, sysvar.1);
             suggestions.push((value, label));
+        }
+
+        // Add #value with its type info if available
+        if let Some(value_var) = self.variables.iter().find(|v| v.name == "#value") {
+            let type_hint = format!("{}", value_var.declared_type);
+            suggestions.push((
+                "#value".to_string(),
+                format!("#value ({})", type_hint),
+            ));
+        } else {
+            suggestions.push((
+                "#value".to_string(),
+                "#value (current pipeline value)".to_string(),
+            ));
         }
 
         suggestions
@@ -254,10 +289,10 @@ impl PathSuggestionGenerator {
             }
         };
 
-        // Fetch fields of target entity
+        // Fetch fields of the resolved entity (tries source then target client).
         let mut suggestions = Vec::new();
-        match self.client.metadata().entity(target_entity.as_str()).await {
-            Ok(metadata) => {
+        match self.fetch_metadata(target_entity.as_str()).await {
+            Some(metadata) => {
                 debug!(
                     "[PathSuggestions] Fetched metadata for {}, {} attributes",
                     target_entity,
@@ -269,10 +304,10 @@ impl PathSuggestionGenerator {
                     suggestions.push((attr.logical_name.clone(), type_str));
                 }
             }
-            Err(e) => {
+            None => {
                 debug!(
-                    "[PathSuggestions] Failed to fetch metadata for {}: {:?}",
-                    target_entity, e
+                    "[PathSuggestions] Failed to fetch metadata for {} from both clients",
+                    target_entity
                 );
             }
         }
@@ -370,33 +405,25 @@ impl PathSuggestionGenerator {
 
     /// Fetch the target entities for a lookup field on an entity.
     async fn fetch_field_targets(&self, entity: &str, field: &str) -> Vec<(String, String)> {
-        match self.client.metadata().entity(entity).await {
-            Ok(metadata) => {
-                debug!("[PathSuggestions] Fetched metadata for {}", entity);
-                if let Some(attr) = metadata.attribute(field) {
-                    debug!(
-                        "[PathSuggestions] Found attribute {:?} with targets: {:?}",
-                        field, attr.targets
-                    );
-                    return attr
-                        .targets
-                        .iter()
-                        .map(|target| {
-                            let label = format!("{} (target)", target);
-                            (target.clone(), label)
-                        })
-                        .collect();
-                } else {
-                    debug!(
-                        "[PathSuggestions] Attribute {:?} not found on {}",
-                        field, entity
-                    );
-                }
-            }
-            Err(e) => {
+        if let Some(metadata) = self.fetch_metadata(entity).await {
+            debug!("[PathSuggestions] Fetched metadata for {}", entity);
+            if let Some(attr) = metadata.attribute(field) {
                 debug!(
-                    "[PathSuggestions] Failed to fetch metadata for {}: {:?}",
-                    entity, e
+                    "[PathSuggestions] Found attribute {:?} with targets: {:?}",
+                    field, attr.targets
+                );
+                return attr
+                    .targets
+                    .iter()
+                    .map(|target| {
+                        let label = format!("{} (target)", target);
+                        (target.clone(), label)
+                    })
+                    .collect();
+            } else {
+                debug!(
+                    "[PathSuggestions] Attribute {:?} not found on {}",
+                    field, entity
                 );
             }
         }
@@ -462,9 +489,28 @@ impl PathSuggestionGenerator {
                 );
                 (start_entity, path)
             }
-            PathExpr::SystemVar(_) => {
-                debug!("[PathSuggestions] System variables don't resolve to entities");
+            PathExpr::SystemVar(var) => {
+                if var == SystemVar::Value {
+                    // #value used as a base for dot navigation — resolve its entity
+                    debug!("[PathSuggestions] #value as base, resolving to target entity");
+                    return self.resolve_variable_target_entity("#value", None);
+                }
+                debug!("[PathSuggestions] System variable #{:?} doesn't resolve to entities", var);
                 return None;
+            }
+            PathExpr::SystemVarNavigation { var, path } => {
+                // #value.field — resolve #value's type from variables
+                if var != SystemVar::Value {
+                    debug!("[PathSuggestions] Only #value supports navigation");
+                    return None;
+                }
+                let start_entity = self.resolve_variable_target_entity("#value", None)?;
+                debug!(
+                    "[PathSuggestions] Parsed #value navigation -> entity '{}', {} path segments",
+                    start_entity,
+                    path.segments.len()
+                );
+                (start_entity, path.clone())
             }
             PathExpr::EntityRef { .. } => {
                 debug!("[PathSuggestions] Entity refs don't resolve to navigable entities");
@@ -479,12 +525,12 @@ impl PathSuggestionGenerator {
                 segment.field, segment.target, segment.optional
             );
 
-            let metadata = match self.client.metadata().entity(current_entity.as_str()).await {
-                Ok(m) => m,
-                Err(e) => {
+            let metadata = match self.fetch_metadata(current_entity.as_str()).await {
+                Some(m) => m,
+                None => {
                     debug!(
-                        "[PathSuggestions] Failed to get metadata for {}: {:?}",
-                        current_entity, e
+                        "[PathSuggestions] Failed to get metadata for {} from either client",
+                        current_entity
                     );
                     return None;
                 }

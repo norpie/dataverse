@@ -103,6 +103,40 @@ pub fn resolve_path(
             (TransformResult::Value(value), None)
         }
 
+        PathExpr::SystemVarNavigation { var, path } => {
+            // Only #value supports field navigation
+            let base_value = match var {
+                SystemVar::Value => ctx.value,
+                _ => {
+                    return (
+                        TransformResult::Error(TransformError::type_mismatch(
+                            "navigable system variable",
+                            format!("#{:?}", var),
+                        )),
+                        None,
+                    );
+                }
+            };
+
+            match base_value {
+                Value::Record(record) => {
+                    let initial_entity = Some(record.entity().clone());
+                    traverse_record(record, path, initial_entity)
+                }
+                Value::Null => (
+                    TransformResult::Error(TransformError::type_mismatch("Record", "Null")),
+                    None,
+                ),
+                other => (
+                    TransformResult::Error(TransformError::type_mismatch(
+                        "Record",
+                        format!("{other:?}"),
+                    )),
+                    None,
+                ),
+            }
+        }
+
         PathExpr::EntityRef { entity, inner } => {
             // Resolve the inner path to get a UUID
             let (inner_result, _) = resolve_path(inner, ctx);

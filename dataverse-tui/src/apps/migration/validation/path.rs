@@ -36,6 +36,13 @@ pub enum PathExpr {
     },
     /// System variable: `#value`, `#type`, `#index`
     SystemVar(SystemVar),
+    /// System variable with field navigation: `#value.field`, `#value.lookup.field`
+    SystemVarNavigation {
+        /// The system variable (only `Value` supports navigation).
+        var: SystemVar,
+        /// The field path to navigate after resolving the system variable.
+        path: FieldPath,
+    },
     /// Entity reference construction: `/contact($var)`, `/account(parentaccountid)`
     ///
     /// Resolves the inner path to a UUID and wraps it in an EntityReference.
@@ -158,13 +165,29 @@ pub fn parse_path(input: &str) -> Result<PathExpr, ParseError> {
         return parse_variable_path(rest);
     }
 
-    // System variable: #name
+    // System variable: #name or #name.field (navigation)
     if let Some(rest) = input.strip_prefix('#') {
-        let name = rest.trim();
-        if name.is_empty() {
+        let rest = rest.trim();
+        if rest.is_empty() {
             return Err(ParseError::EmptySystemVar);
         }
-        let sys_var = parse_system_var(name)?;
+
+        // Check for dot navigation: #value.field
+        if let Some(dot_pos) = rest.find('.') {
+            let var_name = &rest[..dot_pos];
+            let sys_var = parse_system_var(var_name)?;
+            let field_part = &rest[dot_pos + 1..];
+            if field_part.is_empty() {
+                return Err(ParseError::EmptyFieldName);
+            }
+            let segments = parse_field_path(field_part)?;
+            return Ok(PathExpr::SystemVarNavigation {
+                var: sys_var,
+                path: FieldPath { segments },
+            });
+        }
+
+        let sys_var = parse_system_var(rest)?;
         return Ok(PathExpr::SystemVar(sys_var));
     }
 
@@ -374,6 +397,20 @@ impl PathValidator {
         }
     }
 
+    /// Fetch entity metadata, trying the source client first, then the target client.
+    ///
+    /// Handles entities that may only exist in the target environment
+    /// (e.g., `#value` after a Find resolves to a target entity).
+    async fn fetch_metadata(
+        &self,
+        entity: &str,
+    ) -> Option<dataverse_lib::model::metadata::EntityMetadata> {
+        match self.client.metadata().entity(entity).await {
+            Ok(m) => Some(m),
+            Err(_) => self.target_client.metadata().entity(entity).await.ok(),
+        }
+    }
+
     /// Validate a path expression.
     pub async fn validate(&self, path: &str, ctx: &ValidationContext) -> ValidationResult {
         // Parse the path
@@ -389,6 +426,9 @@ impl PathValidator {
                     .await
             }
             PathExpr::SystemVar(var) => self.validate_system_var(var),
+            PathExpr::SystemVarNavigation { var, path } => {
+                self.validate_system_var_navigation(var, &path, ctx).await
+            }
             PathExpr::Field(field_path) => self.validate_field_path(&field_path, ctx).await,
             PathExpr::EntityRef { entity, inner } => {
                 self.validate_entity_ref(&entity, &inner, ctx).await
@@ -426,6 +466,63 @@ impl PathValidator {
             description: description.to_string(),
             value_type: None,
         })
+    }
+
+    /// Validate a system variable with field navigation: `#value.field`.
+    async fn validate_system_var_navigation(
+        &self,
+        var: SystemVar,
+        field_path: &FieldPath,
+        ctx: &ValidationContext,
+    ) -> ValidationResult {
+        // Only #value supports navigation
+        if var != SystemVar::Value {
+            return ValidationResult::Invalid(format!(
+                "System variable #{:?} does not support field navigation",
+                var
+            ));
+        }
+
+        // Look up #value's type from context (pushed as a VariableInfo)
+        let value_type = match ctx.variable_types.get("#value") {
+            Some(vt) => vt,
+            None => {
+                return ValidationResult::Invalid(
+                    "#value type is unknown in this context — cannot navigate fields".to_string(),
+                );
+            }
+        };
+
+        // #value must be a Lookup to navigate into
+        let targets = match value_type {
+            ValueType::Known(FieldType::Lookup { targets, .. }) => targets,
+            _ => {
+                return ValidationResult::Invalid(format!(
+                    "#value has type {} which is not a Lookup — cannot navigate fields",
+                    value_type
+                ));
+            }
+        };
+
+        if targets.is_empty() {
+            return ValidationResult::Invalid(
+                "#value is a Lookup with no target entities".to_string(),
+            );
+        }
+
+        let start_entity = if targets.len() == 1 {
+            targets[0].clone()
+        } else {
+            return ValidationResult::Invalid(format!(
+                "#value is polymorphic (targets: {}) — field navigation not supported",
+                targets.join(", ")
+            ));
+        };
+
+        let mut path_parts = vec![format!("#value ({})", start_entity)];
+
+        self.validate_field_path_from(&start_entity, field_path, &mut path_parts)
+            .await
     }
 
     /// Validate a variable navigation path: `$var.field`, `$var[target].field`.
@@ -517,6 +614,9 @@ impl PathValidator {
                     .await
             }
             PathExpr::SystemVar(var) => self.validate_system_var(*var),
+            PathExpr::SystemVarNavigation { var, path } => {
+                self.validate_system_var_navigation(*var, path, ctx).await
+            }
             PathExpr::Field(field_path) => self.validate_field_path(field_path, ctx).await,
             PathExpr::EntityRef { entity: e, inner: i } => {
                 Box::pin(self.validate_entity_ref(e, i, ctx)).await
@@ -577,13 +677,13 @@ impl PathValidator {
         for (i, segment) in field_path.segments.iter().enumerate() {
             let is_last = i == field_path.segments.len() - 1;
 
-            // Fetch entity metadata
-            let metadata = match self.client.metadata().entity(current_entity.as_str()).await {
-                Ok(m) => m,
-                Err(e) => {
+            // Fetch entity metadata (try source, then target environment)
+            let metadata = match self.fetch_metadata(current_entity.as_str()).await {
+                Some(m) => m,
+                None => {
                     return ValidationResult::Invalid(format!(
-                        "Failed to fetch metadata for '{}': {}",
-                        current_entity, e
+                        "Entity '{}' not found in either environment",
+                        current_entity
                     ));
                 }
             };

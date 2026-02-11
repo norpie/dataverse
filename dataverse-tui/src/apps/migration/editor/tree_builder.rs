@@ -49,6 +49,8 @@ use super::tree_types::compute_chain_types;
 pub(super) struct TypeAccumulator {
     /// Transform ID -> output type after that transform.
     pub(super) transform_types: HashMap<i64, ValueType>,
+    /// Transform ID -> input type (#value) going into that transform.
+    pub(super) transform_input_types: HashMap<i64, ValueType>,
     /// All type warnings across all chains.
     pub(super) warnings: Vec<TypeWarning>,
     /// Variable name -> resolved output type of its chain.
@@ -59,6 +61,11 @@ impl TypeAccumulator {
     /// Get the output type for a transform.
     pub(super) fn type_for(&self, transform_id: i64) -> Option<&ValueType> {
         self.transform_types.get(&transform_id)
+    }
+
+    /// Get the input type (#value) for a transform.
+    pub(super) fn input_type_for(&self, transform_id: i64) -> Option<&ValueType> {
+        self.transform_input_types.get(&transform_id)
     }
 
     /// Get the warning for a transform, if any.
@@ -73,6 +80,12 @@ impl TypeAccumulator {
         self.transform_types.extend(
             chain_result
                 .transform_types
+                .iter()
+                .map(|(k, v)| (*k, v.clone())),
+        );
+        self.transform_input_types.extend(
+            chain_result
+                .transform_input_types
                 .iter()
                 .map(|(k, v)| (*k, v.clone())),
         );
@@ -552,16 +565,19 @@ fn check_field_mapping_output(
 
 /// Create a `MigrationTreeNode::Transform` with embedded type tracking data.
 fn make_transform_node(t: Transform, ctx: &TreeBuildContext) -> MigrationTreeNode {
+    let input_type = ctx.types.input_type_for(t.id).cloned();
     let output_type = ctx.types.type_for(t.id).cloned();
     let warning = ctx.types.warning_for(t.id).cloned();
     log::debug!(
-        "type_tracking: tree node for transform {} -> type={:?}, warning={}",
+        "type_tracking: tree node for transform {} -> input={:?}, output={:?}, warning={}",
         t.id,
+        input_type,
         output_type,
         warning.is_some(),
     );
     MigrationTreeNode::Transform(TransformNode {
         transform: t,
+        input_type,
         output_type,
         warning,
     })

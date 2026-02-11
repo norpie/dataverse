@@ -55,6 +55,8 @@ pub struct EntityMappingNode {
 pub struct TransformNode {
     /// The underlying transform data.
     pub transform: Transform,
+    /// The input type (#value) going into this transform (from type propagation).
+    pub input_type: Option<ValueType>,
     /// The resolved output type of this transform (from type propagation).
     pub output_type: Option<ValueType>,
     /// Type warning if this transform has an input type mismatch.
