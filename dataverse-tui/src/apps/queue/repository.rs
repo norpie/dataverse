@@ -165,6 +165,49 @@ impl QueueRepository {
         Ok(())
     }
 
+    /// Delete multiple queue items by ID (skips running items).
+    /// Returns the number of items actually deleted.
+    pub async fn delete_many(&self, ids: Vec<QueueItemId>) -> Result<usize, RepositoryError> {
+        if ids.is_empty() {
+            return Ok(0);
+        }
+
+        let placeholders = ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+
+        let affected = self
+            .client
+            .conn(move |conn| {
+                let sql = format!(
+                    "DELETE FROM queue_items WHERE id IN ({}) AND status != 'running'",
+                    placeholders
+                );
+                let params: Vec<Box<dyn rusqlite::types::ToSql>> =
+                    ids.into_iter().map(|id| Box::new(id) as _).collect();
+                let params_refs: Vec<&dyn rusqlite::types::ToSql> =
+                    params.iter().map(|p| p.as_ref()).collect();
+                conn.execute(&sql, params_refs.as_slice())
+            })
+            .await?;
+
+        Ok(affected)
+    }
+
+    /// Delete all non-running queue items with a specific source.
+    /// Returns the number of items deleted.
+    pub async fn delete_by_source(&self, source: String) -> Result<usize, RepositoryError> {
+        let affected = self
+            .client
+            .conn(move |conn| {
+                conn.execute(
+                    "DELETE FROM queue_items WHERE source = ?1 AND status != 'running'",
+                    rusqlite::params![source],
+                )
+            })
+            .await?;
+
+        Ok(affected)
+    }
+
     /// List items with optional filtering.
     pub async fn list(&self, filter: ListFilter) -> Result<Vec<QueueItem>, RepositoryError> {
         let statuses = filter.statuses.map(|s| {

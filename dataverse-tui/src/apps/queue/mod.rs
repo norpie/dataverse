@@ -25,10 +25,17 @@ use crate::systems::client_management::EnvironmentRemoved;
 
 use api::AddItems;
 use api::AddItemsResponse;
+use api::DeleteItems;
+use api::DeleteItemsBySource;
+use api::DeleteItemsResponse;
+use api::GetItemResults;
+use api::GetItemResultsResponse;
 use api::GetQueueStatus;
+use api::PauseQueue;
 use api::QueueItemCompleted;
 use api::QueueReady;
 use api::QueueStatusChanged;
+use api::ResumeQueue;
 use repository::ListFilter;
 use repository::NewQueueItem;
 use repository::QueueRepository;
@@ -720,6 +727,124 @@ impl Queue {
     #[request_handler]
     async fn handle_get_status(&self, _request: GetQueueStatus) -> StatusCounts {
         self.status_counts.get()
+    }
+
+    #[request_handler]
+    async fn handle_get_item_results(
+        &self,
+        request: GetItemResults,
+    ) -> GetItemResultsResponse {
+        use api::ExecutionWithResults;
+
+        let Some(repo) = self.repository.get() else {
+            return GetItemResultsResponse {
+                executions: vec![],
+            };
+        };
+
+        let executions = match repo.get_executions(request.item_id).await {
+            Ok(execs) => execs,
+            Err(e) => {
+                log::error!("Failed to get executions for item {}: {}", request.item_id, e);
+                return GetItemResultsResponse {
+                    executions: vec![],
+                };
+            }
+        };
+
+        let mut result = Vec::with_capacity(executions.len());
+        for execution in executions {
+            let results = repo
+                .get_operation_results(execution.id)
+                .await
+                .unwrap_or_default();
+            result.push(ExecutionWithResults {
+                execution,
+                results,
+            });
+        }
+
+        GetItemResultsResponse {
+            executions: result,
+        }
+    }
+
+    #[request_handler]
+    async fn handle_pause_queue(&self, _request: PauseQueue, gx: &GlobalContext) {
+        if self.is_running.get() {
+            self.is_running.set(false);
+            self.publish_status_changed(gx);
+        }
+    }
+
+    #[request_handler]
+    async fn handle_resume_queue(&self, _request: ResumeQueue, gx: &GlobalContext) {
+        if !self.is_running.get() {
+            self.is_running.set(true);
+            self.failure_count.set(0);
+            self.try_start_next_items(gx).await;
+            self.publish_status_changed(gx);
+        }
+    }
+
+    #[request_handler]
+    async fn handle_delete_items(
+        &self,
+        request: DeleteItems,
+        gx: &GlobalContext,
+    ) -> DeleteItemsResponse {
+        let Some(repo) = self.repository.get() else {
+            return DeleteItemsResponse { deleted: 0 };
+        };
+
+        let deleted = match repo.delete_many(request.ids).await {
+            Ok(count) => count,
+            Err(e) => {
+                log::error!("Failed to delete queue items: {}", e);
+                0
+            }
+        };
+
+        if deleted > 0 {
+            if let Ok(counts) = repo.count_by_status().await {
+                self.status_counts.set(counts.clone());
+                self.publish_status_changed(gx);
+            }
+            self.refresh_source_options(&repo).await;
+            self.refresh_tree(&repo).await;
+        }
+
+        DeleteItemsResponse { deleted }
+    }
+
+    #[request_handler]
+    async fn handle_delete_items_by_source(
+        &self,
+        request: DeleteItemsBySource,
+        gx: &GlobalContext,
+    ) -> DeleteItemsResponse {
+        let Some(repo) = self.repository.get() else {
+            return DeleteItemsResponse { deleted: 0 };
+        };
+
+        let deleted = match repo.delete_by_source(request.source).await {
+            Ok(count) => count,
+            Err(e) => {
+                log::error!("Failed to delete queue items by source: {}", e);
+                0
+            }
+        };
+
+        if deleted > 0 {
+            if let Ok(counts) = repo.count_by_status().await {
+                self.status_counts.set(counts.clone());
+                self.publish_status_changed(gx);
+            }
+            self.refresh_source_options(&repo).await;
+            self.refresh_tree(&repo).await;
+        }
+
+        DeleteItemsResponse { deleted }
     }
 
     // =========================================================================

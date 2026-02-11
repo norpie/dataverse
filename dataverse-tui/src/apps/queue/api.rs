@@ -47,6 +47,61 @@ pub struct AddItemsResponse {
 #[response(StatusCounts)]
 pub struct GetQueueStatus;
 
+/// Request to get operation results for a completed queue item.
+#[derive(Request)]
+#[response(GetItemResultsResponse)]
+pub struct GetItemResults {
+    /// The queue item ID to get results for.
+    pub item_id: QueueItemId,
+}
+
+/// Response containing execution records and their operation results.
+pub struct GetItemResultsResponse {
+    /// Execution records with their per-operation results.
+    pub executions: Vec<ExecutionWithResults>,
+}
+
+/// An execution record paired with its operation results.
+pub struct ExecutionWithResults {
+    /// The execution record.
+    pub execution: super::types::ExecutionRecord,
+    /// Per-operation results from this execution.
+    pub results: Vec<super::types::OperationResultRecord>,
+}
+
+/// Request to pause the queue (stop picking up new items).
+#[derive(Request)]
+#[response(())]
+pub struct PauseQueue;
+
+/// Request to resume the queue (start picking up new items).
+#[derive(Request)]
+#[response(())]
+pub struct ResumeQueue;
+
+/// Request to delete specific queue items by ID.
+/// Items that are currently running cannot be deleted.
+#[derive(Request)]
+#[response(DeleteItemsResponse)]
+pub struct DeleteItems {
+    /// IDs of items to delete.
+    pub ids: Vec<QueueItemId>,
+}
+
+/// Response to DeleteItems request.
+pub struct DeleteItemsResponse {
+    /// Number of items actually deleted.
+    pub deleted: usize,
+}
+
+/// Request to delete all non-running queue items with a specific source.
+#[derive(Request)]
+#[response(DeleteItemsResponse)]
+pub struct DeleteItemsBySource {
+    /// Source identifier to match.
+    pub source: String,
+}
+
 // =============================================================================
 // Events
 // =============================================================================
