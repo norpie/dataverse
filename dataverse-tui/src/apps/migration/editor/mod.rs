@@ -907,7 +907,13 @@ impl MigrationEditor {
 
     #[handler]
     async fn run_execution(&self, gx: &GlobalContext) {
-        let counts = self.preview_counts.get();
+        // Aggregate counts across ALL entities in the phase, not just the current one
+        let counts = self.preview_results.with_ref(|results| {
+            results
+                .iter()
+                .map(|mc| mc.count_operations())
+                .fold(OperationTypeCounts::default(), |a, b| a + b)
+        });
         let phase_name = self.preview_phase_name.get();
 
         let has_work = counts.create + counts.update + counts.associate

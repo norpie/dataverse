@@ -146,6 +146,25 @@ pub struct OperationTypeCounts {
     pub error: usize,
 }
 
+impl std::ops::Add for OperationTypeCounts {
+    type Output = Self;
+
+    fn add(self, rhs: Self) -> Self {
+        Self {
+            create: self.create + rhs.create,
+            update: self.update + rhs.update,
+            skip: self.skip + rhs.skip,
+            delete: self.delete + rhs.delete,
+            deactivate: self.deactivate + rhs.deactivate,
+            associate: self.associate + rhs.associate,
+            disassociate: self.disassociate + rhs.disassociate,
+            ignore_source: self.ignore_source + rhs.ignore_source,
+            ignore_target: self.ignore_target + rhs.ignore_target,
+            error: self.error + rhs.error,
+        }
+    }
+}
+
 // =============================================================================
 // Input
 // =============================================================================
