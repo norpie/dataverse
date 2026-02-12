@@ -161,7 +161,7 @@ pub fn execute_chain(chain: &[ChainItem], ctx: &mut TransformContext<'_>) -> Tra
     }
 
     for (i, item) in chain.iter().enumerate() {
-        log::debug!(
+        log::trace!(
             "execute_chain: step {} transform={:?}, #value={:?}",
             i,
             std::mem::discriminant(&item.data),
@@ -171,13 +171,13 @@ pub fn execute_chain(chain: &[ChainItem], ctx: &mut TransformContext<'_>) -> Tra
 
         match result {
             TransformResult::Value(ref value) => {
-                log::debug!("execute_chain: step {} result=Value({:?})", i, value);
+                log::trace!("execute_chain: step {} result=Value({:?})", i, value);
                 // Update #value for next transform
                 ctx.system_vars.value = value.clone();
             }
             // Exit and Error propagate immediately
             TransformResult::Exit(_) | TransformResult::Error(_) => {
-                log::debug!("execute_chain: step {} result={:?}", i, result);
+                log::trace!("execute_chain: step {} result={:?}", i, result);
                 return result;
             }
         }

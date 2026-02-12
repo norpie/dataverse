@@ -25,6 +25,7 @@ use std::collections::HashSet;
 use dataverse_lib::model::Entity;
 use dataverse_lib::model::Record;
 use dataverse_lib::DataverseClient;
+use rayon::prelude::*;
 
 use self::analysis::AnalysisInput;
 use self::cache::LiveFindCache;
@@ -394,7 +395,7 @@ pub fn execute_mapping(
     let path_cache = build_path_cache(variables, field_mappings);
 
     let record_results = source_records
-        .iter()
+        .par_iter()
         .enumerate()
         .map(|(index, source)| {
             let system_vars = SystemVars::new(
