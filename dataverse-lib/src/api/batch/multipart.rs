@@ -104,7 +104,7 @@ fn operation_parts<'a>(
         } => {
             let entity_set = resolve_entity_set(entity);
             let url = format!("{}/{}", base_url, entity_set);
-            let body = serde_json::to_string(&record.fields()).unwrap_or_default();
+            let body = serde_json::to_string(record).unwrap_or_default();
             ("POST", url, Some(body), options)
         }
 
@@ -143,7 +143,7 @@ fn operation_parts<'a>(
         } => {
             let entity_set = resolve_entity_set(entity);
             let url = format!("{}/{}({})", base_url, entity_set, id);
-            let body = serde_json::to_string(&record.fields()).unwrap_or_default();
+            let body = serde_json::to_string(record).unwrap_or_default();
             ("PATCH", url, Some(body), options)
         }
 
@@ -165,7 +165,7 @@ fn operation_parts<'a>(
         } => {
             let entity_set = resolve_entity_set(entity);
             let url = format!("{}/{}({})", base_url, entity_set, id);
-            let body = serde_json::to_string(&record.fields()).unwrap_or_default();
+            let body = serde_json::to_string(record).unwrap_or_default();
             ("PATCH", url, Some(body), options)
         }
 

@@ -15,6 +15,7 @@ use dataverse_lib::api::Batch;
 use dataverse_lib::api::Op;
 use dataverse_lib::model::metadata::ExecutionMetadata;
 use dataverse_lib::model::metadata::ManyToManyRelationship;
+use dataverse_lib::model::types::EntityBinding;
 use dataverse_lib::model::types::OptionSetValue;
 use dataverse_lib::model::Entity;
 use dataverse_lib::model::Record;
@@ -362,7 +363,9 @@ pub fn generate_update_pass(
 
                 let mut update_record = Record::new(Entity::set(&pending.entity_set));
                 for (field, value) in &pending.lookup_fields {
-                    update_record.insert(field.clone(), value.clone());
+                    if let Some(bound) = to_binding(value, field, meta, metadata) {
+                        update_record.insert(field.clone(), bound);
+                    }
                 }
 
                 let op = Op::update(Entity::set(&pending.entity_set), target_id, update_record)
@@ -394,6 +397,15 @@ pub fn generate_update_pass(
                 if diff.field == "statecode" || diff.field == "statuscode" {
                     continue;
                 }
+
+                // Lookup fields need conversion to EntityBinding for @odata.bind format
+                if is_lookup_value(&diff.new_value, &diff.field, meta) {
+                    if let Some(bound) = to_binding(&diff.new_value, &diff.field, meta, metadata) {
+                        update_record.insert(diff.field.clone(), bound);
+                    }
+                    continue;
+                }
+
                 update_record.insert(diff.field.clone(), diff.new_value.clone());
             }
 
@@ -751,6 +763,62 @@ fn is_lookup_value(value: &Value, field: &str, meta: &ExecutionMetadata) -> bool
         Value::EntityReference { .. } => true,
         Value::Null => meta.lookup_attributes.contains(field),
         _ => false,
+    }
+}
+
+/// Convert a lookup value to the write format (`EntityBinding`) that serializes
+/// as `"field@odata.bind"`.
+///
+/// - `EntityReference` → `EntityBinding` (resolves logical entity name → set name via metadata)
+/// - `Null` → `EntityBinding::null(set_name)` (serializes as `"field@odata.bind": null`)
+/// - Already an `EntityBinding` → returned as-is
+///
+/// `field` and `entity_meta` are used to resolve the target entity set name for
+/// null lookups (which don't carry type information).
+///
+/// Returns `None` if the entity reference target is not in the metadata map
+/// (unknown entity — can't resolve set name).
+fn to_binding(
+    value: &Value,
+    field: &str,
+    entity_meta: &ExecutionMetadata,
+    metadata: &HashMap<String, ExecutionMetadata>,
+) -> Option<Value> {
+    match value {
+        Value::EntityReference(er) => {
+            let logical_name = er.entity.name();
+            let target_meta = metadata.get(logical_name);
+            match target_meta {
+                Some(meta) => Some(Value::EntityBinding(er.bind(&meta.entity_set_name))),
+                None => {
+                    log::warn!(
+                        "Cannot resolve entity set name for lookup target '{}' — \
+                         entity not in metadata. Skipping lookup field.",
+                        logical_name
+                    );
+                    None
+                }
+            }
+        }
+        Value::Null => {
+            // Resolve the target entity set name from lookup_targets
+            let set_name = entity_meta
+                .lookup_targets
+                .get(field)
+                .and_then(|targets| targets.first())
+                .and_then(|logical| metadata.get(logical))
+                .map(|m| m.entity_set_name.as_str())
+                .unwrap_or("");
+            Some(Value::EntityBinding(EntityBinding::null(set_name)))
+        }
+        Value::EntityBinding(_) => Some(value.clone()),
+        other => {
+            log::warn!(
+                "to_binding called with non-lookup value: {:?}",
+                other.type_name()
+            );
+            None
+        }
     }
 }
 

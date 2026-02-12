@@ -64,13 +64,14 @@ pub fn format_value(value: &Value) -> FormattedValue {
         Value::Guid(g) => FormattedValue::same(g.to_string()),
         Value::DateTime(dt) => FormattedValue::same(dt.format("%Y-%m-%d %H:%M").to_string()),
         Value::Money(m) => FormattedValue::same(format!("{}", m.value())),
-        Value::EntityReference(r) => FormattedValue::new(
-            match &r.name {
-                Some(name) => format!("{} ({})", name, r.id),
-                None => r.id.to_string(),
-            },
-            r.id.to_string(),
-        ),
+        Value::EntityReference(r) => {
+            let entity_name = r.entity.name();
+            let display = match &r.name {
+                Some(name) => format!("{} /{}({})", name, entity_name, r.id),
+                None => format!("/{}({})", entity_name, r.id),
+            };
+            FormattedValue::new(display, r.id.to_string())
+        }
         Value::OptionSet(o) => FormattedValue::new(
             o.label.clone().unwrap_or_else(|| o.value.to_string()),
             o.value.to_string(),
@@ -92,9 +93,16 @@ pub fn format_value(value: &Value) -> FormattedValue {
                 .collect::<Vec<_>>()
                 .join(", "),
         ),
-        Value::EntityBinding(b) => {
-            FormattedValue::new(b.id.to_string(), format!("/{}({})", b.set_name, b.id))
-        }
+        Value::EntityBinding(b) => match b.id {
+            Some(id) => {
+                let bind = format!("/{}({})", b.set_name, id);
+                FormattedValue::new(bind.clone(), bind)
+            }
+            None => {
+                let bind = format!("/{}(null)", b.set_name);
+                FormattedValue::new(bind.clone(), bind)
+            }
+        },
         Value::File(f) => FormattedValue::new(
             f.file_name.clone().unwrap_or_else(|| "[file]".to_string()),
             f.id.to_string(),

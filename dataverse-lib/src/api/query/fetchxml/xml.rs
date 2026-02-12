@@ -132,7 +132,7 @@ pub fn value_to_fetchxml(value: &Value) -> String {
         Value::Money(m) => m.value().to_string(),
         Value::OptionSet(o) => o.value.to_string(),
         Value::EntityReference(r) => r.id.to_string(),
-        Value::EntityBinding(b) => b.id.to_string(),
+        Value::EntityBinding(b) => b.id.map(|id| id.to_string()).unwrap_or_default(),
         // Complex types aren't typically used in filters
         Value::MultiOptionSet(_)
         | Value::File(_)

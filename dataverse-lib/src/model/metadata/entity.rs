@@ -3,6 +3,7 @@
 use serde::Deserialize;
 use serde::Serialize;
 
+use std::collections::HashMap;
 use std::collections::HashSet;
 
 use super::AttributeMetadata;
@@ -182,6 +183,8 @@ pub struct ExecutionMetadata {
     pub primary_key: String,
     /// Logical names of all lookup attributes (Lookup, Customer, Owner).
     pub lookup_attributes: HashSet<String>,
+    /// For each lookup attribute, the target entity logical names.
+    pub lookup_targets: HashMap<String, Vec<String>>,
     /// Whether this entity is an intersect (junction) entity.
     pub is_intersect: bool,
     /// For junction entities: the N:N relationship this entity backs.
@@ -341,11 +344,19 @@ impl EntityMetadata {
             })?
             .value;
 
+        let lookup_targets: HashMap<String, Vec<String>> = self
+            .attributes
+            .iter()
+            .filter(|a| a.is_lookup())
+            .map(|a| (a.logical_name.clone(), a.targets.clone()))
+            .collect();
+
         Ok(ExecutionMetadata {
             logical_name: self.logical_name.clone(),
             entity_set_name: self.entity_set_name.clone(),
             primary_key: self.primary_id_attribute.clone(),
             lookup_attributes,
+            lookup_targets,
             is_intersect: self.is_intersect,
             junction_relationship,
             default_active_statuscode,

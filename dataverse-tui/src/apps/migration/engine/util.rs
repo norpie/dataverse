@@ -46,8 +46,8 @@ pub fn values_equal(a: &Value, b: &Value) -> bool {
         // Lookup comparisons — compare by GUID regardless of read/write format
         (Value::EntityReference(a), Value::EntityReference(b)) => a.id == b.id,
         (Value::EntityBinding(a), Value::EntityBinding(b)) => a.id == b.id,
-        (Value::EntityReference(a), Value::EntityBinding(b)) => a.id == b.id,
-        (Value::EntityBinding(a), Value::EntityReference(b)) => a.id == b.id,
+        (Value::EntityReference(a), Value::EntityBinding(b)) => Some(a.id) == b.id,
+        (Value::EntityBinding(a), Value::EntityReference(b)) => a.id == Some(b.id),
         _ => false,
     }
 }

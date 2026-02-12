@@ -65,7 +65,7 @@ impl EntityReference {
     /// You must provide the entity set name (e.g., "contacts" for the "contact" entity).
     pub fn bind(&self, set_name: impl Into<String>) -> EntityBinding {
         EntityBinding {
-            id: self.id,
+            id: Some(self.id),
             set_name: set_name.into(),
         }
     }
@@ -87,8 +87,8 @@ impl EntityReference {
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct EntityBinding {
-    /// The unique identifier of the record to bind to.
-    pub id: Uuid,
+    /// The unique identifier of the record to bind to, or `None` to clear the lookup.
+    pub id: Option<Uuid>,
     /// The entity set name (e.g., "contacts").
     pub set_name: String,
 }
@@ -97,13 +97,21 @@ impl EntityBinding {
     /// Creates a new entity binding.
     pub fn new(set_name: impl Into<String>, id: Uuid) -> Self {
         Self {
-            id,
+            id: Some(id),
             set_name: set_name.into(),
         }
     }
 
-    /// Returns the OData bind path (e.g., "/contacts(abc-123)").
-    pub fn odata_bind(&self) -> String {
-        format!("/{}({})", self.set_name, self.id)
+    /// Creates a null binding that clears the lookup field.
+    pub fn null(set_name: impl Into<String>) -> Self {
+        Self {
+            id: None,
+            set_name: set_name.into(),
+        }
+    }
+
+    /// Returns the OData bind path (e.g., "/contacts(abc-123)"), or `None` for a null binding.
+    pub fn odata_bind(&self) -> Option<String> {
+        self.id.map(|id| format!("/{}({})", self.set_name, id))
     }
 }

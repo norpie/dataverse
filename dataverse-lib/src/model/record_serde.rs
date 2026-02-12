@@ -72,6 +72,7 @@ impl Serialize for Record {
             for (key, value) in &self.fields {
                 match value {
                     // EntityBinding serializes as "field@odata.bind": "/entities(guid)"
+                    // Null bindings serialize as "field@odata.bind": null (clears the lookup)
                     Value::EntityBinding(binding) => {
                         let bind_key = format!("{}@odata.bind", key);
                         map.serialize_entry(&bind_key, &binding.odata_bind())?;
@@ -90,9 +91,9 @@ impl Serialize for Record {
                             .join(",");
                         map.serialize_entry(key, &csv)?;
                     }
-                    // Null values should not be serialized (Dataverse ignores them anyway)
+                    // Null values serialize as JSON null (explicitly clears the field)
                     Value::Null => {
-                        // Skip null values in serialization
+                        map.serialize_entry(key, &())?;
                     }
                     // All other values serialize normally
                     _ => {
