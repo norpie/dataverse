@@ -62,15 +62,16 @@ pub fn build_source_task(config: &FetchTaskConfig<'_>) -> Result<QueryBuilder, B
     );
 
     // Apply filter: test GUIDs override source filter entirely
-    if let Some(guids) = config.test_guids {
-        if !guids.is_empty() {
-            let pk = config.source_primary_key;
-            let filters: Vec<Filter> = guids
-                .iter()
-                .map(|guid| Filter::eq(pk, Value::Guid(guid.parse().unwrap_or_default())))
-                .collect();
-            query = query.filter(Filter::or(filters));
-        }
+    let use_test_guids = config.test_guids.map(|g| !g.is_empty()).unwrap_or(false);
+
+    if use_test_guids {
+        let guids = config.test_guids.unwrap(); // safe: we just checked is_empty
+        let pk = config.source_primary_key;
+        let filters: Vec<Filter> = guids
+            .iter()
+            .map(|guid| Filter::eq(pk, Value::Guid(guid.parse().unwrap_or_default())))
+            .collect();
+        query = query.filter(Filter::or(filters));
     } else if let Some(filter_node) = config.source_filter {
         if let Some(filter) = convert_filter(filter_node).map_err(BuildError::FilterConvert)? {
             query = query.filter(filter);

@@ -738,8 +738,9 @@ impl MigrationEditor {
         use crate::modals::LoadingUpdater;
 
         // 4-7: Split results, build cache, transform, compare — single modal
-        let comparisons: Vec<MappingComparison> = gx.modal(LoadingModal::run_with_updates(
+        let comparisons: Result<Vec<MappingComparison>, String> = gx.modal(LoadingModal::run_with_default_updates(
             "Processing...",
+            || Err("Cancelled".to_string()),
             |updater: LoadingUpdater| async move {
                 // 4. Split results
                 updater.update("Splitting fetch results...");
@@ -802,7 +803,7 @@ impl MigrationEditor {
                         .map(|s| s.as_str())
                         .unwrap_or("id");
 
-                    let mut comparison = pipeline::compare_mapping_results(
+                    let mut comparison = match pipeline::compare_mapping_results(
                         pipeline::ComparisonInput {
                             source_records: &source_records,
                             mapping_result,
@@ -817,7 +818,15 @@ impl MigrationEditor {
                             no_match_fallback: em.no_match_fallback,
                             orphan_strategy: em.orphan_strategy,
                         },
-                    );
+                    ) {
+                        Ok(c) => c,
+                        Err(e) => {
+                            return Err(format!(
+                                "Failed to compare {}: {}",
+                                em.name, e
+                            ));
+                        }
+                    };
 
                     // Remap operations for junction target entities
                     if junction_fk_attrs.contains_key(&em.target_entity) {
@@ -830,9 +839,20 @@ impl MigrationEditor {
                     // source_records + target_records dropped HERE
                 }
 
-                comparisons
+                Ok(comparisons)
             },
         )).await;
+
+        let comparisons = match comparisons {
+            Ok(c) => c,
+            Err(e) => {
+                gx.modal(ErrorAcknowledgmentModal::new(
+                    "Comparison Error".into(),
+                    e,
+                )).await;
+                return;
+            }
+        };
 
         // Store results and navigate
         self.preview_phase_id.set(phase_id);

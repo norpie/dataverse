@@ -19,6 +19,7 @@ use self::matching::build_target_index;
 use self::matching::match_target;
 use self::matching::MatchInput;
 use self::matching::MatchResult;
+use self::matching::TargetIndexError;
 
 use super::engine::record::RecordResult;
 use super::engine::ChainItem;
@@ -209,12 +210,12 @@ pub struct CompareInput<'a> {
 /// 3. Determine operation (Create, Update, Skip, Error)
 ///
 /// Then detect orphaned target records and apply orphan strategy.
-pub fn compare_mapping(input: CompareInput<'_>) -> MappingComparison {
+pub fn compare_mapping(input: CompareInput<'_>) -> Result<MappingComparison, TargetIndexError> {
     let mut records = Vec::with_capacity(input.source_records.len());
     let mut matched_target_ids: HashSet<Uuid> = HashSet::new();
 
     // Build target index once for O(1) SameId lookups
-    let target_index = build_target_index(input.target_records, input.target_primary_key);
+    let target_index = build_target_index(input.target_records, input.target_primary_key)?;
 
     for (source_record, record_result) in input
         .source_records
@@ -315,12 +316,12 @@ pub fn compare_mapping(input: CompareInput<'_>) -> MappingComparison {
         input.orphan_strategy,
     );
 
-    MappingComparison {
+    Ok(MappingComparison {
         source_entity: input.source_entity.to_string(),
         target_entity: input.target_entity.to_string(),
         records,
         orphans,
-    }
+    })
 }
 
 /// Detect orphaned target records and apply the orphan strategy.
@@ -485,7 +486,7 @@ mod tests {
         )];
 
         let input = default_compare_input(&sources, results, &targets);
-        let comparison = compare_mapping(input);
+        let comparison = compare_mapping(input).unwrap();
 
         assert_eq!(comparison.records.len(), 1);
         assert_eq!(comparison.records[0].operation, OperationType::Skip);
@@ -508,7 +509,7 @@ mod tests {
         )];
 
         let input = default_compare_input(&sources, results, &targets);
-        let comparison = compare_mapping(input);
+        let comparison = compare_mapping(input).unwrap();
 
         assert_eq!(comparison.records.len(), 1);
         assert_eq!(comparison.records[0].operation, OperationType::Update);
@@ -528,7 +529,7 @@ mod tests {
 
         let mut input = default_compare_input(&sources, results, &targets);
         input.no_match_fallback = NoMatchFallback::Create;
-        let comparison = compare_mapping(input);
+        let comparison = compare_mapping(input).unwrap();
 
         assert_eq!(comparison.records[0].operation, OperationType::Create);
         assert!(comparison.records[0].target_id.is_none());
@@ -542,7 +543,7 @@ mod tests {
 
         let mut input = default_compare_input(&sources, results, &targets);
         input.no_match_fallback = NoMatchFallback::Error;
-        let comparison = compare_mapping(input);
+        let comparison = compare_mapping(input).unwrap();
 
         assert!(matches!(
             comparison.records[0].operation,
@@ -558,7 +559,7 @@ mod tests {
 
         let mut input = default_compare_input(&sources, results, &targets);
         input.no_match_fallback = NoMatchFallback::Ignore;
-        let comparison = compare_mapping(input);
+        let comparison = compare_mapping(input).unwrap();
 
         assert_eq!(comparison.records[0].operation, OperationType::IgnoreSource);
     }
@@ -586,7 +587,7 @@ mod tests {
         )];
 
         let input = default_compare_input(&sources, results, &targets);
-        let comparison = compare_mapping(input);
+        let comparison = compare_mapping(input).unwrap();
 
         assert!(matches!(
             comparison.records[0].operation,
@@ -609,7 +610,7 @@ mod tests {
 
         let mut input = default_compare_input(&sources, results, &targets);
         input.orphan_strategy = OrphanStrategy::Delete;
-        let comparison = compare_mapping(input);
+        let comparison = compare_mapping(input).unwrap();
 
         assert_eq!(comparison.orphans.len(), 1);
         assert_eq!(comparison.orphans[0].operation, OperationType::Delete);
@@ -627,7 +628,7 @@ mod tests {
 
         let mut input = default_compare_input(&sources, results, &targets);
         input.orphan_strategy = OrphanStrategy::Deactivate;
-        let comparison = compare_mapping(input);
+        let comparison = compare_mapping(input).unwrap();
 
         assert_eq!(comparison.orphans.len(), 1);
         assert_eq!(comparison.orphans[0].operation, OperationType::Deactivate);
@@ -644,7 +645,7 @@ mod tests {
 
         let mut input = default_compare_input(&sources, results, &targets);
         input.orphan_strategy = OrphanStrategy::Ignore;
-        let comparison = compare_mapping(input);
+        let comparison = compare_mapping(input).unwrap();
 
         assert_eq!(comparison.orphans.len(), 1);
         assert_eq!(comparison.orphans[0].operation, OperationType::IgnoreTarget);
@@ -658,7 +659,7 @@ mod tests {
 
         let mut input = default_compare_input(&sources, results, &targets);
         input.orphan_strategy = OrphanStrategy::Error;
-        let comparison = compare_mapping(input);
+        let comparison = compare_mapping(input).unwrap();
 
         assert_eq!(comparison.orphans.len(), 1);
         assert!(matches!(
@@ -690,7 +691,7 @@ mod tests {
         let mut input = default_compare_input(&sources, results, &targets);
         input.no_match_fallback = NoMatchFallback::Create;
         input.orphan_strategy = OrphanStrategy::Delete;
-        let comparison = compare_mapping(input);
+        let comparison = compare_mapping(input).unwrap();
 
         assert_eq!(comparison.records[0].operation, OperationType::Skip);
         assert_eq!(comparison.records[1].operation, OperationType::Update);
@@ -737,7 +738,7 @@ mod tests {
         let mut input = default_compare_input(&sources, results, &targets);
         input.strategy = MatchStrategy::Find;
         input.match_conditions = &conditions;
-        let comparison = compare_mapping(input);
+        let comparison = compare_mapping(input).unwrap();
 
         assert_eq!(comparison.records[0].operation, OperationType::Skip);
         assert_eq!(comparison.records[0].target_id, Some(id(10)));

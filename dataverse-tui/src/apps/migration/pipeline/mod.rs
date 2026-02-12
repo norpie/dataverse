@@ -38,6 +38,7 @@ use self::fetch::BuildError;
 use self::fetch::FetchTaskConfig;
 
 use super::comparison::compare_mapping;
+use super::comparison::matching::TargetIndexError;
 use super::comparison::CompareInput;
 use super::comparison::MappingComparison;
 use super::engine::record::execute_record;
@@ -598,7 +599,9 @@ pub struct ComparisonInput<'a> {
 ///
 /// Consumes the mapping result, moving field data into comparisons
 /// instead of cloning.
-pub fn compare_mapping_results(input: ComparisonInput<'_>) -> MappingComparison {
+pub fn compare_mapping_results(
+    input: ComparisonInput<'_>,
+) -> Result<MappingComparison, TargetIndexError> {
     compare_mapping(CompareInput {
         source_records: input.source_records,
         record_results: input.mapping_result.record_results,
@@ -992,7 +995,7 @@ mod tests {
             orphan_strategy: OrphanStrategy::Delete,
         };
 
-        let comparison = compare_mapping_results(comparison_input);
+        let comparison = compare_mapping_results(comparison_input).unwrap();
 
         use crate::apps::migration::comparison::OperationType;
 

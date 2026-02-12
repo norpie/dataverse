@@ -60,19 +60,71 @@ pub type TargetIndex = HashMap<Uuid, usize>;
 /// Build a target index from target records for SameId matching.
 ///
 /// Maps each target record's ID to its index in the slice.
-/// Records without IDs are skipped.
-pub fn build_target_index(target_records: &[Record], primary_key: &str) -> TargetIndex {
+/// Returns an error if any target record has no resolvable ID.
+pub fn build_target_index(
+    target_records: &[Record],
+    primary_key: &str,
+) -> Result<TargetIndex, TargetIndexError> {
     let mut index = HashMap::with_capacity(target_records.len());
     for (i, target) in target_records.iter().enumerate() {
         let id = target.id().or_else(|| match target.get(primary_key) {
             Some(Value::Guid(id)) => Some(*id),
             _ => None,
         });
-        if let Some(id) = id {
-            index.insert(id, i);
+        match id {
+            Some(id) => {
+                // Log specific record we're looking for + first few
+                if id.to_string().contains("7cfac398") || i < 3 {
+                    log::warn!(
+                        "[matching] target_index[{}]: id={}, record.id()={:?}, field('{}')={:?}",
+                        i,
+                        id,
+                        target.id(),
+                        primary_key,
+                        target.get(primary_key),
+                    );
+                }
+                index.insert(id, i);
+            }
+            None => {
+                return Err(TargetIndexError {
+                    record_index: i,
+                    primary_key: primary_key.to_string(),
+                });
+            }
         }
     }
-    index
+    let search_id = Uuid::parse_str("7cfac398-9c0a-e511-80c2-005056a64738").ok();
+    let found = search_id
+        .as_ref()
+        .map(|id| index.contains_key(id))
+        .unwrap_or(false);
+    log::warn!(
+        "[matching] Built target index: {} entries, pk_field='{}', looking for 7cfac398-9c0a-e511-80c2-005056a64738? {}",
+        index.len(),
+        primary_key,
+        found,
+    );
+    Ok(index)
+}
+
+/// Error when a target record cannot be indexed.
+#[derive(Debug, Clone)]
+pub struct TargetIndexError {
+    /// Index of the problematic record in the target records slice.
+    pub record_index: usize,
+    /// The primary key field that was expected.
+    pub primary_key: String,
+}
+
+impl std::fmt::Display for TargetIndexError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "Target record at index {} has no ID (expected primary key field '{}' as Guid)",
+            self.record_index, self.primary_key,
+        )
+    }
 }
 
 /// Result of attempting to match a source record to a target record.
@@ -130,7 +182,16 @@ fn match_same_id(input: &MatchInput<'_>, target_index: &TargetIndex) -> MatchRes
     // O(1) HashMap lookup
     match target_index.get(&source_pk_value) {
         Some(&idx) => MatchResult::Found(idx),
-        None => MatchResult::NotFound,
+        None => {
+            log::debug!(
+                "[matching] SameId NotFound: source_pk={}, target_index_size={}, source_pk_field='{}', record.id()={:?}",
+                source_pk_value,
+                target_index.len(),
+                input.source_primary_key,
+                input.source_record.id(),
+            );
+            MatchResult::NotFound
+        }
     }
 }
 
@@ -243,7 +304,7 @@ mod tests {
             make_record("account", id(1), vec![("name", Value::from("Acme Target"))]),
         ];
 
-        let index = build_target_index(&targets, "accountid");
+        let index = build_target_index(&targets, "accountid").unwrap();
         let input = default_input(&source, MatchStrategy::SameId, &[]);
         let result = match_target(&input, &targets, &index);
 
@@ -258,7 +319,7 @@ mod tests {
             make_record("account", id(3), vec![]),
         ];
 
-        let index = build_target_index(&targets, "accountid");
+        let index = build_target_index(&targets, "accountid").unwrap();
         let input = default_input(&source, MatchStrategy::SameId, &[]);
         let result = match_target(&input, &targets, &index);
 
@@ -268,7 +329,7 @@ mod tests {
     #[test]
     fn same_id_empty_targets() {
         let source = make_record("account", id(1), vec![]);
-        let index = build_target_index(&[], "accountid");
+        let index = build_target_index(&[], "accountid").unwrap();
         let input = default_input(&source, MatchStrategy::SameId, &[]);
         let result = match_target(&input, &[], &index);
 
@@ -292,7 +353,7 @@ mod tests {
             })],
         )];
 
-        let index = build_target_index(&targets, "accountid");
+        let index = build_target_index(&targets, "accountid").unwrap();
         let input = default_input(&source, MatchStrategy::Find, &conditions);
         let result = match_target(&input, &targets, &index);
 
@@ -334,7 +395,7 @@ mod tests {
             ),
         ];
 
-        let index = build_target_index(&targets, "accountid");
+        let index = build_target_index(&targets, "accountid").unwrap();
         let input = default_input(&source, MatchStrategy::Find, &conditions);
         let result = match_target(&input, &targets, &index);
 
@@ -356,7 +417,7 @@ mod tests {
             })],
         )];
 
-        let index = build_target_index(&targets, "accountid");
+        let index = build_target_index(&targets, "accountid").unwrap();
         let input = default_input(&source, MatchStrategy::Find, &conditions);
         let result = match_target(&input, &targets, &index);
 
@@ -378,7 +439,7 @@ mod tests {
             })],
         )];
 
-        let index = build_target_index(&targets, "accountid");
+        let index = build_target_index(&targets, "accountid").unwrap();
         let input = default_input(&source, MatchStrategy::Find, &conditions);
         let result = match_target(&input, &targets, &index);
 
@@ -418,7 +479,7 @@ mod tests {
             })],
         )];
 
-        let index = build_target_index(&targets, "accountid");
+        let index = build_target_index(&targets, "accountid").unwrap();
         let input = default_input(&source, MatchStrategy::Find, &conditions);
         let result = match_target(&input, &targets, &index);
 
@@ -441,7 +502,7 @@ mod tests {
             })],
         )];
 
-        let index = build_target_index(&targets, "accountid");
+        let index = build_target_index(&targets, "accountid").unwrap();
         let input = default_input(&source, MatchStrategy::Find, &conditions);
         let result = match_target(&input, &targets, &index);
 
@@ -460,7 +521,7 @@ mod tests {
             })],
         )];
 
-        let index = build_target_index(&[], "accountid");
+        let index = build_target_index(&[], "accountid").unwrap();
         let input = default_input(&source, MatchStrategy::Find, &conditions);
         let result = match_target(&input, &[], &index);
 
@@ -478,7 +539,7 @@ mod tests {
             })],
         )];
 
-        let index = build_target_index(&[], "accountid");
+        let index = build_target_index(&[], "accountid").unwrap();
         let input = default_input(&source, MatchStrategy::Find, &conditions);
         let result = match_target(&input, &[], &index);
 
