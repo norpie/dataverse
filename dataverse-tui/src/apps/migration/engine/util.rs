@@ -1,5 +1,7 @@
 //! Shared utility functions for the transform engine.
 
+use std::sync::Arc;
+
 use dataverse_lib::model::Record;
 use dataverse_lib::model::Value;
 
@@ -123,7 +125,7 @@ mod tests {
         );
         let record = make_record(
             "account",
-            vec![("primarycontactid", Value::Record(Box::new(nested)))],
+            vec![("primarycontactid", Value::Record(Arc::new(nested)))],
         );
         assert_eq!(
             traverse_path(&record, "primarycontactid.emailaddress1"),
@@ -152,11 +154,11 @@ mod tests {
         let inner = make_record("account", vec![("name", Value::from("ParentCo"))]);
         let middle = make_record(
             "contact",
-            vec![("parentcustomerid", Value::Record(Box::new(inner)))],
+            vec![("parentcustomerid", Value::Record(Arc::new(inner)))],
         );
         let record = make_record(
             "account",
-            vec![("primarycontactid", Value::Record(Box::new(middle)))],
+            vec![("primarycontactid", Value::Record(Arc::new(middle)))],
         );
         assert_eq!(
             traverse_path(&record, "primarycontactid.parentcustomerid.name"),
@@ -169,7 +171,7 @@ mod tests {
         let nested = make_record("contact", vec![("fullname", Value::from("Alice"))]);
         let record = make_record(
             "account",
-            vec![("primarycontactid", Value::Record(Box::new(nested)))],
+            vec![("primarycontactid", Value::Record(Arc::new(nested)))],
         );
         // Field exists on nested record but we're asking for a different field
         assert_eq!(

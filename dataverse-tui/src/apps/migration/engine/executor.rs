@@ -3,6 +3,8 @@
 //! This module handles executing a sequence of transforms, passing the result
 //! of each transform to the next via the `#value` system variable.
 
+use std::sync::Arc;
+
 use dataverse_lib::model::Record;
 use dataverse_lib::model::Value;
 
@@ -420,7 +422,7 @@ fn execute_find(
     match result {
         Ok(record) => {
             ctx.system_vars.value_type = Some(record.entity().clone());
-            TransformResult::Value(Value::Record(Box::new(record)))
+            TransformResult::Value(Value::Record(record))
         }
         Err(find_err) => apply_find_fallback(find_err, entity, fallback, children, ctx),
     }
@@ -434,7 +436,7 @@ fn execute_find_where(
     entity: &str,
     children: &ChainChildren,
     ctx: &mut TransformContext<'_>,
-) -> Result<Record, FindError> {
+) -> Result<Arc<Record>, FindError> {
     let (conditions, _) = match children {
         ChainChildren::FindConditions(conds, default) => (conds, default),
         _ => return Err(FindError::Other("Find missing conditions".to_string())),
@@ -477,12 +479,15 @@ fn execute_find_lua(
     entity: &str,
     script: &str,
     ctx: &TransformContext<'_>,
-) -> Result<Record, FindError> {
+) -> Result<Arc<Record>, FindError> {
     let id = ctx.find_cache.find_lua(entity, script, ctx.source_record)?;
 
-    ctx.find_cache.get(entity, id).cloned().ok_or_else(|| {
-        FindError::Other(format!("Lua find returned ID {id} but record not in cache"))
-    })
+    ctx.find_cache
+        .get(entity, id)
+        .map(|r| Arc::new(r.clone()))
+        .ok_or_else(|| {
+            FindError::Other(format!("Lua find returned ID {id} but record not in cache"))
+        })
 }
 
 /// Apply fallback when find fails.

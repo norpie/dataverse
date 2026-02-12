@@ -1,5 +1,7 @@
 //! Value enum for dynamic field values
 
+use std::sync::Arc;
+
 use chrono::DateTime;
 use chrono::Utc;
 use rust_decimal::Decimal;
@@ -12,6 +14,7 @@ use super::types::ImageReference;
 use super::types::Money;
 use super::types::MultiSelectOptionSetValue;
 use super::types::OptionSetValue;
+use super::Record;
 
 /// A dynamic value that can hold any Dataverse field type.
 ///
@@ -83,9 +86,9 @@ pub enum Value {
     /// Image reference.
     Image(ImageReference),
     /// Nested record (from expanded navigation property).
-    Record(Box<super::Record>),
+    Record(Arc<Record>),
     /// Collection of records (from expanded collection navigation property).
-    Records(Vec<super::Record>),
+    Records(Vec<Record>),
     /// Fallback for unrecognized JSON values.
     Json(serde_json::Value),
 }

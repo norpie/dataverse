@@ -28,17 +28,19 @@ use std::fmt;
 
 use serde::Deserialize;
 use serde::Deserializer;
-use serde::Serialize;
-use serde::Serializer;
+use std::sync::Arc;
+
 use serde::de::MapAccess;
 use serde::de::Visitor;
 use serde::ser::SerializeMap;
+use serde::Serialize;
+use serde::Serializer;
 use uuid::Uuid;
 
+use super::types::EntityReference;
 use super::Entity;
 use super::Record;
 use super::Value;
-use super::types::EntityReference;
 
 // =============================================================================
 // Binary format helper (for bincode)
@@ -241,7 +243,7 @@ impl<'de> Visitor<'de> for RecordVisitor {
                 let nested_record = json_object_to_record(obj, entity, &lookup_logical_names);
                 record
                     .fields
-                    .insert(key.clone(), Value::Record(Box::new(nested_record)));
+                    .insert(key.clone(), Value::Record(Arc::new(nested_record)));
 
                 // Store formatted value if available
                 if let Some(formatted) = formatted_values.remove(&key) {
@@ -414,7 +416,7 @@ fn json_value_to_value(
             // Parse as a nested record with unknown entity type
             let nested =
                 json_object_to_record(obj, Entity::Logical(String::new()), lookup_logical_names);
-            Value::Record(Box::new(nested))
+            Value::Record(Arc::new(nested))
         }
     }
 }

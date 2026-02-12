@@ -4,6 +4,7 @@
 //! are stored and searched during transform execution.
 
 use std::collections::HashMap;
+use std::sync::Arc;
 use std::sync::Mutex;
 
 use dataverse_lib::model::Record;
@@ -80,12 +81,16 @@ type FieldIndex = HashMap<IndexKey, Vec<usize>>;
 
 /// In-memory find cache for resolving find() transforms against real data.
 ///
-/// Records are indexed by entity name with a secondary UUID index for O(1)
+/// Records are stored as `Arc<Record>` to avoid expensive deep clones
+/// when returning matches from `find_where`. The Arc is cheaply cloneable,
+/// and the underlying Record data is shared across all references.
+///
+/// Indexed by entity name with a secondary UUID index for O(1)
 /// lookups by ID and lazy single-field indexes for fast `find_where`.
 /// Populated from fetch modal results before transform execution begins.
 pub struct LiveFindCache {
-    /// Records indexed by entity logical name.
-    records: HashMap<String, Vec<Record>>,
+    /// Records indexed by entity logical name, wrapped in Arc for cheap sharing.
+    records: HashMap<String, Vec<Arc<Record>>>,
     /// Secondary index: entity → (UUID → index into records vec).
     id_index: HashMap<String, HashMap<Uuid, usize>>,
     /// Lazy single-field indexes: (entity, field) → (value → record indices).
@@ -111,13 +116,14 @@ impl LiveFindCache {
 
     /// Insert records for an entity into the cache.
     ///
-    /// Builds a UUID index for O(1) lookups by ID.
-    /// Clears any lazily-built field indexes for this entity.
-    /// If records already exist for this entity, they are replaced.
+    /// Wraps each record in `Arc` for cheap sharing. Builds a UUID index
+    /// for O(1) lookups by ID. Clears any lazily-built field indexes for
+    /// this entity. If records already exist for this entity, they are replaced.
     pub fn insert_records(&mut self, entity: impl Into<String>, records: Vec<Record>) {
         let entity = entity.into();
-        let mut index = HashMap::with_capacity(records.len());
-        for (i, record) in records.iter().enumerate() {
+        let arc_records: Vec<Arc<Record>> = records.into_iter().map(Arc::new).collect();
+        let mut index = HashMap::with_capacity(arc_records.len());
+        for (i, record) in arc_records.iter().enumerate() {
             if let Some(id) = record.id() {
                 index.insert(id, i);
             }
@@ -127,7 +133,7 @@ impl LiveFindCache {
         if let Ok(mut fi) = self.field_indexes.lock() {
             fi.retain(|(e, _), _| e != &entity);
         }
-        self.records.insert(entity, records);
+        self.records.insert(entity, arc_records);
     }
 
     /// Get or build a single-field index for an entity+field combination.
@@ -182,7 +188,7 @@ impl FindCache for LiveFindCache {
         &self,
         entity: &str,
         conditions: &[(String, Value)],
-    ) -> Result<Record, FindError> {
+    ) -> Result<Arc<Record>, FindError> {
         let records = self
             .records
             .get(entity)
@@ -254,7 +260,7 @@ impl FindCache for LiveFindCache {
 
         match matches.len() {
             0 => Err(FindError::NotFound),
-            1 => Ok(records[matches[0]].clone()),
+            1 => Ok(Arc::clone(&records[matches[0]])),
             n => Err(FindError::Multiple(n)),
         }
     }
@@ -289,8 +295,8 @@ impl FindCache for LiveFindCache {
             .create_table()
             .map_err(|e| FindError::LuaError(e.to_string()))?;
         for (i, record) in records.iter().enumerate() {
-            let record_json =
-                serde_json::to_value(record).map_err(|e| FindError::LuaError(e.to_string()))?;
+            let record_json = serde_json::to_value(record.as_ref())
+                .map_err(|e| FindError::LuaError(e.to_string()))?;
             let record_lua = runtime
                 .json_to_lua(&record_json)
                 .map_err(|e| FindError::LuaError(e.to_string()))?;
@@ -333,7 +339,7 @@ impl FindCache for LiveFindCache {
 
     fn get(&self, entity: &str, id: Uuid) -> Option<&Record> {
         let idx = *self.id_index.get(entity)?.get(&id)?;
-        self.records.get(entity)?.get(idx)
+        self.records.get(entity)?.get(idx).map(|arc| arc.as_ref())
     }
 }
 
@@ -696,7 +702,7 @@ mod tests {
                     id(1),
                     vec![(
                         "primarycontactid",
-                        Value::Record(Box::new(nested_contact.clone())),
+                        Value::Record(Arc::new(nested_contact.clone())),
                     )],
                 ),
                 make_record("account", id(2), vec![("name", Value::from("NoContact"))]),
@@ -725,7 +731,7 @@ mod tests {
             vec![make_record(
                 "account",
                 id(1),
-                vec![("primarycontactid", Value::Record(Box::new(nested_contact)))],
+                vec![("primarycontactid", Value::Record(Arc::new(nested_contact)))],
             )],
         );
 

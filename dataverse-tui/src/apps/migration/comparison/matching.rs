@@ -6,6 +6,7 @@
 //!   for matches using `values_equal` + `traverse_path`.
 
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use dataverse_lib::model::Entity;
 use dataverse_lib::model::Record;
@@ -401,12 +402,12 @@ mod tests {
             make_record(
                 "account",
                 id(10),
-                vec![("primarycontactid", Value::Record(Box::new(nested1)))],
+                vec![("primarycontactid", Value::Record(Arc::new(nested1)))],
             ),
             make_record(
                 "account",
                 id(11),
-                vec![("primarycontactid", Value::Record(Box::new(nested2)))],
+                vec![("primarycontactid", Value::Record(Arc::new(nested2)))],
             ),
         ];
 

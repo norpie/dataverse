@@ -1,5 +1,7 @@
 //! Format transform - template string interpolation.
 
+use std::sync::Arc;
+
 use dataverse_lib::model::Value;
 
 use super::resolve::resolve_path_str;
@@ -221,7 +223,7 @@ mod tests {
         Record::new("account")
             .set("name", "Contoso")
             .set("accountnumber", "12345")
-            .set("primarycontactid", Value::Record(Box::new(contact)))
+            .set("primarycontactid", Value::Record(Arc::new(contact)))
             .set("secondarycontactid", Value::Null)
     }
 
@@ -233,7 +235,7 @@ mod tests {
         let mut vars = HashMap::new();
         vars.insert("prefix".to_string(), Value::String("ACCT".to_string()));
         vars.insert("suffix".to_string(), Value::String("INC".to_string()));
-        vars.insert("capacity".to_string(), Value::Record(Box::new(capacity)));
+        vars.insert("capacity".to_string(), Value::Record(Arc::new(capacity)));
         vars
     }
 

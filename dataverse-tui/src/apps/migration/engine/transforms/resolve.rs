@@ -4,6 +4,7 @@
 //! Used by both `copy` and `format` transforms.
 
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use dataverse_lib::model::types::EntityReference;
 use dataverse_lib::model::Entity;
@@ -273,12 +274,12 @@ mod tests {
 
         let contact = Record::new("contact")
             .set("fullname", "John Smith")
-            .set("parentcustomerid", Value::Record(Box::new(grandparent)));
+            .set("parentcustomerid", Value::Record(Arc::new(grandparent)));
 
         Record::new("account")
             .set("name", "Contoso")
             .set("revenue", 1_000_000i64)
-            .set("primarycontactid", Value::Record(Box::new(contact)))
+            .set("primarycontactid", Value::Record(Arc::new(contact)))
             .set("secondarycontactid", Value::Null)
     }
 
@@ -293,13 +294,13 @@ mod tests {
 
         let found_contact = Record::new("contact")
             .set("fullname", "Found Person")
-            .set("parentcustomerid", Value::Record(Box::new(nested_account)));
+            .set("parentcustomerid", Value::Record(Arc::new(nested_account)));
 
         let mut vars = HashMap::new();
-        vars.insert("capacity".to_string(), Value::Record(Box::new(capacity)));
+        vars.insert("capacity".to_string(), Value::Record(Arc::new(capacity)));
         vars.insert(
             "found_contact".to_string(),
-            Value::Record(Box::new(found_contact)),
+            Value::Record(Arc::new(found_contact)),
         );
         vars.insert("prefix".to_string(), Value::String("ACCT".to_string()));
         vars.insert("empty".to_string(), Value::Null);

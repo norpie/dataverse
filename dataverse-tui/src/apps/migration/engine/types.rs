@@ -1,6 +1,7 @@
 //! Core types for transform execution.
 
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use dataverse_lib::model::Entity;
 use dataverse_lib::model::Record;
@@ -266,9 +267,13 @@ pub enum FindError {
 pub trait FindCache: Send + Sync {
     /// Find a record by where-clause conditions.
     ///
-    /// Returns the matching record, or an error if not found / multiple found.
-    fn find_where(&self, entity: &str, conditions: &[(String, Value)])
-        -> Result<Record, FindError>;
+    /// Returns an `Arc<Record>` to avoid expensive deep clones of matched
+    /// records. The caller can cheaply clone the Arc if needed.
+    fn find_where(
+        &self,
+        entity: &str,
+        conditions: &[(String, Value)],
+    ) -> Result<Arc<Record>, FindError>;
 
     /// Find a record using a Lua script.
     ///
@@ -301,7 +306,7 @@ impl FindCache for StubFindCache {
         &self,
         entity: &str,
         _conditions: &[(String, Value)],
-    ) -> Result<Record, FindError> {
+    ) -> Result<Arc<Record>, FindError> {
         Err(FindError::NotCached(entity.to_string()))
     }
 

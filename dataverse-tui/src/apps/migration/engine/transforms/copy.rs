@@ -5,6 +5,8 @@
 //! - Variable access: `$var`, `$var.field`
 //! - System variables: `#value`, `#index`, etc.
 
+use std::sync::Arc;
+
 use dataverse_lib::model::Entity;
 use dataverse_lib::model::Value;
 
@@ -73,12 +75,12 @@ mod tests {
 
         let contact = Record::new("contact")
             .set("fullname", "John Smith")
-            .set("parentcustomerid", Value::Record(Box::new(grandparent)));
+            .set("parentcustomerid", Value::Record(Arc::new(grandparent)));
 
         Record::new("account")
             .set("name", "Contoso")
             .set("revenue", 1_000_000i64)
-            .set("primarycontactid", Value::Record(Box::new(contact)))
+            .set("primarycontactid", Value::Record(Arc::new(contact)))
             .set("secondarycontactid", Value::Null) // null lookup for testing
     }
 
@@ -224,7 +226,7 @@ mod tests {
 
         let record = Record::new("account")
             .set("name", "Test")
-            .set("primarycontactid", Value::Record(Box::new(contact)));
+            .set("primarycontactid", Value::Record(Arc::new(contact)));
 
         let vars = HashMap::new();
         let value = Value::Null;
@@ -265,7 +267,7 @@ mod tests {
             .set("capacityid", "cap-123")
             .set("name", "Standard");
         let mut vars = HashMap::new();
-        vars.insert("capacity".to_string(), Value::Record(Box::new(capacity)));
+        vars.insert("capacity".to_string(), Value::Record(Arc::new(capacity)));
         let value = Value::Null;
         let ctx = make_ctx(&record, &vars, &value);
 
@@ -368,7 +370,7 @@ mod tests {
         let contact = Record::new("contact").set("fullname", "John");
         let record = Record::new("account")
             .set("primarycontactid", Value::Null)
-            .set("secondarycontactid", Value::Record(Box::new(contact)));
+            .set("secondarycontactid", Value::Record(Arc::new(contact)));
         let vars = HashMap::new();
         let value = Value::Null;
         let ctx = make_ctx(&record, &vars, &value);
