@@ -1377,6 +1377,7 @@ impl Runtime {
             .clickable(true); // Capture clicks outside menu
 
         // Stack backdrop behind menu
+        // interaction_scope scopes focus/clicks so hover can't reach elements underneath
         Element::box_()
             .id(id)
             .position(Position::Absolute)
@@ -1384,6 +1385,7 @@ impl Runtime {
             .top(0)
             .width(Size::Fill)
             .height(Size::Fill)
+            .interaction_scope(true)
             .child(backdrop)
             .child(positioned_menu)
     }
