@@ -70,6 +70,10 @@ pub struct RecordComparison {
     pub diffs: Vec<FieldDiff>,
     /// Transform errors from the engine.
     pub errors: Vec<(String, TransformError)>,
+    /// The target record's current statecode (if matched).
+    pub target_statecode: Option<Value>,
+    /// The target record's current statuscode (if matched).
+    pub target_statuscode: Option<Value>,
 }
 
 /// An orphaned target record (not matched by any source record).
@@ -207,7 +211,8 @@ pub fn compare_mapping(input: CompareInput<'_>) -> MappingComparison {
         let has_errors = !record_result.errors.is_empty();
         let match_result = match_target(&match_input, input.target_records, &target_index);
 
-        let (operation, target_id, diffs) = match match_result {
+        let (operation, target_id, diffs, target_statecode, target_statuscode) = match match_result
+        {
             MatchResult::Found(target_idx) => {
                 let target = &input.target_records[target_idx];
                 let tid = target.id();
@@ -215,8 +220,17 @@ pub fn compare_mapping(input: CompareInput<'_>) -> MappingComparison {
                     matched_target_ids.insert(tid);
                 }
 
+                let tsc = target.get("statecode").cloned();
+                let tssc = target.get("statuscode").cloned();
+
                 if has_errors {
-                    (OperationType::Error("Transform errors".into()), tid, vec![])
+                    (
+                        OperationType::Error("Transform errors".into()),
+                        tid,
+                        vec![],
+                        tsc,
+                        tssc,
+                    )
                 } else {
                     let diffs = diff_fields(&record_result.fields, target);
                     let op = if diffs.is_empty() {
@@ -224,7 +238,7 @@ pub fn compare_mapping(input: CompareInput<'_>) -> MappingComparison {
                     } else {
                         OperationType::Update
                     };
-                    (op, tid, diffs)
+                    (op, tid, diffs, tsc, tssc)
                 }
             }
             MatchResult::NotFound => {
@@ -233,6 +247,8 @@ pub fn compare_mapping(input: CompareInput<'_>) -> MappingComparison {
                         OperationType::Error("Transform errors".into()),
                         None,
                         vec![],
+                        None,
+                        None,
                     )
                 } else {
                     let op = match input.no_match_fallback {
@@ -242,15 +258,17 @@ pub fn compare_mapping(input: CompareInput<'_>) -> MappingComparison {
                         NoMatchFallback::Create => OperationType::Create,
                         NoMatchFallback::Ignore => OperationType::Ignore,
                     };
-                    (op, None, vec![])
+                    (op, None, vec![], None, None)
                 }
             }
             MatchResult::Multiple(n) => (
                 OperationType::Error(format!("Multiple target matches ({})", n)),
                 None,
                 vec![],
+                None,
+                None,
             ),
-            MatchResult::Error(msg) => (OperationType::Error(msg), None, vec![]),
+            MatchResult::Error(msg) => (OperationType::Error(msg), None, vec![], None, None),
         };
 
         // Move fields and errors out of record_result — no cloning
@@ -261,6 +279,8 @@ pub fn compare_mapping(input: CompareInput<'_>) -> MappingComparison {
             transformed: record_result.fields,
             diffs,
             errors: record_result.errors,
+            target_statecode,
+            target_statuscode,
         });
     }
 

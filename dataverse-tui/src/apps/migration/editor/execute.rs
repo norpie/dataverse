@@ -125,6 +125,10 @@ impl MigrationEditor {
                 self.exec_pending_lookups.set(result.pending_lookups);
                 result.entity_batches
             }
+            SubPhase::Activate => {
+                // TODO: generate_activate_pass (step 5)
+                Vec::new()
+            }
             SubPhase::Update => {
                 let pending = self.exec_pending_lookups.get();
                 let captured = self.exec_captured_ids.get();
@@ -132,6 +136,10 @@ impl MigrationEditor {
             }
             SubPhase::Associate => generate_associate_pass(&comparisons, &metadata),
             SubPhase::Disassociate => generate_disassociate_pass(&comparisons, &metadata),
+            SubPhase::Deactivate => {
+                // TODO: generate_deactivate_pass (step 6)
+                Vec::new()
+            }
             SubPhase::Delete => generate_delete_pass(&comparisons, &metadata),
         };
 
@@ -501,9 +509,11 @@ impl MigrationEditor {
 fn is_pass_enabled(em: &EntityMapping, sub_phase: SubPhase) -> bool {
     match sub_phase {
         SubPhase::Create => em.create_pass_enabled,
+        SubPhase::Activate => em.activate_pass_enabled,
         SubPhase::Update => em.update_pass_enabled,
         SubPhase::Associate => em.associate_pass_enabled,
         SubPhase::Disassociate => em.disassociate_pass_enabled,
+        SubPhase::Deactivate => em.deactivate_pass_enabled,
         SubPhase::Delete => em.delete_pass_enabled,
     }
 }
@@ -511,10 +521,12 @@ fn is_pass_enabled(em: &EntityMapping, sub_phase: SubPhase) -> bool {
 /// Get the queue priority for a sub-phase (higher = more urgent).
 fn sub_phase_priority(sub_phase: SubPhase) -> i32 {
     match sub_phase {
-        SubPhase::Create => 50,
-        SubPhase::Update => 40,
-        SubPhase::Associate => 30,
-        SubPhase::Disassociate => 20,
+        SubPhase::Create => 70,
+        SubPhase::Activate => 60,
+        SubPhase::Update => 50,
+        SubPhase::Associate => 40,
+        SubPhase::Disassociate => 30,
+        SubPhase::Deactivate => 20,
         SubPhase::Delete => 10,
     }
 }

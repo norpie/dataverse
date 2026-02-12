@@ -2,10 +2,12 @@
 //!
 //! Generates operations per sub-phase:
 //! 1. **Create** — scalar fields only (lookups deferred to Update)
-//! 2. **Update** — lookup fields on created records + diffs on existing + statecode changes
-//! 3. **Associate** — N:N junction associations
-//! 4. **Disassociate** — orphan junction associations
-//! 5. **Delete** — orphan record deletion
+//! 2. **Activate** — reactivate inactive target records before Update
+//! 3. **Update** — lookup fields on created records + diffs on existing
+//! 4. **Associate** — N:N junction associations
+//! 5. **Disassociate** — orphan junction associations
+//! 6. **Deactivate** — set inactive state on records and orphans
+//! 7. **Delete** — orphan record deletion
 
 use std::collections::HashMap;
 
@@ -34,9 +36,11 @@ const BATCH_SIZE: usize = 50;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SubPhase {
     Create,
+    Activate,
     Update,
     Associate,
     Disassociate,
+    Deactivate,
     Delete,
 }
 
@@ -44,9 +48,11 @@ impl SubPhase {
     /// All sub-phases in execution order.
     pub const ALL: &'static [SubPhase] = &[
         SubPhase::Create,
+        SubPhase::Activate,
         SubPhase::Update,
         SubPhase::Associate,
         SubPhase::Disassociate,
+        SubPhase::Deactivate,
         SubPhase::Delete,
     ];
 
@@ -54,9 +60,11 @@ impl SubPhase {
     pub fn label(&self) -> &'static str {
         match self {
             SubPhase::Create => "Create",
+            SubPhase::Activate => "Activate",
             SubPhase::Update => "Update",
             SubPhase::Associate => "Associate",
             SubPhase::Disassociate => "Disassociate",
+            SubPhase::Deactivate => "Deactivate",
             SubPhase::Delete => "Delete",
         }
     }

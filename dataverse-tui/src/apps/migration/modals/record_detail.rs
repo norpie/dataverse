@@ -41,6 +41,8 @@ impl Default for RecordDetail {
             transformed: Default::default(),
             diffs: Vec::new(),
             errors: Vec::new(),
+            target_statecode: None,
+            target_statuscode: None,
         })
     }
 }
