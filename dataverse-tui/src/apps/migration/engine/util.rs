@@ -12,6 +12,8 @@ use dataverse_lib::model::Value;
 pub fn values_equal(a: &Value, b: &Value) -> bool {
     match (a, b) {
         (Value::Null, Value::Null) => true,
+        // Null ↔ empty string: semantically the same in Dataverse
+        (Value::Null, Value::String(s)) | (Value::String(s), Value::Null) => s.is_empty(),
         (Value::Bool(a), Value::Bool(b)) => a == b,
         (Value::Int(a), Value::Int(b)) => a == b,
         (Value::Long(a), Value::Long(b)) => a == b,

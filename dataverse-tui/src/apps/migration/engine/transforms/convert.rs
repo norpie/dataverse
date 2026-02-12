@@ -5,7 +5,6 @@ use rust_decimal::Decimal;
 
 use crate::apps::migration::engine::TransformError;
 use crate::apps::migration::engine::TransformResult;
-use crate::formatting::format_value;
 
 /// Target type for conversion.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -153,9 +152,31 @@ fn convert_to_decimal(value: &Value) -> TransformResult {
     TransformResult::Value(Value::Decimal(result))
 }
 
+/// Convert a Value to a plain string representation, without display formatting.
+///
+/// Used by both the Convert(String) transform and format template interpolation.
+/// Unlike `format_value().display`, this produces raw strings suitable for data
+/// (no quotes around strings, empty string for null, etc.).
+pub fn value_to_plain_string(value: &Value) -> String {
+    match value {
+        Value::Null => String::new(),
+        Value::String(s) => s.clone(),
+        Value::Int(n) => n.to_string(),
+        Value::Long(n) => n.to_string(),
+        Value::Float(n) => format!("{:.2}", n),
+        Value::Decimal(d) => d.to_string(),
+        Value::Bool(b) => b.to_string(),
+        Value::Guid(g) => g.to_string(),
+        Value::DateTime(dt) => dt.format("%Y-%m-%d %H:%M").to_string(),
+        Value::Money(m) => format!("{}", m.value()),
+        Value::OptionSet(o) => o.label.clone().unwrap_or_else(|| o.value.to_string()),
+        Value::EntityReference(r) => r.name.clone().unwrap_or_else(|| r.id.to_string()),
+        _ => format!("{:?}", value),
+    }
+}
+
 fn convert_to_string(value: &Value) -> TransformResult {
-    let formatted = format_value(value);
-    TransformResult::Value(Value::String(formatted.display))
+    TransformResult::Value(Value::String(value_to_plain_string(value)))
 }
 
 fn convert_to_bool(value: &Value) -> TransformResult {

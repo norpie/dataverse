@@ -54,13 +54,13 @@ impl FormattedValue {
 /// Format a Dataverse Value for display, returning both display and raw values.
 pub fn format_value(value: &Value) -> FormattedValue {
     match value {
-        Value::Null => FormattedValue::default(),
+        Value::Null => FormattedValue::new("(null)", "null"),
         Value::Bool(b) => FormattedValue::new(if *b { "Yes" } else { "No" }, b.to_string()),
         Value::Int(n) => FormattedValue::same(n.to_string()),
         Value::Long(n) => FormattedValue::same(n.to_string()),
         Value::Float(n) => FormattedValue::same(format!("{:.2}", n)),
         Value::Decimal(d) => FormattedValue::same(d.to_string()),
-        Value::String(s) => FormattedValue::same(s.clone()),
+        Value::String(s) => FormattedValue::new(format!("\"{}\"", s), s.clone()),
         Value::Guid(g) => FormattedValue::same(g.to_string()),
         Value::DateTime(dt) => FormattedValue::same(dt.format("%Y-%m-%d %H:%M").to_string()),
         Value::Money(m) => FormattedValue::same(format!("{}", m.value())),

@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use dataverse_lib::model::Value;
 
+use super::convert::value_to_plain_string;
 use super::resolve::resolve_path_str;
 use super::resolve::ResolveContext;
 use crate::apps::migration::engine::TransformError;
@@ -11,7 +12,6 @@ use crate::apps::migration::engine::TransformResult;
 use crate::apps::migration::validation::parse_path;
 use crate::apps::migration::validation::FieldPath;
 use crate::apps::migration::validation::PathExpr;
-use crate::formatting::format_value;
 
 /// Execute the format transform.
 ///
@@ -72,8 +72,7 @@ fn interpolate(template: &str, ctx: &ResolveContext<'_>) -> Result<String, Trans
                 result.push_str("{}");
             } else {
                 let value = resolve_placeholder(&placeholder, ctx)?;
-                let formatted = format_value(&value);
-                result.push_str(&formatted.display);
+                result.push_str(&value_to_plain_string(&value));
             }
         } else {
             result.push(ch);
