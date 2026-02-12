@@ -79,8 +79,15 @@ impl Serialize for Value {
                 Value::Money(v) => v.serialize(serializer),
                 Value::EntityReference(v) => v.serialize(serializer),
                 Value::EntityBinding(v) => v.serialize(serializer),
-                Value::OptionSet(v) => v.serialize(serializer),
-                Value::MultiOptionSet(v) => v.serialize(serializer),
+                Value::OptionSet(v) => serializer.serialize_i32(v.value),
+                Value::MultiOptionSet(v) => {
+                    use serde::ser::SerializeSeq;
+                    let mut seq = serializer.serialize_seq(Some(v.values.len()))?;
+                    for val in &v.values {
+                        seq.serialize_element(val)?;
+                    }
+                    seq.end()
+                }
                 Value::File(v) => v.serialize(serializer),
                 Value::Image(v) => v.serialize(serializer),
                 Value::Record(v) => v.serialize(serializer),
