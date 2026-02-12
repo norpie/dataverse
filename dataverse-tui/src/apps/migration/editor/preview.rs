@@ -64,9 +64,16 @@ pub fn build_preview_table(comparison: &MappingComparison) -> (Vec<PreviewRow>, 
     let mut rows = Vec::new();
     let mut field_names: Vec<String> = Vec::new();
 
-    // Collect all unique field names from transformed records
+    // Collect all unique field names from transformed records and orphans
     for record in &comparison.records {
         for field in record.transformed.keys() {
+            if !field_names.contains(field) {
+                field_names.push(field.clone());
+            }
+        }
+    }
+    for orphan in &comparison.orphans {
+        for field in orphan.fields.keys() {
             if !field_names.contains(field) {
                 field_names.push(field.clone());
             }
@@ -122,12 +129,17 @@ pub fn build_preview_table(comparison: &MappingComparison) -> (Vec<PreviewRow>, 
             .map(|id| format!("{}", id))
             .unwrap_or_else(|| "(no id)".to_string());
 
+        let mut fields = HashMap::new();
+        for (field, value) in &orphan.fields {
+            fields.insert(field.clone(), format_value(value).display);
+        }
+
         rows.push(PreviewRow {
             key: orphan_offset + i,
             op: orphan.operation.clone(),
             source_id: format!("(orphan) {}", target_id),
             info: String::new(),
-            fields: HashMap::new(),
+            fields,
         });
     }
 
@@ -158,7 +170,8 @@ pub fn op_label_color(op: &OperationType) -> (&'static str, &'static str) {
         OperationType::Deactivate => ("DEACTIVATE", "warning"),
         OperationType::Associate => ("ASSOCIATE", "success"),
         OperationType::Disassociate => ("DISASSOC", "error"),
-        OperationType::Ignore => ("IGNORE", "muted"),
+        OperationType::IgnoreSource => ("IGN. SOURCE", "muted"),
+        OperationType::IgnoreTarget => ("IGN. TARGET", "muted"),
         OperationType::Error(_) => ("ERROR", "error"),
     }
 }

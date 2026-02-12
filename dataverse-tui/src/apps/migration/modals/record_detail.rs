@@ -299,6 +299,41 @@ fn build_record_lines(record: &RecordComparison) -> Vec<DetailLine> {
                 key += 1;
             }
         }
+        OperationType::IgnoreSource => {
+            lines.push(DetailLine {
+                key,
+                text: "Ignored \u{2014} no target match".to_string(),
+                color: "muted".to_string(),
+                bold: true,
+            });
+            key += 1;
+            lines.push(DetailLine {
+                key,
+                text: String::new(),
+                color: "muted".to_string(),
+                bold: false,
+            });
+            key += 1;
+            lines.push(DetailLine {
+                key,
+                text: "Fields".to_string(),
+                color: "muted".to_string(),
+                bold: true,
+            });
+            key += 1;
+            let mut fields: Vec<_> = record.transformed.iter().collect();
+            fields.sort_by_key(|(k, _)| *k);
+            for (field, value) in fields {
+                let display = format_value(value).display;
+                lines.push(DetailLine {
+                    key,
+                    text: format!("  {}: {}", field, display),
+                    color: "primary".to_string(),
+                    bold: false,
+                });
+                key += 1;
+            }
+        }
         OperationType::Skip => {
             lines.push(DetailLine {
                 key,
@@ -337,19 +372,59 @@ fn build_record_lines(record: &RecordComparison) -> Vec<DetailLine> {
 
 fn build_orphan_lines(orphan: &OrphanRecord) -> Vec<DetailLine> {
     let mut lines = Vec::new();
+    let mut key = 0;
 
     lines.push(DetailLine {
-        key: 0,
+        key,
         text: format!("Target ID: {}", format_uuid(orphan.record_id)),
         color: "primary".to_string(),
         bold: true,
     });
+    key += 1;
+
+    let reason = match &orphan.operation {
+        OperationType::IgnoreTarget => "Ignored \u{2014} orphan target",
+        OperationType::Delete => "Delete \u{2014} orphan target",
+        OperationType::Deactivate => "Deactivate \u{2014} orphan target",
+        OperationType::Error(msg) => msg.as_str(),
+        _ => "Unknown",
+    };
     lines.push(DetailLine {
-        key: 1,
-        text: format!("Operation: {:?}", orphan.operation),
+        key,
+        text: reason.to_string(),
         color: "muted".to_string(),
-        bold: false,
+        bold: true,
     });
+    key += 1;
+
+    if !orphan.fields.is_empty() {
+        lines.push(DetailLine {
+            key,
+            text: String::new(),
+            color: "muted".to_string(),
+            bold: false,
+        });
+        key += 1;
+        lines.push(DetailLine {
+            key,
+            text: "Fields".to_string(),
+            color: "muted".to_string(),
+            bold: true,
+        });
+        key += 1;
+        let mut fields: Vec<_> = orphan.fields.iter().collect();
+        fields.sort_by_key(|(k, _)| k.as_str());
+        for (field, value) in fields {
+            let display = format_value(value).display;
+            lines.push(DetailLine {
+                key,
+                text: format!("  {}: {}", field, display),
+                color: "primary".to_string(),
+                bold: false,
+            });
+            key += 1;
+        }
+    }
 
     lines
 }

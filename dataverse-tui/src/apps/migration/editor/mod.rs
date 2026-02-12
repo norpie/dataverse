@@ -1774,8 +1774,11 @@ impl MigrationEditor {
                     if counts.deactivate > 0 {
                         text (content: {format!("Deactivate: {}", counts.deactivate)}) style (fg: warning)
                     }
-                    if counts.ignore > 0 {
-                        text (content: {format!("Ignore: {}", counts.ignore)}) style (fg: muted)
+                    if counts.ignore_source > 0 {
+                        text (content: {format!("Ign. Source: {}", counts.ignore_source)}) style (fg: muted)
+                    }
+                    if counts.ignore_target > 0 {
+                        text (content: {format!("Ign. Target: {}", counts.ignore_target)}) style (fg: muted)
                     }
                     if counts.error > 0 {
                         text (content: {format!("Error: {}", counts.error)}) style (fg: error)

@@ -49,8 +49,10 @@ pub enum OperationType {
     Associate,
     /// Association should be removed (junction entity orphan).
     Disassociate,
-    /// Record should be ignored (per config).
-    Ignore,
+    /// Source record ignored — no target match (per config).
+    IgnoreSource,
+    /// Orphaned target record ignored (per config).
+    IgnoreTarget,
     /// An error occurred during processing.
     Error(String),
 }
@@ -79,10 +81,12 @@ pub struct RecordComparison {
 /// An orphaned target record (not matched by any source record).
 #[derive(Debug, Clone)]
 pub struct OrphanRecord {
-    /// The determined operation (Delete, Deactivate, Ignore, or Error).
+    /// The determined operation (Delete, Deactivate, IgnoreTarget, or Error).
     pub operation: OperationType,
     /// The orphaned target record ID.
     pub record_id: Option<Uuid>,
+    /// Target record field values (for display in detail view).
+    pub fields: HashMap<String, Value>,
 }
 
 /// Comparison results for an entire entity mapping.
@@ -108,7 +112,7 @@ impl MappingComparison {
                 OperationType::Update => counts.update += 1,
                 OperationType::Skip => counts.skip += 1,
                 OperationType::Associate => counts.associate += 1,
-                OperationType::Ignore => counts.ignore += 1,
+                OperationType::IgnoreSource => counts.ignore_source += 1,
                 OperationType::Error(_) => counts.error += 1,
                 _ => {}
             }
@@ -118,7 +122,7 @@ impl MappingComparison {
                 OperationType::Delete => counts.delete += 1,
                 OperationType::Deactivate => counts.deactivate += 1,
                 OperationType::Disassociate => counts.disassociate += 1,
-                OperationType::Ignore => counts.ignore += 1,
+                OperationType::IgnoreTarget => counts.ignore_target += 1,
                 OperationType::Error(_) => counts.error += 1,
                 _ => {}
             }
@@ -137,7 +141,8 @@ pub struct OperationTypeCounts {
     pub deactivate: usize,
     pub associate: usize,
     pub disassociate: usize,
-    pub ignore: usize,
+    pub ignore_source: usize,
+    pub ignore_target: usize,
     pub error: usize,
 }
 
@@ -256,7 +261,7 @@ pub fn compare_mapping(input: CompareInput<'_>) -> MappingComparison {
                             OperationType::Error("No target match found".into())
                         }
                         NoMatchFallback::Create => OperationType::Create,
-                        NoMatchFallback::Ignore => OperationType::Ignore,
+                        NoMatchFallback::Ignore => OperationType::IgnoreSource,
                     };
                     (op, None, vec![], None, None)
                 }
@@ -317,13 +322,20 @@ fn detect_orphans(
             let operation = match strategy {
                 OrphanStrategy::Delete => OperationType::Delete,
                 OrphanStrategy::Deactivate => OperationType::Deactivate,
-                OrphanStrategy::Ignore => OperationType::Ignore,
+                OrphanStrategy::Ignore => OperationType::IgnoreTarget,
                 OrphanStrategy::Error => OperationType::Error("Orphaned target record".into()),
             };
+
+            let fields = target
+                .fields()
+                .iter()
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect();
 
             orphans.push(OrphanRecord {
                 operation,
                 record_id: Some(target_id),
+                fields,
             });
         }
     }
@@ -529,7 +541,7 @@ mod tests {
         input.no_match_fallback = NoMatchFallback::Ignore;
         let comparison = compare_mapping(input);
 
-        assert_eq!(comparison.records[0].operation, OperationType::Ignore);
+        assert_eq!(comparison.records[0].operation, OperationType::IgnoreSource);
     }
 
     #[test]
@@ -616,7 +628,7 @@ mod tests {
         let comparison = compare_mapping(input);
 
         assert_eq!(comparison.orphans.len(), 1);
-        assert_eq!(comparison.orphans[0].operation, OperationType::Ignore);
+        assert_eq!(comparison.orphans[0].operation, OperationType::IgnoreTarget);
     }
 
     #[test]
