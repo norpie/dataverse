@@ -146,7 +146,7 @@ impl Queue {
         }
 
         element! {
-            column (padding: (1, 2), width: fill, height: fill, overflow: auto) style (bg: surface) {
+            column (id: "queue-preview", padding: (1, 2), width: fill, height: fill, overflow: auto) style (bg: surface) {
                 text (content: {item.description.clone()}) style (bold, fg: primary)
 
                 row (gap: 1) {
@@ -222,7 +222,7 @@ fn render_operation_preview(operation: &Operation, label: &str) -> Element {
             }
 
             element! {
-                column (padding: (1, 2), width: fill, height: fill, overflow: auto) style (bg: surface) {
+                column (id: "queue-preview", padding: (1, 2), width: fill, height: fill, overflow: auto) style (bg: surface) {
                     text (content: {label_str}) style (bold, fg: primary)
 
                     row (gap: 1) {
@@ -260,7 +260,7 @@ fn render_operation_preview(operation: &Operation, label: &str) -> Element {
             };
 
             element! {
-                column (padding: (1, 2), width: fill, height: fill, overflow: auto) style (bg: surface) {
+                column (id: "queue-preview", padding: (1, 2), width: fill, height: fill, overflow: auto) style (bg: surface) {
                     text (content: {label.to_string()}) style (bold, fg: primary)
 
                     row (gap: 1) {
@@ -304,7 +304,7 @@ fn render_operation_preview(operation: &Operation, label: &str) -> Element {
             }
 
             element! {
-                column (padding: (1, 2), width: fill, height: fill, overflow: auto) style (bg: surface) {
+                column (id: "queue-preview", padding: (1, 2), width: fill, height: fill, overflow: auto) style (bg: surface) {
                     text (content: {label.to_string()}) style (bold, fg: primary)
 
                     row (gap: 1) {
@@ -330,7 +330,7 @@ fn render_operation_preview(operation: &Operation, label: &str) -> Element {
             let id_str = id.to_string();
 
             element! {
-                column (padding: (1, 2), width: fill, height: fill, overflow: auto) style (bg: surface) {
+                column (id: "queue-preview", padding: (1, 2), width: fill, height: fill, overflow: auto) style (bg: surface) {
                     text (content: {label.to_string()}) style (bold, fg: primary)
 
                     row (gap: 1) {
@@ -366,7 +366,7 @@ fn render_operation_preview(operation: &Operation, label: &str) -> Element {
             }
 
             element! {
-                column (padding: (1, 2), width: fill, height: fill, overflow: auto) style (bg: surface) {
+                column (id: "queue-preview", padding: (1, 2), width: fill, height: fill, overflow: auto) style (bg: surface) {
                     text (content: {label.to_string()}) style (bold, fg: primary)
 
                     row (gap: 1) {

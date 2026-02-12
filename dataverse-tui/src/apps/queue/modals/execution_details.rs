@@ -42,7 +42,7 @@ impl ExecutionDetailsModal {
         page! {
             column (padding: (1, 2), gap: 1, width: fill, height: fill) style (bg: surface) {
                 text (content: "Execution History") style (bold, fg: interact)
-                column (height: fill, width: fill) style (overflow: scroll) {
+                column (id: "exec-scroll", height: fill, width: fill) style (overflow: scroll) {
                     text (content: {content})
                 }
                 row (width: fill, justify: end) {

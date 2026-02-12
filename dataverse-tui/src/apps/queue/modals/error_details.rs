@@ -40,7 +40,7 @@ impl ErrorDetailsModal {
         page! {
             column (padding: (1, 2), gap: 1, width: fill, height: fill) style (bg: surface) {
                 text (content: "Error Details") style (bold, fg: interact)
-                column (height: fill, width: fill, overflow: scroll) {
+                column (id: "error-scroll", height: fill, width: fill, overflow: scroll) {
                     text (content: {error}) style (fg: error)
                 }
                 row (width: fill, justify: end) {
