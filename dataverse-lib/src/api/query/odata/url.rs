@@ -19,7 +19,8 @@ pub fn build_select_expand_params(select: &[String], expand: &[ExpandBuilder]) -
     }
 
     if !expand.is_empty() {
-        let expand_clauses: Vec<_> = expand.iter().map(|e| e.to_odata()).collect();
+        let mut expand_clauses: Vec<_> = expand.iter().map(|e| e.to_odata()).collect();
+        expand_clauses.sort();
         params.push(format!("$expand={}", expand_clauses.join(",")));
     }
 
