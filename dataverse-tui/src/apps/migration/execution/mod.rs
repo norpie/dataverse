@@ -99,8 +99,6 @@ pub struct PendingLookupUpdate {
     pub known_target_id: Option<Uuid>,
     /// Lookup fields to set (field_name → EntityReference value).
     pub lookup_fields: HashMap<String, Value>,
-    /// Statecode value if it needs to be set (deferred from Create).
-    pub deferred_statecode: Option<Value>,
 }
 
 /// Result of generating the Create pass.
@@ -120,7 +118,7 @@ pub struct CreatePassResult {
 /// For each `RecordComparison` with `OperationType::Create`:
 /// - Scalar fields go into the Create operation
 /// - Lookup fields (EntityReference) are deferred to the Update pass
-/// - Statecode is deferred to the Update pass (always create as active)
+/// - State fields (statecode/statuscode) are skipped — handled by the Deactivate pass
 /// - Primary key field is included if present in `transformed` (preserves source GUID)
 /// - `content_id` is set to the source record UUID for correlation
 ///
@@ -157,7 +155,6 @@ pub fn generate_create_pass(
             let content_id = source_id.to_string();
             let mut create_record = Record::new(Entity::set(&meta.entity_set_name));
             let mut lookup_fields = HashMap::new();
-            let mut deferred_statecode = None;
             let mut known_target_id = None;
 
             for (field, value) in &record.transformed {
@@ -170,11 +167,9 @@ pub fn generate_create_pass(
                     continue;
                 }
 
-                // Statecode: always defer (create as active, set state in Update pass)
-                if field == "statecode" {
-                    if !is_active_statecode(value) {
-                        deferred_statecode = Some(value.clone());
-                    }
+                // State fields: skip — always create as active.
+                // The Deactivate pass will set the desired state afterwards.
+                if field == "statecode" || field == "statuscode" {
                     continue;
                 }
 
@@ -197,15 +192,14 @@ pub fn generate_create_pass(
 
             operations.push(op);
 
-            // Track pending lookup updates if there are deferred fields
-            if !lookup_fields.is_empty() || deferred_statecode.is_some() {
+            // Track pending lookup updates if there are deferred lookup fields
+            if !lookup_fields.is_empty() {
                 all_pending.push(PendingLookupUpdate {
                     content_id,
                     entity: mapping.target_entity.clone(),
                     entity_set: meta.entity_set_name.clone(),
                     known_target_id,
                     lookup_fields,
-                    deferred_statecode,
                 });
             }
         }
@@ -317,7 +311,8 @@ pub fn generate_activate_pass(
 /// 1. Lookup fields deferred from Create pass (using known or captured target IDs)
 /// 2. Diff-based updates on existing records (`OperationType::Update`)
 ///
-/// Statecode changes are included in the same Update operation.
+/// State fields (statecode/statuscode) are excluded from diffs — they are
+/// handled by the Activate and Deactivate passes.
 pub fn generate_update_pass(
     comparisons: &[MappingComparison],
     metadata: &HashMap<String, ExecutionMetadata>,
@@ -366,9 +361,6 @@ pub fn generate_update_pass(
                 for (field, value) in &pending.lookup_fields {
                     update_record.insert(field.clone(), value.clone());
                 }
-                if let Some(statecode) = &pending.deferred_statecode {
-                    update_record.insert("statecode", statecode.clone());
-                }
 
                 let op = Op::update(Entity::set(&pending.entity_set), target_id, update_record)
                     .bypass_plugins()
@@ -395,7 +387,16 @@ pub fn generate_update_pass(
 
             let mut update_record = Record::new(Entity::set(&meta.entity_set_name));
             for diff in &record.diffs {
+                // State fields are handled by Activate/Deactivate passes
+                if diff.field == "statecode" || diff.field == "statuscode" {
+                    continue;
+                }
                 update_record.insert(diff.field.clone(), diff.new_value.clone());
+            }
+
+            // Skip if all diffs were state fields (nothing left to update)
+            if update_record.fields().is_empty() {
+                continue;
             }
 
             let op = Op::update(Entity::set(&meta.entity_set_name), target_id, update_record)
