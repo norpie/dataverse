@@ -97,6 +97,11 @@ pub fn analyze_mapping(input: &AnalysisInput<'_>) -> FetchPlan {
         collector.target.select.insert(target_field.clone());
     }
 
+    // 5. Always fetch statecode/statuscode from target so the execution engine
+    //    can detect inactive records and handle state transitions correctly.
+    collector.target.select.insert("statecode".to_string());
+    collector.target.select.insert("statuscode".to_string());
+
     // Build the fetch plan
     let target = if collector.target.has_fields() {
         Some(collector.target.build_target())
