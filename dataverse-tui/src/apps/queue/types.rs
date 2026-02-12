@@ -52,7 +52,7 @@ impl ItemStatus {
             Self::Interrupted => "warning",
             Self::Done => "success",
             Self::Failed => "error",
-            Self::PartiallyFailed => "warning",
+            Self::PartiallyFailed => "error",
         }
     }
 }

@@ -10,10 +10,10 @@ use tuidom::Color;
 
 use crate::formatting::format_value;
 
-use super::Queue;
 use super::repository::StatusCounts;
-use super::tree::{QueueTreeNode, format_operation};
+use super::tree::{format_operation, QueueTreeNode};
 use super::types::{QueueItem, QueuePayload};
+use super::Queue;
 
 /// Recursively find a node by key in the tree.
 fn find_node_recursive(
@@ -34,30 +34,23 @@ fn find_node_recursive(
 impl Queue {
     /// Get the currently focused queue item from the tree state.
     pub(super) fn focused_item(&self) -> Option<QueueItem> {
-        self.tree_state.with_ref(|s| {
-            s.focused_key.as_ref().and_then(|key| {
-                let item_id: Option<i64> = key
-                    .strip_prefix("item-")
-                    .and_then(|rest| rest.split('-').next())
-                    .and_then(|id_str| id_str.parse().ok());
-                item_id.and_then(|id| {
-                    s.roots.iter().find_map(|node| {
-                        if let QueueTreeNode::Item { item, .. } = &node.value
-                            && item.id == id
-                        {
-                            return Some(item.clone());
-                        }
-                        None
-                    })
-                })
-            })
-        })
+        let focused_key = self.tree_state.with_ref(|s| s.focused_key.clone());
+        let key = focused_key?;
+        let item_id: i64 = key
+            .strip_prefix("item-")
+            .and_then(|rest| rest.split('-').next())
+            .and_then(|id_str| id_str.parse().ok())?;
+        self.items
+            .with_ref(|items| items.iter().find(|i| i.id == item_id).cloned())
     }
 
     pub(super) fn render_preview(&self) -> Element {
         let focused_key = self.tree_state.with_ref(|s| s.focused_key.clone());
 
+        log::debug!("[QUEUE PREVIEW] focused_key: {:?}", focused_key);
+
         let Some(key) = focused_key else {
+            log::debug!("[QUEUE PREVIEW] No focused key, showing empty preview");
             return element! {
                 column (padding: (1, 2), width: fill, height: fill) style (bg: surface)
             };
@@ -80,26 +73,35 @@ impl Queue {
             }
         }
 
-        // Otherwise, find the item from the tree
-        let item = self.tree_state.with_ref(|s| {
-            // Extract item ID from key
+        // Otherwise, find the item from the in-memory list
+        let item = {
             let item_id: Option<i64> = key
                 .strip_prefix("item-")
                 .and_then(|rest| rest.split('-').next())
                 .and_then(|id_str| id_str.parse().ok());
 
+            log::debug!(
+                "[QUEUE PREVIEW] Parsed item_id: {:?} from key: {}",
+                item_id,
+                key
+            );
+
             item_id.and_then(|id| {
-                // Search roots for the matching item
-                s.roots.iter().find_map(|node| {
-                    if let QueueTreeNode::Item { item, .. } = &node.value
-                        && item.id == id
-                    {
-                        return Some(item.clone());
+                let found = self
+                    .items
+                    .with_ref(|items| items.iter().find(|i| i.id == id).cloned());
+                log::debug!(
+                    "[QUEUE PREVIEW] Item lookup for id {}: {}",
+                    id,
+                    if found.is_some() {
+                        "found"
+                    } else {
+                        "NOT FOUND"
                     }
-                    None
-                })
+                );
+                found
             })
-        });
+        };
 
         let Some(item) = item else {
             return element! {
@@ -144,7 +146,7 @@ impl Queue {
         }
 
         element! {
-            column (padding: (1, 2), gap: 1, width: fill, height: fill) style (bg: surface) {
+            column (padding: (1, 2), width: fill, height: fill, overflow: auto) style (bg: surface) {
                 text (content: {item.description.clone()}) style (bold, fg: primary)
 
                 row (gap: 1) {
@@ -220,7 +222,7 @@ fn render_operation_preview(operation: &Operation, label: &str) -> Element {
             }
 
             element! {
-                column (padding: (1, 2), gap: 1, width: fill, height: fill) style (bg: surface) {
+                column (padding: (1, 2), width: fill, height: fill, overflow: auto) style (bg: surface) {
                     text (content: {label_str}) style (bold, fg: primary)
 
                     row (gap: 1) {
@@ -258,7 +260,7 @@ fn render_operation_preview(operation: &Operation, label: &str) -> Element {
             };
 
             element! {
-                column (padding: (1, 2), gap: 1, width: fill, height: fill) style (bg: surface) {
+                column (padding: (1, 2), width: fill, height: fill, overflow: auto) style (bg: surface) {
                     text (content: {label.to_string()}) style (bold, fg: primary)
 
                     row (gap: 1) {
@@ -302,7 +304,7 @@ fn render_operation_preview(operation: &Operation, label: &str) -> Element {
             }
 
             element! {
-                column (padding: (1, 2), gap: 1, width: fill, height: fill) style (bg: surface) {
+                column (padding: (1, 2), width: fill, height: fill, overflow: auto) style (bg: surface) {
                     text (content: {label.to_string()}) style (bold, fg: primary)
 
                     row (gap: 1) {
@@ -328,7 +330,7 @@ fn render_operation_preview(operation: &Operation, label: &str) -> Element {
             let id_str = id.to_string();
 
             element! {
-                column (padding: (1, 2), gap: 1, width: fill, height: fill) style (bg: surface) {
+                column (padding: (1, 2), width: fill, height: fill, overflow: auto) style (bg: surface) {
                     text (content: {label.to_string()}) style (bold, fg: primary)
 
                     row (gap: 1) {
@@ -364,7 +366,7 @@ fn render_operation_preview(operation: &Operation, label: &str) -> Element {
             }
 
             element! {
-                column (padding: (1, 2), gap: 1, width: fill, height: fill) style (bg: surface) {
+                column (padding: (1, 2), width: fill, height: fill, overflow: auto) style (bg: surface) {
                     text (content: {label.to_string()}) style (bold, fg: primary)
 
                     row (gap: 1) {

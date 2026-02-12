@@ -299,11 +299,9 @@ impl Queue {
             })
             .collect();
 
-        // Build tree nodes
-        let nodes = build_tree_nodes(
-            &filtered.into_iter().cloned().collect::<Vec<_>>(),
-            &timings,
-        );
+        // Build and set tree nodes
+        let filtered_items: Vec<_> = filtered.into_iter().cloned().collect();
+        let nodes = build_tree_nodes(&filtered_items, &timings);
         self.tree_state.update(|s| {
             s.set_roots(nodes);
         });
@@ -345,21 +343,31 @@ impl Queue {
             .collect();
         sources.sort();
 
-        self.source_filter.update(|s| {
-            let current_selected: Vec<String> = s
-                .selected_values()
-                .filter(|v| *v == "__all__" || sources.contains(v))
-                .cloned()
-                .collect();
-
-            let mut options = vec![("__all__".to_string(), "All sources".to_string())];
-            options.extend(sources.iter().map(|src| (src.clone(), src.clone())));
-            s.set_options(options);
-
-            for src in current_selected {
-                s.selection.selected.insert(src);
-            }
+        // Only update if options actually changed to avoid bumping generation
+        let current_options: Vec<String> = self.source_filter.with_ref(|s| {
+            s.options.iter().map(|(v, _)| v.clone()).collect()
         });
+        let new_options: Vec<String> = std::iter::once("__all__".to_string())
+            .chain(sources.iter().cloned())
+            .collect();
+
+        if current_options != new_options {
+            self.source_filter.update(|s| {
+                let current_selected: Vec<String> = s
+                    .selected_values()
+                    .filter(|v| *v == "__all__" || sources.contains(v))
+                    .cloned()
+                    .collect();
+
+                let mut options = vec![("__all__".to_string(), "All sources".to_string())];
+                options.extend(sources.iter().map(|src| (src.clone(), src.clone())));
+                s.set_options(options);
+
+                for src in current_selected {
+                    s.selection.selected.insert(src);
+                }
+            });
+        }
     }
 
     // =========================================================================
@@ -1243,9 +1251,7 @@ impl Queue {
                         tree (state: self.tree_state, id: "queue-tree", width: fill, height: fill)
                             on_activate: item_activated()
                     }
-                    column (width: fill, height: fill) {
-                        { preview }
-                    }
+                    { preview }
                 }
 
                 // Footer
