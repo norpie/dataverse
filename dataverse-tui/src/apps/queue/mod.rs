@@ -480,6 +480,41 @@ impl Queue {
         }
     }
 
+    #[handler]
+    async fn clear_all(&self, gx: &GlobalContext) {
+        let confirmed = gx
+            .modal(crate::modals::ConfirmModal::with_message(
+                "Clear all queue items?",
+            ))
+            .await;
+        if !confirmed {
+            return;
+        }
+
+        let Some(repo) = self.repository.get() else {
+            return;
+        };
+
+        match repo.clear_all().await {
+            Ok(count) => {
+                if count > 0 {
+                    gx.toast(Toast::info(format!("Cleared {} item(s)", count)));
+                    self.items.update(|items| {
+                        items.retain(|i| i.status == ItemStatus::Running);
+                    });
+                    let remaining_ids: HashSet<i64> =
+                        self.items.with_ref(|items| items.iter().map(|i| i.id).collect());
+                    self.item_timings.update(|timings| {
+                        timings.retain(|id, _| remaining_ids.contains(id));
+                    });
+                }
+            }
+            Err(e) => {
+                log::error!("Failed to clear all items: {}", e);
+            }
+        }
+    }
+
     // =========================================================================
     // Item Actions
     // =========================================================================
@@ -1195,6 +1230,7 @@ impl Queue {
         let eta_text = ui::format_eta(&self.recent_durations.get(), &counts);
 
         let has_completed = counts.done > 0;
+        let has_items = counts.total() > 0;
 
         // Context-aware button logic
         let buttons = self.action_buttons();
@@ -1241,6 +1277,9 @@ impl Queue {
                         }
                         if has_completed {
                             button (label: "Clear", hint: "C", id: "clear") on_activate: clear_completed()
+                        }
+                        if has_items {
+                            button (label: "Clear All", id: "clear-all") on_activate: clear_all()
                         }
                     }
                 }
