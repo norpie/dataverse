@@ -1,8 +1,8 @@
 //! Design-time value type for type tracking.
 
-use super::Value;
 use super::metadata::AttributeMetadata;
 use super::metadata::AttributeType;
+use super::Value;
 
 /// Lightweight option set value + label pair for design-time type tracking.
 ///
@@ -31,10 +31,16 @@ pub enum FieldType {
         kind: AttributeType,
         targets: Vec<String>,
     },
-    /// Option set type with name for compatibility checking.
+    /// Option set type with name and available options for compatibility checking.
     /// `name` identifies the option set (e.g., "statusreason").
     /// Empty name means unknown — treated as wildcard for compatibility.
-    OptionSet { kind: AttributeType, name: String },
+    /// `options` contains the available value+label pairs.
+    /// Empty options means unknown — treated as wildcard for compatibility.
+    OptionSet {
+        kind: AttributeType,
+        name: String,
+        options: Vec<OptionInfo>,
+    },
 }
 
 impl FieldType {
@@ -66,10 +72,14 @@ impl FieldType {
             }
             (
                 FieldType::OptionSet {
-                    kind: ka, name: na, ..
+                    kind: ka,
+                    name: na,
+                    options: oa,
                 },
                 FieldType::OptionSet {
-                    kind: kb, name: nb, ..
+                    kind: kb,
+                    name: nb,
+                    options: ob,
                 },
             ) => {
                 // Kinds must be in the same compatibility group
@@ -77,10 +87,16 @@ impl FieldType {
                     return false;
                 }
                 // If both have names, they must match
-                if !na.is_empty() && !nb.is_empty() {
-                    na == nb
+                if !na.is_empty() && !nb.is_empty() && na != nb {
+                    return false;
+                }
+                // If both have options, check that all source values exist in the
+                // target (lenient: source is a subset of target).
+                if !oa.is_empty() && !ob.is_empty() {
+                    oa.iter()
+                        .all(|src| ob.iter().any(|tgt| tgt.value == src.value))
                 } else {
-                    // Unknown name = assume compatible
+                    // Unknown options on either side = assume compatible
                     true
                 }
             }
@@ -138,6 +154,7 @@ impl From<AttributeType> for FieldType {
             FieldType::OptionSet {
                 kind: attr,
                 name: String::new(),
+                options: vec![],
             }
         } else {
             FieldType::Simple(attr)
@@ -153,13 +170,23 @@ impl From<&AttributeMetadata> for FieldType {
                 targets: attr.targets.clone(),
             }
         } else if is_option_set_type(attr.attribute_type) {
-            let name = attr
-                .options()
-                .and_then(|os| os.name.clone())
+            let os = attr.options();
+            let name = os.and_then(|os| os.name.clone()).unwrap_or_default();
+            let options = os
+                .map(|os| {
+                    os.options
+                        .iter()
+                        .map(|o| OptionInfo {
+                            value: o.value,
+                            label: o.label.text().unwrap_or_default().to_string(),
+                        })
+                        .collect()
+                })
                 .unwrap_or_default();
             FieldType::OptionSet {
                 kind: attr.attribute_type,
                 name,
+                options,
             }
         } else {
             FieldType::Simple(attr.attribute_type)
@@ -197,9 +224,13 @@ impl ValueType {
         ValueType::Known(FieldType::Lookup { kind, targets })
     }
 
-    /// Convenience: create a `Known(OptionSet { kind, name })`.
-    pub fn option_set(kind: AttributeType, name: String) -> Self {
-        ValueType::Known(FieldType::OptionSet { kind, name })
+    /// Convenience: create a `Known(OptionSet { kind, name, options })`.
+    pub fn option_set(kind: AttributeType, name: String, options: Vec<OptionInfo>) -> Self {
+        ValueType::Known(FieldType::OptionSet {
+            kind,
+            name,
+            options,
+        })
     }
 
     /// Check if this type is compatible with expected input type.
@@ -295,9 +326,11 @@ impl From<&Value> for ValueType {
                 ValueType::lookup(AttributeType::Lookup, vec![er.entity.name().to_string()])
             }
             Value::EntityBinding(_) => ValueType::lookup(AttributeType::Lookup, vec![]),
-            Value::OptionSet(_) => ValueType::option_set(AttributeType::Picklist, String::new()),
+            Value::OptionSet(_) => {
+                ValueType::option_set(AttributeType::Picklist, String::new(), vec![])
+            }
             Value::MultiOptionSet(_) => {
-                ValueType::option_set(AttributeType::MultiSelectPicklist, String::new())
+                ValueType::option_set(AttributeType::MultiSelectPicklist, String::new(), vec![])
             }
             Value::File(_) => ValueType::simple(AttributeType::File),
             Value::Image(_) => ValueType::simple(AttributeType::Image),

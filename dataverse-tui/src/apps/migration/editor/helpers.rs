@@ -2,6 +2,7 @@
 
 use dataverse_lib::DataverseClient;
 use dataverse_lib::model::FieldType;
+use dataverse_lib::model::OptionInfo;
 use dataverse_lib::model::ValueType;
 use dataverse_lib::model::metadata::AttributeType;
 use rafter::prelude::*;
@@ -152,13 +153,26 @@ fn resolve_picklist_field_type(
     metadata: &dataverse_lib::model::metadata::EntityMetadata,
     logical_name: &str,
 ) -> FieldType {
-    let name = metadata
-        .picklist_attribute(logical_name)
-        .and_then(|typed| typed.option_set.name.clone())
+    let typed = metadata.picklist_attribute(logical_name);
+    let name = typed
+        .and_then(|t| t.option_set.name.clone())
+        .unwrap_or_default();
+    let options = typed
+        .map(|t| {
+            t.option_set
+                .options
+                .iter()
+                .map(|o| OptionInfo {
+                    value: o.value,
+                    label: o.label.text().unwrap_or_default().to_string(),
+                })
+                .collect()
+        })
         .unwrap_or_default();
     FieldType::OptionSet {
         kind: AttributeType::Picklist,
         name,
+        options,
     }
 }
 
@@ -167,13 +181,26 @@ fn resolve_state_field_type(
     metadata: &dataverse_lib::model::metadata::EntityMetadata,
     logical_name: &str,
 ) -> FieldType {
-    let name = metadata
-        .state_attribute(logical_name)
-        .and_then(|typed| typed.option_set.name.clone())
+    let typed = metadata.state_attribute(logical_name);
+    let name = typed
+        .and_then(|t| t.option_set.name.clone())
+        .unwrap_or_default();
+    let options = typed
+        .map(|t| {
+            t.option_set
+                .options
+                .iter()
+                .map(|o| OptionInfo {
+                    value: o.value,
+                    label: o.label.text().unwrap_or_default().to_string(),
+                })
+                .collect()
+        })
         .unwrap_or_default();
     FieldType::OptionSet {
         kind: AttributeType::State,
         name,
+        options,
     }
 }
 
@@ -182,13 +209,26 @@ fn resolve_status_field_type(
     metadata: &dataverse_lib::model::metadata::EntityMetadata,
     logical_name: &str,
 ) -> FieldType {
-    let name = metadata
-        .status_attribute(logical_name)
-        .and_then(|typed| typed.option_set.name.clone())
+    let typed = metadata.status_attribute(logical_name);
+    let name = typed
+        .and_then(|t| t.option_set.name.clone())
+        .unwrap_or_default();
+    let options = typed
+        .map(|t| {
+            t.option_set
+                .options
+                .iter()
+                .map(|o| OptionInfo {
+                    value: o.value,
+                    label: o.label.text().unwrap_or_default().to_string(),
+                })
+                .collect()
+        })
         .unwrap_or_default();
     FieldType::OptionSet {
         kind: AttributeType::Status,
         name,
+        options,
     }
 }
 
@@ -197,13 +237,26 @@ fn resolve_multi_select_field_type(
     metadata: &dataverse_lib::model::metadata::EntityMetadata,
     logical_name: &str,
 ) -> FieldType {
-    let name = metadata
-        .multi_select_picklist_attribute(logical_name)
-        .and_then(|typed| typed.option_set.name.clone())
+    let typed = metadata.multi_select_picklist_attribute(logical_name);
+    let name = typed
+        .and_then(|t| t.option_set.name.clone())
+        .unwrap_or_default();
+    let options = typed
+        .map(|t| {
+            t.option_set
+                .options
+                .iter()
+                .map(|o| OptionInfo {
+                    value: o.value,
+                    label: o.label.text().unwrap_or_default().to_string(),
+                })
+                .collect()
+        })
         .unwrap_or_default();
     FieldType::OptionSet {
         kind: AttributeType::MultiSelectPicklist,
         name,
+        options,
     }
 }
 

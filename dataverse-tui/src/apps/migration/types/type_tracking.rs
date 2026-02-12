@@ -89,7 +89,11 @@ impl TransformData {
             // ValueMap accepts any option set, outputs the target's type
             TransformData::ValueMap { target, .. } => TransformSignature {
                 input: Some(ValueType::AnyOptionSet),
-                output: Some(ValueType::option_set(target.kind, target.name.clone())),
+                output: Some(ValueType::option_set(
+                    target.kind,
+                    target.name.clone(),
+                    target.options.clone(),
+                )),
             },
 
             // Math (numeric -> numeric)

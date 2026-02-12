@@ -201,13 +201,13 @@ impl MigrationEditor {
     /// Extract option set kind + name from a ValueType, if it's an option set.
     pub(super) fn extract_option_set_info(vt: &ValueType) -> Option<OptionSetInfo> {
         match vt {
-            ValueType::Known(FieldType::OptionSet { kind, name }) => Some(OptionSetInfo {
+            ValueType::Known(FieldType::OptionSet { kind, name, .. }) => Some(OptionSetInfo {
                 kind: *kind,
                 name: name.clone(),
             }),
             // If it's a union, pick the first option set
             ValueType::Union(types) => types.iter().find_map(|ft| match ft {
-                FieldType::OptionSet { kind, name } => Some(OptionSetInfo {
+                FieldType::OptionSet { kind, name, .. } => Some(OptionSetInfo {
                     kind: *kind,
                     name: name.clone(),
                 }),
