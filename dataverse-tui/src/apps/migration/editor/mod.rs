@@ -1055,7 +1055,7 @@ impl MigrationEditor {
             results.get(index).map(|comparison| {
                 let (rows, columns) = build_preview_table(comparison);
                 TableState::new(rows, columns)
-                    .with_selection(SelectionMode::Single)
+                    .with_selection(SelectionMode::None)
                     .with_frozen(&["op", "source_id", "info"])
             })
         });
