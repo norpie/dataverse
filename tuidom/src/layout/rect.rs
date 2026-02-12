@@ -66,6 +66,22 @@ impl Rect {
         x >= self.x && x < self.right() && y >= self.y && y < self.bottom()
     }
 
+    /// Intersect this rect with an optional clip rect.
+    /// If `other` is None, returns self unchanged.
+    /// Returns the overlapping area (may be empty/zero-sized).
+    pub fn intersect(self, other: Option<Rect>) -> Rect {
+        match other {
+            None => self,
+            Some(clip) => {
+                let x = self.x.max(clip.x);
+                let y = self.y.max(clip.y);
+                let right = self.right().min(clip.right());
+                let bottom = self.bottom().min(clip.bottom());
+                Rect::new(x, y, right.saturating_sub(x), bottom.saturating_sub(y))
+            }
+        }
+    }
+
     /// Get the center point of this rectangle.
     pub const fn center(&self) -> (u16, u16) {
         (self.x + self.width / 2, self.y + self.height / 2)
