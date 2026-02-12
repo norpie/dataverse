@@ -52,6 +52,13 @@ fn apply_op(s: &str, op: &StringOp) -> String {
         StringOp::Trim => s.trim().to_string(),
         StringOp::TrimStart => s.trim_start().to_string(),
         StringOp::TrimEnd => s.trim_end().to_string(),
+        StringOp::Truncate(max_len) => {
+            if s.len() <= *max_len {
+                s.to_string()
+            } else {
+                s.chars().take(*max_len).collect()
+            }
+        }
     }
 }
 

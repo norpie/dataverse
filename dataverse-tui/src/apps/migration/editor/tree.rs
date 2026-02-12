@@ -582,6 +582,7 @@ fn transform_config_text(data: &TransformData) -> String {
             StringOp::Trim => "trim".to_string(),
             StringOp::TrimStart => "trim_start".to_string(),
             StringOp::TrimEnd => "trim_end".to_string(),
+            StringOp::Truncate(max) => format!("truncate({})", max),
         },
         TransformData::Convert { target_type } => target_type.clone(),
         TransformData::ParseInt => String::new(),
@@ -644,11 +645,14 @@ pub fn transform_display_text(data: &TransformData) -> String {
         }
         TransformData::StringOps { op } => {
             let op_name = match op {
-                crate::apps::migration::types::StringOp::Uppercase => "uppercase",
-                crate::apps::migration::types::StringOp::Lowercase => "lowercase",
-                crate::apps::migration::types::StringOp::Trim => "trim",
-                crate::apps::migration::types::StringOp::TrimStart => "trim_start",
-                crate::apps::migration::types::StringOp::TrimEnd => "trim_end",
+                crate::apps::migration::types::StringOp::Uppercase => "uppercase".to_string(),
+                crate::apps::migration::types::StringOp::Lowercase => "lowercase".to_string(),
+                crate::apps::migration::types::StringOp::Trim => "trim".to_string(),
+                crate::apps::migration::types::StringOp::TrimStart => "trim_start".to_string(),
+                crate::apps::migration::types::StringOp::TrimEnd => "trim_end".to_string(),
+                crate::apps::migration::types::StringOp::Truncate(max) => {
+                    format!("truncate({})", max)
+                }
             };
             format!("string_ops ({})", op_name)
         }

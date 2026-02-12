@@ -89,6 +89,7 @@ pub enum StringOp {
     Trim,
     TrimStart,
     TrimEnd,
+    Truncate(usize),
 }
 
 /// Mathematical operation type.
