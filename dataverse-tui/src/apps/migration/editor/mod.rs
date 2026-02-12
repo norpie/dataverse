@@ -1021,6 +1021,45 @@ impl MigrationEditor {
                             }
                         }
 
+                        // Also resolve metadata for lookup target entities that aren't
+                        // already mapped. This is needed so to_binding() can resolve
+                        // entity set names for lookup fields (e.g., nrq_country).
+                        let lookup_targets: Vec<String> = metadata
+                            .values()
+                            .flat_map(|m| m.lookup_targets.values().flatten())
+                            .filter(|name| !metadata.contains_key(*name))
+                            .cloned()
+                            .collect::<std::collections::HashSet<_>>()
+                            .into_iter()
+                            .collect();
+
+                        for entity_name in &lookup_targets {
+                            updater.update(format!("Resolving lookup target: {}", entity_name));
+                            match target_client.metadata().entity(entity_name.as_str()).await {
+                                Ok(em) => {
+                                    match em.execution_metadata() {
+                                        Ok(exec_meta) => {
+                                            metadata.insert(entity_name.clone(), exec_meta);
+                                        }
+                                        Err(e) => {
+                                            log::warn!(
+                                                "Metadata error for lookup target {}: {} — \
+                                                 lookups to this entity may fail",
+                                                entity_name, e
+                                            );
+                                        }
+                                    }
+                                }
+                                Err(e) => {
+                                    log::warn!(
+                                        "Failed to fetch metadata for lookup target {}: {} — \
+                                         lookups to this entity may fail",
+                                        entity_name, e
+                                    );
+                                }
+                            }
+                        }
+
                         Ok((metadata, target_env_id, 0i64))
                     }
                 },
