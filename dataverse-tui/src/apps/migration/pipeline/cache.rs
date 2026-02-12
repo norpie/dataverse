@@ -337,9 +337,9 @@ impl FindCache for LiveFindCache {
             .map_err(|e| FindError::LuaError(format!("Invalid GUID '{guid_str}': {e}")))
     }
 
-    fn get(&self, entity: &str, id: Uuid) -> Option<&Record> {
+    fn get(&self, entity: &str, id: Uuid) -> Option<Arc<Record>> {
         let idx = *self.id_index.get(entity)?.get(&id)?;
-        self.records.get(entity)?.get(idx).map(|arc| arc.as_ref())
+        self.records.get(entity)?.get(idx).cloned()
     }
 }
 

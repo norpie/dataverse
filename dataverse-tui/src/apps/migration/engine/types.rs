@@ -288,8 +288,9 @@ pub trait FindCache: Send + Sync {
 
     /// Get a record by ID from the cache.
     ///
-    /// Used after find() to access fields from the found record.
-    fn get(&self, entity: &str, id: Uuid) -> Option<&Record>;
+    /// Returns an `Arc<Record>` to avoid expensive deep clones when the
+    /// caller needs an owned handle (e.g. wrapping in `Value::Record`).
+    fn get(&self, entity: &str, id: Uuid) -> Option<Arc<Record>>;
 }
 
 // =============================================================================
@@ -319,7 +320,7 @@ impl FindCache for StubFindCache {
         Err(FindError::NotCached(entity.to_string()))
     }
 
-    fn get(&self, _entity: &str, _id: Uuid) -> Option<&Record> {
+    fn get(&self, _entity: &str, _id: Uuid) -> Option<Arc<Record>> {
         None
     }
 }

@@ -482,12 +482,9 @@ fn execute_find_lua(
 ) -> Result<Arc<Record>, FindError> {
     let id = ctx.find_cache.find_lua(entity, script, ctx.source_record)?;
 
-    ctx.find_cache
-        .get(entity, id)
-        .map(|r| Arc::new(r.clone()))
-        .ok_or_else(|| {
-            FindError::Other(format!("Lua find returned ID {id} but record not in cache"))
-        })
+    ctx.find_cache.get(entity, id).ok_or_else(|| {
+        FindError::Other(format!("Lua find returned ID {id} but record not in cache"))
+    })
 }
 
 /// Apply fallback when find fails.
