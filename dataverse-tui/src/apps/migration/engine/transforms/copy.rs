@@ -62,6 +62,7 @@ mod tests {
     use dataverse_lib::model::Value;
 
     use super::*;
+    use crate::apps::migration::engine::PathCache;
     use crate::apps::migration::engine::TransformError;
 
     fn make_record() -> Record {
@@ -86,6 +87,7 @@ mod tests {
         vars: &'a HashMap<String, Value>,
         value: &'a Value,
     ) -> ResolveContext<'a> {
+        let path_cache: &'a PathCache = Box::leak(Box::new(PathCache::new()));
         ResolveContext {
             source_record: record,
             variables: vars,
@@ -94,6 +96,7 @@ mod tests {
             index: 0,
             source_entity: Entity::logical("account"),
             target_entity: Entity::logical("contact"),
+            path_cache,
         }
     }
 
@@ -383,6 +386,7 @@ mod tests {
         let record = make_record();
         let vars = HashMap::new();
         let value = Value::Null;
+        let path_cache: &PathCache = Box::leak(Box::new(PathCache::new()));
         let ctx = ResolveContext {
             source_record: &record,
             variables: &vars,
@@ -391,6 +395,7 @@ mod tests {
             index: 7,
             source_entity: Entity::logical("account"),
             target_entity: Entity::logical("contact"),
+            path_cache,
         };
 
         let (result, _) = execute_copy("#index", &ctx);

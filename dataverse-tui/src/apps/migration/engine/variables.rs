@@ -11,6 +11,7 @@ use dataverse_lib::model::Value;
 use super::executor::execute_chain;
 use super::executor::ChainItem;
 use super::types::FindCache;
+use super::types::PathCache;
 use super::types::SystemVars;
 use super::types::TransformContext;
 use super::types::TransformError;
@@ -32,6 +33,7 @@ pub fn compute_variables(
     source_record: &Record,
     system_vars: &SystemVars,
     find_cache: &dyn FindCache,
+    path_cache: &PathCache,
 ) -> Result<HashMap<String, Value>, (String, TransformError)> {
     let mut computed: HashMap<String, Value> = HashMap::new();
 
@@ -45,6 +47,7 @@ pub fn compute_variables(
                 ..system_vars.clone()
             },
             find_cache,
+            path_cache,
         };
 
         match execute_chain(chain, &mut ctx) {
@@ -72,6 +75,7 @@ pub fn compute_variables(
 mod tests {
     use dataverse_lib::model::Entity;
 
+    use crate::apps::migration::engine::PathCache;
     use crate::apps::migration::engine::StubFindCache;
     use crate::apps::migration::types::TransformData;
 
@@ -79,6 +83,10 @@ mod tests {
 
     fn test_system_vars() -> SystemVars {
         SystemVars::new(Entity::logical("account"), Entity::logical("contact"), 0)
+    }
+
+    fn empty_path_cache() -> PathCache {
+        PathCache::new()
     }
 
     #[test]
@@ -93,8 +101,9 @@ mod tests {
         let source = Record::new("account");
         let cache = StubFindCache;
         let sys = test_system_vars();
+        let pc = empty_path_cache();
 
-        let result = compute_variables(&variables, &source, &sys, &cache).unwrap();
+        let result = compute_variables(&variables, &source, &sys, &cache, &pc).unwrap();
         assert_eq!(
             result.get("prefix"),
             Some(&Value::String("ACME".to_string()))
@@ -125,8 +134,9 @@ mod tests {
         let source = Record::new("account").set("name", "world");
         let cache = StubFindCache;
         let sys = test_system_vars();
+        let pc = empty_path_cache();
 
-        let result = compute_variables(&variables, &source, &sys, &cache).unwrap();
+        let result = compute_variables(&variables, &source, &sys, &cache, &pc).unwrap();
         assert_eq!(
             result.get("first"),
             Some(&Value::String("hello".to_string()))
@@ -150,8 +160,9 @@ mod tests {
         let source = Record::new("account");
         let cache = StubFindCache;
         let sys = test_system_vars();
+        let pc = empty_path_cache();
 
-        let err = compute_variables(&variables, &source, &sys, &cache).unwrap_err();
+        let err = compute_variables(&variables, &source, &sys, &cache, &pc).unwrap_err();
         assert_eq!(err.0, "bad_var");
     }
 
@@ -160,8 +171,9 @@ mod tests {
         let source = Record::new("account");
         let cache = StubFindCache;
         let sys = test_system_vars();
+        let pc = empty_path_cache();
 
-        let result = compute_variables(&[], &source, &sys, &cache).unwrap();
+        let result = compute_variables(&[], &source, &sys, &cache, &pc).unwrap();
         assert!(result.is_empty());
     }
 
@@ -179,8 +191,9 @@ mod tests {
         let source = Record::new("account");
         let cache = StubFindCache;
         let sys = test_system_vars();
+        let pc = empty_path_cache();
 
-        let result = compute_variables(&variables, &source, &sys, &cache).unwrap();
+        let result = compute_variables(&variables, &source, &sys, &cache, &pc).unwrap();
         assert_eq!(result.get("starts_null"), Some(&Value::Null));
     }
 }

@@ -41,12 +41,18 @@ use super::comparison::CompareInput;
 use super::comparison::MappingComparison;
 use super::engine::record::execute_record;
 use super::engine::record::RecordResult;
+use super::engine::transforms::extract_placeholders;
+use super::engine::ChainChildren;
 use super::engine::ChainItem;
 use super::engine::FindCache;
+use super::engine::PathCache;
 use super::engine::SystemVars;
+use super::types::Condition;
+use super::types::Expr;
 use super::types::MatchStrategy;
 use super::types::NoMatchFallback;
 use super::types::OrphanStrategy;
+use super::types::TransformData;
 
 use crate::modals::odata_fetch::ODataFetchTask;
 use crate::widgets::filter_builder::FilterNode;
@@ -373,6 +379,9 @@ pub struct MappingResult {
 ///
 /// Calls `execute_record` for each source record with the shared
 /// variables, field mappings, system vars, and find cache.
+///
+/// Builds a path cache once before iteration to avoid re-parsing path
+/// strings for every record.
 pub fn execute_mapping(
     source_records: &[Record],
     variables: &[(String, Vec<ChainItem>)],
@@ -381,6 +390,9 @@ pub fn execute_mapping(
     target_entity: &str,
     find_cache: &dyn FindCache,
 ) -> MappingResult {
+    // Build path cache once for all records in this mapping
+    let path_cache = build_path_cache(variables, field_mappings);
+
     let record_results = source_records
         .iter()
         .enumerate()
@@ -390,11 +402,163 @@ pub fn execute_mapping(
                 Entity::logical(target_entity),
                 index,
             );
-            execute_record(source, variables, field_mappings, system_vars, find_cache)
+            execute_record(
+                source,
+                variables,
+                field_mappings,
+                system_vars,
+                find_cache,
+                &path_cache,
+            )
         })
         .collect();
 
     MappingResult { record_results }
+}
+
+/// Build a path cache from all chains in variables and field mappings.
+///
+/// Walks all chain items recursively, extracting path strings from Copy,
+/// Format, Guard, Match conditions, and Find conditions. Pre-parses them
+/// into `PathExpr` so each record doesn't re-parse the same strings.
+fn build_path_cache(
+    variables: &[(String, Vec<ChainItem>)],
+    field_mappings: &[(String, Vec<ChainItem>)],
+) -> PathCache {
+    let mut cache = PathCache::new();
+
+    for (_, chain) in variables {
+        collect_paths_from_chain(chain, &mut cache);
+    }
+    for (_, chain) in field_mappings {
+        collect_paths_from_chain(chain, &mut cache);
+    }
+
+    cache
+}
+
+/// Recursively collect and pre-parse all path strings from a chain.
+fn collect_paths_from_chain(chain: &[ChainItem], cache: &mut PathCache) {
+    for item in chain {
+        collect_paths_from_data(&item.data, cache);
+        collect_paths_from_children(&item.children, cache);
+    }
+}
+
+/// Extract path strings from a single TransformData and pre-parse them.
+fn collect_paths_from_data(data: &TransformData, cache: &mut PathCache) {
+    match data {
+        TransformData::Copy { path } => {
+            // Handle coalesce syntax: "a ?? b ?? c"
+            if path.contains("??") {
+                for alt in path.split("??").map(|s| s.trim()) {
+                    if !alt.is_empty() {
+                        try_cache_path(alt, cache);
+                    }
+                }
+            } else {
+                try_cache_path(path, cache);
+            }
+        }
+        TransformData::Format { template } => {
+            // Extract placeholders from format template
+            for placeholder in extract_placeholders(template) {
+                // Handle coalesce within placeholders
+                if placeholder.contains("??") {
+                    for alt in placeholder.split("??").map(|s| s.trim()) {
+                        if !alt.is_empty() {
+                            try_cache_path(alt, cache);
+                        }
+                    }
+                } else {
+                    try_cache_path(&placeholder, cache);
+                }
+            }
+        }
+        TransformData::Guard { condition } => {
+            collect_paths_from_condition(condition, cache);
+        }
+        _ => {}
+    }
+}
+
+/// Extract path strings from conditions (Guard, Match branches).
+fn collect_paths_from_condition(condition: &Condition, cache: &mut PathCache) {
+    match condition {
+        Condition::And(conditions) | Condition::Or(conditions) => {
+            for c in conditions {
+                collect_paths_from_condition(c, cache);
+            }
+        }
+        Condition::Not(inner) => collect_paths_from_condition(inner, cache),
+        Condition::Compare { left, right, .. } => {
+            collect_paths_from_expr(left, cache);
+            collect_paths_from_expr(right, cache);
+        }
+        Condition::IsNull(expr) | Condition::IsNotNull(expr) => {
+            collect_paths_from_expr(expr, cache);
+        }
+        Condition::Contains { value, substring } => {
+            collect_paths_from_expr(value, cache);
+            collect_paths_from_expr(substring, cache);
+        }
+        Condition::StartsWith { value, prefix } => {
+            collect_paths_from_expr(value, cache);
+            collect_paths_from_expr(prefix, cache);
+        }
+        Condition::EndsWith { value, suffix } => {
+            collect_paths_from_expr(value, cache);
+            collect_paths_from_expr(suffix, cache);
+        }
+    }
+}
+
+/// Extract path strings from expressions.
+fn collect_paths_from_expr(expr: &Expr, cache: &mut PathCache) {
+    if let Expr::Path(path) = expr {
+        try_cache_path(path, cache);
+    }
+}
+
+/// Extract paths from child chains recursively.
+fn collect_paths_from_children(children: &ChainChildren, cache: &mut PathCache) {
+    match children {
+        ChainChildren::None => {}
+        ChainChildren::Fallback(chain) => collect_paths_from_chain(chain, cache),
+        ChainChildren::Branches(branches, default) => {
+            for branch in branches {
+                collect_paths_from_condition(&branch.condition, cache);
+                collect_paths_from_chain(&branch.chain, cache);
+            }
+            if let Some(default) = default {
+                collect_paths_from_chain(default, cache);
+            }
+        }
+        ChainChildren::Alternatives(alts) => {
+            for alt in alts {
+                collect_paths_from_chain(alt, cache);
+            }
+        }
+        ChainChildren::FindConditions(conditions, default) => {
+            for cond in conditions {
+                collect_paths_from_chain(&cond.source_chain, cache);
+            }
+            if let Some(default) = default {
+                collect_paths_from_chain(default, cache);
+            }
+        }
+    }
+}
+
+/// Try to parse a path string and cache it. Silently skips parse errors
+/// (they'll be caught at execution time with a proper error message).
+fn try_cache_path(path: &str, cache: &mut PathCache) {
+    if cache.contains_key(path) {
+        return;
+    }
+    if let Ok(parsed) = crate::apps::migration::validation::parse_path(path) {
+        cache.insert(path.to_string(), parsed);
+    }
 }
 
 // =============================================================================

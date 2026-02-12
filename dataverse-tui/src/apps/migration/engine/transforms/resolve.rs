@@ -10,6 +10,7 @@ use dataverse_lib::model::Entity;
 use dataverse_lib::model::Record;
 use dataverse_lib::model::Value;
 
+use crate::apps::migration::engine::PathCache;
 use crate::apps::migration::engine::TransformError;
 use crate::apps::migration::engine::TransformResult;
 use crate::apps::migration::types::SystemVar;
@@ -34,6 +35,8 @@ pub struct ResolveContext<'a> {
     pub source_entity: Entity,
     /// Target entity (`#target_entity`).
     pub target_entity: Entity,
+    /// Pre-parsed path cache.
+    pub path_cache: &'a PathCache,
 }
 
 /// Resolve a parsed path expression to a value.
@@ -241,8 +244,15 @@ fn traverse_record(
 
 /// Convenience: resolve a raw path string.
 ///
-/// Parses the path and resolves it. Returns a parse error if the path is invalid.
+/// Looks up the path in the pre-parsed cache first. Falls back to parsing
+/// if not cached (e.g., in tests or one-off resolutions).
 pub fn resolve_path_str(path: &str, ctx: &ResolveContext<'_>) -> (TransformResult, Option<Entity>) {
+    // Check pre-parsed cache first
+    if let Some(parsed) = ctx.path_cache.get(path) {
+        return resolve_path(parsed, ctx);
+    }
+
+    // Fallback: parse on the fly (tests, uncached paths)
     match crate::apps::migration::validation::parse_path(path) {
         Ok(parsed) => resolve_path(&parsed, ctx),
         Err(e) => (
@@ -296,11 +306,17 @@ mod tests {
         vars
     }
 
+    fn empty_cache() -> PathCache {
+        PathCache::new()
+    }
+
     fn make_ctx<'a>(
         source: &'a Record,
         variables: &'a HashMap<String, Value>,
         value: &'a Value,
     ) -> ResolveContext<'a> {
+        // Leak the cache to get 'a lifetime in tests (tiny allocation, acceptable for tests)
+        let cache: &'a PathCache = Box::leak(Box::new(empty_cache()));
         ResolveContext {
             source_record: source,
             variables,
@@ -309,6 +325,7 @@ mod tests {
             index: 42,
             source_entity: Entity::logical("account"),
             target_entity: Entity::logical("contact"),
+            path_cache: cache,
         }
     }
 

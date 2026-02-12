@@ -209,6 +209,8 @@ mod tests {
     use dataverse_lib::model::Entity;
     use dataverse_lib::model::Record;
 
+    use crate::apps::migration::engine::PathCache;
+
     use super::*;
 
     fn make_record() -> Record {
@@ -240,6 +242,7 @@ mod tests {
         vars: &'a HashMap<String, Value>,
         value: &'a Value,
     ) -> ResolveContext<'a> {
+        let path_cache: &'a PathCache = Box::leak(Box::new(PathCache::new()));
         ResolveContext {
             source_record: record,
             variables: vars,
@@ -248,6 +251,7 @@ mod tests {
             index: 5,
             source_entity: Entity::logical("account"),
             target_entity: Entity::logical("contact"),
+            path_cache,
         }
     }
 

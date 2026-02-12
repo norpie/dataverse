@@ -11,6 +11,7 @@ use dataverse_lib::model::Value;
 use super::executor::execute_chain;
 use super::executor::ChainItem;
 use super::types::FindCache;
+use super::types::PathCache;
 use super::types::SystemVars;
 use super::types::TransformContext;
 use super::types::TransformError;
@@ -64,24 +65,27 @@ impl RecordResult {
 /// - `field_mappings`: Field mapping definitions: `(target_field, chain)`.
 /// - `system_vars`: System variables (index, source/target entity).
 /// - `find_cache`: Target data cache for find() resolution.
+/// - `path_cache`: Pre-parsed path expressions for this mapping.
 pub fn execute_record(
     source: &Record,
     variables: &[(String, Vec<ChainItem>)],
     field_mappings: &[(String, Vec<ChainItem>)],
     system_vars: SystemVars,
     find_cache: &dyn FindCache,
+    path_cache: &PathCache,
 ) -> RecordResult {
     // Step 1: Compute variables
-    let computed_vars = match compute_variables(variables, source, &system_vars, find_cache) {
-        Ok(vars) => vars,
-        Err((var_name, error)) => {
-            // Variable computation failed — return a single error and no fields
-            return RecordResult {
-                fields: HashMap::new(),
-                errors: vec![(format!("${}", var_name), error)],
-            };
-        }
-    };
+    let computed_vars =
+        match compute_variables(variables, source, &system_vars, find_cache, path_cache) {
+            Ok(vars) => vars,
+            Err((var_name, error)) => {
+                // Variable computation failed — return a single error and no fields
+                return RecordResult {
+                    fields: HashMap::new(),
+                    errors: vec![(format!("${}", var_name), error)],
+                };
+            }
+        };
 
     // Step 2: Execute field mappings
     let mut fields = HashMap::new();
@@ -97,6 +101,7 @@ pub fn execute_record(
                 ..system_vars.clone()
             },
             find_cache,
+            path_cache,
         };
 
         match execute_chain(chain, &mut ctx) {
@@ -137,6 +142,10 @@ mod tests {
         SystemVars::new(Entity::logical("account"), Entity::logical("account"), 0)
     }
 
+    fn empty_path_cache() -> PathCache {
+        PathCache::new()
+    }
+
     #[test]
     fn simple_copy_mapping() {
         let source = Record::new("account")
@@ -159,7 +168,15 @@ mod tests {
         ];
 
         let cache = StubFindCache;
-        let result = execute_record(&source, &[], &field_mappings, test_system_vars(), &cache);
+        let pc = empty_path_cache();
+        let result = execute_record(
+            &source,
+            &[],
+            &field_mappings,
+            test_system_vars(),
+            &cache,
+            &pc,
+        );
 
         assert!(result.is_ok());
         assert_eq!(result.field_count(), 2);
@@ -188,7 +205,15 @@ mod tests {
         )];
 
         let cache = StubFindCache;
-        let result = execute_record(&source, &[], &field_mappings, test_system_vars(), &cache);
+        let pc = empty_path_cache();
+        let result = execute_record(
+            &source,
+            &[],
+            &field_mappings,
+            test_system_vars(),
+            &cache,
+            &pc,
+        );
 
         assert!(result.is_ok());
         assert_eq!(
@@ -216,12 +241,14 @@ mod tests {
         )];
 
         let cache = StubFindCache;
+        let pc = empty_path_cache();
         let result = execute_record(
             &source,
             &variables,
             &field_mappings,
             test_system_vars(),
             &cache,
+            &pc,
         );
 
         assert!(result.is_ok());
@@ -255,7 +282,15 @@ mod tests {
         ];
 
         let cache = StubFindCache;
-        let result = execute_record(&source, &[], &field_mappings, test_system_vars(), &cache);
+        let pc = empty_path_cache();
+        let result = execute_record(
+            &source,
+            &[],
+            &field_mappings,
+            test_system_vars(),
+            &cache,
+            &pc,
+        );
 
         assert!(!result.is_ok());
         assert_eq!(result.field_count(), 2); // name + guid_field succeeded
@@ -282,12 +317,14 @@ mod tests {
         )];
 
         let cache = StubFindCache;
+        let pc = empty_path_cache();
         let result = execute_record(
             &source,
             &variables,
             &field_mappings,
             test_system_vars(),
             &cache,
+            &pc,
         );
 
         assert!(!result.is_ok());
@@ -325,7 +362,15 @@ mod tests {
         )];
 
         let cache = StubFindCache;
-        let result = execute_record(&source, &[], &field_mappings, test_system_vars(), &cache);
+        let pc = empty_path_cache();
+        let result = execute_record(
+            &source,
+            &[],
+            &field_mappings,
+            test_system_vars(),
+            &cache,
+            &pc,
+        );
 
         assert!(result.is_ok());
         // status != 1, guard doesn't trigger, continues to copy name
@@ -365,7 +410,15 @@ mod tests {
         )];
 
         let cache = StubFindCache;
-        let result = execute_record(&source, &[], &field_mappings, test_system_vars(), &cache);
+        let pc = empty_path_cache();
+        let result = execute_record(
+            &source,
+            &[],
+            &field_mappings,
+            test_system_vars(),
+            &cache,
+            &pc,
+        );
 
         assert!(result.is_ok());
         // Guard triggered, exit with "Active", skipped copy
@@ -379,7 +432,8 @@ mod tests {
     fn empty_mappings() {
         let source = Record::new("account");
         let cache = StubFindCache;
-        let result = execute_record(&source, &[], &[], test_system_vars(), &cache);
+        let pc = empty_path_cache();
+        let result = execute_record(&source, &[], &[], test_system_vars(), &cache, &pc);
 
         assert!(result.is_ok());
         assert_eq!(result.field_count(), 0);

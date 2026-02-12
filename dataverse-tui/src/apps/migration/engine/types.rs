@@ -8,6 +8,18 @@ use dataverse_lib::model::Value;
 use thiserror::Error;
 use uuid::Uuid;
 
+use crate::apps::migration::validation::PathExpr;
+
+// =============================================================================
+// Path Cache
+// =============================================================================
+
+/// Pre-parsed path expressions, keyed by raw path string.
+///
+/// Built once per entity mapping before record iteration, avoiding redundant
+/// `parse_path()` calls for every record × every transform.
+pub type PathCache = HashMap<String, PathExpr>;
+
 // =============================================================================
 // Execution Context
 // =============================================================================
@@ -22,6 +34,8 @@ pub struct TransformContext<'a> {
     pub system_vars: SystemVars,
     /// Find cache for find() resolution.
     pub find_cache: &'a dyn FindCache,
+    /// Pre-parsed path cache (shared across all records in a mapping).
+    pub path_cache: &'a PathCache,
 }
 
 /// System variables available in transforms and conditions.

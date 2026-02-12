@@ -17,6 +17,7 @@ use crate::apps::migration::engine::util::traverse_path;
 use crate::apps::migration::engine::util::values_equal;
 use crate::apps::migration::engine::ChainItem;
 use crate::apps::migration::engine::FindCache;
+use crate::apps::migration::engine::PathCache;
 use crate::apps::migration::engine::SystemVars;
 use crate::apps::migration::engine::TransformContext;
 use crate::apps::migration::engine::TransformResult;
@@ -143,12 +144,14 @@ fn match_find(input: &MatchInput<'_>, target_records: &[Record]) -> MatchResult 
         0,
     );
 
+    let empty_path_cache = PathCache::new();
     for (target_field, source_chain) in input.match_conditions {
         let mut ctx = TransformContext {
             source_record: input.source_record,
             variables: &std::collections::HashMap::new(),
             system_vars: system_vars.clone(),
             find_cache: input.find_cache,
+            path_cache: &empty_path_cache,
         };
 
         match execute_chain(source_chain, &mut ctx) {

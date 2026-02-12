@@ -28,6 +28,7 @@ pub fn resolve_expr(expr: &Expr, ctx: &TransformContext<'_>) -> Result<Value, Tr
                 index: ctx.system_vars.index,
                 source_entity: ctx.system_vars.source_entity.clone(),
                 target_entity: ctx.system_vars.target_entity.clone(),
+                path_cache: ctx.path_cache,
             };
             let (result, _) = resolve_path_str(path, &rctx);
             match result {
@@ -215,6 +216,7 @@ mod tests {
     use dataverse_lib::model::Record;
     use dataverse_lib::model::Value;
 
+    use crate::apps::migration::engine::PathCache;
     use crate::apps::migration::engine::StubFindCache;
     use crate::apps::migration::engine::SystemVars;
     use crate::apps::migration::engine::TransformContext;
@@ -230,11 +232,13 @@ mod tests {
         variables: &'a HashMap<String, Value>,
         cache: &'a StubFindCache,
     ) -> TransformContext<'a> {
+        let path_cache: &'a PathCache = Box::leak(Box::new(PathCache::new()));
         TransformContext {
             source_record: source,
             variables,
             system_vars: SystemVars::new(Entity::logical("account"), Entity::logical("contact"), 5),
             find_cache: cache,
+            path_cache,
         }
     }
 

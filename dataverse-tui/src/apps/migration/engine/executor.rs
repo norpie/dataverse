@@ -222,6 +222,7 @@ fn resolve_ctx<'a>(ctx: &'a TransformContext<'a>) -> ResolveContext<'a> {
         index: ctx.system_vars.index,
         source_entity: ctx.system_vars.source_entity.clone(),
         target_entity: ctx.system_vars.target_entity.clone(),
+        path_cache: ctx.path_cache,
     }
 }
 
@@ -533,6 +534,7 @@ mod tests {
     use dataverse_lib::model::Record;
     use dataverse_lib::model::Value;
 
+    use crate::apps::migration::engine::PathCache;
     use crate::apps::migration::engine::StubFindCache;
     use crate::apps::migration::engine::SystemVars;
     use crate::apps::migration::engine::TransformContext;
@@ -544,6 +546,7 @@ mod tests {
         variables: &'a HashMap<String, Value>,
         cache: &'a StubFindCache,
     ) -> TransformContext<'a> {
+        let path_cache: &'a PathCache = Box::leak(Box::new(PathCache::new()));
         TransformContext {
             source_record: source,
             variables,
@@ -553,6 +556,7 @@ mod tests {
                 0,
             ),
             find_cache: cache,
+            path_cache,
         }
     }
 
