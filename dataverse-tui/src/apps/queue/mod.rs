@@ -10,11 +10,13 @@ pub mod types;
 mod ui;
 
 use std::collections::{HashMap, HashSet, VecDeque};
+use std::sync::Arc;
 
 use chrono::Utc;
 use rafter::page;
 use rafter::prelude::*;
 use rafter::widgets::{Button, Input, Select, SelectState, SelectionMode, Text, Tree, TreeState};
+use tokio::sync::Mutex as TokioMutex;
 use tuidom::Color;
 
 use crate::credentials::CredentialsProvider;
@@ -85,6 +87,9 @@ pub struct Queue {
     prev_source_selection: HashSet<String>,
     /// Search text for filtering by description.
     search_text: String,
+    /// Lock to serialize item-completion handling (prevents race in failure counting).
+    #[state(skip)]
+    completion_lock: Arc<TokioMutex<()>>,
 }
 
 #[app_impl]
@@ -1099,6 +1104,11 @@ impl Queue {
 
     #[event_handler]
     async fn on_item_completed(&self, event: QueueItemCompleted, gx: &GlobalContext) {
+        // Serialize completion handling to prevent race conditions in failure
+        // counting. Without this lock, concurrent handlers can all read the same
+        // failure_count and start new items before the pause takes effect.
+        let _guard = self.completion_lock.lock().await;
+
         // Update item status in memory
         self.items.update(|items| {
             if let Some(i) = items.iter_mut().find(|i| i.id == event.item_id) {
@@ -1146,7 +1156,8 @@ impl Queue {
             });
         }
 
-        // Try to start more items
+        // Try to start more items (still under lock so no other completion
+        // handler can race between the failure check and dispatching new work)
         if self.is_running.get() {
             self.try_start_next_items(gx).await;
         }
