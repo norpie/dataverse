@@ -478,7 +478,7 @@ impl PathSuggestionGenerator {
                 );
                 return self.resolve_variable_target_entity(&name, None);
             }
-            PathExpr::VariableNavigation { name, target, path } => {
+            PathExpr::VariableNavigation { name, target, path, .. } => {
                 // Variable with field navigation — start from variable's target entity
                 let start_entity = self.resolve_variable_target_entity(&name, target.as_deref())?;
                 debug!(
@@ -498,7 +498,7 @@ impl PathSuggestionGenerator {
                 debug!("[PathSuggestions] System variable #{:?} doesn't resolve to entities", var);
                 return None;
             }
-            PathExpr::SystemVarNavigation { var, path } => {
+            PathExpr::SystemVarNavigation { var, path, .. } => {
                 // #value.field — resolve #value's type from variables
                 if var != SystemVar::Value {
                     debug!("[PathSuggestions] Only #value supports navigation");

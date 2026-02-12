@@ -63,6 +63,7 @@ pub fn resolve_path(
             name,
             target: _,
             path,
+            optional,
         } => {
             let var_value = match ctx.variables.get(name.as_str()) {
                 Some(v) => v,
@@ -79,6 +80,7 @@ pub fn resolve_path(
                     let initial_entity = Some(record.entity().clone());
                     traverse_record(record, path, initial_entity)
                 }
+                Value::Null if *optional => (TransformResult::Value(Value::Null), None),
                 Value::Null => (
                     TransformResult::Error(TransformError::type_mismatch("Record", "Null")),
                     None,
@@ -107,7 +109,11 @@ pub fn resolve_path(
             (TransformResult::Value(value), None)
         }
 
-        PathExpr::SystemVarNavigation { var, path } => {
+        PathExpr::SystemVarNavigation {
+            var,
+            path,
+            optional,
+        } => {
             // Only #value supports field navigation
             let base_value = match var {
                 SystemVar::Value => ctx.value,
@@ -127,6 +133,7 @@ pub fn resolve_path(
                     let initial_entity = Some(record.entity().clone());
                     traverse_record(record, path, initial_entity)
                 }
+                Value::Null if *optional => (TransformResult::Value(Value::Null), None),
                 Value::Null => (
                     TransformResult::Error(TransformError::type_mismatch("Record", "Null")),
                     None,

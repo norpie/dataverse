@@ -252,6 +252,7 @@ pub(super) fn collect_navigation_paths(
                     name,
                     target,
                     path: field_path,
+                    ..
                 }) => {
                     // Variable navigation — resolve target entity from variable's declared type
                     let var = variables

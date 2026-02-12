@@ -47,6 +47,7 @@ pub(super) fn compute_chain_types(
                         name,
                         target,
                         path: field_path,
+                        ..
                     }) => resolve_variable_navigation(
                         &name,
                         target.as_deref(),
@@ -64,6 +65,7 @@ pub(super) fn compute_chain_types(
                     Ok(PathExpr::SystemVarNavigation {
                         var,
                         path: field_path,
+                        ..
                     }) => {
                         // #value.field — navigate from #value's type
                         if var != SystemVar::Value {

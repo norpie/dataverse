@@ -33,6 +33,8 @@ pub enum PathExpr {
         target: Option<String>,
         /// The field path to navigate after resolving the variable.
         path: FieldPath,
+        /// Whether the variable itself is optional (`$var?.field` — null-propagating).
+        optional: bool,
     },
     /// System variable: `#value`, `#type`, `#index`
     SystemVar(SystemVar),
@@ -42,6 +44,8 @@ pub enum PathExpr {
         var: SystemVar,
         /// The field path to navigate after resolving the system variable.
         path: FieldPath,
+        /// Whether the system var is optional (`#value?.field` — null-propagating).
+        optional: bool,
     },
     /// Entity reference construction: `/contact($var)`, `/account(parentaccountid)`
     ///
@@ -172,9 +176,15 @@ pub fn parse_path(input: &str) -> Result<PathExpr, ParseError> {
             return Err(ParseError::EmptySystemVar);
         }
 
-        // Check for dot navigation: #value.field
+        // Check for dot navigation: #value.field or #value?.field
         if let Some(dot_pos) = rest.find('.') {
-            let var_name = &rest[..dot_pos];
+            let var_part = &rest[..dot_pos];
+            // Strip optional `?` suffix: #value?.field
+            let (var_name, optional) = if let Some(stripped) = var_part.strip_suffix('?') {
+                (stripped, true)
+            } else {
+                (var_part, false)
+            };
             let sys_var = parse_system_var(var_name)?;
             let field_part = &rest[dot_pos + 1..];
             if field_part.is_empty() {
@@ -184,6 +194,7 @@ pub fn parse_path(input: &str) -> Result<PathExpr, ParseError> {
             return Ok(PathExpr::SystemVarNavigation {
                 var: sys_var,
                 path: FieldPath { segments },
+                optional,
             });
         }
 
@@ -226,10 +237,10 @@ fn parse_entity_ref(input: &str) -> Result<PathExpr, ParseError> {
     })
 }
 
-/// Parse a variable path: `name`, `name.field`, `name[target].field`.
+/// Parse a variable path: `name`, `name.field`, `name[target].field`, `name?.field`.
 fn parse_variable_path(input: &str) -> Result<PathExpr, ParseError> {
     // Check for bracket target on the variable itself: $var[target].field
-    let (name, target, remainder) = if let Some(bracket_start) = input.find('[') {
+    let (name, target, optional, remainder) = if let Some(bracket_start) = input.find('[') {
         let name = &input[..bracket_start];
         if name.is_empty() {
             return Err(ParseError::EmptyVariable);
@@ -241,13 +252,25 @@ fn parse_variable_path(input: &str) -> Result<PathExpr, ParseError> {
             return Err(ParseError::EmptyTarget);
         }
         let remainder = &after_bracket[bracket_end + 1..];
-        (name, Some(target.to_string()), remainder)
+        // Check for optional `?` after bracket: $var[target]?.field
+        let (remainder, optional) = if let Some(rest) = remainder.strip_prefix('?') {
+            (rest, true)
+        } else {
+            (remainder, false)
+        };
+        (name, Some(target.to_string()), optional, remainder)
     } else if let Some(dot_pos) = input.find('.') {
         let name = &input[..dot_pos];
+        // Strip optional `?` suffix: $var?.field
+        let (name, optional) = if let Some(stripped) = name.strip_suffix('?') {
+            (stripped, true)
+        } else {
+            (name, false)
+        };
         if name.is_empty() {
             return Err(ParseError::EmptyVariable);
         }
-        (name, None, &input[dot_pos..])
+        (name, None, optional, &input[dot_pos..])
     } else {
         // Plain variable, no navigation
         return Ok(PathExpr::Variable(input.to_string()));
@@ -266,6 +289,7 @@ fn parse_variable_path(input: &str) -> Result<PathExpr, ParseError> {
         name: name.to_string(),
         target,
         path: FieldPath { segments },
+        optional,
     })
 }
 
@@ -421,12 +445,12 @@ impl PathValidator {
 
         match parsed {
             PathExpr::Variable(name) => self.validate_variable(&name, ctx),
-            PathExpr::VariableNavigation { name, target, path } => {
+            PathExpr::VariableNavigation { name, target, path, .. } => {
                 self.validate_variable_navigation(&name, target.as_deref(), &path, ctx)
                     .await
             }
             PathExpr::SystemVar(var) => self.validate_system_var(var),
-            PathExpr::SystemVarNavigation { var, path } => {
+            PathExpr::SystemVarNavigation { var, path, .. } => {
                 self.validate_system_var_navigation(var, &path, ctx).await
             }
             PathExpr::Field(field_path) => self.validate_field_path(&field_path, ctx).await,
@@ -609,12 +633,12 @@ impl PathValidator {
         // Validate the inner path
         let inner_result = match inner {
             PathExpr::Variable(name) => self.validate_variable(name, ctx),
-            PathExpr::VariableNavigation { name, target, path } => {
+            PathExpr::VariableNavigation { name, target, path, .. } => {
                 self.validate_variable_navigation(name, target.as_deref(), path, ctx)
                     .await
             }
             PathExpr::SystemVar(var) => self.validate_system_var(*var),
-            PathExpr::SystemVarNavigation { var, path } => {
+            PathExpr::SystemVarNavigation { var, path, .. } => {
                 self.validate_system_var_navigation(*var, path, ctx).await
             }
             PathExpr::Field(field_path) => self.validate_field_path(field_path, ctx).await,
@@ -904,6 +928,27 @@ mod tests {
                         optional: false,
                     }]
                 },
+                optional: false,
+            }
+        );
+    }
+
+    #[test]
+    fn parse_variable_navigation_optional() {
+        let result = parse_path("$my_var?.name").unwrap();
+        assert_eq!(
+            result,
+            PathExpr::VariableNavigation {
+                name: "my_var".to_string(),
+                target: None,
+                path: FieldPath {
+                    segments: vec![FieldSegment {
+                        field: "name".to_string(),
+                        target: None,
+                        optional: false,
+                    }]
+                },
+                optional: true,
             }
         );
     }
@@ -930,6 +975,7 @@ mod tests {
                         },
                     ]
                 },
+                optional: false,
             }
         );
     }
@@ -949,6 +995,27 @@ mod tests {
                         optional: false,
                     }]
                 },
+                optional: false,
+            }
+        );
+    }
+
+    #[test]
+    fn parse_variable_navigation_polymorphic_optional() {
+        let result = parse_path("$my_var[account]?.name").unwrap();
+        assert_eq!(
+            result,
+            PathExpr::VariableNavigation {
+                name: "my_var".to_string(),
+                target: Some("account".to_string()),
+                path: FieldPath {
+                    segments: vec![FieldSegment {
+                        field: "name".to_string(),
+                        target: None,
+                        optional: false,
+                    }]
+                },
+                optional: true,
             }
         );
     }
@@ -1065,6 +1132,29 @@ mod tests {
                             optional: false,
                         }]
                     },
+                    optional: false,
+                }),
+            }
+        );
+    }
+
+    #[test]
+    fn parse_entity_ref_with_optional_system_var_navigation() {
+        let result = parse_path("/nrq_country(#value?.nrq_countryid)").unwrap();
+        assert_eq!(
+            result,
+            PathExpr::EntityRef {
+                entity: "nrq_country".to_string(),
+                inner: Box::new(PathExpr::SystemVarNavigation {
+                    var: SystemVar::Value,
+                    path: FieldPath {
+                        segments: vec![FieldSegment {
+                            field: "nrq_countryid".to_string(),
+                            target: None,
+                            optional: false,
+                        }]
+                    },
+                    optional: true,
                 }),
             }
         );
