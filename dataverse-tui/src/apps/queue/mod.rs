@@ -11,7 +11,7 @@ mod ui;
 
 use std::collections::{HashMap, HashSet, VecDeque};
 
-use chrono::{DateTime, Utc};
+use chrono::Utc;
 use rafter::page;
 use rafter::prelude::*;
 use rafter::widgets::{Button, Input, Select, SelectState, SelectionMode, Text, Tree, TreeState};
@@ -42,6 +42,8 @@ use repository::QueueRepository;
 use repository::StatusCounts;
 use tree::{QueueTreeNode, build_tree_nodes};
 use types::ItemStatus;
+use types::ItemTiming;
+use types::QueueItem;
 use types::StatusFilter;
 
 /// Action button visibility and labels for queue item context.
@@ -61,16 +63,16 @@ pub struct Queue {
     repository: Option<QueueRepository>,
     /// Whether the queue is currently executing.
     is_running: bool,
-    /// Number of currently running operations.
-    running_count: usize,
+    /// All queue items (single source of truth).
+    items: Vec<QueueItem>,
+    /// Timing info for items (running elapsed + completed duration).
+    item_timings: HashMap<i64, ItemTiming>,
     /// Maximum concurrent operations.
     max_concurrency: usize,
     /// Consecutive failure count (for auto-pause).
     failure_count: usize,
     /// Maximum failures before auto-pause.
     max_failures: usize,
-    /// Current status counts.
-    status_counts: StatusCounts,
     /// Tree state for the queue items.
     tree_state: TreeState<QueueTreeNode>,
     /// Last 7 execution durations for ETA calculation.
@@ -83,8 +85,6 @@ pub struct Queue {
     prev_source_selection: HashSet<String>,
     /// Search text for filtering by description.
     search_text: String,
-    /// Track start times for running items (item_id -> started_at).
-    running_start_times: HashMap<i64, DateTime<Utc>>,
 }
 
 #[app_impl]
@@ -118,9 +118,14 @@ impl Queue {
             )));
         }
 
-        // Load initial counts
-        if let Ok(counts) = repo.count_by_status().await {
-            self.status_counts.set(counts);
+        // Load all items into memory
+        match repo.list(ListFilter::default()).await {
+            Ok(all_items) => {
+                self.items.set(all_items);
+            }
+            Err(e) => {
+                log::error!("Failed to load queue items: {}", e);
+            }
         }
 
         // Load settings from global data
@@ -131,53 +136,42 @@ impl Queue {
         let saved_sources = settings.queue.source_filter.get();
         let search_text = settings.queue.search_text.get();
 
-        // Build source filter select state
-        let available_sources = repo.get_sources().await.unwrap_or_default();
-        let mut options = vec![("__all__".to_string(), "All sources".to_string())];
-        options.extend(available_sources.iter().map(|s| (s.clone(), s.clone())));
-        let mut source_state = SelectState::new(options).with_selection(SelectionMode::Forced);
-
-        // Restore previously selected sources, or default to "All sources"
-        if saved_sources.is_empty() {
-            source_state
-                .selection
-                .selected
-                .insert("__all__".to_string());
-        } else {
-            for src in &saved_sources {
-                if src == "__all__" || available_sources.contains(src) {
-                    source_state.selection.selected.insert(src.clone());
-                }
-            }
-            // Ensure at least one is selected (Forced mode requirement)
-            if source_state.selection.selected.is_empty() {
-                source_state
-                    .selection
-                    .selected
-                    .insert("__all__".to_string());
-            }
-        }
+        // Build source filter select state (watch_source_options will keep it updated)
+        let source_state = SelectState::new(vec![("__all__".to_string(), "All sources".to_string())])
+            .with_selection(SelectionMode::Forced);
 
         self.status_filter.set(status_filter);
-        // Track initial selection for change detection
-        let initial_selection: HashSet<String> = source_state.selection.selected.clone();
         self.source_filter.set(source_state);
+        // Restore previously selected sources (will be validated by watch_source_options)
+        if saved_sources.is_empty() {
+            self.source_filter.update(|s| {
+                s.selection.selected.insert("__all__".to_string());
+            });
+        } else {
+            self.source_filter.update(|s| {
+                for src in &saved_sources {
+                    s.selection.selected.insert(src.clone());
+                }
+            });
+        }
+        let initial_selection: HashSet<String> = self
+            .source_filter
+            .get()
+            .selection
+            .selected
+            .clone();
         self.prev_source_selection.set(initial_selection);
         self.search_text.set(search_text);
-
-        // Load initial tree (uses filter state)
-        self.refresh_tree(&repo).await;
 
         self.repository.set(Some(repo));
 
         self.is_running.set(false);
-        self.running_count.set(0);
         self.max_concurrency.set(max_concurrency);
         self.failure_count.set(0);
         self.max_failures.set(max_failures);
 
         // Publish ready event for other systems (e.g., taskbar)
-        let counts = self.status_counts.get();
+        let counts = self.status_counts();
         gx.publish(QueueReady {
             is_running: false,
             counts,
@@ -185,7 +179,7 @@ impl Queue {
     }
 
     fn title(&self) -> String {
-        let counts = self.status_counts.get();
+        let counts = self.status_counts();
         let pending = counts.pending();
         let running = counts.running;
 
@@ -201,6 +195,26 @@ impl Queue {
     // =========================================================================
     // Derived State
     // =========================================================================
+
+    /// Compute status counts from the in-memory item list.
+    #[derived]
+    fn status_counts(&self) -> StatusCounts {
+        let items = self.items.get();
+        let mut counts = StatusCounts::default();
+        for item in items.iter() {
+            match item.status {
+                ItemStatus::Blocked => counts.blocked += 1,
+                ItemStatus::Ready => counts.ready += 1,
+                ItemStatus::Paused => counts.paused += 1,
+                ItemStatus::Running => counts.running += 1,
+                ItemStatus::Interrupted => counts.interrupted += 1,
+                ItemStatus::Done => counts.done += 1,
+                ItemStatus::Failed => counts.failed += 1,
+                ItemStatus::PartiallyFailed => counts.partially_failed += 1,
+            }
+        }
+        counts
+    }
 
     /// Compute action button visibility and labels based on focused item.
     #[derived]
@@ -236,6 +250,119 @@ impl Queue {
     }
 
     // =========================================================================
+    // Watches
+    // =========================================================================
+
+    /// Rebuild the tree whenever items, timings, or filters change.
+    #[watch]
+    async fn watch_tree(&self) {
+        let items = self.items.get();
+        let timings = self.item_timings.get();
+        let status_filter = self.status_filter.get();
+        let source_filter_state = self.source_filter.get();
+        let search_text = self.search_text.get();
+
+        // Compute active filters
+        let statuses = status_filter.to_statuses();
+        let sources = {
+            let selected: Vec<String> = source_filter_state.selected_values().cloned().collect();
+            if selected.is_empty() || selected.contains(&"__all__".to_string()) {
+                None
+            } else {
+                Some(selected)
+            }
+        };
+
+        // Filter items
+        let filtered: Vec<&QueueItem> = items
+            .iter()
+            .filter(|item| {
+                if let Some(ref statuses) = statuses {
+                    if !statuses.contains(&item.status) {
+                        return false;
+                    }
+                }
+                if let Some(ref sources) = sources {
+                    if !sources.contains(&item.source) {
+                        return false;
+                    }
+                }
+                if !search_text.is_empty()
+                    && !item
+                        .description
+                        .to_lowercase()
+                        .contains(&search_text.to_lowercase())
+                {
+                    return false;
+                }
+                true
+            })
+            .collect();
+
+        // Build tree nodes
+        let nodes = build_tree_nodes(
+            &filtered.into_iter().cloned().collect::<Vec<_>>(),
+            &timings,
+        );
+        self.tree_state.update(|s| {
+            s.set_roots(nodes);
+        });
+    }
+
+    /// Publish QueueStatusChanged whenever is_running or items change.
+    #[watch]
+    async fn watch_status_publish(&self, gx: &GlobalContext) {
+        let is_running = self.is_running.get();
+        let items = self.items.get();
+
+        let mut counts = StatusCounts::default();
+        for item in items.iter() {
+            match item.status {
+                ItemStatus::Blocked => counts.blocked += 1,
+                ItemStatus::Ready => counts.ready += 1,
+                ItemStatus::Paused => counts.paused += 1,
+                ItemStatus::Running => counts.running += 1,
+                ItemStatus::Interrupted => counts.interrupted += 1,
+                ItemStatus::Done => counts.done += 1,
+                ItemStatus::Failed => counts.failed += 1,
+                ItemStatus::PartiallyFailed => counts.partially_failed += 1,
+            }
+        }
+
+        gx.publish(QueueStatusChanged { is_running, counts });
+    }
+
+    /// Update source filter options whenever items change.
+    #[watch]
+    async fn watch_source_options(&self) {
+        let items = self.items.get();
+
+        let mut sources: Vec<String> = items
+            .iter()
+            .map(|i| i.source.clone())
+            .collect::<HashSet<_>>()
+            .into_iter()
+            .collect();
+        sources.sort();
+
+        self.source_filter.update(|s| {
+            let current_selected: Vec<String> = s
+                .selected_values()
+                .filter(|v| *v == "__all__" || sources.contains(v))
+                .cloned()
+                .collect();
+
+            let mut options = vec![("__all__".to_string(), "All sources".to_string())];
+            options.extend(sources.iter().map(|src| (src.clone(), src.clone())));
+            s.set_options(options);
+
+            for src in current_selected {
+                s.selection.selected.insert(src);
+            }
+        });
+    }
+
+    // =========================================================================
     // Keybinds
     // =========================================================================
 
@@ -265,8 +392,6 @@ impl Queue {
         } else {
             gx.toast(Toast::info("Queue paused"));
         }
-
-        self.publish_status_changed(gx);
     }
 
     #[handler]
@@ -279,29 +404,43 @@ impl Queue {
             return;
         };
 
-        match repo.get_next_ready().await {
-            Ok(Some(item)) => {
+        // Find next ready item from in-memory list
+        let next = self.items.with_ref(|items| {
+            items
+                .iter()
+                .filter(|i| i.status == ItemStatus::Ready)
+                .max_by(|a, b| {
+                    a.priority
+                        .cmp(&b.priority)
+                        .then(b.created_at.cmp(&a.created_at))
+                })
+                .cloned()
+        });
+
+        match next {
+            Some(item) => {
                 if repo
                     .update_status(item.id, ItemStatus::Running)
                     .await
                     .is_ok()
                 {
-                    self.running_count.set(self.running_count.get() + 1);
-                    self.running_start_times.update(|times| {
-                        times.insert(item.id, Utc::now());
+                    let item_id = item.id;
+                    self.items.update(|items| {
+                        if let Some(i) = items.iter_mut().find(|i| i.id == item_id) {
+                            i.status = ItemStatus::Running;
+                        }
                     });
-                    self.refresh_tree(&repo).await;
+                    self.item_timings.update(|timings| {
+                        timings.insert(item_id, ItemTiming::Running { started_at: Utc::now() });
+                    });
 
                     let gx = gx.clone();
                     let repo = repo.clone();
                     tokio::spawn(executor::execute_and_complete(item, repo, gx));
                 }
             }
-            Ok(None) => {
+            None => {
                 gx.toast(Toast::info("No ready items"));
-            }
-            Err(e) => {
-                log::error!("Failed to get next ready item: {}", e);
             }
         }
     }
@@ -316,11 +455,15 @@ impl Queue {
             Ok(count) => {
                 if count > 0 {
                     gx.toast(Toast::info(format!("Cleared {} completed item(s)", count)));
-                    if let Ok(counts) = repo.count_by_status().await {
-                        self.status_counts.set(counts);
-                    }
-                    self.refresh_tree(&repo).await;
-                    self.publish_status_changed(gx);
+                    self.items.update(|items| {
+                        items.retain(|i| !i.status.is_terminal());
+                    });
+                    // Clean up timings for removed items
+                    let remaining_ids: HashSet<i64> =
+                        self.items.with_ref(|items| items.iter().map(|i| i.id).collect());
+                    self.item_timings.update(|timings| {
+                        timings.retain(|id, _| remaining_ids.contains(id));
+                    });
                 }
             }
             Err(e) => {
@@ -388,7 +531,7 @@ impl Queue {
     }
 
     #[handler]
-    async fn pause_item(&self, item_id: i64, gx: &GlobalContext) {
+    async fn pause_item(&self, item_id: i64) {
         let Some(repo) = self.repository.get() else {
             return;
         };
@@ -397,7 +540,11 @@ impl Queue {
             .await
             .is_ok()
         {
-            self.refresh_counts_and_tree(&repo, gx).await;
+            self.items.update(|items| {
+                if let Some(i) = items.iter_mut().find(|i| i.id == item_id) {
+                    i.status = ItemStatus::Paused;
+                }
+            });
         }
     }
 
@@ -407,7 +554,11 @@ impl Queue {
             return;
         };
         if repo.update_status(item_id, ItemStatus::Ready).await.is_ok() {
-            self.refresh_counts_and_tree(&repo, gx).await;
+            self.items.update(|items| {
+                if let Some(i) = items.iter_mut().find(|i| i.id == item_id) {
+                    i.status = ItemStatus::Ready;
+                }
+            });
             if self.is_running.get() {
                 self.try_start_next_items(gx).await;
             }
@@ -420,9 +571,14 @@ impl Queue {
             return;
         };
         match repo.retry_item(item_id).await {
-            Ok(_new_id) => {
+            Ok(new_id) => {
                 gx.toast(Toast::info("Item re-queued"));
-                self.refresh_counts_and_tree(&repo, gx).await;
+                // Load the new item from DB and add to memory
+                if let Ok(new_item) = repo.get(new_id).await {
+                    self.items.update(|items| {
+                        items.push(new_item);
+                    });
+                }
                 if self.is_running.get() {
                     self.try_start_next_items(gx).await;
                 }
@@ -450,7 +606,12 @@ impl Queue {
         };
         if repo.delete(item_id).await.is_ok() {
             gx.toast(Toast::info("Item deleted"));
-            self.refresh_counts_and_tree(&repo, gx).await;
+            self.items.update(|items| {
+                items.retain(|i| i.id != item_id);
+            });
+            self.item_timings.update(|timings| {
+                timings.remove(&item_id);
+            });
         }
     }
 
@@ -494,9 +655,16 @@ impl Queue {
         if let Some(update) = gx
             .modal(crate::apps::queue::modals::EditItemModal::for_item(&item))
             .await
-            && repo.update_item(item_id, update).await.is_ok()
+            && repo.update_item(item_id, update.clone()).await.is_ok()
         {
-            self.refresh_counts_and_tree(&repo, gx).await;
+            self.items.update(|items| {
+                if let Some(i) = items.iter_mut().find(|i| i.id == item_id) {
+                    i.priority = update.priority;
+                    i.description = update.description.clone();
+                    i.source = update.source.clone();
+                    i.env_id = update.env_id;
+                }
+            });
         }
     }
 
@@ -511,7 +679,7 @@ impl Queue {
         };
         match item.status {
             ItemStatus::Ready => {
-                self.pause_item(item.id, gx).await;
+                self.pause_item(item.id).await;
             }
             ItemStatus::Paused => {
                 self.resume_item(item.id, gx).await;
@@ -576,10 +744,6 @@ impl Queue {
         // Persist setting
         let settings = gx.data::<Settings>();
         let _ = settings.queue.status_filter.set(next).await;
-
-        if let Some(repo) = self.repository.get() {
-            self.refresh_tree(&repo).await;
-        }
     }
 
     #[handler]
@@ -604,10 +768,6 @@ impl Queue {
         // Persist setting
         let settings = gx.data::<Settings>();
         let _ = settings.queue.search_text.set(text).await;
-
-        if let Some(repo) = self.repository.get() {
-            self.refresh_tree(&repo).await;
-        }
     }
 
     #[handler]
@@ -628,13 +788,11 @@ impl Queue {
             let all_sources = "__all__".to_string();
 
             if added.contains(&all_sources) {
-                // "All sources" was just selected → clear specific sources
                 self.source_filter.update(|s| {
                     s.selection.selected.clear();
                     s.selection.selected.insert(all_sources.clone());
                 });
             } else if current.contains(&all_sources) {
-                // A specific source was selected while "All sources" was active → clear "All sources"
                 self.source_filter.update(|s| {
                     s.selection.selected.remove(&all_sources);
                 });
@@ -650,16 +808,10 @@ impl Queue {
             .collect();
         self.prev_source_selection.set(final_selection.clone());
 
-        // Save and refresh
-        let selected: Vec<String> = final_selection.into_iter().collect();
-
         // Persist setting
+        let selected: Vec<String> = final_selection.into_iter().collect();
         let settings = gx.data::<Settings>();
         let _ = settings.queue.source_filter.set(selected).await;
-
-        if let Some(repo) = self.repository.get() {
-            self.refresh_tree(&repo).await;
-        }
     }
 
     // =========================================================================
@@ -701,20 +853,20 @@ impl Queue {
             };
 
             match repo.insert(new_item).await {
-                Ok(id) => ids.push(id),
+                Ok(id) => {
+                    // Load inserted item from DB to get the full record
+                    if let Ok(inserted) = repo.get(id).await {
+                        self.items.update(|items| {
+                            items.push(inserted);
+                        });
+                    }
+                    ids.push(id);
+                }
                 Err(e) => {
                     log::error!("Failed to insert queue item: {}", e);
                 }
             }
         }
-
-        // Refresh counts, sources, and tree
-        if let Ok(counts) = repo.count_by_status().await {
-            self.status_counts.set(counts.clone());
-            self.publish_status_changed(gx);
-        }
-        self.refresh_source_options(&repo).await;
-        self.refresh_tree(&repo).await;
 
         // Try to start execution if running
         if self.is_running.get() {
@@ -726,7 +878,7 @@ impl Queue {
 
     #[request_handler]
     async fn handle_get_status(&self, _request: GetQueueStatus) -> StatusCounts {
-        self.status_counts.get()
+        self.status_counts()
     }
 
     #[request_handler]
@@ -770,10 +922,9 @@ impl Queue {
     }
 
     #[request_handler]
-    async fn handle_pause_queue(&self, _request: PauseQueue, gx: &GlobalContext) {
+    async fn handle_pause_queue(&self, _request: PauseQueue) {
         if self.is_running.get() {
             self.is_running.set(false);
-            self.publish_status_changed(gx);
         }
     }
 
@@ -783,7 +934,6 @@ impl Queue {
             self.is_running.set(true);
             self.failure_count.set(0);
             self.try_start_next_items(gx).await;
-            self.publish_status_changed(gx);
         }
     }
 
@@ -791,12 +941,12 @@ impl Queue {
     async fn handle_delete_items(
         &self,
         request: DeleteItems,
-        gx: &GlobalContext,
     ) -> DeleteItemsResponse {
         let Some(repo) = self.repository.get() else {
             return DeleteItemsResponse { deleted: 0 };
         };
 
+        let ids_set: HashSet<i64> = request.ids.iter().copied().collect();
         let deleted = match repo.delete_many(request.ids).await {
             Ok(count) => count,
             Err(e) => {
@@ -806,12 +956,9 @@ impl Queue {
         };
 
         if deleted > 0 {
-            if let Ok(counts) = repo.count_by_status().await {
-                self.status_counts.set(counts.clone());
-                self.publish_status_changed(gx);
-            }
-            self.refresh_source_options(&repo).await;
-            self.refresh_tree(&repo).await;
+            self.items.update(|items| {
+                items.retain(|i| !ids_set.contains(&i.id) || i.status == ItemStatus::Running);
+            });
         }
 
         DeleteItemsResponse { deleted }
@@ -821,12 +968,12 @@ impl Queue {
     async fn handle_delete_items_by_source(
         &self,
         request: DeleteItemsBySource,
-        gx: &GlobalContext,
     ) -> DeleteItemsResponse {
         let Some(repo) = self.repository.get() else {
             return DeleteItemsResponse { deleted: 0 };
         };
 
+        let source = request.source.clone();
         let deleted = match repo.delete_by_source(request.source).await {
             Ok(count) => count,
             Err(e) => {
@@ -836,12 +983,9 @@ impl Queue {
         };
 
         if deleted > 0 {
-            if let Ok(counts) = repo.count_by_status().await {
-                self.status_counts.set(counts.clone());
-                self.publish_status_changed(gx);
-            }
-            self.refresh_source_options(&repo).await;
-            self.refresh_tree(&repo).await;
+            self.items.update(|items| {
+                items.retain(|i| i.source != source || i.status == ItemStatus::Running);
+            });
         }
 
         DeleteItemsResponse { deleted }
@@ -865,11 +1009,14 @@ impl Queue {
                     count,
                     event.display_name
                 );
-                if let Ok(counts) = repo.count_by_status().await {
-                    self.status_counts.set(counts);
-                    self.publish_status_changed(gx);
-                }
-                self.refresh_tree(&repo).await;
+                let env_id = event.id;
+                self.items.update(|items| {
+                    for item in items.iter_mut() {
+                        if item.env_id == env_id && item.status == ItemStatus::Blocked {
+                            item.status = ItemStatus::Ready;
+                        }
+                    }
+                });
                 if self.is_running.get() {
                     self.try_start_next_items(gx).await;
                 }
@@ -882,7 +1029,7 @@ impl Queue {
     }
 
     #[event_handler]
-    async fn on_environment_removed(&self, event: EnvironmentRemoved, gx: &GlobalContext) {
+    async fn on_environment_removed(&self, event: EnvironmentRemoved) {
         let Some(repo) = self.repository.get() else {
             return;
         };
@@ -891,11 +1038,14 @@ impl Queue {
         match repo.update_environment_availability(event.id, false).await {
             Ok(count) if count > 0 => {
                 log::info!("{} queue items blocked (environment removed)", count);
-                if let Ok(counts) = repo.count_by_status().await {
-                    self.status_counts.set(counts);
-                    self.publish_status_changed(gx);
-                }
-                self.refresh_tree(&repo).await;
+                let env_id = event.id;
+                self.items.update(|items| {
+                    for item in items.iter_mut() {
+                        if item.env_id == env_id && item.status == ItemStatus::Ready {
+                            item.status = ItemStatus::Blocked;
+                        }
+                    }
+                });
             }
             Ok(_) => {}
             Err(e) => {
@@ -906,13 +1056,22 @@ impl Queue {
 
     #[event_handler]
     async fn on_item_completed(&self, event: QueueItemCompleted, gx: &GlobalContext) {
-        // Update running count
-        let running = self.running_count.get().saturating_sub(1);
-        self.running_count.set(running);
+        // Update item status in memory
+        self.items.update(|items| {
+            if let Some(i) = items.iter_mut().find(|i| i.id == event.item_id) {
+                i.status = event.status;
+            }
+        });
 
-        // Remove from running start times
-        self.running_start_times.update(|times| {
-            times.remove(&event.item_id);
+        // Update timing: replace running timing with completed timing
+        self.item_timings.update(|timings| {
+            if let Some(ItemTiming::Running { started_at }) = timings.get(&event.item_id) {
+                let duration_ms = (Utc::now() - *started_at).num_milliseconds();
+                timings.insert(
+                    event.item_id,
+                    ItemTiming::Completed { duration_ms },
+                );
+            }
         });
 
         // Track failures for auto-pause
@@ -933,27 +1092,16 @@ impl Queue {
         }
 
         // Track duration for ETA
-        if let Some(repo) = self.repository.get()
-            && let Ok(executions) = repo.get_executions(event.item_id).await
-            && let Some(exec) = executions.first()
+        if let Some(ItemTiming::Completed { duration_ms }) =
+            self.item_timings.with_ref(|t| t.get(&event.item_id).copied())
         {
             self.recent_durations.update(|d| {
-                d.push_back(exec.duration_ms);
+                d.push_back(duration_ms);
                 if d.len() > 7 {
                     d.pop_front();
                 }
             });
         }
-
-        // Refresh counts and tree
-        if let Some(repo) = self.repository.get() {
-            if let Ok(counts) = repo.count_by_status().await {
-                self.status_counts.set(counts);
-            }
-            self.refresh_tree(&repo).await;
-        }
-
-        self.publish_status_changed(gx);
 
         // Try to start more items
         if self.is_running.get() {
@@ -965,146 +1113,52 @@ impl Queue {
     // Internal Methods
     // =========================================================================
 
-    async fn refresh_counts_and_tree(&self, repo: &QueueRepository, gx: &GlobalContext) {
-        if let Ok(counts) = repo.count_by_status().await {
-            self.status_counts.set(counts);
-        }
-        self.refresh_source_options(repo).await;
-        self.refresh_tree(repo).await;
-        self.publish_status_changed(gx);
-    }
-
-    async fn refresh_tree(&self, repo: &QueueRepository) {
-        let statuses = self.status_filter.get().to_statuses();
-
-        let sources = {
-            let state = self.source_filter.get();
-            let selected: Vec<String> = state.selected_values().cloned().collect();
-            // If "All sources" is selected or nothing is selected, don't filter by source
-            if selected.is_empty() || selected.contains(&"__all__".to_string()) {
-                None
-            } else {
-                Some(selected)
-            }
-        };
-
-        let search = {
-            let text = self.search_text.get();
-            if text.is_empty() { None } else { Some(text) }
-        };
-
-        let filter = ListFilter {
-            statuses,
-            sources,
-            search,
-        };
-
-        match repo.list(filter).await {
-            Ok(items) => {
-                // Build timing map
-                let mut timing_map = std::collections::HashMap::new();
-
-                // Add running items from memory
-                let running_times = self.running_start_times.get();
-                for (item_id, started_at) in running_times.iter() {
-                    timing_map.insert(
-                        *item_id,
-                        types::ItemTiming::Running {
-                            started_at: *started_at,
-                        },
-                    );
-                }
-
-                // Add completed items from execution history
-                for item in &items {
-                    if item.status.is_terminal()
-                        && !timing_map.contains_key(&item.id)
-                        && let Ok(executions) = repo.get_executions(item.id).await
-                        && let Some(exec) = executions.first()
-                    {
-                        timing_map.insert(
-                            item.id,
-                            types::ItemTiming::Completed {
-                                duration_ms: exec.duration_ms,
-                            },
-                        );
-                    }
-                }
-
-                let nodes = build_tree_nodes(&items, &timing_map);
-                self.tree_state.update(|s| {
-                    s.set_roots(nodes);
-                });
-            }
-            Err(e) => {
-                log::error!("Failed to load queue items: {}", e);
-            }
-        }
-    }
-
-    async fn refresh_source_options(&self, repo: &QueueRepository) {
-        let available = repo.get_sources().await.unwrap_or_default();
-        self.source_filter.update(|s| {
-            // Preserve current selections that still exist
-            let current_selected: Vec<String> = s
-                .selected_values()
-                .filter(|v| *v == "__all__" || available.contains(v))
-                .cloned()
-                .collect();
-
-            // Build options with "All sources" at the top
-            let mut options = vec![("__all__".to_string(), "All sources".to_string())];
-            options.extend(available.iter().map(|src| (src.clone(), src.clone())));
-            s.set_options(options);
-
-            // Restore valid selections
-            for src in current_selected {
-                s.selection.selected.insert(src);
-            }
-        });
-    }
-
     async fn try_start_next_items(&self, gx: &GlobalContext) {
         let Some(repo) = self.repository.get() else {
             return;
         };
 
         let max = self.max_concurrency.get();
-        let current = self.running_count.get();
+        let current = self.items.with_ref(|items| {
+            items.iter().filter(|i| i.status == ItemStatus::Running).count()
+        });
 
-        // Fill available slots
-        for _ in current..max {
-            match repo.get_next_ready().await {
-                Ok(Some(item)) => {
-                    if repo
-                        .update_status(item.id, ItemStatus::Running)
-                        .await
-                        .is_ok()
-                    {
-                        self.running_count.set(self.running_count.get() + 1);
-                        self.running_start_times.update(|times| {
-                            times.insert(item.id, Utc::now());
-                        });
+        // Collect ready items sorted by priority desc, created_at asc
+        let mut ready: Vec<QueueItem> = self.items.with_ref(|items| {
+            items
+                .iter()
+                .filter(|i| i.status == ItemStatus::Ready)
+                .cloned()
+                .collect()
+        });
+        ready.sort_by(|a, b| {
+            b.priority
+                .cmp(&a.priority)
+                .then(a.created_at.cmp(&b.created_at))
+        });
 
-                        let gx = gx.clone();
-                        let repo = repo.clone();
-                        tokio::spawn(executor::execute_and_complete(item, repo, gx));
+        let slots = max.saturating_sub(current);
+        for item in ready.into_iter().take(slots) {
+            if repo
+                .update_status(item.id, ItemStatus::Running)
+                .await
+                .is_ok()
+            {
+                let item_id = item.id;
+                self.items.update(|items| {
+                    if let Some(i) = items.iter_mut().find(|i| i.id == item_id) {
+                        i.status = ItemStatus::Running;
                     }
-                }
-                Ok(None) => break,
-                Err(e) => {
-                    log::error!("Failed to get next ready item: {}", e);
-                    break;
-                }
+                });
+                self.item_timings.update(|timings| {
+                    timings.insert(item_id, ItemTiming::Running { started_at: Utc::now() });
+                });
+
+                let gx = gx.clone();
+                let repo = repo.clone();
+                tokio::spawn(executor::execute_and_complete(item, repo, gx));
             }
         }
-    }
-
-    fn publish_status_changed(&self, gx: &GlobalContext) {
-        gx.publish(QueueStatusChanged {
-            is_running: self.is_running.get(),
-            counts: self.status_counts.get(),
-        });
     }
 
     // =========================================================================
@@ -1112,7 +1166,7 @@ impl Queue {
     // =========================================================================
 
     fn element(&self) -> Element {
-        let counts = self.status_counts.get();
+        let counts = self.status_counts();
         let is_running = self.is_running.get();
 
         let (status_color, status_label) = if !is_running {

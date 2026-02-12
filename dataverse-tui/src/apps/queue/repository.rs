@@ -577,6 +577,7 @@ pub struct NewQueueItem {
 }
 
 /// Data for updating an existing queue item.
+#[derive(Clone)]
 pub struct UpdateItem {
     pub priority: i32,
     pub description: String,
