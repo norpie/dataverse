@@ -23,6 +23,7 @@ pub struct NewEntityMapping {
     pub no_match_fallback: NoMatchFallback,
     pub orphan_strategy: OrphanStrategy,
     pub create_pass_enabled: bool,
+    pub activate_pass_enabled: bool,
     pub update_pass_enabled: bool,
     pub delete_pass_enabled: bool,
     pub deactivate_pass_enabled: bool,
@@ -45,6 +46,7 @@ pub struct UpdateEntityMapping {
     pub no_match_fallback: Option<NoMatchFallback>,
     pub orphan_strategy: Option<OrphanStrategy>,
     pub create_pass_enabled: Option<bool>,
+    pub activate_pass_enabled: Option<bool>,
     pub update_pass_enabled: Option<bool>,
     pub delete_pass_enabled: Option<bool>,
     pub deactivate_pass_enabled: Option<bool>,
@@ -66,8 +68,10 @@ impl super::MigrationRepository {
                 let mut stmt = conn.prepare(
                     "SELECT id, phase_id, \"order\", name, source_entity, target_entity, mode, lua_script,
                             match_strategy, match_find_config, no_match_fallback, orphan_strategy,
-                            create_pass_enabled, update_pass_enabled, delete_pass_enabled, deactivate_pass_enabled,
-                            associate_pass_enabled, disassociate_pass_enabled, source_filter, target_filter, test_guids
+                            create_pass_enabled, activate_pass_enabled, update_pass_enabled,
+                            delete_pass_enabled, deactivate_pass_enabled,
+                            associate_pass_enabled, disassociate_pass_enabled,
+                            source_filter, target_filter, test_guids
                      FROM entity_mappings
                      WHERE phase_id = ?1
                      ORDER BY \"order\" ASC",
@@ -89,8 +93,10 @@ impl super::MigrationRepository {
                 let mut stmt = conn.prepare(
                     "SELECT em.id, em.phase_id, em.\"order\", em.name, em.source_entity, em.target_entity, em.mode, em.lua_script,
                             em.match_strategy, em.match_find_config, em.no_match_fallback, em.orphan_strategy,
-                            em.create_pass_enabled, em.update_pass_enabled, em.delete_pass_enabled, em.deactivate_pass_enabled,
-                            em.associate_pass_enabled, em.disassociate_pass_enabled, em.source_filter, em.target_filter, em.test_guids
+                            em.create_pass_enabled, em.activate_pass_enabled, em.update_pass_enabled,
+                            em.delete_pass_enabled, em.deactivate_pass_enabled,
+                            em.associate_pass_enabled, em.disassociate_pass_enabled,
+                            em.source_filter, em.target_filter, em.test_guids
                      FROM entity_mappings em
                      INNER JOIN phases p ON em.phase_id = p.id
                      WHERE p.migration_id = ?1
@@ -110,8 +116,10 @@ impl super::MigrationRepository {
                 let mut stmt = conn.prepare(
                     "SELECT id, phase_id, \"order\", name, source_entity, target_entity, mode, lua_script,
                             match_strategy, match_find_config, no_match_fallback, orphan_strategy,
-                            create_pass_enabled, update_pass_enabled, delete_pass_enabled, deactivate_pass_enabled,
-                            associate_pass_enabled, disassociate_pass_enabled, source_filter, target_filter, test_guids
+                            create_pass_enabled, activate_pass_enabled, update_pass_enabled,
+                            delete_pass_enabled, deactivate_pass_enabled,
+                            associate_pass_enabled, disassociate_pass_enabled,
+                            source_filter, target_filter, test_guids
                      FROM entity_mappings
                      WHERE id = ?1",
                 )?;
@@ -162,6 +170,7 @@ impl super::MigrationRepository {
         let target_entity = mapping.target_entity.clone();
         let lua_script = mapping.lua_script.clone();
         let create_pass_enabled = mapping.create_pass_enabled;
+        let activate_pass_enabled = mapping.activate_pass_enabled;
         let update_pass_enabled = mapping.update_pass_enabled;
         let delete_pass_enabled = mapping.delete_pass_enabled;
         let deactivate_pass_enabled = mapping.deactivate_pass_enabled;
@@ -175,9 +184,11 @@ impl super::MigrationRepository {
                     "INSERT INTO entity_mappings (
                         phase_id, \"order\", name, source_entity, target_entity, mode, lua_script,
                         match_strategy, match_find_config, no_match_fallback, orphan_strategy,
-                        create_pass_enabled, update_pass_enabled, delete_pass_enabled, deactivate_pass_enabled,
-                        associate_pass_enabled, disassociate_pass_enabled, source_filter, target_filter, test_guids
-                    ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20)",
+                        create_pass_enabled, activate_pass_enabled, update_pass_enabled,
+                        delete_pass_enabled, deactivate_pass_enabled,
+                        associate_pass_enabled, disassociate_pass_enabled,
+                        source_filter, target_filter, test_guids
+                    ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21)",
                     params![
                         phase_id,
                         order,
@@ -191,6 +202,7 @@ impl super::MigrationRepository {
                         no_match_fallback_str,
                         orphan_strategy_str,
                         create_pass_enabled as i32,
+                        activate_pass_enabled as i32,
                         update_pass_enabled as i32,
                         delete_pass_enabled as i32,
                         deactivate_pass_enabled as i32,
@@ -308,6 +320,10 @@ impl super::MigrationRepository {
                 if let Some(create_pass_enabled) = update.create_pass_enabled {
                     updates.push("create_pass_enabled = ?");
                     param_vals.push(Box::new(create_pass_enabled as i32));
+                }
+                if let Some(activate_pass_enabled) = update.activate_pass_enabled {
+                    updates.push("activate_pass_enabled = ?");
+                    param_vals.push(Box::new(activate_pass_enabled as i32));
                 }
                 if let Some(update_pass_enabled) = update.update_pass_enabled {
                     updates.push("update_pass_enabled = ?");

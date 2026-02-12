@@ -74,6 +74,7 @@ pub struct EntityMapping {
     pub no_match_fallback: NoMatchFallback,
     pub orphan_strategy: OrphanStrategy,
     pub create_pass_enabled: bool,
+    pub activate_pass_enabled: bool,
     pub update_pass_enabled: bool,
     pub delete_pass_enabled: bool,
     pub deactivate_pass_enabled: bool,

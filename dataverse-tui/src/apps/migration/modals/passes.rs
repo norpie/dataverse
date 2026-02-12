@@ -6,10 +6,11 @@ use rafter::widgets::Button;
 use rafter::widgets::Checkbox;
 use rafter::widgets::Text;
 
-/// Result of the passes modal - all 6 pass toggles.
+/// Result of the passes modal - all 7 pass toggles.
 #[derive(Debug, Clone)]
 pub struct PassesResult {
     pub create_pass: bool,
+    pub activate_pass: bool,
     pub update_pass: bool,
     pub delete_pass: bool,
     pub deactivate_pass: bool,
@@ -25,6 +26,7 @@ pub struct PassesModal {
     /// Warning acknowledgment checkbox (not persisted).
     acknowledged: bool,
     create_pass: bool,
+    activate_pass: bool,
     update_pass: bool,
     delete_pass: bool,
     deactivate_pass: bool,
@@ -37,6 +39,7 @@ impl PassesModal {
     pub fn new_modal(
         entity_mapping_id: i64,
         create_pass: bool,
+        activate_pass: bool,
         update_pass: bool,
         delete_pass: bool,
         deactivate_pass: bool,
@@ -47,6 +50,7 @@ impl PassesModal {
             entity_mapping_id,
             false, // acknowledged starts false
             create_pass,
+            activate_pass,
             update_pass,
             delete_pass,
             deactivate_pass,
@@ -81,6 +85,7 @@ impl PassesModal {
     async fn submit(&self, mx: &ModalContext<Option<PassesResult>>) {
         mx.close(Some(PassesResult {
             create_pass: self.create_pass.get(),
+            activate_pass: self.activate_pass.get(),
             update_pass: self.update_pass.get(),
             delete_pass: self.delete_pass.get(),
             deactivate_pass: self.deactivate_pass.get(),
@@ -110,9 +115,10 @@ impl PassesModal {
                         text (content: "Pass Configuration") style (fg: muted)
 
                         checkbox (state: self.create_pass, id: "create-pass", label: "Create Pass - Create new target records")
+                        checkbox (state: self.activate_pass, id: "activate-pass", label: "Activate Pass - Reactivate inactive targets before update")
                         checkbox (state: self.update_pass, id: "update-pass", label: "Update Pass - Update existing target records")
                         checkbox (state: self.delete_pass, id: "delete-pass", label: "Delete Pass - Delete orphaned target records")
-                        checkbox (state: self.deactivate_pass, id: "deactivate-pass", label: "Deactivate Pass - Deactivate when source was deactivated")
+                        checkbox (state: self.deactivate_pass, id: "deactivate-pass", label: "Deactivate Pass - Set inactive state on records and orphans")
                         checkbox (state: self.associate_pass, id: "associate-pass", label: "Associate Pass - Create N:N relationships")
                         checkbox (state: self.disassociate_pass, id: "disassociate-pass", label: "Disassociate Pass - Remove N:N relationships")
                     }
