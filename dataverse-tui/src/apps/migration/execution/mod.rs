@@ -322,7 +322,7 @@ pub fn generate_update_pass(
     metadata: &HashMap<String, ExecutionMetadata>,
     pending_lookups: &[PendingLookupUpdate],
     captured_ids: &HashMap<String, Uuid>,
-) -> Vec<EntityBatches> {
+) -> Result<Vec<EntityBatches>, String> {
     let mut all_entity_batches = Vec::new();
 
     // Group pending lookups by entity for batching
@@ -363,9 +363,9 @@ pub fn generate_update_pass(
 
                 let mut update_record = Record::new(Entity::set(&pending.entity_set));
                 for (field, value) in &pending.lookup_fields {
-                    if let Some(bound) = to_binding(value, field, meta, metadata) {
-                        update_record.insert(field.clone(), bound);
-                    }
+                    let bound = to_binding(value, field, meta, metadata)?;
+                    let odata_name = lookup_odata_name(field, meta)?;
+                    update_record.insert(odata_name.to_string(), bound);
                 }
 
                 let op = Op::update(Entity::set(&pending.entity_set), target_id, update_record)
@@ -400,9 +400,9 @@ pub fn generate_update_pass(
 
                 // Lookup fields need conversion to EntityBinding for @odata.bind format
                 if is_lookup_value(&diff.new_value, &diff.field, meta) {
-                    if let Some(bound) = to_binding(&diff.new_value, &diff.field, meta, metadata) {
-                        update_record.insert(diff.field.clone(), bound);
-                    }
+                    let bound = to_binding(&diff.new_value, &diff.field, meta, metadata)?;
+                    let odata_name = lookup_odata_name(&diff.field, meta)?;
+                    update_record.insert(odata_name.to_string(), bound);
                     continue;
                 }
 
@@ -431,7 +431,7 @@ pub fn generate_update_pass(
         }
     }
 
-    all_entity_batches
+    Ok(all_entity_batches)
 }
 
 // =============================================================================
@@ -783,43 +783,60 @@ fn to_binding(
     field: &str,
     entity_meta: &ExecutionMetadata,
     metadata: &HashMap<String, ExecutionMetadata>,
-) -> Option<Value> {
+) -> Result<Value, String> {
     match value {
         Value::EntityReference(er) => {
             let logical_name = er.entity.name();
-            let target_meta = metadata.get(logical_name);
-            match target_meta {
-                Some(meta) => Some(Value::EntityBinding(er.bind(&meta.entity_set_name))),
-                None => {
-                    log::warn!(
-                        "Cannot resolve entity set name for lookup target '{}' — \
-                         entity not in metadata. Skipping lookup field.",
-                        logical_name
-                    );
-                    None
-                }
-            }
+            let target_meta = metadata.get(logical_name).ok_or_else(|| {
+                format!(
+                    "Cannot resolve entity set name for lookup target '{}' on field '{}' — \
+                     entity not in metadata",
+                    logical_name, field,
+                )
+            })?;
+            Ok(Value::EntityBinding(er.bind(&target_meta.entity_set_name)))
         }
         Value::Null => {
-            // Resolve the target entity set name from lookup_targets
             let set_name = entity_meta
                 .lookup_targets
                 .get(field)
                 .and_then(|targets| targets.first())
                 .and_then(|logical| metadata.get(logical))
                 .map(|m| m.entity_set_name.as_str())
-                .unwrap_or("");
-            Some(Value::EntityBinding(EntityBinding::null(set_name)))
+                .ok_or_else(|| {
+                    format!(
+                        "Cannot resolve entity set name for null lookup field '{}' on entity '{}'",
+                        field, entity_meta.logical_name,
+                    )
+                })?;
+            Ok(Value::EntityBinding(EntityBinding::null(set_name)))
         }
-        Value::EntityBinding(_) => Some(value.clone()),
-        other => {
-            log::warn!(
-                "to_binding called with non-lookup value: {:?}",
-                other.type_name()
-            );
-            None
-        }
+        Value::EntityBinding(_) => Ok(value.clone()),
+        other => Err(format!(
+            "to_binding called with non-lookup value type '{}' for field '{}'",
+            other.type_name(),
+            field,
+        )),
     }
+}
+
+/// Resolve the OData field name for a lookup attribute.
+///
+/// Lookup fields must use the navigation property name (e.g., `nrq_CountryId`)
+/// for `@odata.bind` annotations, not the logical attribute name (`nrq_countryid`).
+///
+/// Returns an error if the navigation property mapping is not found.
+fn lookup_odata_name<'a>(field: &str, meta: &'a ExecutionMetadata) -> Result<&'a str, String> {
+    meta.lookup_nav_properties
+        .get(field)
+        .map(|s| s.as_str())
+        .ok_or_else(|| {
+            format!(
+                "No navigation property found for lookup '{}' on entity '{}' — \
+                 cannot build @odata.bind annotation",
+                field, meta.logical_name,
+            )
+        })
 }
 
 /// Check if a statecode value represents active (0).

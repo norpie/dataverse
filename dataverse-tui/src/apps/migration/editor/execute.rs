@@ -130,7 +130,16 @@ impl MigrationEditor {
             SubPhase::Update => {
                 let pending = self.exec_pending_lookups.get();
                 let captured = self.exec_captured_ids.get();
-                generate_update_pass(&comparisons, &metadata, &pending, &captured)
+                match generate_update_pass(&comparisons, &metadata, &pending, &captured) {
+                    Ok(batches) => batches,
+                    Err(e) => {
+                        log::error!("[execution] Update pass failed: {}", e);
+                        gx.toast(Toast::error(format!("Update pass failed: {}", e)));
+                        self.update_sub_phase_status(sub_phase, SubPhaseStatus::Complete);
+                        self.exec_status.set(ExecutionStatus::Failed);
+                        return;
+                    }
+                }
             }
             SubPhase::Associate => generate_associate_pass(&comparisons, &metadata),
             SubPhase::Disassociate => generate_disassociate_pass(&comparisons, &metadata),

@@ -193,6 +193,10 @@ pub struct ExecutionMetadata {
     pub default_active_statuscode: i32,
     /// The default statuscode value for inactive state (statecode=1).
     pub default_inactive_statuscode: i32,
+    /// Mapping from lookup logical attribute name to navigation property name.
+    /// e.g., "nrq_countryid" → "nrq_CountryId"
+    /// Used for `@odata.bind` serialization which requires the nav property name.
+    pub lookup_nav_properties: HashMap<String, String>,
 }
 
 impl EntityMetadata {
@@ -351,6 +355,18 @@ impl EntityMetadata {
             .map(|a| (a.logical_name.clone(), a.targets.clone()))
             .collect();
 
+        // Build lookup logical name → navigation property name mapping
+        // from many-to-one relationships (the "referencing" side has the lookup).
+        let lookup_nav_properties: HashMap<String, String> = self
+            .many_to_one_relationships
+            .iter()
+            .filter_map(|r| {
+                r.referencing_entity_navigation_property_name
+                    .as_ref()
+                    .map(|nav| (r.referencing_attribute.clone(), nav.clone()))
+            })
+            .collect();
+
         Ok(ExecutionMetadata {
             logical_name: self.logical_name.clone(),
             entity_set_name: self.entity_set_name.clone(),
@@ -361,6 +377,7 @@ impl EntityMetadata {
             junction_relationship,
             default_active_statuscode,
             default_inactive_statuscode,
+            lookup_nav_properties,
         })
     }
 }
