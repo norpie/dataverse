@@ -200,7 +200,7 @@ impl FindCache for LiveFindCache {
 
         let mut matches: Vec<usize> = Vec::new();
 
-        log::debug!(
+        log::trace!(
             "find_where: entity={}, conditions={:?}, indexed_condition={:?}, candidates={:?}",
             entity,
             conditions
@@ -225,7 +225,7 @@ impl FindCache for LiveFindCache {
                         None => matches!(expected, Value::Null),
                     };
                     if !eq {
-                        log::debug!(
+                        log::trace!(
                             "find_where: candidate {} field={} expected={:?} actual={:?} → mismatch",
                             idx, field, expected, actual
                         );

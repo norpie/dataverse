@@ -115,7 +115,7 @@ pub fn evaluate_condition(
             let val = resolve_expr(value, ctx)?;
             let sfx = resolve_expr(suffix, ctx)?;
             let result = string_ends_with(&val, &sfx);
-            log::debug!(
+            log::trace!(
                 "EndsWith: value={:?}, suffix={:?}, result={}",
                 val,
                 sfx,

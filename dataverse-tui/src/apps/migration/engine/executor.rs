@@ -337,7 +337,7 @@ fn execute_match(children: &ChainChildren, ctx: &mut TransformContext<'_>) -> Tr
         _ => return TransformResult::Error(TransformError::other("Match missing branches")),
     };
 
-    log::debug!(
+    log::trace!(
         "execute_match: #value={:?}, {} branches, has_default={}",
         ctx.system_vars.value,
         branches.len(),
@@ -345,7 +345,7 @@ fn execute_match(children: &ChainChildren, ctx: &mut TransformContext<'_>) -> Tr
     );
 
     for (i, branch) in branches.iter().enumerate() {
-        log::debug!(
+        log::trace!(
             "execute_match: evaluating branch {} condition={:?}",
             i,
             branch.condition
@@ -355,13 +355,13 @@ fn execute_match(children: &ChainChildren, ctx: &mut TransformContext<'_>) -> Tr
             Err(e) => return TransformResult::Error(e),
         };
 
-        log::debug!("execute_match: branch {} matched={}", i, matched);
+        log::trace!("execute_match: branch {} matched={}", i, matched);
         if matched {
             return execute_scoped_chain(&branch.chain, ctx);
         }
     }
 
-    log::debug!("execute_match: no branch matched, falling back to default");
+    log::trace!("execute_match: no branch matched, falling back to default");
     // No branch matched — try default
     if let Some(default) = default_chain {
         return execute_scoped_chain(default, ctx);
