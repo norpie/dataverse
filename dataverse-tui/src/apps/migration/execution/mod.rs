@@ -15,6 +15,7 @@ use dataverse_lib::api::Batch;
 use dataverse_lib::api::Op;
 use dataverse_lib::model::metadata::ExecutionMetadata;
 use dataverse_lib::model::metadata::ManyToManyRelationship;
+use dataverse_lib::model::types::OptionSetValue;
 use dataverse_lib::model::Entity;
 use dataverse_lib::model::Record;
 use dataverse_lib::model::Value;
@@ -222,6 +223,88 @@ pub fn generate_create_pass(
         entity_batches: all_entity_batches,
         pending_lookups: all_pending,
     }
+}
+
+// =============================================================================
+// Activate Pass
+// =============================================================================
+
+/// Generate Activate pass operations.
+///
+/// For each `RecordComparison` with `OperationType::Update` where the target
+/// record is currently inactive (`target_statecode` != 0):
+/// - Build an Update operation setting `statecode=0` and `statuscode=1` (Active)
+///
+/// This must run before the Update pass because Dataverse rejects PATCH on
+/// inactive records. After updates are applied, the Deactivate pass will
+/// restore the desired inactive state if needed.
+///
+/// Junction entities are skipped (they cannot be deactivated/activated).
+pub fn generate_activate_pass(
+    comparisons: &[MappingComparison],
+    metadata: &HashMap<String, ExecutionMetadata>,
+) -> Vec<EntityBatches> {
+    let mut all_entity_batches = Vec::new();
+
+    for mapping in comparisons {
+        let Some(meta) = metadata.get(&mapping.target_entity) else {
+            continue;
+        };
+
+        // Junction entities can't be activated/deactivated
+        if meta.is_intersect {
+            continue;
+        }
+
+        let mut operations = Vec::new();
+
+        for record in &mapping.records {
+            if record.operation != OperationType::Update {
+                continue;
+            }
+
+            let Some(target_id) = record.target_id else {
+                continue;
+            };
+
+            // Check if the target record is currently inactive
+            let is_inactive = record
+                .target_statecode
+                .as_ref()
+                .map(|v| !is_active_statecode(v))
+                .unwrap_or(false);
+
+            if !is_inactive {
+                continue;
+            }
+
+            // Build an Update to reactivate: statecode=0, statuscode=1
+            let mut activate_record = Record::new(Entity::set(&meta.entity_set_name));
+            activate_record.insert("statecode", OptionSetValue::new(0));
+            activate_record.insert("statuscode", OptionSetValue::new(1));
+
+            let op = Op::update(
+                Entity::set(&meta.entity_set_name),
+                target_id,
+                activate_record,
+            )
+            .bypass_plugins()
+            .bypass_flows()
+            .build();
+
+            operations.push(op);
+        }
+
+        if !operations.is_empty() {
+            all_entity_batches.push(EntityBatches {
+                entity: mapping.target_entity.clone(),
+                operation_count: operations.len(),
+                batches: build_batches(operations),
+            });
+        }
+    }
+
+    all_entity_batches
 }
 
 // =============================================================================
@@ -445,10 +528,160 @@ pub fn generate_disassociate_pass(
 }
 
 // =============================================================================
+// Deactivate Pass
+// =============================================================================
+
+/// Generate Deactivate pass operations.
+///
+/// Two sources of deactivation:
+///
+/// **Source A: Orphan records** — `OrphanRecord` with `OperationType::Deactivate`.
+/// Sets `statecode=1, statuscode=2` (standard Inactive).
+///
+/// **Source B: State restoration** — records that were created or updated but need
+/// to end up inactive. For each `RecordComparison` with `OperationType::Create` or
+/// `OperationType::Update` whose transformed `statecode` is not active:
+/// - For Create: uses `known_target_id` from pending_lookups or `captured_ids`
+/// - For Update: uses `record.target_id`
+/// Sets `statecode` and `statuscode` to the values from the transformed map.
+///
+/// Junction entities are skipped.
+pub fn generate_deactivate_pass(
+    comparisons: &[MappingComparison],
+    metadata: &HashMap<String, ExecutionMetadata>,
+    pending_lookups: &[PendingLookupUpdate],
+    captured_ids: &HashMap<String, Uuid>,
+) -> Vec<EntityBatches> {
+    let mut all_entity_batches = Vec::new();
+
+    for mapping in comparisons {
+        let Some(meta) = metadata.get(&mapping.target_entity) else {
+            continue;
+        };
+
+        // Junction entities can't be deactivated
+        if meta.is_intersect {
+            continue;
+        }
+
+        let mut operations = Vec::new();
+
+        // Source A: Orphan deactivation
+        for orphan in &mapping.orphans {
+            if orphan.operation != OperationType::Deactivate {
+                continue;
+            }
+
+            let Some(record_id) = orphan.record_id else {
+                continue;
+            };
+
+            let mut deactivate_record = Record::new(Entity::set(&meta.entity_set_name));
+            deactivate_record.insert("statecode", OptionSetValue::new(1));
+            deactivate_record.insert("statuscode", OptionSetValue::new(2));
+
+            let op = Op::update(
+                Entity::set(&meta.entity_set_name),
+                record_id,
+                deactivate_record,
+            )
+            .bypass_plugins()
+            .bypass_flows()
+            .build();
+
+            operations.push(op);
+        }
+
+        // Source B: State restoration for created/updated records that should be inactive
+        for record in &mapping.records {
+            let target_id = match record.operation {
+                OperationType::Create => {
+                    // Find the target ID from pending_lookups or captured_ids
+                    let source_id = match record.source_id {
+                        Some(id) => id,
+                        None => continue,
+                    };
+                    let content_id = source_id.to_string();
+
+                    // Check pending_lookups for a known_target_id first
+                    let from_pending = pending_lookups
+                        .iter()
+                        .find(|p| p.content_id == content_id)
+                        .and_then(|p| p.known_target_id);
+
+                    match from_pending.or_else(|| captured_ids.get(&content_id).copied()) {
+                        Some(id) => id,
+                        None => {
+                            log::warn!(
+                                "No target ID for created record {} — skipping deactivation",
+                                content_id
+                            );
+                            continue;
+                        }
+                    }
+                }
+                OperationType::Update => match record.target_id {
+                    Some(id) => id,
+                    None => continue,
+                },
+                _ => continue,
+            };
+
+            // Check if the transformed statecode is inactive
+            let transformed_statecode = record.transformed.get("statecode");
+            let needs_deactivation = transformed_statecode
+                .map(|v| !is_active_statecode(v))
+                .unwrap_or(false);
+
+            if !needs_deactivation {
+                continue;
+            }
+
+            // Use transformed statecode value; fall back to standard inactive
+            let statecode_value = transformed_statecode
+                .cloned()
+                .unwrap_or_else(|| Value::OptionSet(OptionSetValue::new(1)));
+
+            // Use transformed statuscode if present; fall back to standard inactive (2)
+            let statuscode_value = record
+                .transformed
+                .get("statuscode")
+                .cloned()
+                .unwrap_or_else(|| Value::OptionSet(OptionSetValue::new(2)));
+
+            let mut deactivate_record = Record::new(Entity::set(&meta.entity_set_name));
+            deactivate_record.insert("statecode", statecode_value);
+            deactivate_record.insert("statuscode", statuscode_value);
+
+            let op = Op::update(
+                Entity::set(&meta.entity_set_name),
+                target_id,
+                deactivate_record,
+            )
+            .bypass_plugins()
+            .bypass_flows()
+            .build();
+
+            operations.push(op);
+        }
+
+        if !operations.is_empty() {
+            all_entity_batches.push(EntityBatches {
+                entity: mapping.target_entity.clone(),
+                operation_count: operations.len(),
+                batches: build_batches(operations),
+            });
+        }
+    }
+
+    all_entity_batches
+}
+
+// =============================================================================
 // Delete Pass
 // =============================================================================
 
-/// Generate Delete pass operations for orphan records.
+/// Generate Delete pass operations.
 ///
 /// For each `OrphanRecord` with `OperationType::Delete`:
 /// - Build a Delete operation using the orphan's record_id

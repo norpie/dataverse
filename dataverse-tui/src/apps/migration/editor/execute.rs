@@ -14,8 +14,9 @@ use crate::apps::migration::execution::SubPhase;
 use crate::apps::migration::execution::SubPhaseProgress;
 use crate::apps::migration::execution::SubPhaseStatus;
 use crate::apps::migration::execution::{
-    generate_associate_pass, generate_create_pass, generate_delete_pass,
-    generate_disassociate_pass, generate_update_pass, total_operations,
+    generate_activate_pass, generate_associate_pass, generate_create_pass,
+    generate_deactivate_pass, generate_delete_pass, generate_disassociate_pass,
+    generate_update_pass, total_operations,
 };
 use crate::apps::migration::repository::MigrationRepository;
 use crate::apps::migration::repository::NewPhaseRun;
@@ -125,10 +126,7 @@ impl MigrationEditor {
                 self.exec_pending_lookups.set(result.pending_lookups);
                 result.entity_batches
             }
-            SubPhase::Activate => {
-                // TODO: generate_activate_pass (step 5)
-                Vec::new()
-            }
+            SubPhase::Activate => generate_activate_pass(&comparisons, &metadata),
             SubPhase::Update => {
                 let pending = self.exec_pending_lookups.get();
                 let captured = self.exec_captured_ids.get();
@@ -137,8 +135,9 @@ impl MigrationEditor {
             SubPhase::Associate => generate_associate_pass(&comparisons, &metadata),
             SubPhase::Disassociate => generate_disassociate_pass(&comparisons, &metadata),
             SubPhase::Deactivate => {
-                // TODO: generate_deactivate_pass (step 6)
-                Vec::new()
+                let pending = self.exec_pending_lookups.get();
+                let captured = self.exec_captured_ids.get();
+                generate_deactivate_pass(&comparisons, &metadata, &pending, &captured)
             }
             SubPhase::Delete => generate_delete_pass(&comparisons, &metadata),
         };
