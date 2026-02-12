@@ -272,10 +272,13 @@ pub fn generate_activate_pass(
                 continue;
             }
 
-            // Build an Update to reactivate: statecode=0, statuscode=1
+            // Build an Update to reactivate using metadata-derived statuscode
             let mut activate_record = Record::new(Entity::set(&meta.entity_set_name));
             activate_record.insert("statecode", OptionSetValue::new(0));
-            activate_record.insert("statuscode", OptionSetValue::new(1));
+            activate_record.insert(
+                "statuscode",
+                OptionSetValue::new(meta.default_active_statuscode),
+            );
 
             let op = Op::update(
                 Entity::set(&meta.entity_set_name),
@@ -579,7 +582,10 @@ pub fn generate_deactivate_pass(
 
             let mut deactivate_record = Record::new(Entity::set(&meta.entity_set_name));
             deactivate_record.insert("statecode", OptionSetValue::new(1));
-            deactivate_record.insert("statuscode", OptionSetValue::new(2));
+            deactivate_record.insert(
+                "statuscode",
+                OptionSetValue::new(meta.default_inactive_statuscode),
+            );
 
             let op = Op::update(
                 Entity::set(&meta.entity_set_name),
@@ -643,12 +649,14 @@ pub fn generate_deactivate_pass(
                 .cloned()
                 .unwrap_or_else(|| Value::OptionSet(OptionSetValue::new(1)));
 
-            // Use transformed statuscode if present; fall back to standard inactive (2)
+            // Use transformed statuscode if present; fall back to metadata-derived inactive
             let statuscode_value = record
                 .transformed
                 .get("statuscode")
                 .cloned()
-                .unwrap_or_else(|| Value::OptionSet(OptionSetValue::new(2)));
+                .unwrap_or_else(|| {
+                    Value::OptionSet(OptionSetValue::new(meta.default_inactive_statuscode))
+                });
 
             let mut deactivate_record = Record::new(Entity::set(&meta.entity_set_name));
             deactivate_record.insert("statecode", statecode_value);

@@ -186,6 +186,10 @@ pub struct ExecutionMetadata {
     pub is_intersect: bool,
     /// For junction entities: the N:N relationship this entity backs.
     pub junction_relationship: Option<ManyToManyRelationship>,
+    /// The default statuscode value for active state (statecode=0).
+    pub default_active_statuscode: i32,
+    /// The default statuscode value for inactive state (statecode=1).
+    pub default_inactive_statuscode: i32,
 }
 
 impl EntityMetadata {
@@ -286,7 +290,7 @@ impl EntityMetadata {
     /// For junction entities, finds the N:N relationship by scanning
     /// `many_to_many_relationships` for one whose `intersect_entity_name`
     /// matches this entity's logical name.
-    pub fn execution_metadata(&self) -> ExecutionMetadata {
+    pub fn execution_metadata(&self) -> Result<ExecutionMetadata, String> {
         let lookup_attributes = self
             .attributes
             .iter()
@@ -303,14 +307,50 @@ impl EntityMetadata {
             None
         };
 
-        ExecutionMetadata {
+        // Find default active/inactive statuscodes from status attribute options
+        let status_options = self.status_attributes.first().ok_or_else(|| {
+            format!(
+                "Entity '{}' has no status attributes — cannot determine valid statuscodes",
+                self.logical_name,
+            )
+        })?;
+
+        let default_active_statuscode = status_options
+            .option_set
+            .options
+            .iter()
+            .find(|o| o.state == 0)
+            .ok_or_else(|| {
+                format!(
+                    "Entity '{}' has no statuscode option for statecode=0 (active)",
+                    self.logical_name,
+                )
+            })?
+            .value;
+
+        let default_inactive_statuscode = status_options
+            .option_set
+            .options
+            .iter()
+            .find(|o| o.state == 1)
+            .ok_or_else(|| {
+                format!(
+                    "Entity '{}' has no statuscode option for statecode=1 (inactive)",
+                    self.logical_name,
+                )
+            })?
+            .value;
+
+        Ok(ExecutionMetadata {
             logical_name: self.logical_name.clone(),
             entity_set_name: self.entity_set_name.clone(),
             primary_key: self.primary_id_attribute.clone(),
             lookup_attributes,
             is_intersect: self.is_intersect,
             junction_relationship,
-        }
+            default_active_statuscode,
+            default_inactive_statuscode,
+        })
     }
 }
 

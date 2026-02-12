@@ -1007,7 +1007,10 @@ impl MigrationEditor {
                             updater.update(format!("Resolving metadata: {}", entity_name));
                             match target_client.metadata().entity(entity_name.as_str()).await {
                                 Ok(em) => {
-                                    metadata.insert(entity_name.clone(), em.execution_metadata());
+                                    let exec_meta = em.execution_metadata().map_err(|e| {
+                                        format!("Metadata error for {}: {}", entity_name, e)
+                                    })?;
+                                    metadata.insert(entity_name.clone(), exec_meta);
                                 }
                                 Err(e) => {
                                     return Err(format!(
