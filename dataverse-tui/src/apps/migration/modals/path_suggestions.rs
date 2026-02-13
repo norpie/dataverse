@@ -184,26 +184,35 @@ impl PathSuggestionGenerator {
                 .collect();
         }
 
-        // No paren yet — suggest target entity logical names
-        debug!("[PathSuggestions] Suggesting target entity names after /");
-        match self.target_client.metadata().all_entities().await {
-            Ok(entities) => {
-                let mut suggestions: Vec<_> = entities
-                    .iter()
-                    .map(|e| {
-                        let value = format!("/{}(", e.logical_name);
-                        let label = format!("/{}( — {}", e.logical_name, e.schema_name);
-                        (value, label)
-                    })
-                    .collect();
-                suggestions.sort_by(|a, b| a.0.cmp(&b.0));
-                suggestions
-            }
-            Err(e) => {
-                debug!("[PathSuggestions] Failed to fetch all entities: {:?}", e);
-                Vec::new()
+        // No paren yet — suggest entity logical names from both environments
+        debug!("[PathSuggestions] Suggesting entity names after /");
+        let mut seen = std::collections::HashSet::new();
+        let mut suggestions = Vec::new();
+
+        // Source entities first
+        if let Ok(entities) = self.client.metadata().all_entities().await {
+            for e in &entities {
+                if seen.insert(e.logical_name.clone()) {
+                    let value = format!("/{}(", e.logical_name);
+                    let label = format!("/{}( — {}", e.logical_name, e.schema_name);
+                    suggestions.push((value, label));
+                }
             }
         }
+
+        // Then target entities (skipping duplicates)
+        if let Ok(entities) = self.target_client.metadata().all_entities().await {
+            for e in &entities {
+                if seen.insert(e.logical_name.clone()) {
+                    let value = format!("/{}(", e.logical_name);
+                    let label = format!("/{}( — {}", e.logical_name, e.schema_name);
+                    suggestions.push((value, label));
+                }
+            }
+        }
+
+        suggestions.sort_by(|a, b| a.0.cmp(&b.0));
+        suggestions
     }
 
     /// Generate root-level suggestions: source fields, variables, system vars.

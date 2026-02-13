@@ -624,8 +624,10 @@ impl PathValidator {
         inner: &PathExpr,
         ctx: &ValidationContext,
     ) -> ValidationResult {
-        // Validate the entity exists in the target environment
-        if let Err(e) = self.target_client.metadata().entity(entity).await {
+        // Validate the entity exists (try source first, then target)
+        if self.client.metadata().entity(entity).await.is_err()
+            && let Err(e) = self.target_client.metadata().entity(entity).await
+        {
             return ValidationResult::Invalid(format!("Entity '{}' not found: {}", entity, e));
         }
 
