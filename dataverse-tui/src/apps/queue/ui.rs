@@ -10,10 +10,10 @@ use tuidom::Color;
 
 use crate::formatting::format_value;
 
-use super::repository::StatusCounts;
-use super::tree::{format_operation, QueueTreeNode};
-use super::types::{QueueItem, QueuePayload};
 use super::Queue;
+use super::repository::StatusCounts;
+use super::tree::{QueueTreeNode, format_operation};
+use super::types::{QueueItem, QueuePayload};
 
 /// Recursively find a node by key in the tree.
 fn find_node_recursive(

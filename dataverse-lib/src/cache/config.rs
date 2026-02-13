@@ -62,7 +62,7 @@ impl Default for CacheConfig {
             attribute_metadata_ttl: Duration::from_secs(21600), // 6 hours
             global_optionset_ttl: Duration::from_secs(43200), // 12 hours
             relationship_ttl: Duration::from_secs(43200), // 12 hours
-            query_ttl: Duration::from_secs(3600), // 1 hour
+            query_ttl: Duration::from_secs(3600),        // 1 hour
             record_ttl: Duration::from_secs(300),        // 5 minutes
         }
     }

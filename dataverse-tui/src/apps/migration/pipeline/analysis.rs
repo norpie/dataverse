@@ -18,10 +18,10 @@ use crate::apps::migration::types::Condition;
 use crate::apps::migration::types::Expr;
 use crate::apps::migration::types::FindMode;
 use crate::apps::migration::types::TransformData;
-use crate::apps::migration::validation::parse_path;
 use crate::apps::migration::validation::FieldPath;
 use crate::apps::migration::validation::FieldSegment;
 use crate::apps::migration::validation::PathExpr;
+use crate::apps::migration::validation::parse_path;
 
 use super::ExpandSpec;
 use super::FetchPlan;

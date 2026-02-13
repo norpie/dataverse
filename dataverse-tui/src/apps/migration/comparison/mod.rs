@@ -13,18 +13,18 @@ use dataverse_lib::model::Record;
 use dataverse_lib::model::Value;
 use uuid::Uuid;
 
-use self::diff::diff_fields;
 use self::diff::FieldDiff;
-use self::matching::build_target_index;
-use self::matching::match_target;
+use self::diff::diff_fields;
 use self::matching::MatchInput;
 use self::matching::MatchResult;
 use self::matching::TargetIndexError;
+use self::matching::build_target_index;
+use self::matching::match_target;
 
-use super::engine::record::RecordResult;
 use super::engine::ChainItem;
 use super::engine::FindCache;
 use super::engine::TransformError;
+use super::engine::record::RecordResult;
 use super::types::MatchStrategy;
 use super::types::NoMatchFallback;
 use super::types::OrphanStrategy;

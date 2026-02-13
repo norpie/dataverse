@@ -48,9 +48,9 @@ use crate::apps::migration::execution::PendingLookupUpdate;
 use crate::apps::migration::execution::SubPhase;
 use crate::apps::migration::execution::SubPhaseProgress;
 use crate::apps::migration::types::PhaseRunStatus;
+use crate::apps::queue::Queue;
 use crate::apps::queue::api::DeleteItemsBySource;
 use crate::apps::queue::api::PauseQueue;
-use crate::apps::queue::Queue;
 use crate::modals::ConfirmModal;
 use crate::modals::LoadingModal;
 use crate::systems::client_management::ClientManagement;
@@ -167,40 +167,40 @@ impl MigrationEditor {
             source_client,
             target_client,
             TreeState::default(),
-            Vec::new(), // phases
-            Vec::new(), // entity_mappings
-            Vec::new(), // variables
-            Vec::new(), // field_mappings
-            Vec::new(), // transforms
-            Vec::new(), // match_branches
-            Vec::new(), // coalesce_chains
-            Vec::new(), // find_conditions
-            Vec::new(), // match_conditions
-            0,                             // preview_phase_id
-            String::new(),                 // preview_phase_name
-            Vec::new(),                    // preview_results
-            0,                             // preview_entity_index
-            Vec::new(),                    // preview_entity_names
-            OperationTypeCounts::default(),// preview_counts
-            TableState::default(),         // preview_table
-            String::new(),                          // exec_phase_name
-            0,                                      // exec_phase_run_id
-            ExecutionStatus::Idle,                  // exec_status
-            Vec::new(),                             // exec_sub_phase_progress
-            Vec::new(),                             // exec_pending_lookups
-            std::collections::HashMap::new(),       // exec_captured_ids
-            Vec::new(),                             // exec_tracked_item_ids
-            Vec::new(),                             // exec_all_item_ids
-            Vec::new(),                             // exec_errors
-            TreeState::default(),                   // exec_tree
-            Vec::new(),                             // exec_comparisons
-            std::collections::HashMap::new(),       // exec_metadata
-            Vec::new(),                             // exec_entity_mappings
-            None,                                   // exec_current_sub_phase
-            std::collections::HashMap::new(),       // exec_item_entity_map
-            std::collections::HashMap::new(),       // exec_item_op_counts
-            0,                                      // exec_env_id
-            0,                                      // exec_account_id
+            Vec::new(),                       // phases
+            Vec::new(),                       // entity_mappings
+            Vec::new(),                       // variables
+            Vec::new(),                       // field_mappings
+            Vec::new(),                       // transforms
+            Vec::new(),                       // match_branches
+            Vec::new(),                       // coalesce_chains
+            Vec::new(),                       // find_conditions
+            Vec::new(),                       // match_conditions
+            0,                                // preview_phase_id
+            String::new(),                    // preview_phase_name
+            Vec::new(),                       // preview_results
+            0,                                // preview_entity_index
+            Vec::new(),                       // preview_entity_names
+            OperationTypeCounts::default(),   // preview_counts
+            TableState::default(),            // preview_table
+            String::new(),                    // exec_phase_name
+            0,                                // exec_phase_run_id
+            ExecutionStatus::Idle,            // exec_status
+            Vec::new(),                       // exec_sub_phase_progress
+            Vec::new(),                       // exec_pending_lookups
+            std::collections::HashMap::new(), // exec_captured_ids
+            Vec::new(),                       // exec_tracked_item_ids
+            Vec::new(),                       // exec_all_item_ids
+            Vec::new(),                       // exec_errors
+            TreeState::default(),             // exec_tree
+            Vec::new(),                       // exec_comparisons
+            std::collections::HashMap::new(), // exec_metadata
+            Vec::new(),                       // exec_entity_mappings
+            None,                             // exec_current_sub_phase
+            std::collections::HashMap::new(), // exec_item_entity_map
+            std::collections::HashMap::new(), // exec_item_op_counts
+            0,                                // exec_env_id
+            0,                                // exec_account_id
         )
     }
 }
@@ -433,8 +433,10 @@ impl MigrationEditor {
         self.exec_metadata.set(std::collections::HashMap::new());
         self.exec_entity_mappings.set(Vec::new());
         self.exec_current_sub_phase.set(None);
-        self.exec_item_entity_map.set(std::collections::HashMap::new());
-        self.exec_item_op_counts.set(std::collections::HashMap::new());
+        self.exec_item_entity_map
+            .set(std::collections::HashMap::new());
+        self.exec_item_op_counts
+            .set(std::collections::HashMap::new());
         self.exec_env_id.set(0);
         self.exec_account_id.set(0);
     }
@@ -456,10 +458,8 @@ impl MigrationEditor {
             return;
         }
 
-        let phase_options: Vec<(i64, String)> = phases
-            .iter()
-            .map(|p| (p.id, p.name.clone()))
-            .collect();
+        let phase_options: Vec<(i64, String)> =
+            phases.iter().map(|p| (p.id, p.name.clone())).collect();
 
         let Some(phase_id) = gx.modal(SelectPhaseModal::new_modal(phase_options)).await else {
             return;
@@ -475,7 +475,11 @@ impl MigrationEditor {
         let entity_mappings = self.entity_mappings.get();
         let phase_mappings: Vec<_> = entity_mappings
             .iter()
-            .filter(|em| em.phase_id == phase_id && !em.source_entity.is_empty() && !em.target_entity.is_empty())
+            .filter(|em| {
+                em.phase_id == phase_id
+                    && !em.source_entity.is_empty()
+                    && !em.target_entity.is_empty()
+            })
             .cloned()
             .collect();
 
@@ -497,9 +501,11 @@ impl MigrationEditor {
         let target_client = self.target_client.get().clone();
 
         // Fetch primary keys and junction FK attributes for all source/target entities
-        let mut primary_keys: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+        let mut primary_keys: std::collections::HashMap<String, String> =
+            std::collections::HashMap::new();
         // For junction entities: maps entity_name -> (fk_attr1, fk_attr2)
-        let mut junction_fk_attrs: std::collections::HashMap<String, (String, String)> = std::collections::HashMap::new();
+        let mut junction_fk_attrs: std::collections::HashMap<String, (String, String)> =
+            std::collections::HashMap::new();
         for em in &phase_mappings {
             for entity in [&em.source_entity, &em.target_entity] {
                 if !entity.is_empty() && !primary_keys.contains_key(entity.as_str()) {
@@ -510,10 +516,8 @@ impl MigrationEditor {
                     };
                     match client.metadata().entity(entity.as_str()).await {
                         Ok(meta) => {
-                            primary_keys.insert(
-                                entity.clone(),
-                                meta.primary_id_attribute().to_string(),
-                            );
+                            primary_keys
+                                .insert(entity.clone(), meta.primary_id_attribute().to_string());
 
                             // For junction entities, extract the FK attribute names
                             // from the ManyToManyRelationship metadata
@@ -525,12 +529,12 @@ impl MigrationEditor {
                                     ) {
                                         log::debug!(
                                             "[preview] junction entity '{}': FK attrs = ({}, {})",
-                                            entity, fk1, fk2,
+                                            entity,
+                                            fk1,
+                                            fk2,
                                         );
-                                        junction_fk_attrs.insert(
-                                            entity.clone(),
-                                            (fk1.clone(), fk2.clone()),
-                                        );
+                                        junction_fk_attrs
+                                            .insert(entity.clone(), (fk1.clone(), fk2.clone()));
                                     }
                                 }
                             }
@@ -539,7 +543,8 @@ impl MigrationEditor {
                             gx.modal(ErrorAcknowledgmentModal::new(
                                 "Metadata Fetch Failed".into(),
                                 format!("Failed to fetch metadata for {}: {}", entity, e),
-                            )).await;
+                            ))
+                            .await;
                             return;
                         }
                     }
@@ -548,9 +553,12 @@ impl MigrationEditor {
         }
 
         // Per-mapping: materialize chains and build MappingInputs
-        let mut materialized_field_mappings: Vec<Vec<(String, Vec<super::engine::ChainItem>)>> = Vec::new();
-        let mut materialized_variables: Vec<Vec<(String, Vec<super::engine::ChainItem>)>> = Vec::new();
-        let mut materialized_match_conditions: Vec<Vec<(String, Vec<super::engine::ChainItem>)>> = Vec::new();
+        let mut materialized_field_mappings: Vec<Vec<(String, Vec<super::engine::ChainItem>)>> =
+            Vec::new();
+        let mut materialized_variables: Vec<Vec<(String, Vec<super::engine::ChainItem>)>> =
+            Vec::new();
+        let mut materialized_match_conditions: Vec<Vec<(String, Vec<super::engine::ChainItem>)>> =
+            Vec::new();
 
         for em in &phase_mappings {
             // Filter data for this entity mapping
@@ -575,12 +583,8 @@ impl MigrationEditor {
                 .cloned()
                 .collect();
 
-            let mat_data = MaterializeData::new(
-                em_transforms,
-                em_branches,
-                em_coalesces,
-                em_find_conds,
-            );
+            let mat_data =
+                MaterializeData::new(em_transforms, em_branches, em_coalesces, em_find_conds);
 
             // Materialize field mapping chains
             let fm_chains: Vec<(String, Vec<_>)> = all_field_mappings
@@ -593,7 +597,10 @@ impl MigrationEditor {
                         fm.target_field,
                         fm.id,
                         chain.len(),
-                        chain.iter().map(|c| format!("{:?}", std::mem::discriminant(&c.data))).collect::<Vec<_>>()
+                        chain
+                            .iter()
+                            .map(|c| format!("{:?}", std::mem::discriminant(&c.data)))
+                            .collect::<Vec<_>>()
                     );
                     (fm.target_field.clone(), chain)
                 })
@@ -658,9 +665,15 @@ impl MigrationEditor {
         for (i, input) in mapping_inputs.iter().enumerate() {
             log::debug!(
                 "[preview] MappingInput[{}]: name={:?} source={:?} target={:?} src_pk={:?} tgt_pk={:?} field_mappings={} variables={} test_guids={:?}",
-                i, input.mapping_name, input.source_entity, input.target_entity,
-                input.source_primary_key, input.target_primary_key,
-                input.field_mappings.len(), input.variables.len(), input.test_guids,
+                i,
+                input.mapping_name,
+                input.source_entity,
+                input.target_entity,
+                input.source_primary_key,
+                input.target_primary_key,
+                input.field_mappings.len(),
+                input.variables.len(),
+                input.test_guids,
             );
         }
         let mut phase_plan = pipeline::analyze_phase(&mapping_inputs);
@@ -674,17 +687,27 @@ impl MigrationEditor {
                     target.select.insert(fk2.clone());
                     log::debug!(
                         "[preview] added junction FK attrs to target $select for '{}': {}, {}",
-                        em.target_entity, fk1, fk2,
+                        em.target_entity,
+                        fk1,
+                        fk2,
                     );
                 }
             }
             // Also ensure source junction FK attrs are fetched (for source synthetic IDs)
             if let Some((fk1, fk2)) = junction_fk_attrs.get(&em.source_entity) {
-                phase_plan.mapping_plans[i].source.select.insert(fk1.clone());
-                phase_plan.mapping_plans[i].source.select.insert(fk2.clone());
+                phase_plan.mapping_plans[i]
+                    .source
+                    .select
+                    .insert(fk1.clone());
+                phase_plan.mapping_plans[i]
+                    .source
+                    .select
+                    .insert(fk2.clone());
                 log::debug!(
                     "[preview] added junction FK attrs to source $select for '{}': {}, {}",
-                    em.source_entity, fk1, fk2,
+                    em.source_entity,
+                    fk1,
+                    fk2,
                 );
             }
         }
@@ -692,12 +715,22 @@ impl MigrationEditor {
         for (i, plan) in phase_plan.mapping_plans.iter().enumerate() {
             log::debug!(
                 "[preview] FetchPlan[{}]: source_entity={:?} source_select={:?} expands={} target={:?} find_caches={}",
-                i, plan.source.entity, plan.source.select, plan.source.expands.len(),
+                i,
+                plan.source.entity,
+                plan.source.select,
+                plan.source.expands.len(),
                 plan.target.as_ref().map(|t| t.entity.as_str()),
                 plan.find_caches.len(),
             );
         }
-        log::debug!("[preview] merged_find_caches: {:?}", phase_plan.merged_find_caches.iter().map(|c| &c.entity).collect::<Vec<_>>());
+        log::debug!(
+            "[preview] merged_find_caches: {:?}",
+            phase_plan
+                .merged_find_caches
+                .iter()
+                .map(|c| &c.entity)
+                .collect::<Vec<_>>()
+        );
 
         // 2. Build fetch tasks
         let fetch_tasks = match pipeline::build_phase_fetch_tasks(
@@ -711,7 +744,8 @@ impl MigrationEditor {
                 gx.modal(ErrorAcknowledgmentModal::new(
                     "Fetch Task Error".into(),
                     format!("Failed to build fetch tasks: {:?}", e),
-                )).await;
+                ))
+                .await;
                 return;
             }
         };
@@ -729,7 +763,8 @@ impl MigrationEditor {
                 gx.modal(ErrorAcknowledgmentModal::new(
                     "Fetch Failed".into(),
                     format!("Fetch failed: {}", e),
-                )).await;
+                ))
+                .await;
                 return;
             }
         };
@@ -846,10 +881,8 @@ impl MigrationEditor {
         let comparisons = match comparisons {
             Ok(c) => c,
             Err(e) => {
-                gx.modal(ErrorAcknowledgmentModal::new(
-                    "Comparison Error".into(),
-                    e,
-                )).await;
+                gx.modal(ErrorAcknowledgmentModal::new("Comparison Error".into(), e))
+                    .await;
                 return;
             }
         };
@@ -857,8 +890,10 @@ impl MigrationEditor {
         // Store results and navigate
         self.preview_phase_id.set(phase_id);
         self.preview_phase_name.set(phase_name);
-        self.preview_entity_names.set(preview::entity_names(&comparisons));
-        self.preview_counts.set(preview::entity_counts(&comparisons, 0));
+        self.preview_entity_names
+            .set(preview::entity_names(&comparisons));
+        self.preview_counts
+            .set(preview::entity_counts(&comparisons, 0));
         self.preview_results.set(comparisons);
         self.preview_entity_index.set(0);
         self.navigate(Page::Preview);
@@ -936,9 +971,9 @@ impl MigrationEditor {
         });
         let phase_name = self.preview_phase_name.get();
 
-        let has_work = counts.create + counts.update + counts.associate
-            + counts.disassociate + counts.delete
-            > 0;
+        let has_work =
+            counts.create + counts.update + counts.associate + counts.disassociate + counts.delete
+                > 0;
         if !has_work {
             gx.toast(Toast::warning("Nothing to execute"));
             return;
@@ -993,7 +1028,14 @@ impl MigrationEditor {
             .map(|c| c.target_entity.clone())
             .collect();
 
-        let metadata_result: Result<(std::collections::HashMap<String, ExecutionMetadata>, i64, i64), String> = gx
+        let metadata_result: Result<
+            (
+                std::collections::HashMap<String, ExecutionMetadata>,
+                i64,
+                i64,
+            ),
+            String,
+        > = gx
             .modal(LoadingModal::run_with_default_updates(
                 "Preparing execution...",
                 || Err("Cancelled".to_string()),
@@ -1036,25 +1078,25 @@ impl MigrationEditor {
                         for entity_name in &lookup_targets {
                             updater.update(format!("Resolving lookup target: {}", entity_name));
                             match target_client.metadata().entity(entity_name.as_str()).await {
-                                Ok(em) => {
-                                    match em.execution_metadata() {
-                                        Ok(exec_meta) => {
-                                            metadata.insert(entity_name.clone(), exec_meta);
-                                        }
-                                        Err(e) => {
-                                            log::warn!(
-                                                "Metadata error for lookup target {}: {} — \
-                                                 lookups to this entity may fail",
-                                                entity_name, e
-                                            );
-                                        }
+                                Ok(em) => match em.execution_metadata() {
+                                    Ok(exec_meta) => {
+                                        metadata.insert(entity_name.clone(), exec_meta);
                                     }
-                                }
+                                    Err(e) => {
+                                        log::warn!(
+                                            "Metadata error for lookup target {}: {} — \
+                                                 lookups to this entity may fail",
+                                            entity_name,
+                                            e
+                                        );
+                                    }
+                                },
                                 Err(e) => {
                                     log::warn!(
                                         "Failed to fetch metadata for lookup target {}: {} — \
                                          lookups to this entity may fail",
-                                        entity_name, e
+                                        entity_name,
+                                        e
                                     );
                                 }
                             }
@@ -1077,9 +1119,7 @@ impl MigrationEditor {
 
         // Resolve account_id for the target environment
         let account_id = match gx
-            .request_system::<ClientManagement, GetAnyClient>(GetAnyClient {
-                env_id,
-            })
+            .request_system::<ClientManagement, GetAnyClient>(GetAnyClient { env_id })
             .await
         {
             Ok(Ok(info)) => info.account_id,
@@ -1131,9 +1171,9 @@ impl MigrationEditor {
         self.preview_table.set(table.unwrap_or_default());
 
         // Update counts for the current entity
-        let counts = self.preview_results.with_ref(|results| {
-            preview::entity_counts(results, index)
-        });
+        let counts = self
+            .preview_results
+            .with_ref(|results| preview::entity_counts(results, index));
         self.preview_counts.set(counts);
     }
 
@@ -1187,7 +1227,11 @@ impl MigrationEditor {
     // =========================================================================
 
     #[event_handler]
-    async fn on_queue_item_completed(&self, event: crate::apps::queue::api::QueueItemCompleted, gx: &GlobalContext) {
+    async fn on_queue_item_completed(
+        &self,
+        event: crate::apps::queue::api::QueueItemCompleted,
+        gx: &GlobalContext,
+    ) {
         self.handle_item_completed(&event, gx).await;
     }
 
@@ -1211,7 +1255,8 @@ impl MigrationEditor {
             }
             Some(MigrationTreeNode::EntityMapping(emn)) => {
                 // Entity mapping selected -> add sibling entity mapping
-                self.add_entity_mapping_impl(emn.entity_mapping.phase_id, gx).await;
+                self.add_entity_mapping_impl(emn.entity_mapping.phase_id, gx)
+                    .await;
             }
             Some(MigrationTreeNode::Variables { entity_mapping_id }) => {
                 // Variables section -> add new variable
@@ -1308,7 +1353,8 @@ impl MigrationEditor {
                 self.delete_phase_impl(phase.id, cx, gx).await;
             }
             Some(MigrationTreeNode::EntityMapping(emn)) => {
-                self.delete_entity_mapping_impl(emn.entity_mapping.id, cx, gx).await;
+                self.delete_entity_mapping_impl(emn.entity_mapping.id, cx, gx)
+                    .await;
             }
             Some(MigrationTreeNode::Variable(vn)) => {
                 self.delete_variable_impl(vn.variable.id, vn.variable.entity_mapping_id, cx, gx)

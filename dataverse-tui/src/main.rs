@@ -33,9 +33,21 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     init_logging()?;
 
     let (settings, credentials, migrations) = tokio::try_join!(
-        async { init_settings().await.map_err(|e| Box::new(e) as Box<dyn std::error::Error>) },
-        async { init_credentials().await.map_err(|e| Box::new(e) as Box<dyn std::error::Error>) },
-        async { init_migrations().await.map_err(|e| Box::new(e) as Box<dyn std::error::Error>) },
+        async {
+            init_settings()
+                .await
+                .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)
+        },
+        async {
+            init_credentials()
+                .await
+                .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)
+        },
+        async {
+            init_migrations()
+                .await
+                .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)
+        },
     )?;
 
     Runtime::new()?

@@ -1,8 +1,8 @@
 //! Math transform - arithmetic operations.
 
 use dataverse_lib::model::Value;
-use rust_decimal::prelude::ToPrimitive;
 use rust_decimal::Decimal;
+use rust_decimal::prelude::ToPrimitive;
 
 use crate::apps::migration::engine::TransformError;
 use crate::apps::migration::engine::TransformResult;

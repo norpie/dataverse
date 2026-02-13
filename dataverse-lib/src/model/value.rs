@@ -7,6 +7,7 @@ use chrono::Utc;
 use rust_decimal::Decimal;
 use uuid::Uuid;
 
+use super::Record;
 use super::types::EntityBinding;
 use super::types::EntityReference;
 use super::types::FileReference;
@@ -14,7 +15,6 @@ use super::types::ImageReference;
 use super::types::Money;
 use super::types::MultiSelectOptionSetValue;
 use super::types::OptionSetValue;
-use super::Record;
 
 /// A dynamic value that can hold any Dataverse field type.
 ///

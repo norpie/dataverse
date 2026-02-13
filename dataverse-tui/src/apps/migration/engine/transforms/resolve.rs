@@ -6,10 +6,10 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use dataverse_lib::model::types::EntityReference;
 use dataverse_lib::model::Entity;
 use dataverse_lib::model::Record;
 use dataverse_lib::model::Value;
+use dataverse_lib::model::types::EntityReference;
 
 use crate::apps::migration::engine::PathCache;
 use crate::apps::migration::engine::TransformError;

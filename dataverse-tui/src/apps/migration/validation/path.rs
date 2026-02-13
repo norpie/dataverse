@@ -445,7 +445,9 @@ impl PathValidator {
 
         match parsed {
             PathExpr::Variable(name) => self.validate_variable(&name, ctx),
-            PathExpr::VariableNavigation { name, target, path, .. } => {
+            PathExpr::VariableNavigation {
+                name, target, path, ..
+            } => {
                 self.validate_variable_navigation(&name, target.as_deref(), &path, ctx)
                     .await
             }
@@ -624,16 +626,15 @@ impl PathValidator {
     ) -> ValidationResult {
         // Validate the entity exists in the target environment
         if let Err(e) = self.target_client.metadata().entity(entity).await {
-            return ValidationResult::Invalid(format!(
-                "Entity '{}' not found: {}",
-                entity, e
-            ));
+            return ValidationResult::Invalid(format!("Entity '{}' not found: {}", entity, e));
         }
 
         // Validate the inner path
         let inner_result = match inner {
             PathExpr::Variable(name) => self.validate_variable(name, ctx),
-            PathExpr::VariableNavigation { name, target, path, .. } => {
+            PathExpr::VariableNavigation {
+                name, target, path, ..
+            } => {
                 self.validate_variable_navigation(name, target.as_deref(), path, ctx)
                     .await
             }
@@ -642,9 +643,10 @@ impl PathValidator {
                 self.validate_system_var_navigation(*var, path, ctx).await
             }
             PathExpr::Field(field_path) => self.validate_field_path(field_path, ctx).await,
-            PathExpr::EntityRef { entity: e, inner: i } => {
-                Box::pin(self.validate_entity_ref(e, i, ctx)).await
-            }
+            PathExpr::EntityRef {
+                entity: e,
+                inner: i,
+            } => Box::pin(self.validate_entity_ref(e, i, ctx)).await,
         };
 
         // Check the inner path resolved to a Guid-compatible type
@@ -667,10 +669,7 @@ impl PathValidator {
                 }
 
                 ValidationResult::Valid(ValidPath {
-                    description: format!(
-                        "EntityRef: /{} → {}",
-                        entity, valid_inner.description
-                    ),
+                    description: format!("EntityRef: /{} → {}", entity, valid_inner.description),
                     value_type: Some(AttributeType::Lookup),
                 })
             }

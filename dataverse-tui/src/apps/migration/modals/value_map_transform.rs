@@ -203,8 +203,9 @@ impl ValueMapTransformModal {
     /// Rebuild source select options when mappings change, filtering out already-used values.
     #[watch]
     async fn sync_source_options(&self) {
-        let used_froms: std::collections::HashSet<i32> =
-            self.mappings.with_ref(|m| m.items.iter().map(|d| d.from).collect());
+        let used_froms: std::collections::HashSet<i32> = self
+            .mappings
+            .with_ref(|m| m.items.iter().map(|d| d.from).collect());
 
         self.source_select.update(|s| {
             s.set_options(

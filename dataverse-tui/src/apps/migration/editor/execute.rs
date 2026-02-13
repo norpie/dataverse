@@ -22,12 +22,12 @@ use crate::apps::migration::repository::MigrationRepository;
 use crate::apps::migration::repository::NewPhaseRun;
 use crate::apps::migration::types::EntityMapping;
 use crate::apps::migration::types::PhaseRunStatus;
+use crate::apps::queue::Queue;
 use crate::apps::queue::api::AddItems;
 use crate::apps::queue::api::GetItemResults;
 use crate::apps::queue::api::NewItem;
 use crate::apps::queue::api::QueueItemCompleted;
 use crate::apps::queue::types::QueuePayload;
-use crate::apps::queue::Queue;
 
 use super::MigrationEditor;
 
@@ -40,9 +40,9 @@ impl MigrationEditor {
     /// - Already navigated to Page::Execute
     pub(super) async fn start_execution(&self, gx: &GlobalContext) {
         // Create PhaseRun in DB
-        let phase_id = self.exec_entity_mappings.with_ref(|ems| {
-            ems.first().map(|em| em.phase_id).unwrap_or(0)
-        });
+        let phase_id = self
+            .exec_entity_mappings
+            .with_ref(|ems| ems.first().map(|em| em.phase_id).unwrap_or(0));
 
         let repo = gx.data::<MigrationRepository>();
         let phase_run_id = match repo
@@ -103,7 +103,9 @@ impl MigrationEditor {
 
         // Check if any entity mapping has this pass enabled
         let entity_mappings = self.exec_entity_mappings.get();
-        let any_enabled = entity_mappings.iter().any(|em| is_pass_enabled(em, sub_phase));
+        let any_enabled = entity_mappings
+            .iter()
+            .any(|em| is_pass_enabled(em, sub_phase));
 
         if !any_enabled {
             log::info!(
@@ -219,12 +221,7 @@ impl MigrationEditor {
                         env_id,
                         account_id,
                         source: "migration".to_string(),
-                        description: format!(
-                            "{} {} ({})",
-                            sub_phase.label(),
-                            eb.entity,
-                            op_count
-                        ),
+                        description: format!("{} {} ({})", sub_phase.label(), eb.entity, op_count),
                     },
                     eb.entity.clone(),
                     op_count,
@@ -314,7 +311,9 @@ impl MigrationEditor {
             None => return,
         };
 
-        let entity = self.exec_item_entity_map.with_ref(|m| m.get(&item_id).cloned());
+        let entity = self
+            .exec_item_entity_map
+            .with_ref(|m| m.get(&item_id).cloned());
         let op_count = self
             .exec_item_op_counts
             .with_ref(|m| m.get(&item_id).copied().unwrap_or(0));
@@ -405,7 +404,10 @@ impl MigrationEditor {
         // Update entity progress
         if let Some(entity_name) = &entity {
             self.exec_sub_phase_progress.update(|progress| {
-                if let Some(sp) = progress.iter_mut().find(|p| p.sub_phase == current_sub_phase) {
+                if let Some(sp) = progress
+                    .iter_mut()
+                    .find(|p| p.sub_phase == current_sub_phase)
+                {
                     if let Some(ep) = sp.entities.iter_mut().find(|e| &e.entity == entity_name) {
                         ep.completed += success_count + failure_count;
                         ep.failed += failure_count;
@@ -423,10 +425,7 @@ impl MigrationEditor {
         let remaining = self.exec_tracked_item_ids.with_ref(|ids| ids.len());
 
         if remaining == 0 {
-            log::info!(
-                "[execution] Sub-phase {:?} complete",
-                current_sub_phase,
-            );
+            log::info!("[execution] Sub-phase {:?} complete", current_sub_phase,);
             self.update_sub_phase_status(current_sub_phase, SubPhaseStatus::Complete);
             self.advance_to_next_sub_phase(current_sub_phase, gx).await;
         }
@@ -487,12 +486,7 @@ impl MigrationEditor {
 
         let repo = gx.data::<MigrationRepository>();
         if let Err(e) = repo
-            .update_phase_run_status(
-                phase_run_id,
-                status,
-                Some(all_item_ids),
-                error,
-            )
+            .update_phase_run_status(phase_run_id, status, Some(all_item_ids), error)
             .await
         {
             log::error!("[execution] Failed to update phase run status: {}", e);

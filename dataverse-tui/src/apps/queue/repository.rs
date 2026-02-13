@@ -357,12 +357,7 @@ impl QueueRepository {
     pub async fn clear_all(&self) -> Result<usize, RepositoryError> {
         let affected = self
             .client
-            .conn(|conn| {
-                conn.execute(
-                    "DELETE FROM queue_items WHERE status != 'running'",
-                    [],
-                )
-            })
+            .conn(|conn| conn.execute("DELETE FROM queue_items WHERE status != 'running'", []))
             .await?;
         Ok(affected)
     }

@@ -19,10 +19,7 @@ impl SelectPhaseModal {
     ///
     /// `phases` is a list of `(id, name)` pairs.
     pub fn new_modal(phases: Vec<(i64, String)>) -> Self {
-        let options: Vec<(i64, String)> = phases
-            .into_iter()
-            .map(|(id, name)| (id, name))
-            .collect();
+        let options: Vec<(i64, String)> = phases.into_iter().map(|(id, name)| (id, name)).collect();
         let state = RadioState::new(options);
         Self::new(state)
     }

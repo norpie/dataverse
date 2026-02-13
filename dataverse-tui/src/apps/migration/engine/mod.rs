@@ -13,11 +13,11 @@ mod types;
 pub mod util;
 pub mod variables;
 
-pub use executor::execute_chain;
 pub use executor::BranchItem;
 pub use executor::ChainChildren;
 pub use executor::ChainItem;
 pub use executor::FindConditionItem;
+pub use executor::execute_chain;
 pub use paths::FieldPath;
 pub use types::FindCache;
 pub use types::FindError;

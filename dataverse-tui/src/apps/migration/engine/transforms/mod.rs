@@ -16,8 +16,8 @@ mod string_ops;
 mod value_map;
 
 pub use constant::execute_constant;
-pub use convert::execute_convert;
 pub use convert::ConvertTarget;
+pub use convert::execute_convert;
 pub use copy::execute_copy;
 pub use format::execute_format;
 pub use format::extract_placeholders;
@@ -29,5 +29,5 @@ pub use parse::execute_parse_decimal;
 pub use parse::execute_parse_int;
 pub use replace::execute_replace;
 pub use string_ops::execute_string_ops;
-pub use value_map::execute_value_map;
 pub use value_map::ValueMapping;
+pub use value_map::execute_value_map;

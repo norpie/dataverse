@@ -2,10 +2,10 @@
 
 mod parse;
 
-pub use parse::{parse_filter_value, string_to_value, ParseError};
+pub use parse::{ParseError, parse_filter_value, string_to_value};
 
-use dataverse_lib::model::metadata::AttributeType;
 use dataverse_lib::model::Value;
+use dataverse_lib::model::metadata::AttributeType;
 
 /// Returns the default column width for a given attribute type.
 pub fn default_column_width(attr_type: &AttributeType) -> u16 {

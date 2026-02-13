@@ -200,10 +200,7 @@ impl PathSuggestionGenerator {
                 suggestions
             }
             Err(e) => {
-                debug!(
-                    "[PathSuggestions] Failed to fetch all entities: {:?}",
-                    e
-                );
+                debug!("[PathSuggestions] Failed to fetch all entities: {:?}", e);
                 Vec::new()
             }
         }
@@ -253,10 +250,7 @@ impl PathSuggestionGenerator {
         // Add #value with its type info if available
         if let Some(value_var) = self.variables.iter().find(|v| v.name == "#value") {
             let type_hint = format!("{}", value_var.declared_type);
-            suggestions.push((
-                "#value".to_string(),
-                format!("#value ({})", type_hint),
-            ));
+            suggestions.push(("#value".to_string(), format!("#value ({})", type_hint)));
         } else {
             suggestions.push((
                 "#value".to_string(),
@@ -478,7 +472,9 @@ impl PathSuggestionGenerator {
                 );
                 return self.resolve_variable_target_entity(&name, None);
             }
-            PathExpr::VariableNavigation { name, target, path, .. } => {
+            PathExpr::VariableNavigation {
+                name, target, path, ..
+            } => {
                 // Variable with field navigation — start from variable's target entity
                 let start_entity = self.resolve_variable_target_entity(&name, target.as_deref())?;
                 debug!(
@@ -495,7 +491,10 @@ impl PathSuggestionGenerator {
                     debug!("[PathSuggestions] #value as base, resolving to target entity");
                     return self.resolve_variable_target_entity("#value", None);
                 }
-                debug!("[PathSuggestions] System variable #{:?} doesn't resolve to entities", var);
+                debug!(
+                    "[PathSuggestions] System variable #{:?} doesn't resolve to entities",
+                    var
+                );
                 return None;
             }
             PathExpr::SystemVarNavigation { var, path, .. } => {

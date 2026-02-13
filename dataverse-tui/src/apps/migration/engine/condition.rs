@@ -7,8 +7,8 @@ use crate::apps::migration::types::Condition;
 use crate::apps::migration::types::Expr;
 use crate::apps::migration::types::SystemVar;
 
-use super::transforms::resolve::resolve_path_str;
 use super::transforms::resolve::ResolveContext;
+use super::transforms::resolve::resolve_path_str;
 use super::types::TransformContext;
 use super::types::TransformError;
 

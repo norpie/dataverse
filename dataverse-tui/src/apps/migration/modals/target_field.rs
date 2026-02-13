@@ -43,7 +43,12 @@ pub struct TargetFieldModal {
 
 impl TargetFieldModal {
     /// Create a new target field modal for adding a condition.
-    pub fn new_modal(client: DataverseClient, entity: String, title: &str, description: &str) -> Self {
+    pub fn new_modal(
+        client: DataverseClient,
+        entity: String,
+        title: &str,
+        description: &str,
+    ) -> Self {
         let autocomplete = AutocompleteState::new(Vec::<(String, String)>::new());
 
         Self::new(
@@ -148,10 +153,7 @@ impl TargetFieldModal {
             Vec::new(),
         );
         let suggestions = generator.generate_suggestions(&path).await;
-        debug!(
-            "[TargetField] Generated {} suggestions",
-            suggestions.len()
-        );
+        debug!("[TargetField] Generated {} suggestions", suggestions.len());
 
         self.autocomplete.update(|s| {
             s.options = suggestions;

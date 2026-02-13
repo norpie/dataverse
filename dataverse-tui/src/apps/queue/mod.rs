@@ -142,8 +142,9 @@ impl Queue {
         let search_text = settings.queue.search_text.get();
 
         // Build source filter select state (watch_source_options will keep it updated)
-        let source_state = SelectState::new(vec![("__all__".to_string(), "All sources".to_string())])
-            .with_selection(SelectionMode::Forced);
+        let source_state =
+            SelectState::new(vec![("__all__".to_string(), "All sources".to_string())])
+                .with_selection(SelectionMode::Forced);
 
         self.status_filter.set(status_filter);
         self.source_filter.set(source_state);
@@ -159,12 +160,8 @@ impl Queue {
                 }
             });
         }
-        let initial_selection: HashSet<String> = self
-            .source_filter
-            .get()
-            .selection
-            .selected
-            .clone();
+        let initial_selection: HashSet<String> =
+            self.source_filter.get().selection.selected.clone();
         self.prev_source_selection.set(initial_selection);
         self.search_text.set(search_text);
 
@@ -349,9 +346,9 @@ impl Queue {
         sources.sort();
 
         // Only update if options actually changed to avoid bumping generation
-        let current_options: Vec<String> = self.source_filter.with_ref(|s| {
-            s.options.iter().map(|(v, _)| v.clone()).collect()
-        });
+        let current_options: Vec<String> = self
+            .source_filter
+            .with_ref(|s| s.options.iter().map(|(v, _)| v.clone()).collect());
         let new_options: Vec<String> = std::iter::once("__all__".to_string())
             .chain(sources.iter().cloned())
             .collect();
@@ -444,7 +441,12 @@ impl Queue {
                         }
                     });
                     self.item_timings.update(|timings| {
-                        timings.insert(item_id, ItemTiming::Running { started_at: Utc::now() });
+                        timings.insert(
+                            item_id,
+                            ItemTiming::Running {
+                                started_at: Utc::now(),
+                            },
+                        );
                     });
 
                     let gx = gx.clone();
@@ -472,8 +474,9 @@ impl Queue {
                         items.retain(|i| !i.status.is_terminal());
                     });
                     // Clean up timings for removed items
-                    let remaining_ids: HashSet<i64> =
-                        self.items.with_ref(|items| items.iter().map(|i| i.id).collect());
+                    let remaining_ids: HashSet<i64> = self
+                        .items
+                        .with_ref(|items| items.iter().map(|i| i.id).collect());
                     self.item_timings.update(|timings| {
                         timings.retain(|id, _| remaining_ids.contains(id));
                     });
@@ -507,8 +510,9 @@ impl Queue {
                     self.items.update(|items| {
                         items.retain(|i| i.status == ItemStatus::Running);
                     });
-                    let remaining_ids: HashSet<i64> =
-                        self.items.with_ref(|items| items.iter().map(|i| i.id).collect());
+                    let remaining_ids: HashSet<i64> = self
+                        .items
+                        .with_ref(|items| items.iter().map(|i| i.id).collect());
                     self.item_timings.update(|timings| {
                         timings.retain(|id, _| remaining_ids.contains(id));
                     });
@@ -930,25 +934,22 @@ impl Queue {
     }
 
     #[request_handler]
-    async fn handle_get_item_results(
-        &self,
-        request: GetItemResults,
-    ) -> GetItemResultsResponse {
+    async fn handle_get_item_results(&self, request: GetItemResults) -> GetItemResultsResponse {
         use api::ExecutionWithResults;
 
         let Some(repo) = self.repository.get() else {
-            return GetItemResultsResponse {
-                executions: vec![],
-            };
+            return GetItemResultsResponse { executions: vec![] };
         };
 
         let executions = match repo.get_executions(request.item_id).await {
             Ok(execs) => execs,
             Err(e) => {
-                log::error!("Failed to get executions for item {}: {}", request.item_id, e);
-                return GetItemResultsResponse {
-                    executions: vec![],
-                };
+                log::error!(
+                    "Failed to get executions for item {}: {}",
+                    request.item_id,
+                    e
+                );
+                return GetItemResultsResponse { executions: vec![] };
             }
         };
 
@@ -958,15 +959,10 @@ impl Queue {
                 .get_operation_results(execution.id)
                 .await
                 .unwrap_or_default();
-            result.push(ExecutionWithResults {
-                execution,
-                results,
-            });
+            result.push(ExecutionWithResults { execution, results });
         }
 
-        GetItemResultsResponse {
-            executions: result,
-        }
+        GetItemResultsResponse { executions: result }
     }
 
     #[request_handler]
@@ -986,10 +982,7 @@ impl Queue {
     }
 
     #[request_handler]
-    async fn handle_delete_items(
-        &self,
-        request: DeleteItems,
-    ) -> DeleteItemsResponse {
+    async fn handle_delete_items(&self, request: DeleteItems) -> DeleteItemsResponse {
         let Some(repo) = self.repository.get() else {
             return DeleteItemsResponse { deleted: 0 };
         };
@@ -1120,10 +1113,7 @@ impl Queue {
         self.item_timings.update(|timings| {
             if let Some(ItemTiming::Running { started_at }) = timings.get(&event.item_id) {
                 let duration_ms = (Utc::now() - *started_at).num_milliseconds();
-                timings.insert(
-                    event.item_id,
-                    ItemTiming::Completed { duration_ms },
-                );
+                timings.insert(event.item_id, ItemTiming::Completed { duration_ms });
             }
         });
 
@@ -1145,8 +1135,9 @@ impl Queue {
         }
 
         // Track duration for ETA
-        if let Some(ItemTiming::Completed { duration_ms }) =
-            self.item_timings.with_ref(|t| t.get(&event.item_id).copied())
+        if let Some(ItemTiming::Completed { duration_ms }) = self
+            .item_timings
+            .with_ref(|t| t.get(&event.item_id).copied())
         {
             self.recent_durations.update(|d| {
                 d.push_back(duration_ms);
@@ -1174,7 +1165,10 @@ impl Queue {
 
         let max = self.max_concurrency.get();
         let current = self.items.with_ref(|items| {
-            items.iter().filter(|i| i.status == ItemStatus::Running).count()
+            items
+                .iter()
+                .filter(|i| i.status == ItemStatus::Running)
+                .count()
         });
 
         // Collect ready items sorted by priority desc, created_at asc
@@ -1205,7 +1199,12 @@ impl Queue {
                     }
                 });
                 self.item_timings.update(|timings| {
-                    timings.insert(item_id, ItemTiming::Running { started_at: Utc::now() });
+                    timings.insert(
+                        item_id,
+                        ItemTiming::Running {
+                            started_at: Utc::now(),
+                        },
+                    );
                 });
 
                 let gx = gx.clone();

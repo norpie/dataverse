@@ -13,13 +13,13 @@ use std::collections::HashMap;
 
 use dataverse_lib::api::Batch;
 use dataverse_lib::api::Op;
+use dataverse_lib::model::Entity;
+use dataverse_lib::model::Record;
+use dataverse_lib::model::Value;
 use dataverse_lib::model::metadata::ExecutionMetadata;
 use dataverse_lib::model::metadata::ManyToManyRelationship;
 use dataverse_lib::model::types::EntityBinding;
 use dataverse_lib::model::types::OptionSetValue;
-use dataverse_lib::model::Entity;
-use dataverse_lib::model::Record;
-use dataverse_lib::model::Value;
 use uuid::Uuid;
 
 use super::comparison::MappingComparison;

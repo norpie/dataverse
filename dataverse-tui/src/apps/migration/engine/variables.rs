@@ -8,8 +8,8 @@ use std::collections::HashMap;
 
 use dataverse_lib::model::Value;
 
-use super::executor::execute_chain;
 use super::executor::ChainItem;
+use super::executor::execute_chain;
 use super::types::FindCache;
 use super::types::PathCache;
 use super::types::SystemVars;

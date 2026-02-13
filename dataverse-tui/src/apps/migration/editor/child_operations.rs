@@ -2,8 +2,8 @@
 
 use rafter::prelude::*;
 
-use crate::apps::migration::modals::TargetFieldModal;
 use crate::apps::migration::modals::GuardTransformModal;
+use crate::apps::migration::modals::TargetFieldModal;
 use crate::apps::migration::modals::VariableInfo;
 use crate::apps::migration::repository::MigrationRepository;
 use crate::apps::migration::repository::NewCoalesceChain;
@@ -628,5 +628,4 @@ impl MigrationEditor {
             }
         }
     }
-
 }

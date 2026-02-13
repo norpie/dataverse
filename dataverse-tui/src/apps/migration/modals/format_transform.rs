@@ -43,7 +43,13 @@ impl FormatTransformModal {
         autocomplete.text = current_template;
         autocomplete.cursor = autocomplete.text.len();
 
-        Self::new(client, target_client, source_entity, variables, autocomplete)
+        Self::new(
+            client,
+            target_client,
+            source_entity,
+            variables,
+            autocomplete,
+        )
     }
 
     fn current_template(&self) -> String {

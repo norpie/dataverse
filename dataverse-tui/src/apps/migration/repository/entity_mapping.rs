@@ -243,16 +243,12 @@ impl super::MigrationRepository {
         let source_filter_blob = match &update.source_filter {
             super::Update::Keep => None,
             super::Update::Clear => Some(None),
-            super::Update::Set(f) => {
-                Some(serialize_filter_node(&Some(f.clone()))?)
-            }
+            super::Update::Set(f) => Some(serialize_filter_node(&Some(f.clone()))?),
         };
         let target_filter_blob = match &update.target_filter {
             super::Update::Keep => None,
             super::Update::Clear => Some(None),
-            super::Update::Set(f) => {
-                Some(serialize_filter_node(&Some(f.clone()))?)
-            }
+            super::Update::Set(f) => Some(serialize_filter_node(&Some(f.clone()))?),
         };
         let test_guids_csv = update
             .test_guids

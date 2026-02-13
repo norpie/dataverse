@@ -97,9 +97,7 @@ impl StringOpsTransformModal {
     async fn save(&self, mx: &ModalContext<Option<StringOp>>) {
         if let Some(op) = self.op_select.get().value().cloned() {
             let result = match op {
-                StringOp::Truncate(_) => {
-                    StringOp::Truncate(self.max_length.get().value() as usize)
-                }
+                StringOp::Truncate(_) => StringOp::Truncate(self.max_length.get().value() as usize),
                 other => other,
             };
             mx.close(Some(result));
