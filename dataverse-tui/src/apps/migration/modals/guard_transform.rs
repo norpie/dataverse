@@ -12,6 +12,7 @@ use rafter::widgets::NumberInputState;
 use rafter::widgets::Select;
 use rafter::widgets::SelectState;
 use rafter::widgets::Text;
+use rust_decimal::Decimal;
 use tuidom::Element;
 
 use super::path_suggestions::PathSuggestionGenerator;
@@ -20,6 +21,19 @@ use crate::apps::migration::types::CompareOp;
 use crate::apps::migration::types::Condition;
 use crate::apps::migration::types::Expr;
 use crate::apps::migration::types::SystemVar;
+
+/// Convert a float from NumberInput to the most appropriate Value type.
+/// Whole numbers within i32 range become Int, otherwise Decimal.
+fn number_to_value(f: f64) -> Value {
+    if f.fract() == 0.0 && f >= i32::MIN as f64 && f <= i32::MAX as f64 {
+        Value::Int(f as i32)
+    } else {
+        let text = format!("{}", f);
+        text.parse::<Decimal>()
+            .map(Value::Decimal)
+            .unwrap_or(Value::Float(f))
+    }
+}
 
 /// Guard operator kind — determines which right-side input to show.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
@@ -223,32 +237,32 @@ impl GuardTransformModal {
             GuardOp::Equal => Ok(Condition::Compare {
                 left: left_expr,
                 op: CompareOp::Equal,
-                right: Expr::Literal(Value::Float(self.number_value.get().value())),
+                right: Expr::Literal(number_to_value(self.number_value.get().value())),
             }),
             GuardOp::NotEqual => Ok(Condition::Compare {
                 left: left_expr,
                 op: CompareOp::NotEqual,
-                right: Expr::Literal(Value::Float(self.number_value.get().value())),
+                right: Expr::Literal(number_to_value(self.number_value.get().value())),
             }),
             GuardOp::LessThan => Ok(Condition::Compare {
                 left: left_expr,
                 op: CompareOp::LessThan,
-                right: Expr::Literal(Value::Float(self.number_value.get().value())),
+                right: Expr::Literal(number_to_value(self.number_value.get().value())),
             }),
             GuardOp::LessThanOrEqual => Ok(Condition::Compare {
                 left: left_expr,
                 op: CompareOp::LessThanOrEqual,
-                right: Expr::Literal(Value::Float(self.number_value.get().value())),
+                right: Expr::Literal(number_to_value(self.number_value.get().value())),
             }),
             GuardOp::GreaterThan => Ok(Condition::Compare {
                 left: left_expr,
                 op: CompareOp::GreaterThan,
-                right: Expr::Literal(Value::Float(self.number_value.get().value())),
+                right: Expr::Literal(number_to_value(self.number_value.get().value())),
             }),
             GuardOp::GreaterThanOrEqual => Ok(Condition::Compare {
                 left: left_expr,
                 op: CompareOp::GreaterThanOrEqual,
-                right: Expr::Literal(Value::Float(self.number_value.get().value())),
+                right: Expr::Literal(number_to_value(self.number_value.get().value())),
             }),
             GuardOp::Contains => {
                 let s = self.string_value.get().clone();
