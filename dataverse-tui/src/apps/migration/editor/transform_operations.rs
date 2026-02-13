@@ -1,6 +1,7 @@
 //! Transform add/edit/delete/reorder operations.
 
 use dataverse_lib::model::Value;
+use dataverse_lib::model::ValueType;
 use rafter::prelude::*;
 
 use crate::apps::migration::modals::ConstantTransformModal;
@@ -124,7 +125,7 @@ impl MigrationEditor {
             .map(|em| em.source_entity.clone())
             .unwrap_or_default();
 
-        let variables: Vec<VariableInfo> = self
+        let mut variables: Vec<VariableInfo> = self
             .variables
             .get()
             .iter()
@@ -134,6 +135,15 @@ impl MigrationEditor {
                 declared_type: v.declared_type.clone(),
             })
             .collect();
+
+        // Add #value so autocomplete can resolve e.g. #value.lookup_field
+        let input_type = self.resolve_input_type_at(target);
+        if !matches!(input_type, ValueType::Null) {
+            variables.push(VariableInfo {
+                name: "#value".to_string(),
+                declared_type: input_type,
+            });
+        }
 
         match transform_type {
             // =================================================================
