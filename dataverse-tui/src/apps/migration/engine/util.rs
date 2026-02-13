@@ -20,6 +20,13 @@ pub fn values_equal(a: &Value, b: &Value) -> bool {
         (Value::Int(a), Value::Long(b)) => (*a as i64) == *b,
         (Value::Long(a), Value::Int(b)) => *a == (*b as i64),
         (Value::Float(a), Value::Float(b)) => (a - b).abs() < f64::EPSILON,
+        // Float ↔ Int/Long/OptionSet coercion
+        (Value::Float(a), Value::Int(b)) => (*a - *b as f64).abs() < f64::EPSILON,
+        (Value::Int(a), Value::Float(b)) => (*a as f64 - *b).abs() < f64::EPSILON,
+        (Value::Float(a), Value::Long(b)) => (*a - *b as f64).abs() < f64::EPSILON,
+        (Value::Long(a), Value::Float(b)) => (*a as f64 - *b).abs() < f64::EPSILON,
+        (Value::Float(a), Value::OptionSet(b)) => (*a - b.value as f64).abs() < f64::EPSILON,
+        (Value::OptionSet(a), Value::Float(b)) => (a.value as f64 - *b).abs() < f64::EPSILON,
         (Value::Decimal(a), Value::Decimal(b)) => a == b,
         // Decimal ↔ Int/Long coercion
         (Value::Decimal(a), Value::Int(b)) => {
