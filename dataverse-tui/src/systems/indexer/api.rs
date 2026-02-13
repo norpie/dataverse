@@ -1,6 +1,14 @@
 //! Indexer API types (requests and events).
 
+use std::fmt;
+
 use chrono::{DateTime, Utc};
+use dataverse_lib::api::query::odata::QUERY_CACHE_PREFIX;
+use dataverse_lib::api::{
+    CACHE_KEY_ALL_ENTITIES, CACHE_KEY_ALL_GLOBAL_OPTIONSETS, CACHE_KEY_ATTRIBUTE,
+    CACHE_KEY_ATTRIBUTES, CACHE_KEY_ENTITY_CORE, CACHE_KEY_ENTITY_FULL, CACHE_KEY_GLOBAL_OPTIONSET,
+    CACHE_KEY_RELATIONSHIP,
+};
 use rafter::Event;
 use rafter::Request;
 
@@ -183,3 +191,73 @@ pub struct UpdateIndexerSettingsEvent {
 /// Event to open the indexer dashboard modal.
 #[derive(Clone, Event)]
 pub struct OpenIndexerDashboard;
+
+/// Event to clear a specific cache category for the active environment.
+#[derive(Clone, Event)]
+pub struct ClearCacheCategoryEvent {
+    /// Which cache category to clear.
+    pub category: CacheCategory,
+}
+
+// =============================================================================
+// Cache Categories
+// =============================================================================
+
+/// Categories of cached data that can be cleared independently.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CacheCategory {
+    /// Entity list + entity core + entity full metadata.
+    Entities,
+    /// Single attribute + all attributes per entity.
+    Attributes,
+    /// Relationship metadata.
+    Relationships,
+    /// Global option set metadata (single + all).
+    GlobalOptionSets,
+    /// OData/FetchXML query result pages.
+    Queries,
+    /// All cached data.
+    All,
+}
+
+impl CacheCategory {
+    /// All selectable categories (excluding All).
+    pub const INDIVIDUAL: &'static [CacheCategory] = &[
+        CacheCategory::Entities,
+        CacheCategory::Attributes,
+        CacheCategory::Relationships,
+        CacheCategory::GlobalOptionSets,
+        CacheCategory::Queries,
+    ];
+
+    /// Returns the cache key prefixes associated with this category.
+    pub fn prefixes(&self) -> &'static [&'static str] {
+        match self {
+            CacheCategory::Entities => &[
+                CACHE_KEY_ALL_ENTITIES,
+                CACHE_KEY_ENTITY_CORE,
+                CACHE_KEY_ENTITY_FULL,
+            ],
+            CacheCategory::Attributes => &[CACHE_KEY_ATTRIBUTE, CACHE_KEY_ATTRIBUTES],
+            CacheCategory::Relationships => &[CACHE_KEY_RELATIONSHIP],
+            CacheCategory::GlobalOptionSets => {
+                &[CACHE_KEY_ALL_GLOBAL_OPTIONSETS, CACHE_KEY_GLOBAL_OPTIONSET]
+            }
+            CacheCategory::Queries => &[QUERY_CACHE_PREFIX],
+            CacheCategory::All => &[], // handled specially via cache.clear()
+        }
+    }
+}
+
+impl fmt::Display for CacheCategory {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            CacheCategory::Entities => write!(f, "Entities"),
+            CacheCategory::Attributes => write!(f, "Attributes"),
+            CacheCategory::Relationships => write!(f, "Relationships"),
+            CacheCategory::GlobalOptionSets => write!(f, "Global Option Sets"),
+            CacheCategory::Queries => write!(f, "Queries"),
+            CacheCategory::All => write!(f, "All"),
+        }
+    }
+}

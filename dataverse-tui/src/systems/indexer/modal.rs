@@ -8,10 +8,12 @@ use rafter::widgets::{
 use tuidom::{Color, Element, Style};
 
 use super::{
-    EnvSyncStatus, IndexerSettingsChanged, IndexerStatusChanged, IndexerStatusResponse,
-    PauseIndexerEvent, ResumeIndexerEvent, SyncProgress, SyncSettings, TriggerSyncEvent,
-    UpdateIndexerSettingsEvent,
+    CacheCategory, ClearCacheCategoryEvent, EnvSyncStatus, IndexerSettingsChanged,
+    IndexerStatusChanged, IndexerStatusResponse, PauseIndexerEvent, ResumeIndexerEvent,
+    SyncProgress, SyncSettings, TriggerSyncEvent, UpdateIndexerSettingsEvent,
 };
+use crate::modals::ConfirmModal;
+use crate::systems::client_management::SessionChanged;
 use crate::systems::taskbar::StatusIndicator;
 
 /// Page enum for the indexer dashboard tabs.
@@ -20,6 +22,7 @@ pub enum Page {
     #[default]
     Status,
     Settings,
+    Cache,
 }
 
 /// Environment list item for display.
@@ -136,10 +139,17 @@ pub struct IndexerDashboardModal {
     check_interval: NumberInputState,
     refresh_threshold: NumberInputState,
     settings_dirty: bool,
+
+    // Cache state
+    active_env_name: Option<String>,
 }
 
 impl IndexerDashboardModal {
-    pub fn with_status(status: IndexerStatusResponse, settings: SyncSettings) -> Self {
+    pub fn with_status(
+        status: IndexerStatusResponse,
+        settings: SyncSettings,
+        active_env_name: Option<String>,
+    ) -> Self {
         let items: Vec<EnvListItem> = status.environments.iter().map(to_list_item).collect();
 
         Self {
@@ -159,6 +169,7 @@ impl IndexerDashboardModal {
                     .integer(),
             ),
             settings_dirty: State::new(false),
+            active_env_name: State::new(active_env_name),
             __page: State::new(Page::default()),
             __handler_registry: rafter::HandlerRegistry::default(),
             __derived_cache: Default::default(),
@@ -210,6 +221,7 @@ impl IndexerDashboardModal {
         bind("escape", close);
         bind("1", tab_status);
         bind("2", tab_settings);
+        bind("3", tab_cache);
         bind("p", toggle_pause);
         bind("s", sync_all);
     }
@@ -227,6 +239,11 @@ impl IndexerDashboardModal {
     #[handler]
     async fn tab_settings(&self) {
         self.navigate(Page::Settings);
+    }
+
+    #[handler]
+    async fn tab_cache(&self) {
+        self.navigate(Page::Cache);
     }
 
     // =========================================================================
@@ -293,8 +310,65 @@ impl IndexerDashboardModal {
     }
 
     // =========================================================================
+    // Cache handlers
+    // =========================================================================
+
+    #[handler]
+    async fn clear_entities(&self, gx: &GlobalContext) {
+        self.confirm_and_clear(gx, CacheCategory::Entities).await;
+    }
+
+    #[handler]
+    async fn clear_attributes(&self, gx: &GlobalContext) {
+        self.confirm_and_clear(gx, CacheCategory::Attributes).await;
+    }
+
+    #[handler]
+    async fn clear_relationships(&self, gx: &GlobalContext) {
+        self.confirm_and_clear(gx, CacheCategory::Relationships)
+            .await;
+    }
+
+    #[handler]
+    async fn clear_global_option_sets(&self, gx: &GlobalContext) {
+        self.confirm_and_clear(gx, CacheCategory::GlobalOptionSets)
+            .await;
+    }
+
+    #[handler]
+    async fn clear_queries(&self, gx: &GlobalContext) {
+        self.confirm_and_clear(gx, CacheCategory::Queries).await;
+    }
+
+    #[handler]
+    async fn clear_all(&self, gx: &GlobalContext) {
+        self.confirm_and_clear(gx, CacheCategory::All).await;
+    }
+
+    /// Show a confirmation modal and, if confirmed, publish the clear event.
+    async fn confirm_and_clear(&self, gx: &GlobalContext, category: CacheCategory) {
+        let env_name = self
+            .active_env_name
+            .get()
+            .unwrap_or_else(|| "active environment".to_string());
+
+        let message = format!("Clear {} cache for {}?", category, env_name);
+        let confirmed = gx.modal(ConfirmModal::with_message(message)).await;
+
+        if confirmed {
+            gx.publish(ClearCacheCategoryEvent { category });
+        }
+    }
+
+    // =========================================================================
     // Event handlers
     // =========================================================================
+
+    #[event_handler]
+    async fn on_session_changed(&self, event: SessionChanged, _gx: &GlobalContext) {
+        log::debug!("[IndexerModal] Received SessionChanged event");
+        self.active_env_name.set(event.environment_name);
+    }
 
     #[event_handler]
     async fn on_status_changed(&self, event: IndexerStatusChanged, _gx: &GlobalContext) {
@@ -347,6 +421,9 @@ impl IndexerDashboardModal {
                     button (label: "Settings", hint: "2", id: "tab-settings")
                         style (fg: if current == Page::Settings { interact } else { muted })
                         on_activate: tab_settings()
+                    button (label: "Cache", hint: "3", id: "tab-cache")
+                        style (fg: if current == Page::Cache { interact } else { muted })
+                        on_activate: tab_cache()
                 }
 
                 { content }
@@ -430,6 +507,54 @@ impl IndexerDashboardModal {
                         button (label: "Save", id: "save-settings")
                             on_activate: save_settings()
                     }
+                }
+            }
+        }
+    }
+
+    #[page(Cache)]
+    fn cache_page(&self) -> Element {
+        let env_name = self.active_env_name.get();
+        let has_env = env_name.is_some();
+        let env_label = env_name.unwrap_or_else(|| "No active environment".to_string());
+
+        page! {
+            column (gap: 1, width: fill, height: fill, justify: between) {
+                column (gap: 1, width: fill) {
+                    // Active environment
+                    row (gap: 1) {
+                        text (content: "Environment:") style (fg: muted)
+                        text (content: env_label)
+                            style (fg: if has_env { primary } else { error })
+                    }
+
+                    if has_env {
+                        // Category buttons
+                        text (content: "Clear by category") style (fg: muted)
+                        column (gap: 0, width: fill) {
+                            button (label: "Entities", id: "clear-entities")
+                                on_activate: clear_entities()
+                            button (label: "Attributes", id: "clear-attributes")
+                                on_activate: clear_attributes()
+                            button (label: "Relationships", id: "clear-relationships")
+                                on_activate: clear_relationships()
+                            button (label: "Global Option Sets", id: "clear-global-option-sets")
+                                on_activate: clear_global_option_sets()
+                            button (label: "Queries", id: "clear-queries")
+                                on_activate: clear_queries()
+                        }
+
+                        text (content: "Clear everything") style (fg: muted)
+                        button (label: "Clear All", id: "clear-all")
+                            style (fg: error)
+                            on_activate: clear_all()
+                    }
+                }
+
+                // Bottom button
+                row (width: fill, justify: between) {
+                    button (label: "Close", hint: "esc", id: "close")
+                        on_activate: close()
                 }
             }
         }

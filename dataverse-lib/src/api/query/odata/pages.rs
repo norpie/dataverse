@@ -21,7 +21,7 @@ use crate::model::Value;
 use super::builder::QueryBuilder;
 
 /// Cache key prefix for OData query results.
-const QUERY_CACHE_PREFIX: &str = "query:";
+pub const QUERY_CACHE_PREFIX: &str = "query:";
 
 /// Async iterator that yields pages of OData query results.
 ///

@@ -117,6 +117,11 @@ pub trait CacheProvider: Send + Sync {
     /// Clears all values from the cache.
     async fn clear(&self);
 
+    /// Removes all entries whose keys start with the given prefix.
+    ///
+    /// Returns the number of entries removed.
+    async fn clear_by_prefix(&self, prefix: &str) -> usize;
+
     /// Removes all expired entries from the cache.
     ///
     /// Returns the number of entries removed.

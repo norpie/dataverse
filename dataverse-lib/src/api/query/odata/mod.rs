@@ -31,5 +31,6 @@ pub(crate) mod url;
 pub use builder::QueryBuilder;
 pub use expand::ExpandBuilder;
 pub use pages::ODataPages;
+pub use pages::QUERY_CACHE_PREFIX;
 pub use related::RelatedPages;
 pub use related::RelatedQueryBuilder;

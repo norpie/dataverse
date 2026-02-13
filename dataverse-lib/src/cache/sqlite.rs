@@ -185,6 +185,20 @@ impl CacheProvider for SqliteCache {
             .await;
     }
 
+    async fn clear_by_prefix(&self, prefix: &str) -> usize {
+        let prefix = prefix.to_string();
+
+        self.client
+            .conn(move |conn| {
+                conn.execute(
+                    "DELETE FROM cache WHERE key LIKE ? || '%'",
+                    rusqlite::params![prefix],
+                )
+            })
+            .await
+            .unwrap_or(0)
+    }
+
     async fn gc(&self) -> usize {
         let now = Utc::now().timestamp();
 

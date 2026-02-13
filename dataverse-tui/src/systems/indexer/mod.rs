@@ -25,8 +25,8 @@ use rafter::prelude::*;
 use crate::paths;
 use crate::settings::Settings;
 use crate::systems::client_management::{
-    ClientManagement, EnvironmentAdded, EnvironmentRemoved, GetAuthenticatedEnvironments,
-    SessionChanged,
+    ClientManagement, EnvironmentAdded, EnvironmentRemoved, GetActiveClient, GetActiveSession,
+    GetAuthenticatedEnvironments, SessionChanged,
 };
 use crate::systems::taskbar::StatusIndicator;
 
@@ -150,8 +150,11 @@ impl IndexerSystem {
     async fn open_dashboard(&self, gx: &GlobalContext) {
         let status = self.get_current_status(gx).await;
         let settings = self.get_current_settings();
+        let env_name = self.get_active_env_name(gx).await;
         let _ = gx
-            .modal(modal::IndexerDashboardModal::with_status(status, settings))
+            .modal(modal::IndexerDashboardModal::with_status(
+                status, settings, env_name,
+            ))
             .await;
     }
 
@@ -635,14 +638,80 @@ impl IndexerSystem {
             check_interval_secs: self.check_interval_secs.get(),
             refresh_threshold_pct: self.refresh_threshold_pct.get(),
         };
+        let env_name = self.get_active_env_name(gx).await;
         let _ = gx
-            .modal(IndexerDashboardModal::with_status(status, settings))
+            .modal(IndexerDashboardModal::with_status(
+                status, settings, env_name,
+            ))
             .await;
+    }
+
+    #[event_handler]
+    async fn on_clear_cache_category(&self, event: ClearCacheCategoryEvent, gx: &GlobalContext) {
+        log::info!(
+            "[Indexer] Clear cache category requested: {}",
+            event.category
+        );
+
+        // Get the active client to access its cache
+        let client = match gx
+            .request_system::<ClientManagement, GetActiveClient>(GetActiveClient)
+            .await
+        {
+            Ok(Ok(info)) => info.client,
+            Ok(Err(e)) => {
+                log::error!(
+                    "[Indexer] Failed to get active client for cache clear: {}",
+                    e
+                );
+                gx.toast(Toast::error(format!("No active client: {}", e)));
+                return;
+            }
+            Err(e) => {
+                log::error!("[Indexer] Request failed for cache clear: {}", e);
+                gx.toast(Toast::error("Failed to get active client"));
+                return;
+            }
+        };
+
+        let Some(cache) = client.cache() else {
+            gx.toast(Toast::warning("No cache configured for this environment"));
+            return;
+        };
+
+        let removed = if event.category == CacheCategory::All {
+            // For "All", use clear() and report as generic
+            cache.clear().await;
+            0usize // We don't know the exact count from clear()
+        } else {
+            let mut total = 0usize;
+            for prefix in event.category.prefixes() {
+                total += cache.clear_by_prefix(prefix).await;
+            }
+            total
+        };
+
+        let msg = if event.category == CacheCategory::All {
+            format!("{} cache cleared", event.category)
+        } else {
+            format!("{} cache cleared ({} entries)", event.category, removed)
+        };
+        log::info!("[Indexer] {}", msg);
+        gx.toast(Toast::success(msg));
     }
 
     // =========================================================================
     // Helpers
     // =========================================================================
+
+    /// Get the active environment name, if any.
+    async fn get_active_env_name(&self, gx: &GlobalContext) -> Option<String> {
+        gx.request_system::<ClientManagement, GetActiveSession>(GetActiveSession)
+            .await
+            .ok()
+            .flatten()
+            .map(|s| s.environment_name)
+    }
 
     /// Add check tasks for all authenticated environments.
     async fn check_all_environments(&self, gx: &GlobalContext) {

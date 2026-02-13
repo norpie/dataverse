@@ -43,28 +43,28 @@ use crate::error::Error;
 use crate::model::Entity;
 
 /// Cache key prefix for minimal entity metadata (EntityCore).
-pub(crate) const CACHE_KEY_ENTITY_CORE: &str = "entity_core:";
+pub const CACHE_KEY_ENTITY_CORE: &str = "entity_core:";
 
 /// Cache key prefix for full entity metadata (EntityMetadata).
-pub(crate) const CACHE_KEY_ENTITY_FULL: &str = "entity_full:";
+pub const CACHE_KEY_ENTITY_FULL: &str = "entity_full:";
 
 /// Cache key prefix for single attribute metadata.
-pub(crate) const CACHE_KEY_ATTRIBUTE: &str = "attribute:";
+pub const CACHE_KEY_ATTRIBUTE: &str = "attribute:";
 
 /// Cache key prefix for all attributes of an entity.
-pub(crate) const CACHE_KEY_ATTRIBUTES: &str = "attributes:";
+pub const CACHE_KEY_ATTRIBUTES: &str = "attributes:";
 
 /// Cache key prefix for single relationship metadata.
-pub(crate) const CACHE_KEY_RELATIONSHIP: &str = "relationship:";
+pub const CACHE_KEY_RELATIONSHIP: &str = "relationship:";
 
 /// Cache key prefix for global option set metadata.
-pub(crate) const CACHE_KEY_GLOBAL_OPTIONSET: &str = "global_optionset:";
+pub const CACHE_KEY_GLOBAL_OPTIONSET: &str = "global_optionset:";
 
 /// Cache key for all entities list.
-pub(crate) const CACHE_KEY_ALL_ENTITIES: &str = "all_entities";
+pub const CACHE_KEY_ALL_ENTITIES: &str = "all_entities";
 
 /// Cache key for all global option sets list.
-pub(crate) const CACHE_KEY_ALL_GLOBAL_OPTIONSETS: &str = "all_global_optionsets";
+pub const CACHE_KEY_ALL_GLOBAL_OPTIONSETS: &str = "all_global_optionsets";
 
 /// Client for querying Dataverse metadata.
 ///

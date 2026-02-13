@@ -76,6 +76,19 @@ impl CacheProvider for InMemoryCache {
         self.store.clear();
     }
 
+    async fn clear_by_prefix(&self, prefix: &str) -> usize {
+        let mut removed = 0;
+        self.store.retain(|key, _| {
+            if key.starts_with(prefix) {
+                removed += 1;
+                false
+            } else {
+                true
+            }
+        });
+        removed
+    }
+
     async fn gc(&self) -> usize {
         let mut removed = 0;
         self.store.retain(|_, value| {
