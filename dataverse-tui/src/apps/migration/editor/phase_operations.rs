@@ -13,6 +13,43 @@ use crate::apps::migration::types::Phase;
 use super::MigrationEditor;
 
 impl MigrationEditor {
+    /// Reorder a phase within the migration.
+    pub(super) async fn reorder_phase_impl(
+        &self,
+        phase_id: i64,
+        direction: i32,
+        gx: &GlobalContext,
+    ) {
+        let phases = self.phases.get();
+        let mut siblings: Vec<_> = phases.iter().collect();
+        siblings.sort_by_key(|p| p.order);
+
+        let Some(current_idx) = siblings.iter().position(|p| p.id == phase_id) else {
+            return;
+        };
+
+        let new_idx = (current_idx as i32 + direction).max(0) as usize;
+        if new_idx >= siblings.len() || new_idx == current_idx {
+            return;
+        }
+
+        let mut ordered_ids: Vec<i64> = siblings.iter().map(|p| p.id).collect();
+        ordered_ids.remove(current_idx);
+        ordered_ids.insert(new_idx, phase_id);
+
+        let repo = gx.data::<MigrationRepository>();
+        let migration_id = self.migration.get().id;
+        match repo.reorder_phases(migration_id, ordered_ids).await {
+            Ok(()) => {
+                self.load_db_data(gx).await;
+            }
+            Err(e) => {
+                log::error!("Failed to reorder phases: {}", e);
+                gx.toast(Toast::error("Failed to reorder phases"));
+            }
+        }
+    }
+
     /// Add a new phase.
     pub(super) async fn add_phase_impl(&self, gx: &GlobalContext) {
         let Some(result) = gx.modal(NewPhaseModal::new_modal()).await else {

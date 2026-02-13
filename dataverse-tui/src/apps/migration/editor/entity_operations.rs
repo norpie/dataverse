@@ -17,6 +17,46 @@ use crate::modals::parallel_load;
 use super::MigrationEditor;
 
 impl MigrationEditor {
+    /// Reorder an entity mapping within its phase.
+    pub(super) async fn reorder_entity_mapping_impl(
+        &self,
+        entity_mapping_id: i64,
+        phase_id: i64,
+        direction: i32,
+        gx: &GlobalContext,
+    ) {
+        let entity_mappings = self.entity_mappings.get();
+        let mut siblings: Vec<_> = entity_mappings
+            .iter()
+            .filter(|em| em.phase_id == phase_id)
+            .collect();
+        siblings.sort_by_key(|em| em.order);
+
+        let Some(current_idx) = siblings.iter().position(|em| em.id == entity_mapping_id) else {
+            return;
+        };
+
+        let new_idx = (current_idx as i32 + direction).max(0) as usize;
+        if new_idx >= siblings.len() || new_idx == current_idx {
+            return;
+        }
+
+        let mut ordered_ids: Vec<i64> = siblings.iter().map(|em| em.id).collect();
+        ordered_ids.remove(current_idx);
+        ordered_ids.insert(new_idx, entity_mapping_id);
+
+        let repo = gx.data::<MigrationRepository>();
+        match repo.reorder_entity_mappings(phase_id, ordered_ids).await {
+            Ok(()) => {
+                self.load_db_data(gx).await;
+            }
+            Err(e) => {
+                log::error!("Failed to reorder entity mappings: {}", e);
+                gx.toast(Toast::error("Failed to reorder entity mappings"));
+            }
+        }
+    }
+
     /// Add a new entity mapping to a phase.
     pub(super) async fn add_entity_mapping_impl(&self, phase_id: i64, gx: &GlobalContext) {
         // Fetch entity lists from both environments in parallel

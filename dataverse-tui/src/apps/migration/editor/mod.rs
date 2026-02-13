@@ -1409,6 +1409,18 @@ impl MigrationEditor {
         log::debug!("move_item: focused node = {:?}", focused);
 
         match focused {
+            MigrationTreeNode::Phase(phase) => {
+                self.reorder_phase_impl(phase.id, direction, gx).await;
+            }
+            MigrationTreeNode::EntityMapping(emn) => {
+                self.reorder_entity_mapping_impl(
+                    emn.entity_mapping.id,
+                    emn.entity_mapping.phase_id,
+                    direction,
+                    gx,
+                )
+                .await;
+            }
             MigrationTreeNode::Variable(vn) => {
                 self.reorder_variable_impl(
                     vn.variable.id,
