@@ -42,6 +42,8 @@ pub fn values_equal(a: &Value, b: &Value) -> bool {
         }
         (Value::String(a), Value::String(b)) => a == b,
         (Value::Guid(a), Value::Guid(b)) => a == b,
+        (Value::DateTime(a), Value::DateTime(b)) => a == b,
+        (Value::Money(a), Value::Money(b)) => a.0 == b.0,
         (Value::OptionSet(a), Value::OptionSet(b)) => a.value == b.value,
         (Value::OptionSet(a), Value::Int(b)) => a.value == *b,
         (Value::Int(a), Value::OptionSet(b)) => *a == b.value,
