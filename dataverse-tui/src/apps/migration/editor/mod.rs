@@ -1326,7 +1326,9 @@ impl MigrationEditor {
                 // Chain wrapper selected -> add transform to the chain
                 self.add_transform_impl(gx).await;
             }
-            Some(MigrationTreeNode::MatchConfig { entity_mapping_id }) => {
+            Some(MigrationTreeNode::MatchConfig {
+                entity_mapping_id, ..
+            }) => {
                 // MatchConfig (Find mode) -> add match condition
                 self.add_match_condition_impl(entity_mapping_id, gx).await;
             }
@@ -1473,26 +1475,38 @@ impl MigrationEditor {
             MigrationTreeNode::EntityMapping(emn) => {
                 self.edit_entity_mapping_impl(&emn.entity_mapping, gx).await;
             }
-            MigrationTreeNode::MatchConfig { entity_mapping_id } => {
+            MigrationTreeNode::MatchConfig {
+                entity_mapping_id, ..
+            } => {
                 self.edit_match_config_impl(entity_mapping_id, gx).await;
             }
             MigrationTreeNode::MatchCondition(mc) => {
                 self.edit_match_condition_impl(&mc, gx).await;
             }
-            MigrationTreeNode::SourceFilter { entity_mapping_id } => {
+            MigrationTreeNode::SourceFilter {
+                entity_mapping_id, ..
+            } => {
                 self.edit_source_filter_impl(entity_mapping_id, gx).await;
             }
-            MigrationTreeNode::TargetFilter { entity_mapping_id } => {
+            MigrationTreeNode::TargetFilter {
+                entity_mapping_id, ..
+            } => {
                 self.edit_target_filter_impl(entity_mapping_id, gx).await;
             }
-            MigrationTreeNode::UnmatchedHandling { entity_mapping_id } => {
+            MigrationTreeNode::UnmatchedHandling {
+                entity_mapping_id, ..
+            } => {
                 self.edit_unmatched_handling_impl(entity_mapping_id, gx)
                     .await;
             }
-            MigrationTreeNode::Passes { entity_mapping_id } => {
+            MigrationTreeNode::Passes {
+                entity_mapping_id, ..
+            } => {
                 self.edit_passes_impl(entity_mapping_id, gx).await;
             }
-            MigrationTreeNode::TestGuids { entity_mapping_id } => {
+            MigrationTreeNode::TestGuids {
+                entity_mapping_id, ..
+            } => {
                 self.edit_test_guids_impl(entity_mapping_id, gx).await;
             }
             MigrationTreeNode::Variables { entity_mapping_id } => {
@@ -1572,7 +1586,9 @@ impl MigrationEditor {
             Some(MigrationTreeNode::MatchDefault { .. }) => (true, "Add Transform"),
             Some(MigrationTreeNode::FindDefault { .. }) => (true, "Add Transform"),
             Some(MigrationTreeNode::MatchCondition(_)) => (true, "Add Transform"),
-            Some(MigrationTreeNode::MatchConfig { entity_mapping_id }) => {
+            Some(MigrationTreeNode::MatchConfig {
+                entity_mapping_id, ..
+            }) => {
                 let is_find = self
                     .entity_mappings
                     .get()
@@ -1668,22 +1684,22 @@ impl MigrationEditor {
                                     }
                                 }
                             }
-                            Some(MigrationTreeNode::MatchConfig { entity_mapping_id }) => {
+                            Some(MigrationTreeNode::MatchConfig { entity_mapping_id, .. }) => {
                                 { self.render_match_config_detail(entity_mapping_id) }
                             }
-                            Some(MigrationTreeNode::SourceFilter { entity_mapping_id }) => {
+                            Some(MigrationTreeNode::SourceFilter { entity_mapping_id, .. }) => {
                                 { self.render_config_detail("Source Filter", entity_mapping_id, "Filter which source records to process") }
                             }
-                            Some(MigrationTreeNode::TargetFilter { entity_mapping_id }) => {
+                            Some(MigrationTreeNode::TargetFilter { entity_mapping_id, .. }) => {
                                 { self.render_config_detail("Target Filter", entity_mapping_id, "Filter which target records to consider for matching") }
                             }
-                            Some(MigrationTreeNode::UnmatchedHandling { entity_mapping_id }) => {
+                            Some(MigrationTreeNode::UnmatchedHandling { entity_mapping_id, .. }) => {
                                 { self.render_config_detail("Unmatched Handling", entity_mapping_id, "Configure behavior for unmatched source and target records") }
                             }
-                            Some(MigrationTreeNode::Passes { entity_mapping_id }) => {
+                            Some(MigrationTreeNode::Passes { entity_mapping_id, .. }) => {
                                 { self.render_config_detail("Passes", entity_mapping_id, "Enable or disable migration passes (create, update, delete, etc.)") }
                             }
-                            Some(MigrationTreeNode::TestGuids { entity_mapping_id }) => {
+                            Some(MigrationTreeNode::TestGuids { entity_mapping_id, .. }) => {
                                 { self.render_config_detail("Test GUIDs", entity_mapping_id, "Specify record GUIDs to test the migration with") }
                             }
                             Some(MigrationTreeNode::Variables { entity_mapping_id }) => {

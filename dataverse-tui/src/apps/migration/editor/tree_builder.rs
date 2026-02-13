@@ -8,6 +8,7 @@ use std::collections::HashMap;
 use dataverse_lib::model::ValueType;
 use rafter::widgets::TreeNode;
 
+use crate::apps::migration::types::resolve_branch_union;
 use crate::apps::migration::types::ChainOutputWarning;
 use crate::apps::migration::types::ChainTypeResult;
 use crate::apps::migration::types::CoalesceChain;
@@ -25,7 +26,6 @@ use crate::apps::migration::types::Transform;
 use crate::apps::migration::types::TransformData;
 use crate::apps::migration::types::TypeWarning;
 use crate::apps::migration::types::Variable;
-use crate::apps::migration::types::resolve_branch_union;
 
 use super::tree::EntityMappingNode;
 use super::tree::FieldMappingNode;
@@ -297,12 +297,54 @@ fn build_entity_mapping_node(
 
     let mut children = Vec::new();
 
+    // Pre-compute summary data from the entity mapping
+    let test_guid_count = em.test_guids.as_ref().map(|g| g.len()).unwrap_or(0);
+
     if is_lua {
         // Lua mode: only Test GUIDs
         children.push(TreeNode::leaf(MigrationTreeNode::TestGuids {
             entity_mapping_id: em_id,
+            count: test_guid_count,
         }));
     } else {
+        // Compute disabled passes list
+        let disabled_passes = {
+            let mut disabled = Vec::new();
+            if !em.create_pass_enabled {
+                disabled.push("CRT");
+            }
+            if !em.activate_pass_enabled {
+                disabled.push("ACT");
+            }
+            if !em.update_pass_enabled {
+                disabled.push("UPD");
+            }
+            if !em.delete_pass_enabled {
+                disabled.push("DEL");
+            }
+            if !em.deactivate_pass_enabled {
+                disabled.push("DAC");
+            }
+            if !em.associate_pass_enabled {
+                disabled.push("ASC");
+            }
+            if !em.disassociate_pass_enabled {
+                disabled.push("DSC");
+            }
+            disabled
+        };
+
+        let source_filter_count = em
+            .source_filter
+            .as_ref()
+            .map(|f| f.count_conditions())
+            .unwrap_or(0);
+        let target_filter_count = em
+            .target_filter
+            .as_ref()
+            .map(|f| f.count_conditions())
+            .unwrap_or(0);
+
         // Declarative mode: all config nodes
         // MatchConfig is expandable when in Find mode (has match conditions)
         if em.match_strategy == MatchStrategy::Find {
@@ -312,14 +354,19 @@ fn build_entity_mapping_node(
                 .into_iter()
                 .map(|mc| build_match_condition_node(mc, ctx))
                 .collect();
+            let condition_count = mc_children.len();
             if mc_children.is_empty() {
                 children.push(TreeNode::leaf(MigrationTreeNode::MatchConfig {
                     entity_mapping_id: em_id,
+                    strategy: em.match_strategy,
+                    condition_count,
                 }));
             } else {
                 children.push(TreeNode::branch(
                     MigrationTreeNode::MatchConfig {
                         entity_mapping_id: em_id,
+                        strategy: em.match_strategy,
+                        condition_count,
                     },
                     mc_children,
                 ));
@@ -327,22 +374,30 @@ fn build_entity_mapping_node(
         } else {
             children.push(TreeNode::leaf(MigrationTreeNode::MatchConfig {
                 entity_mapping_id: em_id,
+                strategy: em.match_strategy,
+                condition_count: 0,
             }));
         }
         children.push(TreeNode::leaf(MigrationTreeNode::SourceFilter {
             entity_mapping_id: em_id,
+            condition_count: source_filter_count,
         }));
         children.push(TreeNode::leaf(MigrationTreeNode::TargetFilter {
             entity_mapping_id: em_id,
+            condition_count: target_filter_count,
         }));
         children.push(TreeNode::leaf(MigrationTreeNode::UnmatchedHandling {
             entity_mapping_id: em_id,
+            no_match: em.no_match_fallback,
+            orphan: em.orphan_strategy,
         }));
         children.push(TreeNode::leaf(MigrationTreeNode::Passes {
             entity_mapping_id: em_id,
+            disabled: disabled_passes,
         }));
         children.push(TreeNode::leaf(MigrationTreeNode::TestGuids {
             entity_mapping_id: em_id,
+            count: test_guid_count,
         }));
 
         // Variables section with transforms

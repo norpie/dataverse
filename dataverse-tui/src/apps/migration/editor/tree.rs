@@ -20,8 +20,11 @@ use crate::apps::migration::types::FieldMapping;
 use crate::apps::migration::types::FindCondition;
 use crate::apps::migration::types::MatchBranch;
 use crate::apps::migration::types::MatchCondition;
+use crate::apps::migration::types::MatchStrategy;
 use crate::apps::migration::types::MathOp;
 use crate::apps::migration::types::Mode;
+use crate::apps::migration::types::NoMatchFallback;
+use crate::apps::migration::types::OrphanStrategy;
 use crate::apps::migration::types::ParentType;
 use crate::apps::migration::types::Phase;
 use crate::apps::migration::types::StringOp;
@@ -91,17 +94,37 @@ pub enum MigrationTreeNode {
     /// An entity mapping (child of a phase), with junction detection data.
     EntityMapping(EntityMappingNode),
     /// Match configuration (child of entity mapping, Declarative only).
-    MatchConfig { entity_mapping_id: i64 },
+    MatchConfig {
+        entity_mapping_id: i64,
+        strategy: MatchStrategy,
+        condition_count: usize,
+    },
     /// Source filter (child of entity mapping, Declarative only).
-    SourceFilter { entity_mapping_id: i64 },
+    SourceFilter {
+        entity_mapping_id: i64,
+        condition_count: usize,
+    },
     /// Target filter (child of entity mapping, Declarative only).
-    TargetFilter { entity_mapping_id: i64 },
+    TargetFilter {
+        entity_mapping_id: i64,
+        condition_count: usize,
+    },
     /// Unmatched handling settings (child of entity mapping, Declarative only).
-    UnmatchedHandling { entity_mapping_id: i64 },
+    UnmatchedHandling {
+        entity_mapping_id: i64,
+        no_match: NoMatchFallback,
+        orphan: OrphanStrategy,
+    },
     /// Pass toggles (child of entity mapping, Declarative only).
-    Passes { entity_mapping_id: i64 },
+    Passes {
+        entity_mapping_id: i64,
+        disabled: Vec<&'static str>,
+    },
     /// Test GUIDs (child of entity mapping, both modes).
-    TestGuids { entity_mapping_id: i64 },
+    TestGuids {
+        entity_mapping_id: i64,
+        count: usize,
+    },
     /// Variables section header (child of entity mapping, Declarative only).
     Variables { entity_mapping_id: i64 },
     /// An individual variable (child of Variables section).
@@ -139,12 +162,24 @@ impl MigrationTreeNode {
         match self {
             Self::Phase(_) => None,
             Self::EntityMapping(emn) => Some(emn.entity_mapping.id),
-            Self::MatchConfig { entity_mapping_id }
-            | Self::SourceFilter { entity_mapping_id }
-            | Self::TargetFilter { entity_mapping_id }
-            | Self::UnmatchedHandling { entity_mapping_id }
-            | Self::Passes { entity_mapping_id }
-            | Self::TestGuids { entity_mapping_id }
+            Self::MatchConfig {
+                entity_mapping_id, ..
+            }
+            | Self::SourceFilter {
+                entity_mapping_id, ..
+            }
+            | Self::TargetFilter {
+                entity_mapping_id, ..
+            }
+            | Self::UnmatchedHandling {
+                entity_mapping_id, ..
+            }
+            | Self::Passes {
+                entity_mapping_id, ..
+            }
+            | Self::TestGuids {
+                entity_mapping_id, ..
+            }
             | Self::Variables { entity_mapping_id }
             | Self::FieldMappings { entity_mapping_id } => Some(*entity_mapping_id),
             Self::Variable(vn) => Some(vn.variable.entity_mapping_id),
@@ -303,20 +338,32 @@ impl TreeItem for MigrationTreeNode {
         match self {
             Self::Phase(p) => format!("phase-{}", p.id),
             Self::EntityMapping(emn) => format!("entity-{}", emn.entity_mapping.id),
-            Self::MatchConfig { entity_mapping_id } => {
+            Self::MatchConfig {
+                entity_mapping_id, ..
+            } => {
                 format!("match-config-{}", entity_mapping_id)
             }
-            Self::SourceFilter { entity_mapping_id } => {
+            Self::SourceFilter {
+                entity_mapping_id, ..
+            } => {
                 format!("source-filter-{}", entity_mapping_id)
             }
-            Self::TargetFilter { entity_mapping_id } => {
+            Self::TargetFilter {
+                entity_mapping_id, ..
+            } => {
                 format!("target-filter-{}", entity_mapping_id)
             }
-            Self::UnmatchedHandling { entity_mapping_id } => {
+            Self::UnmatchedHandling {
+                entity_mapping_id, ..
+            } => {
                 format!("unmatched-{}", entity_mapping_id)
             }
-            Self::Passes { entity_mapping_id } => format!("passes-{}", entity_mapping_id),
-            Self::TestGuids { entity_mapping_id } => format!("test-guids-{}", entity_mapping_id),
+            Self::Passes {
+                entity_mapping_id, ..
+            } => format!("passes-{}", entity_mapping_id),
+            Self::TestGuids {
+                entity_mapping_id, ..
+            } => format!("test-guids-{}", entity_mapping_id),
             Self::Variables { entity_mapping_id } => format!("variables-{}", entity_mapping_id),
             Self::Variable(vn) => format!("variable-{}", vn.variable.id),
             Self::FieldMappings { entity_mapping_id } => {
@@ -370,24 +417,105 @@ impl TreeItem for MigrationTreeNode {
                     }
                 }
             }
-            Self::MatchConfig { .. } => element! {
-                text (content: "◦ Match Config") style (fg: muted)
-            },
-            Self::SourceFilter { .. } => element! {
-                text (content: "◦ Source Filter") style (fg: muted)
-            },
-            Self::TargetFilter { .. } => element! {
-                text (content: "◦ Target Filter") style (fg: muted)
-            },
-            Self::UnmatchedHandling { .. } => element! {
-                text (content: "◦ Unmatched Handling") style (fg: muted)
-            },
-            Self::Passes { .. } => element! {
-                text (content: "◦ Passes") style (fg: muted)
-            },
-            Self::TestGuids { .. } => element! {
-                text (content: "◦ Test GUIDs") style (fg: muted)
-            },
+            Self::MatchConfig {
+                strategy,
+                condition_count,
+                ..
+            } => {
+                let summary = match strategy {
+                    MatchStrategy::SameId => " Same ID".to_string(),
+                    MatchStrategy::Find => format!(" Find ({} conditions)", condition_count),
+                };
+                element! {
+                    row {
+                        text (content: "◦ Match Config") style (fg: muted)
+                        text (content: {summary}) style (fg: secondary)
+                    }
+                }
+            }
+            Self::SourceFilter {
+                condition_count, ..
+            } => {
+                let summary = if *condition_count == 0 {
+                    " none".to_string()
+                } else {
+                    format!(" {} conditions", condition_count)
+                };
+                element! {
+                    row {
+                        text (content: "◦ Source Filter") style (fg: muted)
+                        text (content: {summary}) style (fg: secondary)
+                    }
+                }
+            }
+            Self::TargetFilter {
+                condition_count, ..
+            } => {
+                let summary = if *condition_count == 0 {
+                    " none".to_string()
+                } else {
+                    format!(" {} conditions", condition_count)
+                };
+                element! {
+                    row {
+                        text (content: "◦ Target Filter") style (fg: muted)
+                        text (content: {summary}) style (fg: secondary)
+                    }
+                }
+            }
+            Self::UnmatchedHandling {
+                no_match, orphan, ..
+            } => {
+                let no_match_label = match no_match {
+                    NoMatchFallback::Error => "error",
+                    NoMatchFallback::Create => "create",
+                    NoMatchFallback::Ignore => "ignore",
+                };
+                let orphan_label = match orphan {
+                    OrphanStrategy::Delete => "delete",
+                    OrphanStrategy::Deactivate => "deactivate",
+                    OrphanStrategy::Ignore => "ignore",
+                    OrphanStrategy::Error => "error",
+                };
+                let summary = format!(" no match: {}, orphans: {}", no_match_label, orphan_label);
+                element! {
+                    row {
+                        text (content: "◦ Unmatched Handling") style (fg: muted)
+                        text (content: {summary}) style (fg: secondary)
+                    }
+                }
+            }
+            Self::Passes { disabled, .. } => {
+                if disabled.is_empty() {
+                    element! {
+                        row {
+                            text (content: "◦ Passes") style (fg: muted)
+                            text (content: " All") style (fg: success)
+                        }
+                    }
+                } else {
+                    let summary = format!(" {}", disabled.join(", "));
+                    element! {
+                        row {
+                            text (content: "◦ Passes") style (fg: muted)
+                            text (content: {summary}) style (fg: error)
+                        }
+                    }
+                }
+            }
+            Self::TestGuids { count, .. } => {
+                let summary = if *count == 0 {
+                    " none".to_string()
+                } else {
+                    format!(" {} GUIDs", count)
+                };
+                element! {
+                    row {
+                        text (content: "◦ Test GUIDs") style (fg: muted)
+                        text (content: {summary}) style (fg: secondary)
+                    }
+                }
+            }
             Self::Variables { .. } => element! {
                 text (content: "◦ Variables") style (fg: muted)
             },
