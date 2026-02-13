@@ -5,18 +5,20 @@
 
 use std::collections::HashMap;
 
+use dataverse_lib::model::metadata::AttributeType;
 use dataverse_lib::model::FieldType;
 use dataverse_lib::model::ValueType;
-use dataverse_lib::model::metadata::AttributeType;
 
+use crate::apps::migration::types::propagate_chain_types;
+use crate::apps::migration::types::resolve_branch_union;
 use crate::apps::migration::types::ChainTypeResult;
+use crate::apps::migration::types::ParentType;
 use crate::apps::migration::types::SystemVar;
 use crate::apps::migration::types::Transform;
 use crate::apps::migration::types::TransformData;
-use crate::apps::migration::types::propagate_chain_types;
+use crate::apps::migration::validation::parse_path;
 use crate::apps::migration::validation::FieldPath;
 use crate::apps::migration::validation::PathExpr;
-use crate::apps::migration::validation::parse_path;
 
 use super::tree_builder::TreeBuildContext;
 
@@ -27,12 +29,12 @@ use super::tree_builder::TreeBuildContext;
 pub(super) fn compute_chain_types(
     transforms: &[Transform],
     source_entity: &str,
-    ctx: &TreeBuildContext,
+    ctx: &mut TreeBuildContext,
 ) -> ChainTypeResult {
-    let variable_types = &ctx.types.variable_types;
+    let variable_types = ctx.types.variable_types.clone();
     let _field_types = ctx.field_type_cache.get(source_entity);
 
-    propagate_chain_types(transforms, |data, current_type| {
+    propagate_chain_types(transforms, |transform_id, data, current_type| {
         match data {
             TransformData::Copy { path } => {
                 // Use the structured parser for all path resolution
@@ -52,7 +54,7 @@ pub(super) fn compute_chain_types(
                         &name,
                         target.as_deref(),
                         &field_path,
-                        variable_types,
+                        &variable_types,
                         ctx,
                     ),
                     Ok(PathExpr::SystemVar(sys_var)) => match sys_var {
@@ -97,7 +99,62 @@ pub(super) fn compute_chain_types(
                     Err(_) => None,
                 }
             }
-            _ => None, // Passthrough for all other dynamic cases
+            TransformData::Match { has_default } => {
+                // Compute branch union by recursively resolving each branch's chain
+                let mut branch_output_types = Vec::new();
+
+                let branches = ctx.lookup.get_match_branches(transform_id);
+                for mb in &branches {
+                    let branch_transforms =
+                        ctx.lookup.get_transforms(ParentType::MatchBranch, mb.id);
+                    if !branch_transforms.is_empty() {
+                        let branch_result =
+                            compute_chain_types(&branch_transforms, source_entity, ctx);
+                        branch_output_types.push(branch_result.output_type.clone());
+                        ctx.types.merge(&branch_result);
+                    }
+                }
+
+                if *has_default {
+                    let default_transforms = ctx
+                        .lookup
+                        .get_transforms(ParentType::MatchDefault, transform_id);
+                    if !default_transforms.is_empty() {
+                        let default_result =
+                            compute_chain_types(&default_transforms, source_entity, ctx);
+                        branch_output_types.push(default_result.output_type.clone());
+                        ctx.types.merge(&default_result);
+                    }
+                }
+
+                if branch_output_types.is_empty() {
+                    None // Passthrough
+                } else {
+                    Some(resolve_branch_union(&branch_output_types))
+                }
+            }
+            TransformData::Coalesce => {
+                // Compute chain union by recursively resolving each fallback chain
+                let chains = ctx.lookup.get_coalesce_chains(transform_id);
+                let mut chain_output_types = Vec::new();
+                for cc in &chains {
+                    let chain_transforms =
+                        ctx.lookup.get_transforms(ParentType::CoalesceChain, cc.id);
+                    if !chain_transforms.is_empty() {
+                        let chain_result =
+                            compute_chain_types(&chain_transforms, source_entity, ctx);
+                        chain_output_types.push(chain_result.output_type.clone());
+                        ctx.types.merge(&chain_result);
+                    }
+                }
+
+                if chain_output_types.is_empty() {
+                    None // Passthrough
+                } else {
+                    Some(resolve_branch_union(&chain_output_types))
+                }
+            }
+            _ => None, // Passthrough for all other dynamic cases (Guard, etc.)
         }
     })
 }

@@ -233,9 +233,9 @@ impl Default for TypeResolutionContext {
 ///
 /// This performs synchronous type propagation. Dynamic types (copy paths)
 /// should be pre-resolved and passed via the `resolve_fn` callback.
-pub fn propagate_chain_types<F>(transforms: &[Transform], resolve_fn: F) -> ChainTypeResult
+pub fn propagate_chain_types<F>(transforms: &[Transform], mut resolve_fn: F) -> ChainTypeResult
 where
-    F: Fn(&TransformData, &ValueType) -> Option<ValueType>,
+    F: FnMut(i64, &TransformData, &ValueType) -> Option<ValueType>,
 {
     let mut result = ChainTypeResult::new();
     let mut current_type = ValueType::Null;
@@ -285,7 +285,7 @@ where
             }
             None => {
                 // Dynamic or passthrough - try to resolve
-                if let Some(resolved) = resolve_fn(&transform.data, &current_type) {
+                if let Some(resolved) = resolve_fn(transform.id, &transform.data, &current_type) {
                     log::debug!(
                         "type_tracking: transform {} output resolved dynamically: {:?}",
                         transform.id,
@@ -320,7 +320,7 @@ where
 
 /// Simple propagation without dynamic resolution (uses passthrough for unknowns).
 pub fn propagate_chain_types_simple(transforms: &[Transform]) -> ChainTypeResult {
-    propagate_chain_types(transforms, |_, _| None)
+    propagate_chain_types(transforms, |_, _, _| None)
 }
 
 // =============================================================================

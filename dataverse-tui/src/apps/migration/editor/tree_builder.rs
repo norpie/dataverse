@@ -120,7 +120,7 @@ impl<'a> TreeLookup<'a> {
     }
 
     /// Get match branches for a transform, sorted by order.
-    fn get_match_branches(&self, transform_id: i64) -> Vec<MatchBranch> {
+    pub(super) fn get_match_branches(&self, transform_id: i64) -> Vec<MatchBranch> {
         let mut branches: Vec<_> = self
             .match_branches
             .iter()
@@ -132,7 +132,7 @@ impl<'a> TreeLookup<'a> {
     }
 
     /// Get coalesce chains for a transform, sorted by order.
-    fn get_coalesce_chains(&self, transform_id: i64) -> Vec<CoalesceChain> {
+    pub(super) fn get_coalesce_chains(&self, transform_id: i64) -> Vec<CoalesceChain> {
         let mut chains: Vec<_> = self
             .coalesce_chains
             .iter()
@@ -484,8 +484,8 @@ fn build_variable_node(v: Variable, ctx: &mut TreeBuildContext) -> TreeNode<Migr
         TreeNode::leaf(MigrationTreeNode::Variable(vn))
     } else {
         // Compute types for this chain
-        let source_entity = ctx.source_entity_for(v.entity_mapping_id);
-        let chain_result = compute_chain_types(&transforms, source_entity, ctx);
+        let source_entity = ctx.source_entity_for(v.entity_mapping_id).to_owned();
+        let chain_result = compute_chain_types(&transforms, &source_entity, ctx);
         ctx.types.merge(&chain_result);
 
         // Check chain output against declared type
