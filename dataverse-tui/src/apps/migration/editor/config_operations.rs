@@ -230,11 +230,16 @@ impl MigrationEditor {
             }
         };
 
-        // Build options for autocomplete
+        // Build options for autocomplete: "Display Name (logical_name)"
         let options: Vec<(String, String)> = attributes
             .iter()
             .map(|a| {
-                let display = a.display_name.text_or(&a.logical_name).to_string();
+                let display_name = a.display_name.text_or(&a.logical_name);
+                let display = if display_name == a.logical_name {
+                    a.logical_name.clone()
+                } else {
+                    format!("{} ({})", display_name, a.logical_name)
+                };
                 (a.logical_name.clone(), display)
             })
             .collect();
@@ -327,11 +332,16 @@ impl MigrationEditor {
             }
         };
 
-        // Build options for autocomplete
+        // Build options for autocomplete: "Display Name (logical_name)"
         let options: Vec<(String, String)> = attributes
             .iter()
             .map(|a| {
-                let display = a.display_name.text_or(&a.logical_name).to_string();
+                let display_name = a.display_name.text_or(&a.logical_name);
+                let display = if display_name == a.logical_name {
+                    a.logical_name.clone()
+                } else {
+                    format!("{} ({})", display_name, a.logical_name)
+                };
                 (a.logical_name.clone(), display)
             })
             .collect();
