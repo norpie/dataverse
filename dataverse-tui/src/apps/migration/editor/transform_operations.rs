@@ -24,8 +24,12 @@ use crate::apps::migration::repository::NewTransform;
 use crate::apps::migration::repository::UpdateTransform;
 use crate::apps::migration::types::Condition;
 use crate::apps::migration::types::Expr;
+use crate::apps::migration::types::CoalesceChain;
+use crate::apps::migration::types::FindCondition;
 use crate::apps::migration::types::FindFallback;
 use crate::apps::migration::types::FindMode;
+use crate::apps::migration::types::MatchBranch;
+use crate::apps::migration::types::MatchCondition;
 use crate::apps::migration::types::MathOp;
 use crate::apps::migration::types::ParentType;
 use crate::apps::migration::types::StringOp;
@@ -37,6 +41,267 @@ use crate::modals::ConfirmModal;
 use super::MigrationEditor;
 use super::insert_target::InsertTarget;
 use super::tree::TransformNode;
+
+// =============================================================================
+// Scope-aware reorder helpers
+// =============================================================================
+
+/// A target slot for moving a transform.
+#[derive(Debug, Clone)]
+struct MoveTarget {
+    parent_type: ParentType,
+    parent_id: i64,
+    order: i32,
+}
+
+/// Get the ordered child scopes of a scope-owning transform.
+///
+/// Returns a list of `(ParentType, parent_id)` in visual order (top to bottom).
+/// Returns empty for transforms that don't own child scopes.
+fn child_scopes(
+    transform: &Transform,
+    match_branches: &[MatchBranch],
+    coalesce_chains: &[CoalesceChain],
+    find_conditions: &[FindCondition],
+    _match_conditions: &[MatchCondition],
+) -> Vec<(ParentType, i64)> {
+    match &transform.data {
+        TransformData::Guard { .. } => {
+            vec![(ParentType::GuardFallback, transform.id)]
+        }
+        TransformData::Match { has_default } => {
+            let mut branches: Vec<_> = match_branches
+                .iter()
+                .filter(|mb| mb.transform_id == transform.id)
+                .collect();
+            branches.sort_by_key(|mb| mb.order);
+            let mut scopes: Vec<(ParentType, i64)> = branches
+                .iter()
+                .map(|mb| (ParentType::MatchBranch, mb.id))
+                .collect();
+            if *has_default {
+                scopes.push((ParentType::MatchDefault, transform.id));
+            }
+            scopes
+        }
+        TransformData::Coalesce => {
+            let mut chains: Vec<_> = coalesce_chains
+                .iter()
+                .filter(|cc| cc.transform_id == transform.id)
+                .collect();
+            chains.sort_by_key(|cc| cc.order);
+            chains
+                .iter()
+                .map(|cc| (ParentType::CoalesceChain, cc.id))
+                .collect()
+        }
+        TransformData::Find { fallback, mode, .. } => {
+            let has_default = matches!(fallback, FindFallback::Default);
+            if matches!(mode, FindMode::Where) {
+                let mut conditions: Vec<_> = find_conditions
+                    .iter()
+                    .filter(|fc| fc.transform_id == transform.id)
+                    .collect();
+                conditions.sort_by_key(|fc| fc.order);
+                let mut scopes: Vec<(ParentType, i64)> = conditions
+                    .iter()
+                    .map(|fc| (ParentType::FindCondition, fc.id))
+                    .collect();
+                if has_default {
+                    scopes.push((ParentType::FindDefault, transform.id));
+                }
+                scopes
+            } else {
+                // Lua mode: only default
+                if has_default {
+                    vec![(ParentType::FindDefault, transform.id)]
+                } else {
+                    vec![]
+                }
+            }
+        }
+        _ => vec![],
+    }
+}
+
+/// Get transforms in a scope, sorted by order.
+fn transforms_in_scope(all_transforms: &[Transform], pt: ParentType, pid: i64) -> Vec<&Transform> {
+    let mut ts: Vec<_> = all_transforms
+        .iter()
+        .filter(|t| t.parent_type == pt && t.parent_id == pid)
+        .collect();
+    ts.sort_by_key(|t| t.order);
+    ts
+}
+
+/// Determine the parent scope of a given scope.
+///
+/// Returns `Some((parent_transform, its_parent_type, its_parent_id))` for nested scopes,
+/// or `None` for top-level scopes (FieldMapping, Variable, MatchCondition).
+fn parent_scope(
+    pt: ParentType,
+    pid: i64,
+    all_transforms: &[Transform],
+    match_branches: &[MatchBranch],
+    coalesce_chains: &[CoalesceChain],
+    find_conditions: &[FindCondition],
+) -> Option<(i64, ParentType, i64)> {
+    match pt {
+        // Top-level scopes — no parent transform
+        ParentType::FieldMapping | ParentType::Variable | ParentType::MatchCondition => None,
+
+        // parent_id IS the parent transform's ID
+        ParentType::GuardFallback | ParentType::MatchDefault | ParentType::FindDefault => {
+            let parent_transform = all_transforms.iter().find(|t| t.id == pid)?;
+            Some((
+                parent_transform.id,
+                parent_transform.parent_type,
+                parent_transform.parent_id,
+            ))
+        }
+
+        // parent_id is a child table row ID — look up the parent transform
+        ParentType::MatchBranch => {
+            let branch = match_branches.iter().find(|mb| mb.id == pid)?;
+            let parent_transform = all_transforms.iter().find(|t| t.id == branch.transform_id)?;
+            Some((
+                parent_transform.id,
+                parent_transform.parent_type,
+                parent_transform.parent_id,
+            ))
+        }
+        ParentType::CoalesceChain => {
+            let chain = coalesce_chains.iter().find(|cc| cc.id == pid)?;
+            let parent_transform = all_transforms.iter().find(|t| t.id == chain.transform_id)?;
+            Some((
+                parent_transform.id,
+                parent_transform.parent_type,
+                parent_transform.parent_id,
+            ))
+        }
+        ParentType::FindCondition => {
+            let condition = find_conditions.iter().find(|fc| fc.id == pid)?;
+            let parent_transform = all_transforms
+                .iter()
+                .find(|t| t.id == condition.transform_id)?;
+            Some((
+                parent_transform.id,
+                parent_transform.parent_type,
+                parent_transform.parent_id,
+            ))
+        }
+    }
+}
+
+/// Find the index of a scope `(pt, pid)` within the parent transform's child scopes.
+fn scope_index_in_parent(
+    pt: ParentType,
+    pid: i64,
+    parent_transform: &Transform,
+    match_branches: &[MatchBranch],
+    coalesce_chains: &[CoalesceChain],
+    find_conditions: &[FindCondition],
+    match_conditions: &[MatchCondition],
+) -> Option<usize> {
+    let scopes = child_scopes(
+        parent_transform,
+        match_branches,
+        coalesce_chains,
+        find_conditions,
+        match_conditions,
+    );
+    scopes.iter().position(|(s_pt, s_pid)| *s_pt == pt && *s_pid == pid)
+}
+
+/// Enter a scope-owning transform from the given direction.
+///
+/// - `entering_first` = true: enter via the first child scope (moving DOWN into it)
+/// - `entering_first` = false: enter via the last child scope (moving UP into it)
+///
+/// Recursively descends if the edge transform in the entered scope is itself a scope-owner.
+fn enter_scope(
+    transform: &Transform,
+    entering_first: bool,
+    all_transforms: &[Transform],
+    match_branches: &[MatchBranch],
+    coalesce_chains: &[CoalesceChain],
+    find_conditions: &[FindCondition],
+    match_conditions: &[MatchCondition],
+) -> Option<MoveTarget> {
+    let scopes = child_scopes(
+        transform,
+        match_branches,
+        coalesce_chains,
+        find_conditions,
+        match_conditions,
+    );
+    if scopes.is_empty() {
+        return None;
+    }
+
+    let (scope_pt, scope_pid) = if entering_first {
+        scopes[0]
+    } else {
+        scopes[scopes.len() - 1]
+    };
+
+    let scope_transforms = transforms_in_scope(all_transforms, scope_pt, scope_pid);
+
+    if entering_first {
+        // Insert at position 0. But check if the first transform is a scope-owner we should
+        // recurse into — NO: when entering from above, we land at position 0 (before everything).
+        // Only recurse when the scope is empty and we need to go deeper? No — empty scope is fine.
+        //
+        // Actually: the user wants visual DFS order. Moving DOWN past a scope-owner means the next
+        // visual position is the first transform inside it. If the scope is empty, the next visual
+        // position would be in the next sibling scope or after the parent. But an empty scope IS a
+        // valid place to land (the transform will be the first one there).
+        Some(MoveTarget {
+            parent_type: scope_pt,
+            parent_id: scope_pid,
+            order: 0,
+        })
+    } else {
+        // Entering from below (moving UP): land at the end. But if the last transform in this
+        // scope is itself a scope-owner with children, recurse into it.
+        if let Some(last) = scope_transforms.last() {
+            let last_scopes = child_scopes(
+                last,
+                match_branches,
+                coalesce_chains,
+                find_conditions,
+                match_conditions,
+            );
+            if !last_scopes.is_empty() {
+                // Recurse into the last transform's scope
+                if let Some(deeper) = enter_scope(
+                    last,
+                    false, // entering last
+                    all_transforms,
+                    match_branches,
+                    coalesce_chains,
+                    find_conditions,
+                    match_conditions,
+                ) {
+                    return Some(deeper);
+                }
+            }
+            // Land after the last transform
+            Some(MoveTarget {
+                parent_type: scope_pt,
+                parent_id: scope_pid,
+                order: last.order + 1,
+            })
+        } else {
+            // Empty scope — land at position 0
+            Some(MoveTarget {
+                parent_type: scope_pt,
+                parent_id: scope_pid,
+                order: 0,
+            })
+        }
+    }
+}
 
 impl MigrationEditor {
     /// Add a new transform based on the focused node.
@@ -340,48 +605,398 @@ impl MigrationEditor {
     // Reorder Transform
     // =========================================================================
 
-    /// Reorder a transform within its chain.
+    /// Reorder a transform, supporting cross-scope movement.
+    ///
+    /// When at a scope boundary (first/last in chain), the transform moves into
+    /// adjacent scopes following visual DFS order rather than being stuck.
     pub(super) async fn reorder_transform_impl(
         &self,
         transform: &Transform,
         direction: i32,
         gx: &GlobalContext,
     ) {
-        let transforms = self.transforms.get();
-        let mut siblings: Vec<_> = transforms
-            .iter()
-            .filter(|t| {
-                t.parent_type == transform.parent_type && t.parent_id == transform.parent_id
-            })
-            .collect();
-        siblings.sort_by_key(|t| t.order);
+        let all_transforms = self.transforms.get();
+        let match_branches = self.match_branches.get();
+        let coalesce_chains = self.coalesce_chains.get();
+        let find_conditions = self.find_conditions.get();
+        let match_conditions = self.match_conditions.get();
+
+        let siblings = transforms_in_scope(&all_transforms, transform.parent_type, transform.parent_id);
 
         let Some(current_idx) = siblings.iter().position(|t| t.id == transform.id) else {
             return;
         };
 
-        let new_idx = (current_idx as i32 + direction).max(0) as usize;
-        if new_idx >= siblings.len() || new_idx == current_idx {
-            return;
-        }
+        let moving_down = direction > 0;
 
-        // Build new order
-        let mut ordered_ids: Vec<i64> = siblings.iter().map(|t| t.id).collect();
-        ordered_ids.remove(current_idx);
-        ordered_ids.insert(new_idx, transform.id);
+        // Try to find a cross-scope target
+        let target = if moving_down {
+            self.find_move_target_down(
+                transform,
+                current_idx,
+                &siblings,
+                &all_transforms,
+                &match_branches,
+                &coalesce_chains,
+                &find_conditions,
+                &match_conditions,
+            )
+        } else {
+            self.find_move_target_up(
+                transform,
+                current_idx,
+                &siblings,
+                &all_transforms,
+                &match_branches,
+                &coalesce_chains,
+                &find_conditions,
+                &match_conditions,
+            )
+        };
 
         let repo = gx.data::<MigrationRepository>();
-        match repo
-            .reorder_transforms(transform.parent_type, transform.parent_id, ordered_ids)
-            .await
-        {
-            Ok(()) => {
-                self.load_db_data(gx).await;
+
+        match target {
+            None => {
+                // No movement possible
             }
-            Err(e) => {
-                log::error!("Failed to reorder transforms: {}", e);
-                gx.toast(Toast::error("Failed to reorder transforms"));
+            Some(t)
+                if t.parent_type == transform.parent_type
+                    && t.parent_id == transform.parent_id =>
+            {
+                // Same scope — use simple reorder
+                let new_idx = t.order as usize;
+                let mut ordered_ids: Vec<i64> = siblings.iter().map(|t| t.id).collect();
+                ordered_ids.remove(current_idx);
+                ordered_ids.insert(new_idx.min(ordered_ids.len()), transform.id);
+
+                match repo
+                    .reorder_transforms(transform.parent_type, transform.parent_id, ordered_ids)
+                    .await
+                {
+                    Ok(()) => {
+                        self.load_db_data(gx).await;
+                    }
+                    Err(e) => {
+                        log::error!("Failed to reorder transforms: {}", e);
+                        gx.toast(Toast::error("Failed to reorder transforms"));
+                    }
+                }
             }
+            Some(t) => {
+                // Cross-scope move
+                match repo
+                    .move_transform_to_scope(
+                        transform.id,
+                        t.parent_type,
+                        t.parent_id,
+                        t.order,
+                    )
+                    .await
+                {
+                    Ok(()) => {
+                        self.load_db_data(gx).await;
+                    }
+                    Err(e) => {
+                        log::error!("Failed to move transform to new scope: {}", e);
+                        gx.toast(Toast::error("Failed to move transform"));
+                    }
+                }
+            }
+        }
+    }
+
+    /// Find the target slot when moving a transform DOWN.
+    fn find_move_target_down(
+        &self,
+        transform: &Transform,
+        current_idx: usize,
+        siblings: &[&Transform],
+        all_transforms: &[Transform],
+        match_branches: &[MatchBranch],
+        coalesce_chains: &[CoalesceChain],
+        find_conditions: &[FindCondition],
+        match_conditions: &[MatchCondition],
+    ) -> Option<MoveTarget> {
+        if current_idx + 1 < siblings.len() {
+            // There's a next sibling
+            let next_sibling = siblings[current_idx + 1];
+            let next_child_scopes = child_scopes(
+                next_sibling,
+                match_branches,
+                coalesce_chains,
+                find_conditions,
+                match_conditions,
+            );
+
+            if !next_child_scopes.is_empty() {
+                // Next sibling is a scope-owner — enter its first child scope
+                if let Some(entered) = enter_scope(
+                    next_sibling,
+                    true, // entering first child
+                    all_transforms,
+                    match_branches,
+                    coalesce_chains,
+                    find_conditions,
+                    match_conditions,
+                ) {
+                    return Some(entered);
+                }
+            }
+
+            // Normal same-scope swap
+            Some(MoveTarget {
+                parent_type: transform.parent_type,
+                parent_id: transform.parent_id,
+                order: (current_idx + 1) as i32,
+            })
+        } else {
+            // At end of scope — exit to parent scope (insert after parent transform)
+            self.exit_scope_down(
+                transform.parent_type,
+                transform.parent_id,
+                all_transforms,
+                match_branches,
+                coalesce_chains,
+                find_conditions,
+                match_conditions,
+            )
+        }
+    }
+
+    /// Find the target slot when moving a transform UP.
+    fn find_move_target_up(
+        &self,
+        transform: &Transform,
+        current_idx: usize,
+        siblings: &[&Transform],
+        all_transforms: &[Transform],
+        match_branches: &[MatchBranch],
+        coalesce_chains: &[CoalesceChain],
+        find_conditions: &[FindCondition],
+        match_conditions: &[MatchCondition],
+    ) -> Option<MoveTarget> {
+        if current_idx > 0 {
+            // There's a previous sibling
+            let prev_sibling = siblings[current_idx - 1];
+            let prev_child_scopes = child_scopes(
+                prev_sibling,
+                match_branches,
+                coalesce_chains,
+                find_conditions,
+                match_conditions,
+            );
+
+            if !prev_child_scopes.is_empty() {
+                // Previous sibling is a scope-owner — enter its last child scope (recursively)
+                if let Some(entered) = enter_scope(
+                    prev_sibling,
+                    false, // entering last child
+                    all_transforms,
+                    match_branches,
+                    coalesce_chains,
+                    find_conditions,
+                    match_conditions,
+                ) {
+                    return Some(entered);
+                }
+            }
+
+            // Normal same-scope swap
+            Some(MoveTarget {
+                parent_type: transform.parent_type,
+                parent_id: transform.parent_id,
+                order: (current_idx - 1) as i32,
+            })
+        } else {
+            // At start of scope — exit to parent scope (insert at parent transform's position)
+            self.exit_scope_up(
+                transform.parent_type,
+                transform.parent_id,
+                all_transforms,
+                match_branches,
+                coalesce_chains,
+                find_conditions,
+                match_conditions,
+            )
+        }
+    }
+
+    /// Exit a scope downward: move after the parent transform in its scope.
+    ///
+    /// If this is the last sibling scope, the transform exits fully.
+    /// If there's a next sibling scope, it enters that scope at position 0.
+    fn exit_scope_down(
+        &self,
+        pt: ParentType,
+        pid: i64,
+        all_transforms: &[Transform],
+        match_branches: &[MatchBranch],
+        coalesce_chains: &[CoalesceChain],
+        find_conditions: &[FindCondition],
+        match_conditions: &[MatchCondition],
+    ) -> Option<MoveTarget> {
+        let (parent_id, parent_pt, parent_pid) = parent_scope(
+            pt,
+            pid,
+            all_transforms,
+            match_branches,
+            coalesce_chains,
+            find_conditions,
+        )?;
+
+        let parent_transform = all_transforms.iter().find(|t| t.id == parent_id)?;
+
+        // Check if there's a next sibling scope
+        let scope_idx = scope_index_in_parent(
+            pt,
+            pid,
+            parent_transform,
+            match_branches,
+            coalesce_chains,
+            find_conditions,
+            match_conditions,
+        )?;
+
+        let all_scopes = child_scopes(
+            parent_transform,
+            match_branches,
+            coalesce_chains,
+            find_conditions,
+            match_conditions,
+        );
+
+        if scope_idx + 1 < all_scopes.len() {
+            // There's a next sibling scope — enter it at position 0
+            let (next_pt, next_pid) = all_scopes[scope_idx + 1];
+            let next_transforms = transforms_in_scope(all_transforms, next_pt, next_pid);
+
+            // Check if the first transform in the next scope is a scope-owner to recurse into
+            if let Some(first) = next_transforms.first() {
+                let first_child_scopes = child_scopes(
+                    first,
+                    match_branches,
+                    coalesce_chains,
+                    find_conditions,
+                    match_conditions,
+                );
+                if !first_child_scopes.is_empty() {
+                    if let Some(entered) = enter_scope(
+                        first,
+                        true,
+                        all_transforms,
+                        match_branches,
+                        coalesce_chains,
+                        find_conditions,
+                        match_conditions,
+                    ) {
+                        return Some(entered);
+                    }
+                }
+            }
+
+            Some(MoveTarget {
+                parent_type: next_pt,
+                parent_id: next_pid,
+                order: 0,
+            })
+        } else {
+            // Last sibling scope — exit fully, insert after parent transform
+            Some(MoveTarget {
+                parent_type: parent_pt,
+                parent_id: parent_pid,
+                order: parent_transform.order + 1,
+            })
+        }
+    }
+
+    /// Exit a scope upward: move before the parent transform in its scope.
+    ///
+    /// If this is the first sibling scope, the transform exits fully.
+    /// If there's a previous sibling scope, it enters that scope at the end (recursively).
+    fn exit_scope_up(
+        &self,
+        pt: ParentType,
+        pid: i64,
+        all_transforms: &[Transform],
+        match_branches: &[MatchBranch],
+        coalesce_chains: &[CoalesceChain],
+        find_conditions: &[FindCondition],
+        match_conditions: &[MatchCondition],
+    ) -> Option<MoveTarget> {
+        let (parent_id, parent_pt, parent_pid) = parent_scope(
+            pt,
+            pid,
+            all_transforms,
+            match_branches,
+            coalesce_chains,
+            find_conditions,
+        )?;
+
+        let parent_transform = all_transforms.iter().find(|t| t.id == parent_id)?;
+
+        // Check if there's a previous sibling scope
+        let scope_idx = scope_index_in_parent(
+            pt,
+            pid,
+            parent_transform,
+            match_branches,
+            coalesce_chains,
+            find_conditions,
+            match_conditions,
+        )?;
+
+        let all_scopes = child_scopes(
+            parent_transform,
+            match_branches,
+            coalesce_chains,
+            find_conditions,
+            match_conditions,
+        );
+
+        if scope_idx > 0 {
+            // There's a previous sibling scope — enter it at the end (recursively)
+            let (prev_pt, prev_pid) = all_scopes[scope_idx - 1];
+            let prev_transforms = transforms_in_scope(all_transforms, prev_pt, prev_pid);
+
+            // Check if the last transform in the previous scope is a scope-owner to recurse into
+            if let Some(last) = prev_transforms.last() {
+                let last_child_scopes = child_scopes(
+                    last,
+                    match_branches,
+                    coalesce_chains,
+                    find_conditions,
+                    match_conditions,
+                );
+                if !last_child_scopes.is_empty() {
+                    if let Some(entered) = enter_scope(
+                        last,
+                        false,
+                        all_transforms,
+                        match_branches,
+                        coalesce_chains,
+                        find_conditions,
+                        match_conditions,
+                    ) {
+                        return Some(entered);
+                    }
+                }
+            }
+
+            // Land at end of previous scope
+            let end_order = prev_transforms.last().map(|t| t.order + 1).unwrap_or(0);
+            Some(MoveTarget {
+                parent_type: prev_pt,
+                parent_id: prev_pid,
+                order: end_order,
+            })
+        } else {
+            // First sibling scope — exit fully, insert at parent transform's position
+            Some(MoveTarget {
+                parent_type: parent_pt,
+                parent_id: parent_pid,
+                order: parent_transform.order,
+            })
         }
     }
 

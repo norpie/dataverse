@@ -221,6 +221,99 @@ impl super::MigrationRepository {
             })
     }
 
+    /// Move a transform from one scope to another.
+    ///
+    /// Atomically:
+    /// 1. Remove the transform from its old scope and re-sequence remaining siblings
+    /// 2. Shift transforms in the new scope at/after `new_order` to make room
+    /// 3. Update the transform's parent_type, parent_id, and order
+    pub async fn move_transform_to_scope(
+        &self,
+        transform_id: i64,
+        new_parent_type: ParentType,
+        new_parent_id: i64,
+        new_order: i32,
+    ) -> Result<(), RepositoryError> {
+        let new_parent_type_str = new_parent_type.as_str().to_string();
+        let now = Utc::now().to_rfc3339();
+
+        self.client
+            .conn_mut(move |conn| {
+                let tx = conn.transaction()?;
+
+                // 1. Get old scope info
+                let (old_parent_type_str, old_parent_id): (String, i64) = tx.query_row(
+                    "SELECT parent_type, parent_id FROM transforms WHERE id = ?1",
+                    [transform_id],
+                    |row| Ok((row.get(0)?, row.get(1)?)),
+                )?;
+
+                // 2. Remove from old scope: delete and re-sequence
+                //    First, set a temporary impossible order so it doesn't interfere
+                tx.execute(
+                    "UPDATE transforms SET \"order\" = -1 WHERE id = ?1",
+                    [transform_id],
+                )?;
+                //    Re-sequence old siblings (excluding the moved transform)
+                let mut stmt = tx.prepare(
+                    "SELECT id FROM transforms
+                     WHERE parent_type = ?1 AND parent_id = ?2 AND id != ?3
+                     ORDER BY \"order\" ASC",
+                )?;
+                let old_sibling_ids: Vec<i64> = stmt
+                    .query_map(
+                        params![old_parent_type_str, old_parent_id, transform_id],
+                        |row| row.get(0),
+                    )?
+                    .collect::<Result<Vec<_>, _>>()?;
+                drop(stmt);
+
+                for (idx, sid) in old_sibling_ids.iter().enumerate() {
+                    tx.execute(
+                        "UPDATE transforms SET \"order\" = ?1 WHERE id = ?2",
+                        params![idx as i32, sid],
+                    )?;
+                }
+
+                // 3. Shift transforms in new scope at/after new_order
+                tx.execute(
+                    "UPDATE transforms SET \"order\" = \"order\" + 1
+                     WHERE parent_type = ?1 AND parent_id = ?2 AND \"order\" >= ?3 AND id != ?4",
+                    params![new_parent_type_str, new_parent_id, new_order, transform_id],
+                )?;
+
+                // 4. Move the transform to the new scope
+                tx.execute(
+                    "UPDATE transforms SET parent_type = ?1, parent_id = ?2, \"order\" = ?3
+                     WHERE id = ?4",
+                    params![new_parent_type_str, new_parent_id, new_order, transform_id],
+                )?;
+
+                // 5. Update migration timestamp
+                let entity_mapping_id: Option<i64> = tx
+                    .query_row(
+                        "SELECT entity_mapping_id FROM transforms WHERE id = ?1",
+                        [transform_id],
+                        |row| row.get(0),
+                    )
+                    .ok();
+
+                if let Some(entity_mapping_id) = entity_mapping_id {
+                    tx.execute(
+                        "UPDATE migrations SET updated_at = ?1
+                         WHERE id = (SELECT migration_id FROM phases
+                                     WHERE id = (SELECT phase_id FROM entity_mappings WHERE id = ?2))",
+                        params![now, entity_mapping_id],
+                    )?;
+                }
+
+                tx.commit()?;
+                Ok(())
+            })
+            .await
+            .map_err(RepositoryError::Database)
+    }
+
     /// Reorder transforms within a parent.
     pub async fn reorder_transforms(
         &self,
