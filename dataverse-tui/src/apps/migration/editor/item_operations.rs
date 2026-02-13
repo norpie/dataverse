@@ -224,9 +224,18 @@ impl MigrationEditor {
             }
         };
 
-        // Build options for autocomplete: logical_name (Display Name)
+        // Collect already-mapped target fields for this entity mapping
+        let field_mappings = self.field_mappings.get();
+        let already_mapped: Vec<&str> = field_mappings
+            .iter()
+            .filter(|fm| fm.entity_mapping_id == entity_mapping_id)
+            .map(|fm| fm.target_field.as_str())
+            .collect();
+
+        // Build options for autocomplete: logical_name (Display Name), excluding already-mapped fields
         let options: Vec<(String, String)> = attributes
             .iter()
+            .filter(|a| !already_mapped.contains(&a.logical_name.as_str()))
             .map(|a| {
                 let display_name = a.display_name.text_or(&a.logical_name);
                 let display = if display_name == a.logical_name {
