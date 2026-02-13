@@ -299,8 +299,18 @@ impl QueryBuilder {
     ///
     /// Uses `$apply=aggregate($count as count)` which returns accurate counts
     /// (the `/$count` endpoint is limited to 5000 on some Dataverse instances).
-    pub async fn count(self, client: &DataverseClient) -> Result<usize, Error> {
+    pub async fn count(mut self, client: &DataverseClient) -> Result<usize, Error> {
         let entity_set_name = self.resolve_entity_set(client).await?;
+
+        // Resolve logical name for lookup field transformation
+        let entity_logical_name = match &self.entity {
+            Entity::Logical(name) => name.clone(),
+            Entity::Set(name) => client.resolve_entity_logical_name(&Entity::Set(name.clone())).await?,
+        };
+
+        // Transform lookup field names in filter before building URL
+        self.transform_lookup_fields(client, &entity_logical_name).await?;
+
         let base_url = client.base_url().trim_end_matches('/');
         let api_version = client.api_version();
 
