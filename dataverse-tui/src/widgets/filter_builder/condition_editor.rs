@@ -1,7 +1,7 @@
 //! Condition editor modal for creating/editing filter conditions.
 
 use dataverse_lib::model::Value;
-use dataverse_lib::model::metadata::{AttributeMetadata, AttributeType};
+use dataverse_lib::model::metadata::{AttributeType, EntityMetadata};
 use rafter::page;
 use rafter::prelude::*;
 use rafter::widgets::{
@@ -14,12 +14,12 @@ use crate::formatting::{format_value, parse_filter_value, type_hint_text};
 use super::types::{CondOp, ConditionData};
 
 /// Modal for creating or editing a filter condition.
-#[modal(default, size = Md)]
+#[modal(size = Md)]
 pub struct ConditionEditorModal {
     #[state(skip)]
     options: Vec<(String, String)>,
     #[state(skip)]
-    attributes: Vec<AttributeMetadata>,
+    metadata: EntityMetadata,
     #[state(skip)]
     initial: Option<ConditionData>,
 
@@ -28,36 +28,52 @@ pub struct ConditionEditorModal {
     value_text: String,
     date_picker: DatePickerState,
     number_input: NumberInputState,
+    optionset_select: SelectState<i32>,
 
     selected_type: Option<AttributeType>,
     error: Option<String>,
 }
 
 impl ConditionEditorModal {
-    /// Create with pre-fetched field options and attribute metadata.
+    /// Create with pre-fetched field options and entity metadata.
     pub fn with_options(
         options: Vec<(String, String)>,
-        attributes: Vec<AttributeMetadata>,
+        metadata: EntityMetadata,
     ) -> Self {
-        Self {
+        Self::new(
             options,
-            attributes,
-            ..Default::default()
-        }
+            metadata,
+            None,
+            AutocompleteState::default(),
+            SelectState::default(),
+            String::new(),
+            DatePickerState::default(),
+            NumberInputState::default(),
+            SelectState::default(),
+            None,
+            None,
+        )
     }
 
     /// Create pre-filled with an existing condition for editing.
     pub fn with_condition(
         options: Vec<(String, String)>,
-        attributes: Vec<AttributeMetadata>,
+        metadata: EntityMetadata,
         condition: ConditionData,
     ) -> Self {
-        Self {
+        Self::new(
             options,
-            attributes,
-            initial: Some(condition),
-            ..Default::default()
-        }
+            metadata,
+            Some(condition),
+            AutocompleteState::default(),
+            SelectState::default(),
+            String::new(),
+            DatePickerState::default(),
+            NumberInputState::default(),
+            SelectState::default(),
+            None,
+            None,
+        )
     }
 }
 
@@ -77,6 +93,7 @@ impl ConditionEditorModal {
 
             // Determine attribute type for the field
             let attr_type = self
+                .metadata
                 .attributes
                 .iter()
                 .find(|a| a.logical_name == initial.field)
@@ -122,9 +139,12 @@ impl ConditionEditorModal {
                     Some(
                         AttributeType::Picklist | AttributeType::State | AttributeType::Status,
                     ) => {
+                        let os_options = optionset_options(&self.metadata, &initial.field);
                         if let Value::OptionSet(os) = &initial.value {
-                            self.number_input
-                                .set(NumberInputState::new(os.value as f64).integer());
+                            self.optionset_select
+                                .set(SelectState::new(os_options).with_value(os.value));
+                        } else {
+                            self.optionset_select.set(SelectState::new(os_options));
                         }
                     }
                     _ => {
@@ -184,7 +204,14 @@ impl ConditionEditorModal {
                     Value::Float(self.number_input.with_ref(|s| s.value()))
                 }
                 Some(AttributeType::Picklist | AttributeType::State | AttributeType::Status) => {
-                    Value::OptionSet(self.number_input.with_ref(|s| s.value_i32().into()))
+                    match self.optionset_select.with_ref(|s| s.value().cloned()) {
+                        Some(v) => Value::OptionSet(v.into()),
+                        None => {
+                            self.error
+                                .set(Some("Please select an option".to_string()));
+                            return;
+                        }
+                    }
                 }
                 _ => {
                     // Fall back to text parsing for other types (String, GUID, etc.)
@@ -226,6 +253,7 @@ impl ConditionEditorModal {
         };
 
         let attr_type = self
+            .metadata
             .attributes
             .iter()
             .find(|a| a.logical_name == field_name)
@@ -247,7 +275,8 @@ impl ConditionEditorModal {
                 self.number_input.set(NumberInputState::new(0.0));
             }
             Some(AttributeType::Picklist | AttributeType::State | AttributeType::Status) => {
-                self.number_input.set(NumberInputState::new(0.0).integer());
+                let os_options = optionset_options(&self.metadata, &field_name);
+                self.optionset_select.set(SelectState::new(os_options));
             }
             _ => {
                 // Text input - already cleared above
@@ -301,11 +330,15 @@ impl ConditionEditorModal {
                             | AttributeType::Double
                             | AttributeType::Decimal
                             | AttributeType::Money
-                            | AttributeType::Picklist
+                        ) => {
+                            number_input (state: self.number_input, id: "cond-value")
+                        }
+                        Some(
+                            AttributeType::Picklist
                             | AttributeType::State
                             | AttributeType::Status
                         ) => {
-                            number_input (state: self.number_input, id: "cond-value")
+                            select (state: self.optionset_select, id: "cond-value", placeholder: "Select option...")
                         }
                         _ => {
                             input (state: self.value_text, id: "cond-value", placeholder: {type_hint})
@@ -381,4 +414,49 @@ pub fn operators_for_type(attr_type: Option<AttributeType>) -> Vec<CondOp> {
         ],
         _ => vec![CondOp::Eq, CondOp::Ne, CondOp::IsNull, CondOp::IsNotNull],
     }
+}
+
+/// Build `(value, "Display Name (value)")` pairs for an optionset attribute
+/// by looking up the typed attribute lists in `EntityMetadata`.
+fn optionset_options(metadata: &EntityMetadata, field_name: &str) -> Vec<(i32, String)> {
+    // Try picklist attributes first
+    if let Some(attr) = metadata.picklist_attribute(field_name) {
+        return attr
+            .option_set
+            .options
+            .iter()
+            .map(|o| {
+                let label = o.label.text_or("(unnamed)");
+                (o.value, format!("{} ({})", label, o.value))
+            })
+            .collect();
+    }
+
+    // Try state attributes
+    if let Some(attr) = metadata.state_attribute(field_name) {
+        return attr
+            .option_set
+            .options
+            .iter()
+            .map(|o| {
+                let label = o.label.text_or("(unnamed)");
+                (o.value, format!("{} ({})", label, o.value))
+            })
+            .collect();
+    }
+
+    // Try status attributes
+    if let Some(attr) = metadata.status_attribute(field_name) {
+        return attr
+            .option_set
+            .options
+            .iter()
+            .map(|o| {
+                let label = o.label.text_or("(unnamed)");
+                (o.value, format!("{} ({})", label, o.value))
+            })
+            .collect();
+    }
+
+    Vec::new()
 }

@@ -1,6 +1,7 @@
 //! Modal for building filter conditions.
 
-use dataverse_lib::model::metadata::AttributeMetadata;
+use dataverse_lib::DataverseClient;
+use dataverse_lib::model::metadata::EntityMetadata;
 use rafter::page;
 use rafter::prelude::*;
 use rafter::widgets::Button;
@@ -8,6 +9,7 @@ use rafter::widgets::Text;
 use rafter::widgets::Tree;
 use rafter::widgets::TreeState;
 
+use crate::modals::LoadingModal;
 use crate::widgets::filter_builder::ConditionData;
 use crate::widgets::filter_builder::ConditionEditorModal;
 use crate::widgets::filter_builder::FilterNode;
@@ -21,9 +23,10 @@ pub struct FilterBuilderModal {
     #[state(skip)]
     title: String,
     #[state(skip)]
-    options: Vec<(String, String)>,
+    client: DataverseClient,
     #[state(skip)]
-    attributes: Vec<AttributeMetadata>,
+    entity_name: String,
+    metadata: Option<EntityMetadata>,
 
     filter: FilterNode,
     tree_state: TreeState<FilterTreeItem>,
@@ -34,8 +37,8 @@ impl FilterBuilderModal {
     /// Create a new filter builder modal.
     pub fn new_modal(
         title: impl Into<String>,
-        options: Vec<(String, String)>,
-        attributes: Vec<AttributeMetadata>,
+        client: DataverseClient,
+        entity_name: impl Into<String>,
         initial: Option<FilterNode>,
     ) -> Self {
         let filter = initial.unwrap_or_default();
@@ -43,8 +46,9 @@ impl FilterBuilderModal {
 
         Self::new(
             title.into(),
-            options,
-            attributes,
+            client,
+            entity_name.into(),
+            None,
             filter,
             TreeState::default(),
             next_id,
@@ -59,9 +63,53 @@ impl FilterBuilderModal {
     }
 
     #[on_start]
-    async fn on_start(&self, mx: &ModalContext<Option<FilterNode>>) {
+    async fn on_start(&self, gx: &GlobalContext, mx: &ModalContext<Option<FilterNode>>) {
+        // Fetch entity metadata (includes typed attributes with option sets)
+        let client = self.client.clone();
+        let entity_name = self.entity_name.clone();
+        let result = gx
+            .modal(LoadingModal::run_with_default(
+                "Loading entity metadata...",
+                || Err(dataverse_lib::error::Error::Cancelled),
+                async move { client.metadata().entity(entity_name).await },
+            ))
+            .await;
+
+        match result {
+            Ok(metadata) => {
+                self.metadata.set(Some(metadata));
+            }
+            Err(e) if e.is_cancelled() => {
+                mx.close(None);
+                return;
+            }
+            Err(e) => {
+                log::error!("Failed to fetch entity metadata: {}", e);
+                gx.toast(Toast::error("Failed to fetch entity metadata"));
+                mx.close(None);
+                return;
+            }
+        }
+
         self.rebuild_tree();
         mx.focus("filter-tree");
+    }
+
+    /// Build autocomplete options from metadata attributes.
+    fn field_options(&self) -> Vec<(String, String)> {
+        let metadata = self.metadata.get();
+        let Some(metadata) = metadata else {
+            return Vec::new();
+        };
+        metadata
+            .attributes
+            .iter()
+            .map(|a| {
+                let display_name = a.display_name.text_or(&a.logical_name);
+                let display = format!("{} ({})", display_name, a.logical_name);
+                (a.logical_name.clone(), display)
+            })
+            .collect()
     }
 
     #[keybinds]
@@ -85,10 +133,15 @@ impl FilterBuilderModal {
 
     #[handler]
     async fn add_condition(&self, gx: &GlobalContext) {
+        let metadata = self.metadata.get();
+        let Some(metadata) = metadata else {
+            return;
+        };
+
         let result = gx
             .modal(ConditionEditorModal::with_options(
-                self.options.clone(),
-                self.attributes.clone(),
+                self.field_options(),
+                metadata.clone(),
             ))
             .await;
 
@@ -173,6 +226,11 @@ impl FilterBuilderModal {
                 self.rebuild_tree();
             }
             FilterTreeKey::Condition(id) => {
+                let metadata = self.metadata.get();
+                let Some(metadata) = metadata else {
+                    return;
+                };
+
                 // Edit condition
                 let filter = self.filter.get();
                 let Some((field, operator, value)) = filter.find_condition(id) else {
@@ -187,8 +245,8 @@ impl FilterBuilderModal {
 
                 let result = gx
                     .modal(ConditionEditorModal::with_condition(
-                        self.options.clone(),
-                        self.attributes.clone(),
+                        self.field_options(),
+                        metadata.clone(),
                         condition,
                     ))
                     .await;

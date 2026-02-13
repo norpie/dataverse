@@ -208,48 +208,14 @@ impl MigrationEditor {
 
         let entity_name = em.source_entity.clone();
         let current_filter = em.source_filter.clone();
-
-        // Fetch attributes for the source entity
         let client = self.source_client.get();
-        let entity_name_clone = entity_name.clone();
-        let attributes = gx
-            .modal(LoadingModal::run_with_default(
-                "Loading entity metadata...",
-                || Err(DataverseError::Cancelled),
-                async move { client.metadata().attributes(entity_name_clone).await },
-            ))
-            .await;
 
-        let attributes = match attributes {
-            Ok(attrs) => attrs,
-            Err(e) if e.is_cancelled() => return,
-            Err(e) => {
-                log::error!("Failed to fetch attributes for {}: {}", entity_name, e);
-                gx.toast(Toast::error("Failed to fetch entity metadata"));
-                return;
-            }
-        };
-
-        // Build options for autocomplete: "Display Name (logical_name)"
-        let options: Vec<(String, String)> = attributes
-            .iter()
-            .map(|a| {
-                let display_name = a.display_name.text_or(&a.logical_name);
-                let display = if display_name == a.logical_name {
-                    a.logical_name.clone()
-                } else {
-                    format!("{} ({})", display_name, a.logical_name)
-                };
-                (a.logical_name.clone(), display)
-            })
-            .collect();
-
-        // Open filter builder modal
+        // Open filter builder modal (fetches metadata internally)
         let result = gx
             .modal(FilterBuilderModal::new_modal(
                 "Source Filter",
-                options,
-                attributes,
+                client,
+                entity_name,
                 current_filter,
             ))
             .await;
@@ -310,48 +276,14 @@ impl MigrationEditor {
 
         let entity_name = em.target_entity.clone();
         let current_filter = em.target_filter.clone();
-
-        // Fetch attributes for the target entity
         let client = self.target_client.get();
-        let entity_name_clone = entity_name.clone();
-        let attributes = gx
-            .modal(LoadingModal::run_with_default(
-                "Loading entity metadata...",
-                || Err(DataverseError::Cancelled),
-                async move { client.metadata().attributes(entity_name_clone).await },
-            ))
-            .await;
 
-        let attributes = match attributes {
-            Ok(attrs) => attrs,
-            Err(e) if e.is_cancelled() => return,
-            Err(e) => {
-                log::error!("Failed to fetch attributes for {}: {}", entity_name, e);
-                gx.toast(Toast::error("Failed to fetch entity metadata"));
-                return;
-            }
-        };
-
-        // Build options for autocomplete: "Display Name (logical_name)"
-        let options: Vec<(String, String)> = attributes
-            .iter()
-            .map(|a| {
-                let display_name = a.display_name.text_or(&a.logical_name);
-                let display = if display_name == a.logical_name {
-                    a.logical_name.clone()
-                } else {
-                    format!("{} ({})", display_name, a.logical_name)
-                };
-                (a.logical_name.clone(), display)
-            })
-            .collect();
-
-        // Open filter builder modal
+        // Open filter builder modal (fetches metadata internally)
         let result = gx
             .modal(FilterBuilderModal::new_modal(
                 "Target Filter",
-                options,
-                attributes,
+                client,
+                entity_name,
                 current_filter,
             ))
             .await;

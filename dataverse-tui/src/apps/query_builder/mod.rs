@@ -413,36 +413,29 @@ impl QueryBuilder {
         };
 
         let entity_clone = entity.clone();
-        let attrs = match gx
+        let metadata = match gx
             .modal(LoadingModal::run_with_default(
-                "Loading attributes",
+                "Loading entity metadata",
                 || Err(DataverseError::Cancelled),
-                async move {
-                    client
-                        .metadata()
-                        .attributes(Entity::set(&entity_clone))
-                        .await
-                },
+                async move { client.metadata().entity(entity_clone).await },
             ))
             .await
         {
-            Ok(a) => a,
+            Ok(m) => m,
             Err(e) if e.is_cancelled() => return,
             Err(e) => {
-                gx.toast(Toast::error(format!("Failed to load attributes: {}", e)));
+                gx.toast(Toast::error(format!("Failed to load metadata: {}", e)));
                 return;
             }
         };
 
-        let options: Vec<(String, String)> = attrs
+        let options: Vec<(String, String)> = metadata
+            .attributes
             .iter()
             .filter(|a| a.is_valid_for_read && a.attribute_of.is_none())
             .map(|a| {
-                let display = a
-                    .display_name
-                    .text()
-                    .map(|d| format!("{} ({})", d, a.logical_name))
-                    .unwrap_or_else(|| a.logical_name.clone());
+                let display_name = a.display_name.text_or(&a.logical_name);
+                let display = format!("{} ({})", display_name, a.logical_name);
                 (a.logical_name.clone(), display)
             })
             .collect();
@@ -455,7 +448,7 @@ impl QueryBuilder {
 
         let result = gx
             .modal(ConditionEditorModal::with_condition(
-                options, attrs, initial,
+                options, metadata, initial,
             ))
             .await;
 
@@ -806,42 +799,35 @@ impl QueryBuilder {
         };
 
         let entity_clone = entity.clone();
-        let attrs = match gx
+        let metadata = match gx
             .modal(LoadingModal::run_with_default(
-                "Loading attributes",
+                "Loading entity metadata",
                 || Err(DataverseError::Cancelled),
-                async move {
-                    client
-                        .metadata()
-                        .attributes(Entity::set(&entity_clone))
-                        .await
-                },
+                async move { client.metadata().entity(entity_clone).await },
             ))
             .await
         {
-            Ok(a) => a,
+            Ok(m) => m,
             Err(e) if e.is_cancelled() => return,
             Err(e) => {
-                gx.toast(Toast::error(format!("Failed to load attributes: {}", e)));
+                gx.toast(Toast::error(format!("Failed to load metadata: {}", e)));
                 return;
             }
         };
 
-        let options: Vec<(String, String)> = attrs
+        let options: Vec<(String, String)> = metadata
+            .attributes
             .iter()
             .filter(|a| a.is_valid_for_read && a.attribute_of.is_none())
             .map(|a| {
-                let display = a
-                    .display_name
-                    .text()
-                    .map(|d| format!("{} ({})", d, a.logical_name))
-                    .unwrap_or_else(|| a.logical_name.clone());
+                let display_name = a.display_name.text_or(&a.logical_name);
+                let display = format!("{} ({})", display_name, a.logical_name);
                 (a.logical_name.clone(), display)
             })
             .collect();
 
         let result = gx
-            .modal(ConditionEditorModal::with_options(options, attrs))
+            .modal(ConditionEditorModal::with_options(options, metadata))
             .await;
         if let Some(cond) = result {
             self.query.update(|q| {
