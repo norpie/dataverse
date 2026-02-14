@@ -17,6 +17,7 @@ use crate::apps::migration::engine::FindConditionItem;
 use crate::apps::migration::types::Condition;
 use crate::apps::migration::types::Expr;
 use crate::apps::migration::types::FindMode;
+use crate::apps::migration::types::SystemVar;
 use crate::apps::migration::types::TransformData;
 use crate::apps::migration::validation::parse_path;
 use crate::apps::migration::validation::FieldPath;
@@ -118,6 +119,7 @@ pub fn analyze_mapping(input: &AnalysisInput<'_>) -> FetchPlan {
         source: collector.source.build_source(),
         target,
         find_caches: collector.find_caches.build(),
+        entity_ref_caches: collector.entity_ref_caches.build(),
     }
 }
 
@@ -130,6 +132,8 @@ struct Collector {
     source: EntityFetchBuilder,
     target: EntityFetchBuilder,
     find_caches: FindCacheBuilder,
+    /// Source-side entities referenced via `/entity()` that need field navigation.
+    entity_ref_caches: FindCacheBuilder,
 }
 
 impl Collector {
@@ -138,6 +142,7 @@ impl Collector {
             source: EntityFetchBuilder::new(source_entity.to_string()),
             target: EntityFetchBuilder::new(target_entity.to_string()),
             find_caches: FindCacheBuilder::new(),
+            entity_ref_caches: FindCacheBuilder::new(),
         }
     }
 }
@@ -315,13 +320,89 @@ impl FindCacheBuilder {
 // =============================================================================
 
 /// Analyze a chain of transforms, collecting fetch requirements.
+///
+/// Tracks entity ref context: when a Copy with `/entity(source_field)` is followed
+/// by transforms that navigate `#value.field`, the entity ref's entity needs to be
+/// fetched from the source environment so the record data is available at runtime.
 fn analyze_chain(
     chain: &[ChainItem],
     var_find_entities: &HashMap<String, String>,
     collector: &mut Collector,
 ) {
+    // Track the entity ref context from the most recent `/entity(field)` in this chain.
+    // When set, any subsequent `#value.field` navigation generates a fetch spec for
+    // the entity ref's entity (source-side).
+    let mut entity_ref_ctx: Option<EntityRefContext> = None;
+
     for item in chain {
+        // If the previous transform produced an entity ref, check if this
+        // transform navigates #value.field — if so, add the needed fields
+        // to the entity ref cache.
+        if let Some(ref ctx) = entity_ref_ctx {
+            collect_entity_ref_navigations(&item.data, ctx, collector);
+        }
+
+        // Check if this item establishes a new entity ref context
+        entity_ref_ctx = extract_entity_ref_context(&item.data);
+
         analyze_item(item, var_find_entities, collector);
+    }
+}
+
+/// Context from a `/entity(field)` transform in the chain.
+struct EntityRefContext {
+    /// The entity name from the `/entity()` syntax (e.g., "cgk_deadline").
+    entity: String,
+}
+
+/// If this transform is a Copy with `/entity(field)`, extract the entity ref context.
+fn extract_entity_ref_context(data: &TransformData) -> Option<EntityRefContext> {
+    if let TransformData::Copy { path } = data {
+        if let Ok(PathExpr::EntityRef { entity, .. }) = parse_path(path) {
+            return Some(EntityRefContext { entity });
+        }
+    }
+    None
+}
+
+/// If this transform navigates `#value.field`, add the field to the entity ref cache.
+fn collect_entity_ref_navigations(
+    data: &TransformData,
+    ctx: &EntityRefContext,
+    collector: &mut Collector,
+) {
+    let paths = match data {
+        TransformData::Copy { path } => {
+            use crate::apps::migration::engine::transforms::split_coalesce;
+            split_coalesce(path)
+                .into_iter()
+                .map(String::from)
+                .collect::<Vec<_>>()
+        }
+        TransformData::Format { template } => {
+            use crate::apps::migration::engine::transforms::extract_placeholders;
+            use crate::apps::migration::engine::transforms::split_coalesce;
+            use crate::apps::migration::engine::transforms::split_format_spec;
+            let mut all = Vec::new();
+            for placeholder in extract_placeholders(template) {
+                let (expr, _) = split_format_spec(&placeholder);
+                for alt in split_coalesce(expr) {
+                    all.push(alt.to_string());
+                }
+            }
+            all
+        }
+        _ => return,
+    };
+
+    for path_str in &paths {
+        if let Ok(PathExpr::SystemVarNavigation { var, path, .. }) = parse_path(path_str) {
+            if matches!(var, SystemVar::Value) {
+                collector
+                    .entity_ref_caches
+                    .add_field_path(&ctx.entity, &path);
+            }
+        }
     }
 }
 

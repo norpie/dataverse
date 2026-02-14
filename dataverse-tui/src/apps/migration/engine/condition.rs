@@ -7,8 +7,8 @@ use crate::apps::migration::types::Condition;
 use crate::apps::migration::types::Expr;
 use crate::apps::migration::types::SystemVar;
 
-use super::transforms::resolve::ResolveContext;
 use super::transforms::resolve::resolve_path_str;
+use super::transforms::resolve::ResolveContext;
 use super::types::TransformContext;
 use super::types::TransformError;
 
@@ -29,6 +29,7 @@ pub fn resolve_expr(expr: &Expr, ctx: &TransformContext<'_>) -> Result<Value, Tr
                 source_entity: ctx.system_vars.source_entity.clone(),
                 target_entity: ctx.system_vars.target_entity.clone(),
                 path_cache: ctx.path_cache,
+                find_cache: ctx.find_cache,
             };
             let (result, _) = resolve_path_str(path, &rctx);
             match result {

@@ -11,6 +11,7 @@ use dataverse_lib::model::Entity;
 use dataverse_lib::model::Record;
 use dataverse_lib::model::Value;
 
+use crate::apps::migration::engine::FindCache;
 use crate::apps::migration::engine::PathCache;
 use crate::apps::migration::engine::TransformError;
 use crate::apps::migration::engine::TransformResult;
@@ -38,6 +39,8 @@ pub struct ResolveContext<'a> {
     pub target_entity: Entity,
     /// Pre-parsed path cache.
     pub path_cache: &'a PathCache,
+    /// Record cache for entity ref navigation (look up records by entity + ID).
+    pub find_cache: &'a dyn FindCache,
 }
 
 /// Resolve a parsed path expression to a value.
@@ -80,6 +83,20 @@ pub fn resolve_path(
                     let initial_entity = Some(record.entity().clone());
                     traverse_record(record, path, initial_entity)
                 }
+                Value::EntityReference(er) => match ctx.find_cache.get(er.entity.name(), er.id) {
+                    Some(record) => {
+                        let initial_entity = Some(record.entity().clone());
+                        traverse_record(&record, path, initial_entity)
+                    }
+                    None if *optional => (TransformResult::Value(Value::Null), None),
+                    None => (
+                        TransformResult::Error(TransformError::entity_ref_not_cached(
+                            er.entity.name(),
+                            er.id,
+                        )),
+                        None,
+                    ),
+                },
                 Value::Null if *optional => (TransformResult::Value(Value::Null), None),
                 Value::Null => (
                     TransformResult::Error(TransformError::type_mismatch("Record", "Null")),
@@ -133,6 +150,20 @@ pub fn resolve_path(
                     let initial_entity = Some(record.entity().clone());
                     traverse_record(record, path, initial_entity)
                 }
+                Value::EntityReference(er) => match ctx.find_cache.get(er.entity.name(), er.id) {
+                    Some(record) => {
+                        let initial_entity = Some(record.entity().clone());
+                        traverse_record(&record, path, initial_entity)
+                    }
+                    None if *optional => (TransformResult::Value(Value::Null), None),
+                    None => (
+                        TransformResult::Error(TransformError::entity_ref_not_cached(
+                            er.entity.name(),
+                            er.id,
+                        )),
+                        None,
+                    ),
+                },
                 Value::Null if *optional => (TransformResult::Value(Value::Null), None),
                 Value::Null => (
                     TransformResult::Error(TransformError::type_mismatch("Record", "Null")),
@@ -154,6 +185,15 @@ pub fn resolve_path(
             match inner_result {
                 TransformResult::Value(Value::Null) => (TransformResult::Value(Value::Null), None),
                 TransformResult::Value(value) => {
+                    // If the inner path resolved to a Record (expanded lookup on a
+                    // non-junction entity), pass it through as an EntityReference
+                    // with a type annotation. This makes `/entity(field)` work
+                    // consistently regardless of whether the field was expanded.
+                    if matches!(&value, Value::Record(_)) {
+                        let entity_ref_entity = Entity::logical(entity);
+                        return (TransformResult::Value(value), Some(entity_ref_entity));
+                    }
+
                     // Extract UUID from the resolved value
                     let uuid = match &value {
                         Value::Guid(id) => *id,
@@ -273,6 +313,7 @@ pub fn resolve_path_str(path: &str, ctx: &ResolveContext<'_>) -> (TransformResul
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::apps::migration::engine::StubFindCache;
 
     fn make_source_record() -> Record {
         let grandparent = Record::new("account")
@@ -325,6 +366,7 @@ mod tests {
     ) -> ResolveContext<'a> {
         // Leak the cache to get 'a lifetime in tests (tiny allocation, acceptable for tests)
         let cache: &'a PathCache = Box::leak(Box::new(empty_cache()));
+        let find_cache: &'a StubFindCache = Box::leak(Box::new(StubFindCache));
         ResolveContext {
             source_record: source,
             variables,
@@ -334,6 +376,7 @@ mod tests {
             source_entity: Entity::logical("account"),
             target_entity: Entity::logical("contact"),
             path_cache: cache,
+            find_cache,
         }
     }
 
@@ -649,5 +692,217 @@ mod tests {
             result,
             TransformResult::Error(TransformError::PathNotFound { .. })
         ));
+    }
+
+    // =========================================================================
+    // Entity ref navigation (via find_cache)
+    // =========================================================================
+
+    use crate::apps::migration::engine::{FindCache, FindError};
+
+    /// Test find cache that stores records by entity + ID.
+    struct TestFindCache {
+        records: HashMap<(String, uuid::Uuid), Arc<Record>>,
+    }
+
+    impl TestFindCache {
+        fn new() -> Self {
+            Self {
+                records: HashMap::new(),
+            }
+        }
+
+        fn insert(&mut self, record: Record) {
+            let entity = record.entity().name().to_string();
+            let id_field = format!("{}id", entity);
+            let id: uuid::Uuid = match record.get(&id_field) {
+                Some(Value::Guid(g)) => *g,
+                Some(Value::String(s)) => s.parse().unwrap(),
+                _ => panic!("Record missing {id_field} Guid field"),
+            };
+            self.records.insert((entity, id), Arc::new(record));
+        }
+    }
+
+    impl FindCache for TestFindCache {
+        fn find_where(
+            &self,
+            entity: &str,
+            _conditions: &[(String, Value)],
+        ) -> Result<Arc<Record>, FindError> {
+            Err(FindError::NotCached(entity.to_string()))
+        }
+
+        fn find_lua(
+            &self,
+            entity: &str,
+            _script: &str,
+            _source_record: &Record,
+        ) -> Result<uuid::Uuid, FindError> {
+            Err(FindError::NotCached(entity.to_string()))
+        }
+
+        fn get(&self, entity: &str, id: uuid::Uuid) -> Option<Arc<Record>> {
+            self.records.get(&(entity.to_string(), id)).cloned()
+        }
+    }
+
+    fn make_ctx_with_cache<'a>(
+        source: &'a Record,
+        variables: &'a HashMap<String, Value>,
+        value: &'a Value,
+        find_cache: &'a dyn FindCache,
+    ) -> ResolveContext<'a> {
+        let cache: &'a PathCache = Box::leak(Box::new(empty_cache()));
+        ResolveContext {
+            source_record: source,
+            variables,
+            value,
+            value_type: &None,
+            index: 0,
+            source_entity: Entity::logical("account"),
+            target_entity: Entity::logical("contact"),
+            path_cache: cache,
+            find_cache,
+        }
+    }
+
+    #[test]
+    fn system_var_entity_ref_navigates_via_cache() {
+        let guid = uuid::Uuid::new_v4();
+        let deadline = Record::new("cgk_deadline")
+            .set("cgk_deadlineid", Value::Guid(guid))
+            .set("cgk_name", "Q1 Deadline");
+
+        let mut cache = TestFindCache::new();
+        cache.insert(deadline);
+
+        let source = make_source_record();
+        let vars = make_variables();
+        let er = EntityReference::new(Entity::logical("cgk_deadline"), guid);
+        let value = Value::EntityReference(er);
+        let ctx = make_ctx_with_cache(&source, &vars, &value, &cache);
+
+        let (result, entity) = resolve_path_str("#value.cgk_name", &ctx);
+        assert!(
+            matches!(result, TransformResult::Value(Value::String(ref s)) if s == "Q1 Deadline")
+        );
+        assert_eq!(entity, Some(Entity::logical("cgk_deadline")));
+    }
+
+    #[test]
+    fn system_var_entity_ref_not_cached_errors() {
+        let guid = uuid::Uuid::new_v4();
+        let cache = TestFindCache::new(); // empty
+
+        let source = make_source_record();
+        let vars = make_variables();
+        let er = EntityReference::new(Entity::logical("cgk_deadline"), guid);
+        let value = Value::EntityReference(er);
+        let ctx = make_ctx_with_cache(&source, &vars, &value, &cache);
+
+        let (result, _) = resolve_path_str("#value.cgk_name", &ctx);
+        assert!(matches!(
+            result,
+            TransformResult::Error(TransformError::EntityRefNotCached { .. })
+        ));
+    }
+
+    #[test]
+    fn system_var_entity_ref_optional_not_cached_returns_null() {
+        let guid = uuid::Uuid::new_v4();
+        let cache = TestFindCache::new(); // empty
+
+        let source = make_source_record();
+        let vars = make_variables();
+        let er = EntityReference::new(Entity::logical("cgk_deadline"), guid);
+        let value = Value::EntityReference(er);
+        let ctx = make_ctx_with_cache(&source, &vars, &value, &cache);
+
+        let (result, _) = resolve_path_str("#value?.cgk_name", &ctx);
+        assert!(matches!(result, TransformResult::Value(Value::Null)));
+    }
+
+    #[test]
+    fn variable_entity_ref_navigates_via_cache() {
+        let guid = uuid::Uuid::new_v4();
+        let deadline = Record::new("cgk_deadline")
+            .set("cgk_deadlineid", Value::Guid(guid))
+            .set("cgk_name", "Q2 Deadline");
+
+        let mut cache = TestFindCache::new();
+        cache.insert(deadline);
+
+        let source = make_source_record();
+        let mut vars = make_variables();
+        let er = EntityReference::new(Entity::logical("cgk_deadline"), guid);
+        vars.insert("deadline_ref".to_string(), Value::EntityReference(er));
+        let value = Value::Null;
+        let ctx = make_ctx_with_cache(&source, &vars, &value, &cache);
+
+        let (result, entity) = resolve_path_str("$deadline_ref.cgk_name", &ctx);
+        assert!(
+            matches!(result, TransformResult::Value(Value::String(ref s)) if s == "Q2 Deadline")
+        );
+        assert_eq!(entity, Some(Entity::logical("cgk_deadline")));
+    }
+
+    #[test]
+    fn variable_entity_ref_not_cached_errors() {
+        let guid = uuid::Uuid::new_v4();
+        let cache = TestFindCache::new(); // empty
+
+        let source = make_source_record();
+        let mut vars = make_variables();
+        let er = EntityReference::new(Entity::logical("cgk_deadline"), guid);
+        vars.insert("deadline_ref".to_string(), Value::EntityReference(er));
+        let value = Value::Null;
+        let ctx = make_ctx_with_cache(&source, &vars, &value, &cache);
+
+        let (result, _) = resolve_path_str("$deadline_ref.cgk_name", &ctx);
+        assert!(matches!(
+            result,
+            TransformResult::Error(TransformError::EntityRefNotCached { .. })
+        ));
+    }
+
+    #[test]
+    fn variable_entity_ref_optional_not_cached_returns_null() {
+        let guid = uuid::Uuid::new_v4();
+        let cache = TestFindCache::new(); // empty
+
+        let source = make_source_record();
+        let mut vars = make_variables();
+        let er = EntityReference::new(Entity::logical("cgk_deadline"), guid);
+        vars.insert("deadline_ref".to_string(), Value::EntityReference(er));
+        let value = Value::Null;
+        let ctx = make_ctx_with_cache(&source, &vars, &value, &cache);
+
+        let (result, _) = resolve_path_str("$deadline_ref?.cgk_name", &ctx);
+        assert!(matches!(result, TransformResult::Value(Value::Null)));
+    }
+
+    #[test]
+    fn entity_ref_record_passthrough() {
+        // When inner path resolves to a Record, pass it through
+        let source = make_source_record();
+        let vars = make_variables();
+        let value = Value::Null;
+        let cache = TestFindCache::new();
+        let ctx = make_ctx_with_cache(&source, &vars, &value, &cache);
+
+        // primarycontactid is a Record (expanded lookup)
+        let (result, entity) = resolve_path_str("/contact(primarycontactid)", &ctx);
+        match result {
+            TransformResult::Value(Value::Record(record)) => {
+                assert_eq!(record.entity(), &Entity::logical("contact"));
+                assert_eq!(
+                    record.get("fullname"),
+                    Some(&Value::String("John Smith".to_string()))
+                );
+            }
+            other => panic!("Expected Record passthrough, got {:?}", other),
+        }
+        assert_eq!(entity, Some(Entity::logical("contact")));
     }
 }

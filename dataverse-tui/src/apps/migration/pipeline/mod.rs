@@ -73,6 +73,9 @@ pub struct FetchPlan {
     pub target: Option<TargetFetchSpec>,
     /// Find cache specifications — one per find entity referenced.
     pub find_caches: Vec<FindCacheSpec>,
+    /// Entity ref cache specifications — source-side entities referenced via `/entity()` syntax
+    /// that need field navigation (e.g., `/cgk_deadline(fk_id)` followed by `#value.name`).
+    pub entity_ref_caches: Vec<FindCacheSpec>,
 }
 
 /// Describes what fields to fetch from the source entity.
@@ -161,6 +164,8 @@ pub struct PhaseFetchPlan {
     pub mapping_plans: Vec<FetchPlan>,
     /// Merged find cache specs (deduplicated across all mappings).
     pub merged_find_caches: Vec<FindCacheSpec>,
+    /// Merged entity ref cache specs — source-side entities from `/entity()` syntax.
+    pub merged_entity_ref_caches: Vec<FindCacheSpec>,
 }
 
 /// Analyze all mappings in a phase and produce a unified fetch plan.
@@ -190,9 +195,16 @@ pub fn analyze_phase(inputs: &[MappingInput<'_>]) -> PhaseFetchPlan {
         .collect();
     let merged_find_caches = merge_find_cache_specs(all_find_caches);
 
+    let all_entity_ref_caches: Vec<Vec<FindCacheSpec>> = mapping_plans
+        .iter()
+        .map(|plan| plan.entity_ref_caches.clone())
+        .collect();
+    let merged_entity_ref_caches = merge_find_cache_specs(all_entity_ref_caches);
+
     PhaseFetchPlan {
         mapping_plans,
         merged_find_caches,
+        merged_entity_ref_caches,
     }
 }
 
@@ -209,6 +221,8 @@ pub struct PhaseFetchTasks {
     pub target_tasks: Vec<(usize, ODataFetchTask)>,
     /// Find cache fetch tasks — one per unique find entity (after merging).
     pub find_cache_tasks: Vec<ODataFetchTask>,
+    /// Entity ref cache fetch tasks — source-side entities from `/entity()` syntax.
+    pub entity_ref_tasks: Vec<ODataFetchTask>,
 }
 
 /// Build all fetch tasks for a phase.
@@ -272,10 +286,24 @@ pub fn build_phase_fetch_tasks(
         })
         .collect();
 
+    let entity_ref_queries = build_find_cache_tasks(&phase_plan.merged_entity_ref_caches);
+    let entity_ref_tasks = entity_ref_queries
+        .into_iter()
+        .zip(phase_plan.merged_entity_ref_caches.iter())
+        .map(|(query, spec)| {
+            into_fetch_task(
+                format!("Entity ref: {}", spec.entity),
+                query,
+                source_client.clone(),
+            )
+        })
+        .collect();
+
     Ok(PhaseFetchTasks {
         source_tasks,
         target_tasks,
         find_cache_tasks,
+        entity_ref_tasks,
     })
 }
 
@@ -283,23 +311,27 @@ pub fn build_phase_fetch_tasks(
 /// for the fetch modal. Returns the tasks and an index map to recover
 /// which result belongs to which category.
 ///
-/// Order: source tasks, then target tasks, then find cache tasks.
+/// Order: source tasks, then target tasks, then find cache tasks, then entity ref tasks.
 pub fn collect_all_tasks(tasks: PhaseFetchTasks) -> (Vec<ODataFetchTask>, FetchTaskIndex) {
     let source_count = tasks.source_tasks.len();
     let target_mapping_indices: Vec<usize> = tasks.target_tasks.iter().map(|(i, _)| *i).collect();
     let target_count = tasks.target_tasks.len();
     let find_cache_count = tasks.find_cache_tasks.len();
+    let entity_ref_count = tasks.entity_ref_tasks.len();
 
-    let mut all_tasks = Vec::with_capacity(source_count + target_count + find_cache_count);
+    let mut all_tasks =
+        Vec::with_capacity(source_count + target_count + find_cache_count + entity_ref_count);
     all_tasks.extend(tasks.source_tasks);
     all_tasks.extend(tasks.target_tasks.into_iter().map(|(_, task)| task));
     all_tasks.extend(tasks.find_cache_tasks);
+    all_tasks.extend(tasks.entity_ref_tasks);
 
     let index = FetchTaskIndex {
         source_count,
         target_count,
         target_mapping_indices,
         find_cache_count,
+        entity_ref_count,
     };
 
     (all_tasks, index)
@@ -315,6 +347,8 @@ pub struct FetchTaskIndex {
     pub target_mapping_indices: Vec<usize>,
     /// Number of find cache tasks.
     pub find_cache_count: usize,
+    /// Number of entity ref cache tasks.
+    pub entity_ref_count: usize,
 }
 
 /// Fetch results split by category.
@@ -326,6 +360,8 @@ pub struct PhaseFetchResults {
     pub target_records: Vec<(usize, Vec<Record>)>,
     /// Find cache records per entity (same order as merged_find_caches).
     pub find_cache_records: Vec<Vec<Record>>,
+    /// Entity ref cache records per entity (same order as merged_entity_ref_caches).
+    pub entity_ref_records: Vec<Vec<Record>>,
 }
 
 /// Split flat fetch results back into categorized results using the index.
@@ -343,10 +379,13 @@ pub fn split_fetch_results(results: Vec<Vec<Record>>, index: &FetchTaskIndex) ->
 
     let find_cache_records: Vec<Vec<Record>> = iter.by_ref().take(index.find_cache_count).collect();
 
+    let entity_ref_records: Vec<Vec<Record>> = iter.by_ref().take(index.entity_ref_count).collect();
+
     PhaseFetchResults {
         source_records,
         target_records,
         find_cache_records,
+        entity_ref_records,
     }
 }
 
@@ -783,6 +822,7 @@ mod tests {
             target_count: 1,
             target_mapping_indices: vec![0],
             find_cache_count: 1,
+            entity_ref_count: 0,
         };
 
         let split = split_fetch_results(results, &index);
@@ -805,6 +845,7 @@ mod tests {
             target_count: 0,
             target_mapping_indices: vec![],
             find_cache_count: 0,
+            entity_ref_count: 0,
         };
 
         let split = split_fetch_results(results, &index);

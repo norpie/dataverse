@@ -263,6 +263,7 @@ mod tests {
     use dataverse_lib::model::Record;
 
     use crate::apps::migration::engine::PathCache;
+    use crate::apps::migration::engine::StubFindCache;
 
     use super::*;
 
@@ -296,6 +297,7 @@ mod tests {
         value: &'a Value,
     ) -> ResolveContext<'a> {
         let path_cache: &'a PathCache = Box::leak(Box::new(PathCache::new()));
+        let find_cache: &'a StubFindCache = Box::leak(Box::new(StubFindCache));
         ResolveContext {
             source_record: record,
             variables: vars,
@@ -305,6 +307,7 @@ mod tests {
             source_entity: Entity::logical("account"),
             target_entity: Entity::logical("contact"),
             path_cache,
+            find_cache,
         }
     }
 

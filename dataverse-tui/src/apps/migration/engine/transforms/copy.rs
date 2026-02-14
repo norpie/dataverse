@@ -65,6 +65,7 @@ mod tests {
 
     use super::*;
     use crate::apps::migration::engine::PathCache;
+    use crate::apps::migration::engine::StubFindCache;
     use crate::apps::migration::engine::TransformError;
 
     fn make_record() -> Record {
@@ -90,6 +91,7 @@ mod tests {
         value: &'a Value,
     ) -> ResolveContext<'a> {
         let path_cache: &'a PathCache = Box::leak(Box::new(PathCache::new()));
+        let find_cache: &'a StubFindCache = Box::leak(Box::new(StubFindCache));
         ResolveContext {
             source_record: record,
             variables: vars,
@@ -99,6 +101,7 @@ mod tests {
             source_entity: Entity::logical("account"),
             target_entity: Entity::logical("contact"),
             path_cache,
+            find_cache,
         }
     }
 
@@ -389,6 +392,7 @@ mod tests {
         let vars = HashMap::new();
         let value = Value::Null;
         let path_cache: &PathCache = Box::leak(Box::new(PathCache::new()));
+        let find_cache: &StubFindCache = Box::leak(Box::new(StubFindCache));
         let ctx = ResolveContext {
             source_record: &record,
             variables: &vars,
@@ -398,6 +402,7 @@ mod tests {
             source_entity: Entity::logical("account"),
             target_entity: Entity::logical("contact"),
             path_cache,
+            find_cache,
         };
 
         let (result, _) = execute_copy("#index", &ctx);

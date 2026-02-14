@@ -15,8 +15,6 @@ use crate::apps::migration::types::FindFallback;
 use crate::apps::migration::types::FindMode;
 use crate::apps::migration::types::TransformData;
 
-use super::transforms::ConvertTarget;
-use super::transforms::ValueMapping;
 use super::transforms::execute_constant;
 use super::transforms::execute_convert;
 use super::transforms::execute_copy;
@@ -30,6 +28,8 @@ use super::transforms::execute_replace;
 use super::transforms::execute_string_ops;
 use super::transforms::execute_value_map;
 use super::transforms::resolve::ResolveContext;
+use super::transforms::ConvertTarget;
+use super::transforms::ValueMapping;
 use super::types::TransformContext;
 use super::types::TransformError;
 use super::types::TransformResult;
@@ -225,6 +225,7 @@ fn resolve_ctx<'a>(ctx: &'a TransformContext<'a>) -> ResolveContext<'a> {
         source_entity: ctx.system_vars.source_entity.clone(),
         target_entity: ctx.system_vars.target_entity.clone(),
         path_cache: ctx.path_cache,
+        find_cache: ctx.find_cache,
     }
 }
 

@@ -161,6 +161,10 @@ pub enum TransformError {
     #[error("Find returned {count} results for {entity}, expected 1")]
     FindMultiple { entity: String, count: usize },
 
+    /// Entity reference record not found in cache.
+    #[error("Entity ref not cached: {entity}({id}) — was this entity included in entity ref fetch specs?")]
+    EntityRefNotCached { entity: String, id: uuid::Uuid },
+
     /// Invalid regex pattern.
     #[error("Invalid regex pattern '{pattern}': {message}")]
     RegexError { pattern: String, message: String },
@@ -222,6 +226,14 @@ impl TransformError {
     /// Creates a variable not found error.
     pub fn variable_not_found(name: impl Into<String>) -> Self {
         Self::VariableNotFound { name: name.into() }
+    }
+
+    /// Creates an entity ref not cached error.
+    pub fn entity_ref_not_cached(entity: impl Into<String>, id: uuid::Uuid) -> Self {
+        Self::EntityRefNotCached {
+            entity: entity.into(),
+            id,
+        }
     }
 
     /// Creates a generic error.

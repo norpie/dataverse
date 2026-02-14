@@ -782,12 +782,20 @@ impl MigrationEditor {
                 updater.update("Splitting fetch results...");
                 let mut split = pipeline::split_fetch_results(fetch_results, &index);
 
-                // 5. Build find cache
+                // 5. Build find cache (includes entity ref records for /entity() navigation)
                 updater.update("Building find cache...");
-                let find_cache = pipeline::build_find_cache(
+                let mut find_cache = pipeline::build_find_cache(
                     split.find_cache_records,
                     &phase_plan.merged_find_caches,
                 );
+                // Merge entity ref records (source-side) into the same cache
+                for (records, spec) in split
+                    .entity_ref_records
+                    .into_iter()
+                    .zip(phase_plan.merged_entity_ref_caches.iter())
+                {
+                    find_cache.insert_records(&spec.entity, records);
+                }
 
                 // 6. Execute transforms + 7. Compare — per entity mapping
                 let mut comparisons: Vec<MappingComparison> = Vec::new();

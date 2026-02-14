@@ -283,6 +283,7 @@ mod tests {
             source,
             target: None,
             find_caches: vec![],
+            entity_ref_caches: vec![],
         }
     }
 
@@ -452,6 +453,7 @@ mod tests {
                 expands: vec![],
             }),
             find_caches: vec![],
+            entity_ref_caches: vec![],
         };
         let config = simple_config(&plan);
         let result = build_target_task(&config).unwrap();
