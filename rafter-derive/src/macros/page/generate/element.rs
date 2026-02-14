@@ -5,13 +5,13 @@ use quote::{format_ident, quote};
 
 use crate::macros::page::ast::{Attr, AttrValue, ElementNode, HandlerArg, HandlerAttr};
 
-use super::CodegenMode;
 use super::generate_conditional_attr_value;
 use super::generate_view_node;
 use super::handler;
 use super::is_conditional;
 use super::style;
 use super::transition;
+use super::CodegenMode;
 
 /// Generate code for an element node
 pub fn generate(elem: &ElementNode, mode: CodegenMode) -> TokenStream {
@@ -347,6 +347,7 @@ fn is_layout_attr(name: &str) -> bool {
             | "justify"
             | "align"
             | "wrap"
+            | "text_wrap"
             | "flex_grow"
             | "flex_shrink"
             | "align_self"
@@ -383,6 +384,7 @@ fn is_widget_layout_attr(name: &str) -> bool {
             | "justify"
             | "align"
             | "wrap"
+            | "text_wrap"
             | "flex_grow"
             | "flex_shrink"
             | "align_self"
@@ -424,6 +426,7 @@ fn generate_layout_calls(attrs: &[&Attr]) -> Vec<TokenStream> {
             "justify" => calls.push(generate_justify_call(&attr.value)),
             "align" => calls.push(generate_align_call(&attr.value)),
             "wrap" => calls.push(generate_wrap_call(&attr.value)),
+            "text_wrap" => calls.push(generate_text_wrap_call(&attr.value)),
             "flex_grow" => calls.push(quote! { .flex_grow(#value as u16) }),
             "flex_shrink" => calls.push(quote! { .flex_shrink(#value as u16) }),
             "align_self" => calls.push(generate_align_self_call(&attr.value)),
@@ -825,6 +828,44 @@ fn generate_wrap_call(value: &AttrValue) -> TokenStream {
         _ => {
             let val = generate_attr_value(value);
             quote! { .wrap(#val) }
+        }
+    }
+}
+
+/// Generate text_wrap call
+fn generate_text_wrap_call(value: &AttrValue) -> TokenStream {
+    // Handle conditional values
+    if is_conditional(value) {
+        let text_wrap_value = generate_conditional_attr_value(value, |leaf| match leaf {
+            AttrValue::Ident(ident) => {
+                let ident_str = ident.to_string();
+                match ident_str.as_str() {
+                    "no_wrap" | "nowrap" => quote! { tuidom::TextWrap::NoWrap },
+                    "word_wrap" | "word" => quote! { tuidom::TextWrap::WordWrap },
+                    "char_wrap" | "char" => quote! { tuidom::TextWrap::CharWrap },
+                    "truncate" => quote! { tuidom::TextWrap::Truncate },
+                    _ => quote! { #ident },
+                }
+            }
+            _ => generate_attr_value(leaf),
+        });
+        return quote! { .text_wrap(#text_wrap_value) };
+    }
+
+    match value {
+        AttrValue::Ident(ident) => {
+            let ident_str = ident.to_string();
+            match ident_str.as_str() {
+                "no_wrap" | "nowrap" => quote! { .text_wrap(tuidom::TextWrap::NoWrap) },
+                "word_wrap" | "word" => quote! { .text_wrap(tuidom::TextWrap::WordWrap) },
+                "char_wrap" | "char" => quote! { .text_wrap(tuidom::TextWrap::CharWrap) },
+                "truncate" => quote! { .text_wrap(tuidom::TextWrap::Truncate) },
+                _ => quote! { .text_wrap(#ident) },
+            }
+        }
+        _ => {
+            let val = generate_attr_value(value);
+            quote! { .text_wrap(#val) }
         }
     }
 }

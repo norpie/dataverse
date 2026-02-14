@@ -3,8 +3,8 @@ use std::collections::HashMap;
 use super::Rect;
 use crate::animation::AnimationState;
 use crate::element::{Content, Element};
-use crate::text::display_width;
-use crate::types::{Align, Direction, Overflow, Position, Size, Wrap};
+use crate::text::{display_width, wrap_chars, wrap_words};
+use crate::types::{Align, Direction, Overflow, Position, Size, TextWrap, Wrap};
 
 // =============================================================================
 // Virtualization Constants
@@ -612,7 +612,14 @@ fn layout_line(
         let child_main_size = if is_row { child.width } else { child.height };
         let (base, flex_grow) = match child_main_size {
             Size::Fixed(n) => (n, child.flex_grow),
-            Size::Auto => (estimate_size(child, is_row), child.flex_grow),
+            Size::Auto => {
+                // For column layouts, pass cross_size (width) as hint for text wrapping
+                let hint = if !is_row { Some(cross_size) } else { None };
+                (
+                    estimate_size_with_hint(child, is_row, hint),
+                    child.flex_grow,
+                )
+            }
             Size::Fill => (0, 1.max(child.flex_grow)), // Fill acts as flex_grow: 1
             Size::Flex(n) => (0, n.max(child.flex_grow)), // Flex(n) acts as flex_grow: n
             Size::Percent(p) => ((main_size as f32 * p) as u16, child.flex_grow),
@@ -887,6 +894,10 @@ fn resolve_size(size: Size, available: u16, element: &Element, is_width: bool) -
 }
 
 fn estimate_size(element: &Element, is_width: bool) -> u16 {
+    estimate_size_with_hint(element, is_width, None)
+}
+
+fn estimate_size_with_hint(element: &Element, is_width: bool, available_cross: Option<u16>) -> u16 {
     // Check for explicit Fixed size first - this takes precedence over content estimation
     let explicit_size = if is_width {
         element.width
@@ -925,6 +936,27 @@ fn estimate_size(element: &Element, is_width: bool) -> u16 {
         Content::Text(text) => {
             if is_width {
                 display_width(text) as u16
+            } else if element.text_wrap != TextWrap::NoWrap {
+                // For wrapping text, estimate height based on available width
+                if let Some(avail_w) = available_cross {
+                    let inner_w = avail_w
+                        .saturating_sub(element.padding.horizontal_total())
+                        .saturating_sub(border_size);
+                    if inner_w == 0 {
+                        text.lines().count().max(1) as u16
+                    } else {
+                        let lines = match element.text_wrap {
+                            TextWrap::WordWrap => wrap_words(text, inner_w as usize),
+                            TextWrap::CharWrap => wrap_chars(text, inner_w as usize),
+                            TextWrap::Truncate => vec![text.to_string()],
+                            TextWrap::NoWrap => unreachable!(),
+                        };
+                        lines.len().max(1) as u16
+                    }
+                } else {
+                    // No width hint available, fall back to line count
+                    text.lines().count().max(1) as u16
+                }
             } else {
                 // Count newlines for height
                 text.lines().count().max(1) as u16

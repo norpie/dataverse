@@ -3,7 +3,6 @@
 use rafter::page;
 use rafter::prelude::*;
 use rafter::widgets::{Button, Text};
-use tuidom::Wrap;
 
 /// A simple error acknowledgment modal.
 ///
@@ -15,7 +14,7 @@ use tuidom::Wrap;
 /// ```ignore
 /// gx.modal(ErrorAcknowledgmentModal::new("Connection Failed", "Could not reach the server.")).await;
 /// ```
-#[modal]
+#[modal(size = Md)]
 pub struct ErrorAcknowledgmentModal {
     #[state(skip)]
     title: String,
@@ -43,7 +42,7 @@ impl ErrorAcknowledgmentModal {
         page! {
             column (padding: (1, 2), gap: 1, width: fill, height: fill) style (bg: surface) {
                 text (content: self.title.clone()) style (bold, fg: interact)
-                text (content: self.message.clone(), wrap: {Wrap::Wrap}) style (fg: primary)
+                text (content: self.message.clone(), text_wrap: word_wrap, height: fill) style (fg: primary)
                 row (width: fill, justify: center) {
                     button (label: "Close", hint: "esc", id: "close") on_activate: close()
                 }
