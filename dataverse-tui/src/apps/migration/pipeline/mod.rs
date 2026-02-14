@@ -22,33 +22,33 @@ pub mod fetch;
 
 use std::collections::HashSet;
 
-use dataverse_lib::DataverseClient;
 use dataverse_lib::model::Entity;
 use dataverse_lib::model::Record;
+use dataverse_lib::DataverseClient;
 use rayon::prelude::*;
 
 use self::analysis::AnalysisInput;
 use self::cache::LiveFindCache;
-use self::fetch::BuildError;
-use self::fetch::FetchTaskConfig;
 use self::fetch::build_find_cache_tasks;
 use self::fetch::build_source_task;
 use self::fetch::build_target_task;
 use self::fetch::into_fetch_task;
 use self::fetch::merge_find_cache_specs;
+use self::fetch::BuildError;
+use self::fetch::FetchTaskConfig;
 
-use super::comparison::CompareInput;
-use super::comparison::MappingComparison;
 use super::comparison::compare_mapping;
 use super::comparison::matching::TargetIndexError;
+use super::comparison::CompareInput;
+use super::comparison::MappingComparison;
+use super::engine::record::execute_record;
+use super::engine::record::RecordResult;
+use super::engine::transforms::extract_placeholders;
 use super::engine::ChainChildren;
 use super::engine::ChainItem;
 use super::engine::FindCache;
 use super::engine::PathCache;
 use super::engine::SystemVars;
-use super::engine::record::RecordResult;
-use super::engine::record::execute_record;
-use super::engine::transforms::extract_placeholders;
 use super::types::Condition;
 use super::types::Expr;
 use super::types::MatchStrategy;
@@ -146,6 +146,8 @@ pub struct MappingInput<'a> {
     pub test_guids: Option<&'a [String]>,
     /// Display name for the mapping (used in fetch task labels).
     pub mapping_name: &'a str,
+    /// Whether the target entity is a junction (intersect) entity.
+    pub is_target_junction: bool,
 }
 
 // =============================================================================
@@ -176,6 +178,7 @@ pub fn analyze_phase(inputs: &[MappingInput<'_>]) -> PhaseFetchPlan {
                 field_mappings: input.field_mappings,
                 variables: input.variables,
                 match_config_chain: input.match_config_chain,
+                is_target_junction: input.is_target_junction,
             })
         })
         .collect();
@@ -747,17 +750,16 @@ mod tests {
             target_filter: None,
             test_guids: None,
             mapping_name: "account → account",
+            is_target_junction: false,
         }];
 
         let plan = analyze_phase(&inputs);
         assert_eq!(plan.mapping_plans.len(), 1);
         assert!(plan.mapping_plans[0].source.select.contains("name"));
-        assert!(
-            plan.mapping_plans[0]
-                .source
-                .select
-                .contains("address1_city")
-        );
+        assert!(plan.mapping_plans[0]
+            .source
+            .select
+            .contains("address1_city"));
         assert!(plan.mapping_plans[0].source.select.contains("accountid"));
         assert!(plan.merged_find_caches.is_empty());
     }

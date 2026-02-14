@@ -657,6 +657,7 @@ impl MigrationEditor {
                     target_filter: em.target_filter.as_ref(),
                     test_guids: em.test_guids.as_deref(),
                     mapping_name: &em.name,
+                    is_target_junction: junction_fk_attrs.contains_key(&em.target_entity),
                 }
             })
             .collect();

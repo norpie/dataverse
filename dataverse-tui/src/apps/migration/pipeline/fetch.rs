@@ -10,15 +10,15 @@
 use std::collections::HashMap;
 use std::collections::HashSet;
 
-use dataverse_lib::DataverseClient;
-use dataverse_lib::api::query::Filter;
 use dataverse_lib::api::query::odata::QueryBuilder;
+use dataverse_lib::api::query::Filter;
 use dataverse_lib::model::Entity;
 use dataverse_lib::model::Value;
+use dataverse_lib::DataverseClient;
 
 use crate::modals::odata_fetch::ODataFetchTask;
-use crate::widgets::filter_builder::FilterNode;
 use crate::widgets::filter_builder::convert_filter;
+use crate::widgets::filter_builder::FilterNode;
 
 use super::ExpandSpec;
 use super::FetchPlan;

@@ -18,10 +18,10 @@ use crate::apps::migration::types::Condition;
 use crate::apps::migration::types::Expr;
 use crate::apps::migration::types::FindMode;
 use crate::apps::migration::types::TransformData;
+use crate::apps::migration::validation::parse_path;
 use crate::apps::migration::validation::FieldPath;
 use crate::apps::migration::validation::FieldSegment;
 use crate::apps::migration::validation::PathExpr;
-use crate::apps::migration::validation::parse_path;
 
 use super::ExpandSpec;
 use super::FetchPlan;
@@ -49,6 +49,8 @@ pub struct AnalysisInput<'a> {
     pub variables: &'a [(String, Vec<ChainItem>)],
     /// Materialized match config chain (if match strategy is Find).
     pub match_config_chain: Option<&'a [ChainItem]>,
+    /// Whether the target entity is a junction (intersect) entity.
+    pub is_target_junction: bool,
 }
 
 /// Analyze an entity mapping to determine what data needs to be fetched.
@@ -97,10 +99,13 @@ pub fn analyze_mapping(input: &AnalysisInput<'_>) -> FetchPlan {
         collector.target.select.insert(target_field.clone());
     }
 
-    // 5. Always fetch statecode/statuscode from target so the execution engine
+    // 5. Fetch statecode/statuscode from target so the execution engine
     //    can detect inactive records and handle state transitions correctly.
-    collector.target.select.insert("statecode".to_string());
-    collector.target.select.insert("statuscode".to_string());
+    //    Junction (intersect) entities don't have these columns.
+    if !input.is_target_junction {
+        collector.target.select.insert("statecode".to_string());
+        collector.target.select.insert("statuscode".to_string());
+    }
 
     // Build the fetch plan
     let target = if collector.target.has_fields() {
@@ -659,6 +664,7 @@ mod tests {
             field_mappings,
             variables,
             match_config_chain: None,
+            is_target_junction: false,
         }
     }
 
@@ -997,6 +1003,7 @@ mod tests {
             field_mappings: &field_mappings,
             variables: &variables,
             match_config_chain: Some(&match_chain),
+            is_target_junction: false,
         };
         let plan = analyze_mapping(&input);
 

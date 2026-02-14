@@ -12,10 +12,10 @@ use dataverse_lib::model::Value;
 use mlua::Table;
 use uuid::Uuid;
 
-use crate::apps::migration::engine::FindCache;
-use crate::apps::migration::engine::FindError;
 use crate::apps::migration::engine::util::traverse_path;
 use crate::apps::migration::engine::util::values_equal;
+use crate::apps::migration::engine::FindCache;
+use crate::apps::migration::engine::FindError;
 use crate::lua::runtime::LuaRuntime;
 
 // =============================================================================
@@ -350,8 +350,8 @@ impl FindCache for LiveFindCache {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use dataverse_lib::model::Entity;
     use dataverse_lib::model::types::OptionSetValue;
+    use dataverse_lib::model::Entity;
 
     fn make_record(entity: &str, id: Uuid, fields: Vec<(&str, Value)>) -> Record {
         let mut record = Record::with_id(Entity::logical(entity), id);
