@@ -44,6 +44,7 @@ use super::comparison::MappingComparison;
 use super::engine::record::execute_record;
 use super::engine::record::RecordResult;
 use super::engine::transforms::extract_placeholders;
+use super::engine::transforms::split_format_spec;
 use super::engine::ChainChildren;
 use super::engine::ChainItem;
 use super::engine::FindCache;
@@ -468,15 +469,17 @@ fn collect_paths_from_data(data: &TransformData, cache: &mut PathCache) {
         TransformData::Format { template } => {
             // Extract placeholders from format template
             for placeholder in extract_placeholders(template) {
+                // Strip format specifier (e.g., "|%Y-%m-%d") before caching paths
+                let (expr, _) = split_format_spec(&placeholder);
                 // Handle coalesce within placeholders
-                if placeholder.contains("??") {
-                    for alt in placeholder.split("??").map(|s| s.trim()) {
+                if expr.contains("??") {
+                    for alt in expr.split("??").map(|s| s.trim()) {
                         if !alt.is_empty() {
                             try_cache_path(alt, cache);
                         }
                     }
                 } else {
-                    try_cache_path(&placeholder, cache);
+                    try_cache_path(expr, cache);
                 }
             }
         }

@@ -5,13 +5,13 @@ use std::sync::Arc;
 use dataverse_lib::model::Value;
 
 use super::convert::value_to_plain_string;
-use super::resolve::ResolveContext;
 use super::resolve::resolve_path_str;
+use super::resolve::ResolveContext;
 use crate::apps::migration::engine::TransformError;
 use crate::apps::migration::engine::TransformResult;
+use crate::apps::migration::validation::parse_path;
 use crate::apps::migration::validation::FieldPath;
 use crate::apps::migration::validation::PathExpr;
-use crate::apps::migration::validation::parse_path;
 
 /// Execute the format transform.
 ///
@@ -71,8 +71,14 @@ fn interpolate(template: &str, ctx: &ResolveContext<'_>) -> Result<String, Trans
                 // Empty placeholder {} - treat as literal
                 result.push_str("{}");
             } else {
-                let value = resolve_placeholder(&placeholder, ctx)?;
-                result.push_str(&value_to_plain_string(&value));
+                // Split off format specifier: "{path|%Y-%m-%d}" → ("path", Some("%Y-%m-%d"))
+                let (expr, fmt_spec) = split_format_spec(&placeholder);
+                let value = resolve_placeholder(expr, ctx)?;
+                if let Some(fmt) = fmt_spec {
+                    result.push_str(&format_value_with_spec(&value, fmt)?);
+                } else {
+                    result.push_str(&value_to_plain_string(&value));
+                }
             }
         } else {
             result.push(ch);
@@ -130,6 +136,49 @@ fn resolve_placeholder(
     Ok(Value::Null)
 }
 
+/// Split a format specifier from a placeholder.
+///
+/// `"createdon|%Y-%m-%d"` → `("createdon", Some("%Y-%m-%d"))`
+/// `"name"` → `("name", None)`
+/// `"a ?? b|%H:%M"` → `("a ?? b", Some("%H:%M"))`
+///
+/// The `|` is only recognized as a format separator when it appears after
+/// all coalesce alternatives, i.e. `{a ?? b|fmt}` applies `fmt` to the
+/// resolved coalesce result.
+pub fn split_format_spec(placeholder: &str) -> (&str, Option<&str>) {
+    // Find last `|` — the format spec is everything after it.
+    // We use rfind so that paths containing `|` in the future won't break,
+    // but currently no path syntax uses `|`.
+    if let Some(pos) = placeholder.rfind('|') {
+        let spec = placeholder[pos + 1..].trim();
+        let expr = placeholder[..pos].trim();
+        if spec.is_empty() {
+            // Trailing `|` with no spec — ignore it
+            (placeholder, None)
+        } else {
+            (expr, Some(spec))
+        }
+    } else {
+        (placeholder, None)
+    }
+}
+
+/// Apply a strftime format specifier to a resolved value.
+///
+/// - `Value::DateTime` → formatted with the specifier
+/// - `Value::Null` → returns empty string (null propagation)
+/// - Anything else → `TypeMismatch` error
+fn format_value_with_spec(value: &Value, spec: &str) -> Result<String, TransformError> {
+    match value {
+        Value::Null => Ok(String::new()),
+        Value::DateTime(dt) => Ok(dt.format(spec).to_string()),
+        other => Err(TransformError::TypeMismatch {
+            expected: "DateTime".to_string(),
+            got: format!("{:?}", other),
+        }),
+    }
+}
+
 /// Extract raw placeholder strings from a format template.
 ///
 /// Returns each non-empty string found between `{` and `}`.
@@ -184,7 +233,9 @@ pub fn extract_field_paths(template: &str) -> Vec<FieldPath> {
     let mut paths = Vec::new();
 
     for placeholder in extract_placeholders(template) {
-        for alt in split_coalesce(&placeholder) {
+        // Strip format specifier before parsing paths
+        let (expr, _) = split_format_spec(&placeholder);
+        for alt in split_coalesce(expr) {
             match parse_path(alt) {
                 Ok(PathExpr::Field(field_path)) => {
                     paths.push(field_path);
@@ -207,6 +258,7 @@ pub fn extract_field_paths(template: &str) -> Vec<FieldPath> {
 mod tests {
     use std::collections::HashMap;
 
+    use chrono::TimeZone;
     use dataverse_lib::model::Entity;
     use dataverse_lib::model::Record;
 
@@ -543,5 +595,135 @@ mod tests {
         assert_eq!(paths.len(), 2);
         assert_eq!(paths[0].segments[0].field, "email1");
         assert_eq!(paths[1].segments[0].field, "email2");
+    }
+
+    // === Format specifier tests ===
+
+    #[test]
+    fn split_format_spec_with_spec() {
+        let (expr, spec) = split_format_spec("createdon|%Y-%m-%d");
+        assert_eq!(expr, "createdon");
+        assert_eq!(spec, Some("%Y-%m-%d"));
+    }
+
+    #[test]
+    fn split_format_spec_without_spec() {
+        let (expr, spec) = split_format_spec("createdon");
+        assert_eq!(expr, "createdon");
+        assert_eq!(spec, None);
+    }
+
+    #[test]
+    fn split_format_spec_coalesce_with_spec() {
+        let (expr, spec) = split_format_spec("createdon ?? modifiedon|%Y-%m-%d");
+        assert_eq!(expr, "createdon ?? modifiedon");
+        assert_eq!(spec, Some("%Y-%m-%d"));
+    }
+
+    #[test]
+    fn split_format_spec_trailing_pipe_ignored() {
+        let (expr, spec) = split_format_spec("createdon|");
+        assert_eq!(expr, "createdon|");
+        assert_eq!(spec, None);
+    }
+
+    #[test]
+    fn date_format_specifier() {
+        let dt = chrono::Utc
+            .with_ymd_and_hms(2025, 3, 15, 10, 30, 0)
+            .unwrap();
+        let record = Record::new("account").set("createdon", Value::DateTime(dt));
+        let vars = HashMap::new();
+        let value = Value::Null;
+        let ctx = make_ctx(&record, &vars, &value);
+
+        let result = execute_format("{createdon|%Y-%m-%d}", &ctx);
+        assert!(matches!(result, TransformResult::Value(Value::String(s)) if s == "2025-03-15"));
+    }
+
+    #[test]
+    fn date_format_specifier_time_only() {
+        let dt = chrono::Utc
+            .with_ymd_and_hms(2025, 3, 15, 10, 30, 0)
+            .unwrap();
+        let record = Record::new("account").set("createdon", Value::DateTime(dt));
+        let vars = HashMap::new();
+        let value = Value::Null;
+        let ctx = make_ctx(&record, &vars, &value);
+
+        let result = execute_format("{createdon|%H:%M:%S}", &ctx);
+        assert!(matches!(result, TransformResult::Value(Value::String(s)) if s == "10:30:00"));
+    }
+
+    #[test]
+    fn date_format_null_returns_empty() {
+        let record = Record::new("account").set("createdon", Value::Null);
+        let vars = HashMap::new();
+        let value = Value::Null;
+        let ctx = make_ctx(&record, &vars, &value);
+
+        let result = execute_format("{createdon|%Y-%m-%d}", &ctx);
+        assert!(matches!(result, TransformResult::Value(Value::String(s)) if s.is_empty()));
+    }
+
+    #[test]
+    fn date_format_non_date_errors() {
+        let record = Record::new("account").set("name", "Contoso");
+        let vars = HashMap::new();
+        let value = Value::Null;
+        let ctx = make_ctx(&record, &vars, &value);
+
+        let result = execute_format("{name|%Y-%m-%d}", &ctx);
+        assert!(matches!(
+            result,
+            TransformResult::Error(TransformError::TypeMismatch { .. })
+        ));
+    }
+
+    #[test]
+    fn date_format_with_coalesce() {
+        let dt = chrono::Utc.with_ymd_and_hms(2025, 6, 1, 14, 0, 0).unwrap();
+        let record = Record::new("account")
+            .set("createdon", Value::Null)
+            .set("modifiedon", Value::DateTime(dt));
+        let vars = HashMap::new();
+        let value = Value::Null;
+        let ctx = make_ctx(&record, &vars, &value);
+
+        let result = execute_format("{createdon ?? modifiedon|%Y-%m-%d}", &ctx);
+        assert!(matches!(result, TransformResult::Value(Value::String(s)) if s == "2025-06-01"));
+    }
+
+    #[test]
+    fn date_format_in_template() {
+        let dt = chrono::Utc
+            .with_ymd_and_hms(2025, 3, 15, 10, 30, 0)
+            .unwrap();
+        let record = Record::new("account")
+            .set("name", "Contoso")
+            .set("createdon", Value::DateTime(dt));
+        let vars = HashMap::new();
+        let value = Value::Null;
+        let ctx = make_ctx(&record, &vars, &value);
+
+        let result = execute_format("{name} (created {createdon|%Y-%m-%d})", &ctx);
+        assert!(
+            matches!(result, TransformResult::Value(Value::String(s)) if s == "Contoso (created 2025-03-15)")
+        );
+    }
+
+    #[test]
+    fn extract_field_paths_strips_format_spec() {
+        let paths = extract_field_paths("{createdon|%Y-%m-%d}");
+        assert_eq!(paths.len(), 1);
+        assert_eq!(paths[0].segments[0].field, "createdon");
+    }
+
+    #[test]
+    fn extract_field_paths_coalesce_with_format_spec() {
+        let paths = extract_field_paths("{createdon ?? modifiedon|%Y-%m-%d}");
+        assert_eq!(paths.len(), 2);
+        assert_eq!(paths[0].segments[0].field, "createdon");
+        assert_eq!(paths[1].segments[0].field, "modifiedon");
     }
 }
