@@ -276,18 +276,21 @@ impl PendingBrowserAuth {
                 let result = handle_callback(req, &expected_state);
 
                 // Determine response based on result (match by reference first)
-                let (status, body) = match &result {
+                let (status, title, subtitle) = match &result {
                     Ok(_) => (
                         hyper::StatusCode::OK,
-                        "Authentication successful! You can close this window.",
+                        "Authentication successful",
+                        "You can close this tab and return to the application.",
                     ),
                     Err(AuthError::BrowserCancelled) => (
                         hyper::StatusCode::BAD_REQUEST,
-                        "Authentication was cancelled or denied.",
+                        "Authentication cancelled",
+                        "You can close this tab and try again from the application.",
                     ),
                     Err(_) => (
                         hyper::StatusCode::BAD_REQUEST,
-                        "Authentication failed. Please try again.",
+                        "Authentication failed",
+                        "You can close this tab and try again from the application.",
                     ),
                 };
 
@@ -297,9 +300,19 @@ impl PendingBrowserAuth {
                 }
 
                 let html = format!(
-                    "<!DOCTYPE html><html><head><title>Authentication</title></head>\
-                     <body><h1>{}</h1></body></html>",
-                    body
+                    "<!DOCTYPE html>\
+                     <html><head><meta charset=\"utf-8\"><title>{title}</title>\
+                     <style>\
+                       body {{ font-family: system-ui, -apple-system, sans-serif; \
+                              display: flex; justify-content: center; align-items: center; \
+                              min-height: 100vh; margin: 0; background: #0f0f0f; color: #e0e0e0; }}\
+                       .card {{ text-align: center; padding: 3rem; }}\
+                       h1 {{ font-size: 1.5rem; margin: 0 0 0.5rem; }}\
+                       p {{ color: #888; margin: 0; }}\
+                     </style></head>\
+                     <body><div class=\"card\">\
+                       <h1>{title}</h1><p>{subtitle}</p>\
+                     </div></body></html>",
                 );
 
                 Ok::<_, Infallible>(
