@@ -47,6 +47,7 @@ pub use format_transform::FormatTransformModal;
 pub use guard_transform::GuardTransformModal;
 pub use lookup_type_picker::LookupTypePickerModal;
 pub use match_config::MatchConfigModal;
+pub use match_config::MatchConfigResult;
 pub use match_transform::MatchTransformModal;
 pub use math_transform::MathTransformModal;
 pub use new_migration::NewMigrationModal;

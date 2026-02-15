@@ -847,6 +847,44 @@ impl MigrationEditor {
                         .map(|s| s.as_str())
                         .unwrap_or("id");
 
+                    // Build Lua match index if strategy is Lua
+                    let lua_match_index = if em.match_strategy
+                        == crate::apps::migration::types::MatchStrategy::Lua
+                    {
+                        if let Some(ref script) = em.match_lua_script {
+                            let mut source_data = std::collections::HashMap::new();
+                            source_data.insert(
+                                em.source_entity.clone(),
+                                source_records.as_slice(),
+                            );
+                            let mut target_data = std::collections::HashMap::new();
+                            target_data.insert(
+                                em.target_entity.clone(),
+                                target_records.as_slice(),
+                            );
+                            match crate::apps::migration::comparison::matching::build_lua_match_index(
+                                script,
+                                &source_data,
+                                &target_data,
+                            ) {
+                                Ok(index) => Some(index),
+                                Err(e) => {
+                                    return Err(format!(
+                                        "Failed to build Lua match index for {}: {}",
+                                        em.name, e
+                                    ));
+                                }
+                            }
+                        } else {
+                            return Err(format!(
+                                "Mapping {} uses Lua match strategy but has no script",
+                                em.name
+                            ));
+                        }
+                    } else {
+                        None
+                    };
+
                     let mut comparison = match pipeline::compare_mapping_results(
                         pipeline::ComparisonInput {
                             source_records: &source_records,
@@ -861,6 +899,7 @@ impl MigrationEditor {
                             find_cache: &find_cache,
                             no_match_fallback: em.no_match_fallback,
                             orphan_strategy: em.orphan_strategy,
+                            lua_match_index: lua_match_index.as_ref(),
                         },
                     ) {
                         Ok(c) => c,

@@ -71,6 +71,7 @@ pub struct EntityMapping {
     pub lua_script: Option<String>,
     pub match_strategy: MatchStrategy,
     pub match_find_config: Option<FindConfig>,
+    pub match_lua_script: Option<String>,
     pub no_match_fallback: NoMatchFallback,
     pub orphan_strategy: OrphanStrategy,
     pub create_pass_enabled: bool,

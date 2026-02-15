@@ -425,6 +425,7 @@ impl TreeItem for MigrationTreeNode {
                 let summary = match strategy {
                     MatchStrategy::SameId => " Same ID".to_string(),
                     MatchStrategy::Find => format!(" Find ({} conditions)", condition_count),
+                    MatchStrategy::Lua => " Lua".to_string(),
                 };
                 element! {
                     row {

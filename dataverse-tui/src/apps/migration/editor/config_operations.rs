@@ -52,6 +52,7 @@ impl MigrationEditor {
             lua_script: Update::Keep,
             match_strategy: None,
             match_find_config: None,
+            match_lua_script: Update::Keep,
             no_match_fallback: None,
             orphan_strategy: None,
             create_pass_enabled: None,
@@ -113,6 +114,7 @@ impl MigrationEditor {
             lua_script: Update::Keep,
             match_strategy: None,
             match_find_config: None,
+            match_lua_script: Update::Keep,
             no_match_fallback: None,
             orphan_strategy: None,
             create_pass_enabled: Some(result.create_pass),
@@ -173,6 +175,7 @@ impl MigrationEditor {
             lua_script: Update::Keep,
             match_strategy: None,
             match_find_config: None,
+            match_lua_script: Update::Keep,
             no_match_fallback: Some(result.no_match_fallback),
             orphan_strategy: Some(result.orphan_strategy),
             create_pass_enabled: None,
@@ -241,6 +244,7 @@ impl MigrationEditor {
             lua_script: Update::Keep,
             match_strategy: None,
             match_find_config: None,
+            match_lua_script: Update::Keep,
             no_match_fallback: None,
             orphan_strategy: None,
             create_pass_enabled: None,
@@ -309,6 +313,7 @@ impl MigrationEditor {
             lua_script: Update::Keep,
             match_strategy: None,
             match_find_config: None,
+            match_lua_script: Update::Keep,
             no_match_fallback: None,
             orphan_strategy: None,
             create_pass_enabled: None,
@@ -347,20 +352,25 @@ impl MigrationEditor {
         };
 
         let current_strategy = em.match_strategy;
+        let current_lua_script = em.match_lua_script.clone();
 
-        let Some(new_strategy) = gx
-            .modal(MatchConfigModal::new_modal(current_strategy))
+        let Some(result) = gx
+            .modal(MatchConfigModal::new_modal(current_strategy, current_lua_script.clone()))
             .await
         else {
             return;
         };
 
-        if new_strategy == current_strategy {
+        let new_strategy = result.strategy;
+        let strategy_changed = new_strategy != current_strategy;
+        let script_changed = result.lua_script != current_lua_script;
+
+        if !strategy_changed && !script_changed {
             return; // No change
         }
 
-        // If switching from Find to SameId, confirm deletion of conditions
-        if current_strategy == MatchStrategy::Find {
+        // If switching away from Find, confirm deletion of conditions
+        if current_strategy == MatchStrategy::Find && new_strategy != MatchStrategy::Find {
             let has_conditions = self
                 .match_conditions
                 .get()
@@ -370,7 +380,7 @@ impl MigrationEditor {
             if has_conditions {
                 let confirmed = gx
                     .modal(ConfirmModal::with_message(
-                        "Switching to Same ID will delete all match conditions. Continue?",
+                        "Switching away from Find will delete all match conditions. Continue?",
                     ))
                     .await;
 
@@ -391,6 +401,21 @@ impl MigrationEditor {
             }
         }
 
+        // Determine match_lua_script update
+        let match_lua_script = if new_strategy == MatchStrategy::Lua {
+            match result.lua_script {
+                Some(script) => Update::Set(script),
+                None => Update::Keep,
+            }
+        } else {
+            // Switching away from Lua — clear the script
+            if current_strategy == MatchStrategy::Lua {
+                Update::Clear
+            } else {
+                Update::Keep
+            }
+        };
+
         // Update entity mapping
         let repo = gx.data::<MigrationRepository>();
         let update = UpdateEntityMapping {
@@ -399,8 +424,13 @@ impl MigrationEditor {
             target_entity: None,
             mode: None,
             lua_script: Update::Keep,
-            match_strategy: Some(new_strategy),
+            match_strategy: if strategy_changed {
+                Some(new_strategy)
+            } else {
+                None
+            },
             match_find_config: None,
+            match_lua_script,
             no_match_fallback: None,
             orphan_strategy: None,
             create_pass_enabled: None,

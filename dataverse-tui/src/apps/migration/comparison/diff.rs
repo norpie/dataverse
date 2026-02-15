@@ -85,8 +85,8 @@ pub fn diff_fields(transformed: &HashMap<String, Value>, target: &Record) -> Vec
 #[cfg(test)]
 mod tests {
     use super::*;
-    use dataverse_lib::model::Entity;
     use dataverse_lib::model::types::OptionSetValue;
+    use dataverse_lib::model::Entity;
 
     fn make_target(fields: Vec<(&str, Value)>) -> Record {
         let mut record = Record::new(Entity::logical("account"));

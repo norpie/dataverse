@@ -4,12 +4,12 @@ use rafter::element;
 use rafter::widgets::Text;
 use tuidom::Element;
 
-use super::MigrationEditor;
+use super::tree::condition_summary;
+use super::tree::transform_display_text;
 use super::tree::FieldMappingNode;
 use super::tree::TransformNode;
 use super::tree::VariableNode;
-use super::tree::condition_summary;
-use super::tree::transform_display_text;
+use super::MigrationEditor;
 use crate::apps::migration::types::CoalesceChain;
 use crate::apps::migration::types::FindCondition;
 use crate::apps::migration::types::MatchBranch;
@@ -72,6 +72,7 @@ impl MigrationEditor {
         let strategy_label = match strategy {
             MatchStrategy::SameId => "Same ID",
             MatchStrategy::Find => "Find",
+            MatchStrategy::Lua => "Lua",
         };
 
         let strategy_desc = match strategy {
@@ -87,6 +88,7 @@ impl MigrationEditor {
                     .count();
                 format!("Match using {} condition(s) on target fields", count)
             }
+            MatchStrategy::Lua => "Match using Lua script".to_string(),
         };
 
         element! {

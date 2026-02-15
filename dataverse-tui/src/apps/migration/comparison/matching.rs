@@ -1,9 +1,11 @@
 //! Target matching — match each source record to a target record.
 //!
-//! Supports two strategies:
+//! Supports three strategies:
 //! - **SameID**: Match by primary key (source ID == target ID).
 //! - **Find**: Execute match condition source chains, then scan target records
 //!   for matches using `values_equal` + `traverse_path`.
+//! - **Lua**: Run a Lua script once for all records, producing a source→target
+//!   GUID mapping. Per-record matching is then an O(1) lookup.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -11,18 +13,20 @@ use std::sync::Arc;
 use dataverse_lib::model::Entity;
 use dataverse_lib::model::Record;
 use dataverse_lib::model::Value;
+use mlua::Table;
 use uuid::Uuid;
 
+use crate::apps::migration::engine::execute_chain;
+use crate::apps::migration::engine::util::traverse_path;
+use crate::apps::migration::engine::util::values_equal;
 use crate::apps::migration::engine::ChainItem;
 use crate::apps::migration::engine::FindCache;
 use crate::apps::migration::engine::PathCache;
 use crate::apps::migration::engine::SystemVars;
 use crate::apps::migration::engine::TransformContext;
 use crate::apps::migration::engine::TransformResult;
-use crate::apps::migration::engine::execute_chain;
-use crate::apps::migration::engine::util::traverse_path;
-use crate::apps::migration::engine::util::values_equal;
 use crate::apps::migration::types::MatchStrategy;
+use crate::lua::runtime::LuaRuntime;
 
 // =============================================================================
 // Types
@@ -32,7 +36,7 @@ use crate::apps::migration::types::MatchStrategy;
 pub struct MatchInput<'a> {
     /// The source record being matched.
     pub source_record: &'a Record,
-    /// Match strategy (SameId or Find).
+    /// Match strategy (SameId, Find, or Lua).
     pub strategy: MatchStrategy,
     /// Source entity primary key field name.
     pub source_primary_key: &'a str,
@@ -49,6 +53,21 @@ pub struct MatchInput<'a> {
     pub target_entity: &'a str,
     /// Find cache for resolving find() transforms within match condition chains.
     pub find_cache: &'a dyn FindCache,
+    /// Pre-built Lua match index (source GUID → target GUID), if strategy is Lua.
+    pub lua_match_index: Option<&'a LuaMatchIndex>,
+}
+
+/// Pre-built index mapping source record GUIDs to target record GUIDs.
+/// Built once by running the Lua script, then used for O(1) per-record lookups.
+pub type LuaMatchIndex = HashMap<Uuid, Uuid>;
+
+/// Parsed result of calling `M.declare()` on a Lua match script.
+#[derive(Debug, Clone, Default)]
+pub struct LuaDeclare {
+    /// Additional source entities to fetch: (entity_name, fields).
+    pub source_entities: Vec<(String, Vec<String>)>,
+    /// Additional target entities to fetch: (entity_name, fields).
+    pub target_entities: Vec<(String, Vec<String>)>,
 }
 
 /// Pre-built index for O(1) target matching by ID.
@@ -157,6 +176,7 @@ pub fn match_target(
     match input.strategy {
         MatchStrategy::SameId => match_same_id(input, target_index),
         MatchStrategy::Find => match_find(input, target_records),
+        MatchStrategy::Lua => match_lua(input, target_index),
     }
 }
 
@@ -254,6 +274,217 @@ fn match_find(input: &MatchInput<'_>, target_records: &[Record]) -> MatchResult 
 }
 
 // =============================================================================
+// Lua Matching
+// =============================================================================
+
+/// Lua matching: O(1) lookup via pre-built LuaMatchIndex.
+fn match_lua(input: &MatchInput<'_>, target_index: &TargetIndex) -> MatchResult {
+    let lua_index = match input.lua_match_index {
+        Some(idx) => idx,
+        None => return MatchResult::Error("Lua match index not built".to_string()),
+    };
+
+    // Get source record's primary key
+    let source_pk = match input.source_record.id() {
+        Some(id) => id,
+        None => match input.source_record.get(input.source_primary_key) {
+            Some(Value::Guid(id)) => *id,
+            _ => {
+                return MatchResult::Error(format!(
+                    "Source record missing primary key '{}'",
+                    input.source_primary_key
+                ));
+            }
+        },
+    };
+
+    // Look up in Lua match index: source GUID → target GUID
+    let target_guid = match lua_index.get(&source_pk) {
+        Some(guid) => guid,
+        None => return MatchResult::NotFound,
+    };
+
+    // Look up target GUID in target index: target GUID → target record index
+    match target_index.get(target_guid) {
+        Some(&idx) => MatchResult::Found(idx),
+        None => MatchResult::Error(format!(
+            "Lua script returned target GUID {} but it's not in fetched target records",
+            target_guid
+        )),
+    }
+}
+
+/// Build a Lua match index by running the script once with all records.
+///
+/// The script's `M.resolve(source, target)` receives entity-keyed tables:
+/// - `source.entity_name` → array of records
+/// - `target.entity_name` → array of records
+///
+/// Returns `{ matches = { [source_guid] = target_guid } }`.
+pub fn build_lua_match_index(
+    script: &str,
+    source_data: &HashMap<String, &[Record]>,
+    target_data: &HashMap<String, &[Record]>,
+) -> Result<LuaMatchIndex, String> {
+    let runtime = LuaRuntime::new().map_err(|e| format!("Failed to create Lua runtime: {e}"))?;
+
+    // Load the script module
+    let module: Table = runtime
+        .load(script)
+        .map_err(|e| format!("Failed to load Lua script: {e}"))?;
+
+    // Build source table: { entity_name = { record1, record2, ... }, ... }
+    let source_table = build_entity_table(&runtime, source_data)?;
+    let target_table = build_entity_table(&runtime, target_data)?;
+
+    // Call M.resolve(source, target)
+    let resolve: mlua::Function = module
+        .get("resolve")
+        .map_err(|e| format!("Script missing M.resolve(): {e}"))?;
+
+    let result: Table = resolve
+        .call((source_table, target_table))
+        .map_err(|e| format!("M.resolve() failed: {e}"))?;
+
+    // Check for error
+    if let Ok(error_msg) = result.get::<mlua::String>("error") {
+        let msg = error_msg.to_string_lossy();
+        return Err(format!("Lua match error: {msg}"));
+    }
+
+    // Parse matches table: { [source_guid] = target_guid }
+    let matches_table: Table = result
+        .get("matches")
+        .map_err(|e| format!("Result missing 'matches' field: {e}"))?;
+
+    let mut index = HashMap::new();
+    for pair in matches_table.pairs::<mlua::String, mlua::String>() {
+        let (source_key, target_val) =
+            pair.map_err(|e| format!("Invalid entry in matches table: {e}"))?;
+
+        let source_str = source_key
+            .to_str()
+            .map_err(|e| format!("Invalid UTF-8 in source key: {e}"))?;
+        let target_str = target_val
+            .to_str()
+            .map_err(|e| format!("Invalid UTF-8 in target value: {e}"))?;
+
+        let source_uuid: Uuid = source_str
+            .parse()
+            .map_err(|e| format!("Invalid source GUID '{source_str}': {e}"))?;
+        let target_uuid: Uuid = target_str
+            .parse()
+            .map_err(|e| format!("Invalid target GUID '{target_str}': {e}"))?;
+
+        index.insert(source_uuid, target_uuid);
+    }
+
+    log::info!("[matching] Lua match index built: {} entries", index.len());
+
+    Ok(index)
+}
+
+/// Build a Lua table keyed by entity name, each containing an array of records.
+fn build_entity_table(
+    runtime: &LuaRuntime,
+    data: &HashMap<String, &[Record]>,
+) -> Result<Table, String> {
+    let table = runtime
+        .create_table()
+        .map_err(|e| format!("Failed to create table: {e}"))?;
+
+    for (entity_name, records) in data {
+        let entity_table = runtime
+            .create_table()
+            .map_err(|e| format!("Failed to create table for {entity_name}: {e}"))?;
+
+        for (i, record) in records.iter().enumerate() {
+            let record_json = serde_json::to_value(record)
+                .map_err(|e| format!("Failed to serialize record: {e}"))?;
+            let record_lua = runtime
+                .json_to_lua(&record_json)
+                .map_err(|e| format!("Failed to convert record to Lua: {e}"))?;
+            entity_table
+                .set(i + 1, record_lua)
+                .map_err(|e| format!("Failed to insert record: {e}"))?;
+        }
+
+        table
+            .set(entity_name.as_str(), entity_table)
+            .map_err(|e| format!("Failed to set entity {entity_name}: {e}"))?;
+    }
+
+    Ok(table)
+}
+
+/// Parse the `M.declare()` function from a Lua match script.
+///
+/// Returns the declared source and target entities with their fields.
+/// If `M.declare()` doesn't exist, returns an empty declare (only the
+/// mapping's own entities will be used).
+pub fn parse_lua_declare(script: &str) -> Result<LuaDeclare, String> {
+    let runtime = LuaRuntime::new().map_err(|e| format!("Failed to create Lua runtime: {e}"))?;
+
+    let module: Table = runtime
+        .load(script)
+        .map_err(|e| format!("Failed to load Lua script: {e}"))?;
+
+    // M.declare() is optional
+    let declare_fn: mlua::Function = match module.get("declare") {
+        Ok(f) => f,
+        Err(_) => return Ok(LuaDeclare::default()),
+    };
+
+    let result: Table = declare_fn
+        .call(())
+        .map_err(|e| format!("M.declare() failed: {e}"))?;
+
+    let mut declare = LuaDeclare::default();
+
+    // Parse source entities
+    if let Ok(source_table) = result.get::<Table>("source") {
+        declare.source_entities = parse_entity_declarations(&source_table)?;
+    }
+
+    // Parse target entities
+    if let Ok(target_table) = result.get::<Table>("target") {
+        declare.target_entities = parse_entity_declarations(&target_table)?;
+    }
+
+    Ok(declare)
+}
+
+/// Parse entity declarations from a Lua table: { entity_name = { fields = { ... } } }
+fn parse_entity_declarations(table: &Table) -> Result<Vec<(String, Vec<String>)>, String> {
+    let mut entities = Vec::new();
+
+    for pair in table.pairs::<mlua::String, Table>() {
+        let (key, value) = pair.map_err(|e| format!("Invalid entity declaration: {e}"))?;
+        let entity_name = key
+            .to_str()
+            .map_err(|e| format!("Invalid UTF-8 in entity name: {e}"))?
+            .to_string();
+
+        let mut fields = Vec::new();
+        if let Ok(fields_table) = value.get::<Table>("fields") {
+            for field_pair in fields_table.pairs::<i64, mlua::String>() {
+                let (_, field_val) =
+                    field_pair.map_err(|e| format!("Invalid field in {entity_name}: {e}"))?;
+                let field_str = field_val
+                    .to_str()
+                    .map_err(|e| format!("Invalid UTF-8 in field: {e}"))?
+                    .to_string();
+                fields.push(field_str);
+            }
+        }
+
+        entities.push((entity_name, fields));
+    }
+
+    Ok(entities)
+}
+
+// =============================================================================
 // Tests
 // =============================================================================
 
@@ -291,6 +522,7 @@ mod tests {
             source_entity: "account",
             target_entity: "account",
             find_cache: &STUB,
+            lua_match_index: None,
         }
     }
 
@@ -544,5 +776,292 @@ mod tests {
         let result = match_target(&input, &[], &index);
 
         assert!(matches!(result, MatchResult::NotFound));
+    }
+
+    // ---- Lua tests ----
+
+    #[test]
+    fn lua_match_via_index() {
+        let source = make_record("account", id(1), vec![("name", Value::from("Acme"))]);
+        let targets = vec![
+            make_record("account", id(10), vec![("name", Value::from("Other"))]),
+            make_record(
+                "account",
+                id(11),
+                vec![("name", Value::from("Acme Target"))],
+            ),
+        ];
+
+        let mut lua_index = LuaMatchIndex::new();
+        lua_index.insert(id(1), id(11));
+
+        let target_index = build_target_index(&targets, "accountid").unwrap();
+        let mut input = default_input(&source, MatchStrategy::Lua, &[]);
+        input.lua_match_index = Some(&lua_index);
+        let result = match_target(&input, &targets, &target_index);
+
+        assert!(matches!(result, MatchResult::Found(idx) if targets[idx].id() == Some(id(11))));
+    }
+
+    #[test]
+    fn lua_match_not_found_in_index() {
+        let source = make_record("account", id(1), vec![]);
+        let targets = vec![make_record("account", id(10), vec![])];
+
+        let lua_index = LuaMatchIndex::new(); // empty
+
+        let target_index = build_target_index(&targets, "accountid").unwrap();
+        let mut input = default_input(&source, MatchStrategy::Lua, &[]);
+        input.lua_match_index = Some(&lua_index);
+        let result = match_target(&input, &targets, &target_index);
+
+        assert!(matches!(result, MatchResult::NotFound));
+    }
+
+    #[test]
+    fn lua_match_missing_index_errors() {
+        let source = make_record("account", id(1), vec![]);
+        let targets = vec![make_record("account", id(10), vec![])];
+
+        let target_index = build_target_index(&targets, "accountid").unwrap();
+        let input = default_input(&source, MatchStrategy::Lua, &[]); // lua_match_index = None
+        let result = match_target(&input, &targets, &target_index);
+
+        assert!(matches!(result, MatchResult::Error(_)));
+    }
+
+    #[test]
+    fn lua_match_target_guid_not_in_fetched_errors() {
+        let source = make_record("account", id(1), vec![]);
+        let targets = vec![make_record("account", id(10), vec![])];
+
+        let mut lua_index = LuaMatchIndex::new();
+        lua_index.insert(id(1), id(99)); // target 99 doesn't exist in fetched targets
+
+        let target_index = build_target_index(&targets, "accountid").unwrap();
+        let mut input = default_input(&source, MatchStrategy::Lua, &[]);
+        input.lua_match_index = Some(&lua_index);
+        let result = match_target(&input, &targets, &target_index);
+
+        assert!(matches!(result, MatchResult::Error(_)));
+    }
+
+    #[test]
+    fn build_lua_match_index_simple_script() {
+        let source_records = vec![
+            make_record(
+                "cgk_support",
+                id(1),
+                vec![
+                    (
+                        "cgk_supportid",
+                        Value::from("00000000-0000-0000-0000-000000000001"),
+                    ),
+                    ("cgk_name", Value::from("Alpha")),
+                ],
+            ),
+            make_record(
+                "cgk_support",
+                id(2),
+                vec![
+                    (
+                        "cgk_supportid",
+                        Value::from("00000000-0000-0000-0000-000000000002"),
+                    ),
+                    ("cgk_name", Value::from("Beta")),
+                ],
+            ),
+        ];
+
+        let target_records = vec![
+            make_record(
+                "nrq_support",
+                id(10),
+                vec![
+                    (
+                        "nrq_supportid",
+                        Value::from("00000000-0000-0000-0000-00000000000a"),
+                    ),
+                    ("nrq_name", Value::from("Beta")),
+                ],
+            ),
+            make_record(
+                "nrq_support",
+                id(11),
+                vec![
+                    (
+                        "nrq_supportid",
+                        Value::from("00000000-0000-0000-0000-00000000000b"),
+                    ),
+                    ("nrq_name", Value::from("Alpha")),
+                ],
+            ),
+        ];
+
+        let script = r#"
+local M = {}
+function M.resolve(source, target)
+    local matches = {}
+    for _, s in ipairs(source.cgk_support) do
+        for _, t in ipairs(target.nrq_support) do
+            if s.cgk_name == t.nrq_name then
+                matches[s.cgk_supportid] = t.nrq_supportid
+            end
+        end
+    end
+    return { matches = matches }
+end
+return M
+"#;
+
+        let mut source_data = HashMap::new();
+        source_data.insert("cgk_support".to_string(), source_records.as_slice());
+        let mut target_data = HashMap::new();
+        target_data.insert("nrq_support".to_string(), target_records.as_slice());
+
+        let index = build_lua_match_index(script, &source_data, &target_data).unwrap();
+
+        assert_eq!(index.len(), 2);
+        // Alpha(id=1) → Alpha target (id=00..0b)
+        assert_eq!(
+            index.get(&Uuid::parse_str("00000000-0000-0000-0000-000000000001").unwrap()),
+            Some(&Uuid::parse_str("00000000-0000-0000-0000-00000000000b").unwrap()),
+        );
+        // Beta(id=2) → Beta target (id=00..0a)
+        assert_eq!(
+            index.get(&Uuid::parse_str("00000000-0000-0000-0000-000000000002").unwrap()),
+            Some(&Uuid::parse_str("00000000-0000-0000-0000-00000000000a").unwrap()),
+        );
+    }
+
+    #[test]
+    fn build_lua_match_index_error_from_script() {
+        let script = r#"
+local M = {}
+function M.resolve(source, target)
+    return { error = "something went wrong" }
+end
+return M
+"#;
+        let source_data = HashMap::new();
+        let target_data = HashMap::new();
+
+        let result = build_lua_match_index(script, &source_data, &target_data);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("something went wrong"));
+    }
+
+    #[test]
+    fn build_lua_match_index_missing_resolve() {
+        let script = r#"
+local M = {}
+return M
+"#;
+        let source_data = HashMap::new();
+        let target_data = HashMap::new();
+
+        let result = build_lua_match_index(script, &source_data, &target_data);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("M.resolve()"));
+    }
+
+    #[test]
+    fn parse_lua_declare_with_entities() {
+        let script = r#"
+local M = {}
+function M.declare()
+    return {
+        source = {
+            cgk_support = { fields = {"cgk_supportid", "cgk_name"} },
+        },
+        target = {
+            nrq_support = { fields = {"nrq_supportid", "nrq_name"} },
+        },
+    }
+end
+function M.resolve(source, target)
+    return { matches = {} }
+end
+return M
+"#;
+
+        let declare = parse_lua_declare(script).unwrap();
+        assert_eq!(declare.source_entities.len(), 1);
+        assert_eq!(declare.source_entities[0].0, "cgk_support");
+        assert_eq!(
+            declare.source_entities[0].1,
+            vec!["cgk_supportid", "cgk_name"]
+        );
+        assert_eq!(declare.target_entities.len(), 1);
+        assert_eq!(declare.target_entities[0].0, "nrq_support");
+        assert_eq!(
+            declare.target_entities[0].1,
+            vec!["nrq_supportid", "nrq_name"]
+        );
+    }
+
+    #[test]
+    fn parse_lua_declare_without_declare_fn() {
+        let script = r#"
+local M = {}
+function M.resolve(source, target)
+    return { matches = {} }
+end
+return M
+"#;
+
+        let declare = parse_lua_declare(script).unwrap();
+        assert!(declare.source_entities.is_empty());
+        assert!(declare.target_entities.is_empty());
+    }
+
+    #[test]
+    fn build_lua_match_index_with_lib_find() {
+        // Test that lib.find() is available in the Lua runtime
+        let source_records = vec![make_record(
+            "src",
+            id(1),
+            vec![
+                ("srcid", Value::from("00000000-0000-0000-0000-000000000001")),
+                ("name", Value::from("Test")),
+            ],
+        )];
+
+        let target_records = vec![make_record(
+            "tgt",
+            id(10),
+            vec![
+                ("tgtid", Value::from("00000000-0000-0000-0000-00000000000a")),
+                ("name", Value::from("Test")),
+            ],
+        )];
+
+        let script = r#"
+local M = {}
+function M.resolve(source, target)
+    local matches = {}
+    for _, s in ipairs(source.src) do
+        local match = lib.find(target.tgt, "name", s.name)
+        if match then
+            matches[s.srcid] = match.tgtid
+        end
+    end
+    return { matches = matches }
+end
+return M
+"#;
+
+        let mut source_data = HashMap::new();
+        source_data.insert("src".to_string(), source_records.as_slice());
+        let mut target_data = HashMap::new();
+        target_data.insert("tgt".to_string(), target_records.as_slice());
+
+        let index = build_lua_match_index(script, &source_data, &target_data).unwrap();
+
+        assert_eq!(index.len(), 1);
+        assert_eq!(
+            index.get(&Uuid::parse_str("00000000-0000-0000-0000-000000000001").unwrap()),
+            Some(&Uuid::parse_str("00000000-0000-0000-0000-00000000000a").unwrap()),
+        );
     }
 }

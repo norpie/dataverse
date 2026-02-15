@@ -19,6 +19,8 @@ pub enum MatchStrategy {
     SameId,
     /// Use a find expression to locate target records.
     Find,
+    /// Use a Lua script for matching.
+    Lua,
 }
 
 /// Fallback behavior when no target match is found.
@@ -154,6 +156,7 @@ impl MatchStrategy {
         match self {
             MatchStrategy::SameId => "same_id",
             MatchStrategy::Find => "find",
+            MatchStrategy::Lua => "lua",
         }
     }
 
@@ -161,6 +164,7 @@ impl MatchStrategy {
         match s {
             "same_id" => Some(MatchStrategy::SameId),
             "find" => Some(MatchStrategy::Find),
+            "lua" => Some(MatchStrategy::Lua),
             _ => None,
         }
     }

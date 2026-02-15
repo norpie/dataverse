@@ -20,6 +20,7 @@ pub struct NewEntityMapping {
     pub lua_script: Option<String>,
     pub match_strategy: MatchStrategy,
     pub match_find_config: Option<FindConfig>,
+    pub match_lua_script: Option<String>,
     pub no_match_fallback: NoMatchFallback,
     pub orphan_strategy: OrphanStrategy,
     pub create_pass_enabled: bool,
@@ -43,6 +44,7 @@ pub struct UpdateEntityMapping {
     pub lua_script: super::Update<String>,
     pub match_strategy: Option<MatchStrategy>,
     pub match_find_config: Option<FindConfig>,
+    pub match_lua_script: super::Update<String>,
     pub no_match_fallback: Option<NoMatchFallback>,
     pub orphan_strategy: Option<OrphanStrategy>,
     pub create_pass_enabled: Option<bool>,
@@ -67,7 +69,8 @@ impl super::MigrationRepository {
             .conn(move |conn| {
                 let mut stmt = conn.prepare(
                     "SELECT id, phase_id, \"order\", name, source_entity, target_entity, mode, lua_script,
-                            match_strategy, match_find_config, no_match_fallback, orphan_strategy,
+                            match_strategy, match_find_config, match_lua_script,
+                            no_match_fallback, orphan_strategy,
                             create_pass_enabled, activate_pass_enabled, update_pass_enabled,
                             delete_pass_enabled, deactivate_pass_enabled,
                             associate_pass_enabled, disassociate_pass_enabled,
@@ -92,7 +95,8 @@ impl super::MigrationRepository {
             .conn(move |conn| {
                 let mut stmt = conn.prepare(
                     "SELECT em.id, em.phase_id, em.\"order\", em.name, em.source_entity, em.target_entity, em.mode, em.lua_script,
-                            em.match_strategy, em.match_find_config, em.no_match_fallback, em.orphan_strategy,
+                            em.match_strategy, em.match_find_config, em.match_lua_script,
+                            em.no_match_fallback, em.orphan_strategy,
                             em.create_pass_enabled, em.activate_pass_enabled, em.update_pass_enabled,
                             em.delete_pass_enabled, em.deactivate_pass_enabled,
                             em.associate_pass_enabled, em.disassociate_pass_enabled,
@@ -115,7 +119,8 @@ impl super::MigrationRepository {
             .conn(move |conn| {
                 let mut stmt = conn.prepare(
                     "SELECT id, phase_id, \"order\", name, source_entity, target_entity, mode, lua_script,
-                            match_strategy, match_find_config, no_match_fallback, orphan_strategy,
+                            match_strategy, match_find_config, match_lua_script,
+                            no_match_fallback, orphan_strategy,
                             create_pass_enabled, activate_pass_enabled, update_pass_enabled,
                             delete_pass_enabled, deactivate_pass_enabled,
                             associate_pass_enabled, disassociate_pass_enabled,
@@ -169,6 +174,7 @@ impl super::MigrationRepository {
         let source_entity = mapping.source_entity.clone();
         let target_entity = mapping.target_entity.clone();
         let lua_script = mapping.lua_script.clone();
+        let match_lua_script = mapping.match_lua_script.clone();
         let create_pass_enabled = mapping.create_pass_enabled;
         let activate_pass_enabled = mapping.activate_pass_enabled;
         let update_pass_enabled = mapping.update_pass_enabled;
@@ -183,12 +189,13 @@ impl super::MigrationRepository {
                 conn.execute(
                     "INSERT INTO entity_mappings (
                         phase_id, \"order\", name, source_entity, target_entity, mode, lua_script,
-                        match_strategy, match_find_config, no_match_fallback, orphan_strategy,
+                        match_strategy, match_find_config, match_lua_script,
+                        no_match_fallback, orphan_strategy,
                         create_pass_enabled, activate_pass_enabled, update_pass_enabled,
                         delete_pass_enabled, deactivate_pass_enabled,
                         associate_pass_enabled, disassociate_pass_enabled,
                         source_filter, target_filter, test_guids
-                    ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21)",
+                    ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22)",
                     params![
                         phase_id,
                         order,
@@ -199,6 +206,7 @@ impl super::MigrationRepository {
                         lua_script,
                         match_strategy_str,
                         match_find_config_blob,
+                        match_lua_script,
                         no_match_fallback_str,
                         orphan_strategy_str,
                         create_pass_enabled as i32,
@@ -304,6 +312,17 @@ impl super::MigrationRepository {
                 if let Some(blob) = match_find_config_blob {
                     updates.push("match_find_config = ?");
                     param_vals.push(Box::new(blob));
+                }
+                match &update.match_lua_script {
+                    super::Update::Keep => {}
+                    super::Update::Set(script) => {
+                        updates.push("match_lua_script = ?");
+                        param_vals.push(Box::new(Some(script.clone())));
+                    }
+                    super::Update::Clear => {
+                        updates.push("match_lua_script = ?");
+                        param_vals.push(Box::new(None::<String>));
+                    }
                 }
                 if let Some(no_match_fallback) = update.no_match_fallback {
                     updates.push("no_match_fallback = ?");

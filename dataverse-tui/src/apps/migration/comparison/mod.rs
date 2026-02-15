@@ -13,18 +13,19 @@ use dataverse_lib::model::Record;
 use dataverse_lib::model::Value;
 use uuid::Uuid;
 
-use self::diff::FieldDiff;
 use self::diff::diff_fields;
+use self::diff::FieldDiff;
+use self::matching::build_target_index;
+use self::matching::match_target;
+use self::matching::LuaMatchIndex;
 use self::matching::MatchInput;
 use self::matching::MatchResult;
 use self::matching::TargetIndexError;
-use self::matching::build_target_index;
-use self::matching::match_target;
 
+use super::engine::record::RecordResult;
 use super::engine::ChainItem;
 use super::engine::FindCache;
 use super::engine::TransformError;
-use super::engine::record::RecordResult;
 use super::types::MatchStrategy;
 use super::types::NoMatchFallback;
 use super::types::OrphanStrategy;
@@ -192,6 +193,8 @@ pub struct CompareInput<'a> {
     pub target_entity: &'a str,
     /// Find cache for resolving find() in match condition chains.
     pub find_cache: &'a dyn FindCache,
+    /// Pre-built Lua match index (source GUID → target GUID), if strategy is Lua.
+    pub lua_match_index: Option<&'a LuaMatchIndex>,
     /// What to do when no target match is found.
     pub no_match_fallback: NoMatchFallback,
     /// What to do with orphaned target records.
@@ -231,6 +234,7 @@ pub fn compare_mapping(input: CompareInput<'_>) -> Result<MappingComparison, Tar
             source_entity: input.source_entity,
             target_entity: input.target_entity,
             find_cache: input.find_cache,
+            lua_match_index: input.lua_match_index,
         };
 
         let has_errors = !record_result.errors.is_empty();
@@ -464,6 +468,7 @@ mod tests {
             source_entity: "account",
             target_entity: "account",
             find_cache: &STUB,
+            lua_match_index: None,
             no_match_fallback: NoMatchFallback::Create,
             orphan_strategy: OrphanStrategy::Ignore,
         }

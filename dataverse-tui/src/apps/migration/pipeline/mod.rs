@@ -38,6 +38,7 @@ use self::fetch::BuildError;
 use self::fetch::FetchTaskConfig;
 
 use super::comparison::compare_mapping;
+use super::comparison::matching::LuaMatchIndex;
 use super::comparison::matching::TargetIndexError;
 use super::comparison::CompareInput;
 use super::comparison::MappingComparison;
@@ -634,6 +635,8 @@ pub struct ComparisonInput<'a> {
     pub target_entity: &'a str,
     /// Find cache for resolving find() in match condition chains.
     pub find_cache: &'a dyn FindCache,
+    /// Pre-built Lua match index (source GUID → target GUID), if strategy is Lua.
+    pub lua_match_index: Option<&'a LuaMatchIndex>,
     /// What to do when no target match is found.
     pub no_match_fallback: NoMatchFallback,
     /// What to do with orphaned target records.
@@ -658,6 +661,7 @@ pub fn compare_mapping_results(
         source_entity: input.source_entity,
         target_entity: input.target_entity,
         find_cache: input.find_cache,
+        lua_match_index: input.lua_match_index,
         no_match_fallback: input.no_match_fallback,
         orphan_strategy: input.orphan_strategy,
     })
@@ -1039,6 +1043,7 @@ mod tests {
             source_entity: "account",
             target_entity: "account",
             find_cache: &cache,
+            lua_match_index: None,
             no_match_fallback: NoMatchFallback::Create,
             orphan_strategy: OrphanStrategy::Delete,
         };
