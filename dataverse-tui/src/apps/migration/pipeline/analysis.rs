@@ -52,6 +52,8 @@ pub struct AnalysisInput<'a> {
     pub match_config_chain: Option<&'a [ChainItem]>,
     /// Whether the target entity is a junction (intersect) entity.
     pub is_target_junction: bool,
+    /// Lua match script (if match strategy is Lua).
+    pub match_lua_script: Option<&'a str>,
 }
 
 /// Analyze an entity mapping to determine what data needs to be fetched.
@@ -115,11 +117,46 @@ pub fn analyze_mapping(input: &AnalysisInput<'_>) -> FetchPlan {
         None
     };
 
+    // 6. Parse Lua M.declare() for extra entity specs
+    let (lua_source_specs, lua_target_specs) = if let Some(script) = input.match_lua_script {
+        match crate::apps::migration::comparison::matching::parse_lua_declare(script) {
+            Ok(declare) => {
+                let source_specs = declare
+                    .source_entities
+                    .into_iter()
+                    .map(|(entity, fields)| FindCacheSpec {
+                        entity,
+                        select: fields.into_iter().collect(),
+                        expands: vec![],
+                    })
+                    .collect();
+                let target_specs = declare
+                    .target_entities
+                    .into_iter()
+                    .map(|(entity, fields)| FindCacheSpec {
+                        entity,
+                        select: fields.into_iter().collect(),
+                        expands: vec![],
+                    })
+                    .collect();
+                (source_specs, target_specs)
+            }
+            Err(e) => {
+                log::warn!("[analysis] Failed to parse Lua M.declare(): {e}");
+                (vec![], vec![])
+            }
+        }
+    } else {
+        (vec![], vec![])
+    };
+
     FetchPlan {
         source: collector.source.build_source(),
         target,
         find_caches: collector.find_caches.build(),
         entity_ref_caches: collector.entity_ref_caches.build(),
+        lua_source_specs,
+        lua_target_specs,
     }
 }
 
@@ -746,6 +783,7 @@ mod tests {
             variables,
             match_config_chain: None,
             is_target_junction: false,
+            match_lua_script: None,
         }
     }
 
@@ -1085,6 +1123,7 @@ mod tests {
             variables: &variables,
             match_config_chain: Some(&match_chain),
             is_target_junction: false,
+            match_lua_script: None,
         };
         let plan = analyze_mapping(&input);
 

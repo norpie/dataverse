@@ -18,7 +18,7 @@ use crate::apps::migration::types::Mode;
 use crate::apps::migration::types::Phase;
 use crate::modals::ConfirmModal;
 use crate::modals::FileBrowserModal;
-use crate::paths;
+
 
 /// Page enum - each page represents a mode.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -180,7 +180,7 @@ impl EditPhaseModal {
 
     #[handler]
     async fn import_script(&self, gx: &GlobalContext) {
-        let start_dir = paths::downloads_dir().unwrap_or_else(|| PathBuf::from("."));
+        let start_dir = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
         let Some(result) = gx
             .modal(FileBrowserModal::browse(&start_dir, vec!["lua".to_string()]).require_existing())
             .await
@@ -208,7 +208,7 @@ impl EditPhaseModal {
         };
 
         let phase_name = self.name.get();
-        let start_dir = paths::downloads_dir().unwrap_or_else(|| PathBuf::from("."));
+        let start_dir = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
         let Some(result) = gx
             .modal(
                 FileBrowserModal::browse(&start_dir, vec!["lua".to_string()])

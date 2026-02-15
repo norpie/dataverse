@@ -78,6 +78,8 @@ pub fn resolve_path(
                 }
             };
 
+            let nav_path = format_field_path(path);
+
             match var_value {
                 Value::Record(record) => {
                     let initial_entity = Some(record.entity().clone());
@@ -99,13 +101,19 @@ pub fn resolve_path(
                 },
                 Value::Null if *optional => (TransformResult::Value(Value::Null), None),
                 Value::Null => (
-                    TransformResult::Error(TransformError::type_mismatch("Record", "Null")),
+                    TransformResult::Error(TransformError::type_mismatch(
+                        "Record or EntityReference",
+                        format!("${name} is Null (navigating .{nav_path})"),
+                    )),
                     None,
                 ),
                 other => (
                     TransformResult::Error(TransformError::type_mismatch(
-                        "Record",
-                        format!("{other:?}"),
+                        "Record or EntityReference",
+                        format!(
+                            "${name} is {} (navigating .{nav_path})",
+                            value_type_name(other)
+                        ),
                     )),
                     None,
                 ),
@@ -145,6 +153,9 @@ pub fn resolve_path(
                 }
             };
 
+            let nav_path = format_field_path(path);
+            let var_name = format!("#{var:?}").to_lowercase();
+
             match base_value {
                 Value::Record(record) => {
                     let initial_entity = Some(record.entity().clone());
@@ -166,13 +177,19 @@ pub fn resolve_path(
                 },
                 Value::Null if *optional => (TransformResult::Value(Value::Null), None),
                 Value::Null => (
-                    TransformResult::Error(TransformError::type_mismatch("Record", "Null")),
+                    TransformResult::Error(TransformError::type_mismatch(
+                        "Record or EntityReference",
+                        format!("{var_name} is Null (navigating .{nav_path})"),
+                    )),
                     None,
                 ),
                 other => (
                     TransformResult::Error(TransformError::type_mismatch(
-                        "Record",
-                        format!("{other:?}"),
+                        "Record or EntityReference",
+                        format!(
+                            "{var_name} is {} (navigating .{nav_path})",
+                            value_type_name(other)
+                        ),
                     )),
                     None,
                 ),
@@ -307,6 +324,40 @@ pub fn resolve_path_str(path: &str, ctx: &ResolveContext<'_>) -> (TransformResul
             TransformResult::Error(TransformError::path_not_found(format!("{}: {}", path, e))),
             None,
         ),
+    }
+}
+
+/// Format a `FieldPath` as a dot-separated string for error messages.
+fn format_field_path(path: &FieldPath) -> String {
+    path.segments
+        .iter()
+        .map(|s| s.field.as_str())
+        .collect::<Vec<_>>()
+        .join(".")
+}
+
+/// Return a short human-readable type name for a `Value`.
+fn value_type_name(value: &Value) -> &'static str {
+    match value {
+        Value::Null => "Null",
+        Value::String(_) => "String",
+        Value::Int(_) => "Int",
+        Value::Long(_) => "Long",
+        Value::Float(_) => "Float",
+        Value::Decimal(_) => "Decimal",
+        Value::Bool(_) => "Bool",
+        Value::Guid(_) => "Guid",
+        Value::DateTime(_) => "DateTime",
+        Value::Money(_) => "Money",
+        Value::EntityReference(_) => "EntityReference",
+        Value::EntityBinding(_) => "EntityBinding",
+        Value::OptionSet(_) => "OptionSet",
+        Value::MultiOptionSet(_) => "MultiOptionSet",
+        Value::File(_) => "File",
+        Value::Image(_) => "Image",
+        Value::Record(_) => "Record",
+        Value::Records(_) => "Records",
+        Value::Json(_) => "Json",
     }
 }
 

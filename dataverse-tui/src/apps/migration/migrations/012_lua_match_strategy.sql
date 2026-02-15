@@ -1,17 +1,8 @@
 -- Add Lua match strategy support.
--- New column for storing the Lua match script.
-ALTER TABLE entity_mappings ADD COLUMN match_lua_script TEXT;
-
--- Widen the match_strategy CHECK constraint to allow 'lua'.
--- SQLite doesn't support ALTER CHECK, so we drop and re-create.
--- Dropping a CHECK requires a table rebuild, but we can add a new check
--- by using a trigger approach. However, SQLite CHECK constraints added
--- at CREATE TABLE time cannot be dropped. Instead, we rely on the
--- application layer for validation (MatchStrategy::from_str) and leave
--- the old CHECK in place — SQLite will accept 'lua' values only if we
--- recreate the constraint.
---
--- Pragmatic approach: recreate the table with the updated constraint.
+-- Widen the match_strategy CHECK constraint to allow 'lua' and add match_lua_script column.
+-- SQLite doesn't support ALTER CHECK, so we rebuild the table.
+-- The migration runner disables foreign keys before running, so the DROP TABLE
+-- won't trigger ON DELETE CASCADE on child tables (field_mappings, variables, transforms).
 
 CREATE TABLE entity_mappings_new (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

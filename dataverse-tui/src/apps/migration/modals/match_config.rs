@@ -133,7 +133,7 @@ impl MatchConfigModal {
 
     #[handler]
     async fn import_script(&self, gx: &GlobalContext) {
-        let start_dir = paths::downloads_dir().unwrap_or_else(|| PathBuf::from("."));
+        let start_dir = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
         let Some(result) = gx
             .modal(FileBrowserModal::browse(&start_dir, vec!["lua".to_string()]).require_existing())
             .await
@@ -160,7 +160,7 @@ impl MatchConfigModal {
             return;
         };
 
-        let start_dir = paths::downloads_dir().unwrap_or_else(|| PathBuf::from("."));
+        let start_dir = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
         let Some(result) = gx
             .modal(
                 FileBrowserModal::browse(&start_dir, vec!["lua".to_string()])

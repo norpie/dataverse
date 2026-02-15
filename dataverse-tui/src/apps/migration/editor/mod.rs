@@ -658,6 +658,7 @@ impl MigrationEditor {
                     test_guids: em.test_guids.as_deref(),
                     mapping_name: &em.name,
                     is_target_junction: junction_fk_attrs.contains_key(&em.target_entity),
+                    match_lua_script: em.match_lua_script.as_deref(),
                 }
             })
             .collect();
@@ -852,16 +853,62 @@ impl MigrationEditor {
                         == crate::apps::migration::types::MatchStrategy::Lua
                     {
                         if let Some(ref script) = em.match_lua_script {
-                            let mut source_data = std::collections::HashMap::new();
+                            // Collect declared extra source entities for this mapping
+                            let mut lua_source_entity_records: Vec<(String, Vec<dataverse_lib::model::Record>)> =
+                                Vec::new();
+                            for ((mapping_idx, spec), lua_rec) in phase_plan
+                                .lua_source_specs
+                                .iter()
+                                .zip(split.lua_source_records.iter_mut())
+                            {
+                                if *mapping_idx == i {
+                                    lua_source_entity_records.push((
+                                        spec.entity.clone(),
+                                        std::mem::take(&mut lua_rec.1),
+                                    ));
+                                }
+                            }
+                            // Collect declared extra target entities for this mapping
+                            let mut lua_target_entity_records: Vec<(String, Vec<dataverse_lib::model::Record>)> =
+                                Vec::new();
+                            for ((mapping_idx, spec), lua_rec) in phase_plan
+                                .lua_target_specs
+                                .iter()
+                                .zip(split.lua_target_records.iter_mut())
+                            {
+                                if *mapping_idx == i {
+                                    lua_target_entity_records.push((
+                                        spec.entity.clone(),
+                                        std::mem::take(&mut lua_rec.1),
+                                    ));
+                                }
+                            }
+
+                            // Build source_data: mapping's own + declared extras
+                            let mut source_data: std::collections::HashMap<String, &[dataverse_lib::model::Record]> =
+                                std::collections::HashMap::new();
                             source_data.insert(
                                 em.source_entity.clone(),
                                 source_records.as_slice(),
                             );
-                            let mut target_data = std::collections::HashMap::new();
+                            // Build target_data: mapping's own + declared extras
+                            let mut target_data: std::collections::HashMap<String, &[dataverse_lib::model::Record]> =
+                                std::collections::HashMap::new();
                             target_data.insert(
                                 em.target_entity.clone(),
                                 target_records.as_slice(),
                             );
+
+                            // Add declared extras (borrow from owned vecs)
+                            for (entity, records) in &lua_source_entity_records {
+                                source_data
+                                    .insert(entity.clone(), records.as_slice());
+                            }
+                            for (entity, records) in &lua_target_entity_records {
+                                target_data
+                                    .insert(entity.clone(), records.as_slice());
+                            }
+
                             match crate::apps::migration::comparison::matching::build_lua_match_index(
                                 script,
                                 &source_data,

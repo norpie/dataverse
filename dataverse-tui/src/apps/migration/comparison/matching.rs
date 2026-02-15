@@ -176,7 +176,7 @@ pub fn match_target(
     match input.strategy {
         MatchStrategy::SameId => match_same_id(input, target_index),
         MatchStrategy::Find => match_find(input, target_records),
-        MatchStrategy::Lua => match_lua(input, target_index),
+        MatchStrategy::Lua => match_lua(input, target_records, target_index),
     }
 }
 
@@ -278,18 +278,24 @@ fn match_find(input: &MatchInput<'_>, target_records: &[Record]) -> MatchResult 
 // =============================================================================
 
 /// Lua matching: O(1) lookup via pre-built LuaMatchIndex.
-fn match_lua(input: &MatchInput<'_>, target_index: &TargetIndex) -> MatchResult {
+fn match_lua(
+    input: &MatchInput<'_>,
+    target_records: &[Record],
+    target_index: &TargetIndex,
+) -> MatchResult {
     let lua_index = match input.lua_match_index {
         Some(idx) => idx,
         None => return MatchResult::Error("Lua match index not built".to_string()),
     };
 
-    // Get source record's primary key
-    let source_pk = match input.source_record.id() {
-        Some(id) => id,
-        None => match input.source_record.get(input.source_primary_key) {
-            Some(Value::Guid(id)) => *id,
-            _ => {
+    // Get source record's original primary key from the field value, not record.id().
+    // record.id() may be a synthetic UUID (for junction entities) which won't match
+    // the original GUID the Lua script used as its key.
+    let source_pk = match input.source_record.get(input.source_primary_key) {
+        Some(Value::Guid(id)) => *id,
+        _ => match input.source_record.id() {
+            Some(id) => id,
+            None => {
                 return MatchResult::Error(format!(
                     "Source record missing primary key '{}'",
                     input.source_primary_key
@@ -304,13 +310,27 @@ fn match_lua(input: &MatchInput<'_>, target_index: &TargetIndex) -> MatchResult 
         None => return MatchResult::NotFound,
     };
 
-    // Look up target GUID in target index: target GUID → target record index
+    // Look up target GUID in target index: target GUID → target record index.
+    // The target index may be keyed by synthetic IDs (for junction entities),
+    // so also try matching by the original primary key field value.
     match target_index.get(target_guid) {
         Some(&idx) => MatchResult::Found(idx),
-        None => MatchResult::Error(format!(
-            "Lua script returned target GUID {} but it's not in fetched target records",
-            target_guid
-        )),
+        None => {
+            // Fallback: scan target records for one whose PK field matches.
+            // The target index may be keyed by synthetic IDs (for junction entities),
+            // so the original GUID from the Lua script won't be found directly.
+            for (idx, record) in target_records.iter().enumerate() {
+                if let Some(Value::Guid(pk)) = record.get(input.target_primary_key) {
+                    if *pk == *target_guid {
+                        return MatchResult::Found(idx);
+                    }
+                }
+            }
+            MatchResult::Error(format!(
+                "Lua script returned target GUID {} but it's not in fetched target records",
+                target_guid
+            ))
+        }
     }
 }
 

@@ -188,6 +188,11 @@ pub async fn run(client: &Client, migrations: &[Migration]) -> Result<(), Migrat
 
         client
             .conn_mut(move |conn| {
+                // Disable foreign keys before the transaction so that
+                // table rebuilds (DROP + RENAME) don't trigger CASCADE deletes.
+                // PRAGMA foreign_keys is a no-op inside transactions.
+                conn.execute_batch("PRAGMA foreign_keys = OFF;")?;
+
                 // Run in a transaction for atomicity
                 let tx = conn.transaction()?;
 
@@ -201,6 +206,9 @@ pub async fn run(client: &Client, migrations: &[Migration]) -> Result<(), Migrat
                 )?;
 
                 tx.commit()?;
+
+                // Re-enable foreign keys
+                conn.execute_batch("PRAGMA foreign_keys = ON;")?;
                 Ok(())
             })
             .await?;
