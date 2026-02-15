@@ -126,7 +126,8 @@ mod tests {
         let (result, value_type) = execute_copy("primarycontactid.fullname", &ctx);
 
         assert!(matches!(result, TransformResult::Value(Value::String(s)) if s == "John Smith"));
-        assert_eq!(value_type, Some(Entity::logical("contact")));
+        // Scalar leaf values don't carry the parent record's entity annotation
+        assert_eq!(value_type, None);
     }
 
     #[test]
@@ -138,7 +139,8 @@ mod tests {
         let (result, value_type) = execute_copy("primarycontactid.parentcustomerid.name", &ctx);
 
         assert!(matches!(result, TransformResult::Value(Value::String(s)) if s == "Parent Corp"));
-        assert_eq!(value_type, Some(Entity::logical("account")));
+        // Scalar leaf values don't carry the parent record's entity annotation
+        assert_eq!(value_type, None);
     }
 
     #[test]
@@ -218,7 +220,8 @@ mod tests {
         let (result, value_type) = execute_copy("primarycontactid?.fullname", &ctx);
 
         assert!(matches!(result, TransformResult::Value(Value::String(s)) if s == "John Smith"));
-        assert_eq!(value_type, Some(Entity::logical("contact")));
+        // Scalar leaf values don't carry the parent record's entity annotation
+        assert_eq!(value_type, None);
     }
 
     #[test]
@@ -276,7 +279,8 @@ mod tests {
 
         let (result, entity) = execute_copy("$capacity.capacityid", &ctx);
         assert!(matches!(result, TransformResult::Value(Value::String(s)) if s == "cap-123"));
-        assert_eq!(entity, Some(Entity::logical("capacity")));
+        // Scalar leaf values don't carry the parent record's entity annotation
+        assert_eq!(entity, None);
     }
 
     #[test]
@@ -383,7 +387,8 @@ mod tests {
             &ctx,
         );
         assert!(matches!(result, TransformResult::Value(Value::String(s)) if s == "John"));
-        assert_eq!(entity, Some(Entity::logical("contact")));
+        // Scalar leaf values don't carry the parent record's entity annotation
+        assert_eq!(entity, None);
     }
 
     #[test]

@@ -299,7 +299,17 @@ fn traverse_record(
     // Get the leaf value
     let leaf = &field_path.segments[field_path.segments.len() - 1];
     match current_record.get(&leaf.field) {
-        Some(value) => (TransformResult::Value(value.clone()), last_entity),
+        Some(value) => {
+            // Only propagate the entity type annotation when the leaf value is
+            // a lookup-like type (Record, EntityReference). For scalar values
+            // (Guid, String, Int, etc.) the entity annotation from the parent
+            // record is not meaningful and would be misleading in the UI.
+            let entity = match value {
+                Value::Record(_) | Value::EntityReference(_) => last_entity,
+                _ => None,
+            };
+            (TransformResult::Value(value.clone()), entity)
+        }
         None => (
             TransformResult::Error(TransformError::path_not_found(&leaf.field)),
             None,
@@ -458,7 +468,8 @@ mod tests {
         assert!(
             matches!(result, TransformResult::Value(Value::String(ref s)) if s == "John Smith")
         );
-        assert_eq!(entity, Some(Entity::logical("contact")));
+        // Scalar leaf values don't carry the parent record's entity annotation
+        assert_eq!(entity, None);
     }
 
     #[test]
@@ -512,7 +523,8 @@ mod tests {
         assert!(
             matches!(result, TransformResult::Value(Value::String(ref s)) if s == "cap-guid-123")
         );
-        assert_eq!(entity, Some(Entity::logical("capacity")));
+        // Scalar leaf values don't carry the parent record's entity annotation
+        assert_eq!(entity, None);
     }
 
     #[test]
@@ -526,7 +538,8 @@ mod tests {
         assert!(
             matches!(result, TransformResult::Value(Value::String(ref s)) if s == "Nested Corp")
         );
-        assert_eq!(entity, Some(Entity::logical("account")));
+        // Scalar leaf values don't carry the parent record's entity annotation
+        assert_eq!(entity, None);
     }
 
     #[test]
@@ -838,7 +851,8 @@ mod tests {
         assert!(
             matches!(result, TransformResult::Value(Value::String(ref s)) if s == "Q1 Deadline")
         );
-        assert_eq!(entity, Some(Entity::logical("cgk_deadline")));
+        // Scalar leaf values don't carry the parent record's entity annotation
+        assert_eq!(entity, None);
     }
 
     #[test]
@@ -895,7 +909,8 @@ mod tests {
         assert!(
             matches!(result, TransformResult::Value(Value::String(ref s)) if s == "Q2 Deadline")
         );
-        assert_eq!(entity, Some(Entity::logical("cgk_deadline")));
+        // Scalar leaf values don't carry the parent record's entity annotation
+        assert_eq!(entity, None);
     }
 
     #[test]
