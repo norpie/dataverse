@@ -15,3 +15,4 @@ flamegraph.svg
 perf.data
 .env
 .*
+lua/*
