@@ -835,22 +835,7 @@ impl MigrationEditor {
                         i, em.name, record_count, target_records.len(),
                     );
 
-                    // Transform
-                    updater.update(format!(
-                        "Transforming {} ({} records)...",
-                        em.name, record_count
-                    ));
-                    let mapping_result = pipeline::execute_mapping(
-                        &source_records,
-                        &materialized_variables[i],
-                        &materialized_field_mappings[i],
-                        &em.source_entity,
-                        &em.target_entity,
-                        &find_cache,
-                    );
-
-                    // Compare — consumes mapping_result, borrows source/target
-                    updater.update(format!("Comparing {}...", em.name));
+                    // Primary keys for comparison
                     let source_pk = primary_keys
                         .get(&em.source_entity)
                         .map(|s| s.as_str())
@@ -860,113 +845,182 @@ impl MigrationEditor {
                         .map(|s| s.as_str())
                         .unwrap_or("id");
 
-                    // Build Lua match index if strategy is Lua
-                    let lua_match_index = if em.match_strategy
-                        == crate::apps::migration::types::MatchStrategy::Lua
-                    {
-                        if let Some(ref script) = em.match_lua_script {
-                            // Collect declared extra source entities for this mapping
-                            let mut lua_source_entity_records: Vec<(String, Vec<dataverse_lib::model::Record>)> =
-                                Vec::new();
-                            for ((mapping_idx, spec), lua_rec) in phase_plan
-                                .lua_source_specs
-                                .iter()
-                                .zip(split.lua_source_records.iter_mut())
-                            {
-                                if *mapping_idx == i {
-                                    lua_source_entity_records.push((
-                                        spec.entity.clone(),
-                                        std::mem::take(&mut lua_rec.1),
-                                    ));
-                                }
-                            }
-                            // Collect declared extra target entities for this mapping
-                            let mut lua_target_entity_records: Vec<(String, Vec<dataverse_lib::model::Record>)> =
-                                Vec::new();
-                            for ((mapping_idx, spec), lua_rec) in phase_plan
-                                .lua_target_specs
-                                .iter()
-                                .zip(split.lua_target_records.iter_mut())
-                            {
-                                if *mapping_idx == i {
-                                    lua_target_entity_records.push((
-                                        spec.entity.clone(),
-                                        std::mem::take(&mut lua_rec.1),
-                                    ));
-                                }
-                            }
+                    // Collect extra Lua entity records for this mapping (shared by both paths)
+                    let lua_source_entity_records = collect_lua_extra_records(
+                        i,
+                        &phase_plan.lua_source_specs,
+                        &mut split.lua_source_records,
+                    );
+                    let lua_target_entity_records = collect_lua_extra_records(
+                        i,
+                        &phase_plan.lua_target_specs,
+                        &mut split.lua_target_records,
+                    );
 
-                            // Build source_data: mapping's own + declared extras
-                            let mut source_data: std::collections::HashMap<String, &[dataverse_lib::model::Record]> =
-                                std::collections::HashMap::new();
-                            source_data.insert(
-                                em.source_entity.clone(),
-                                source_records.as_slice(),
-                            );
-                            // Build target_data: mapping's own + declared extras
-                            let mut target_data: std::collections::HashMap<String, &[dataverse_lib::model::Record]> =
-                                std::collections::HashMap::new();
-                            target_data.insert(
-                                em.target_entity.clone(),
-                                target_records.as_slice(),
-                            );
+                    let mut comparison = if em.mode == Mode::Lua {
+                        // === Entity-level Lua path ===
+                        let script = match em.lua_script.as_ref() {
+                            Some(s) => s,
+                            None => {
+                                return Err(format!(
+                                    "Mapping {} uses Lua mode but has no script",
+                                    em.name
+                                ));
+                            }
+                        };
 
-                            // Add declared extras (borrow from owned vecs)
-                            for (entity, records) in &lua_source_entity_records {
-                                source_data
-                                    .insert(entity.clone(), records.as_slice());
-                            }
-                            for (entity, records) in &lua_target_entity_records {
-                                target_data
-                                    .insert(entity.clone(), records.as_slice());
-                            }
+                        updater.update(format!(
+                            "Running Lua script for {} ({} records)...",
+                            em.name, record_count
+                        ));
 
-                            match crate::apps::migration::comparison::matching::build_lua_match_index(
-                                script,
-                                &source_data,
-                                &target_data,
-                            ) {
-                                Ok(index) => Some(index),
-                                Err(e) => {
-                                    return Err(format!(
-                                        "Failed to build Lua match index for {}: {}",
-                                        em.name, e
-                                    ));
-                                }
+                        // Include primary target records in extra_target so the
+                        // Lua script can see them. execute_entity_lua borrows via
+                        // &[(String, Vec<Record>)], so we retain ownership.
+                        let mut entity_lua_target: Vec<(String, Vec<dataverse_lib::model::Record>)> =
+                            lua_target_entity_records;
+                        entity_lua_target.push((
+                            em.target_entity.clone(),
+                            target_records.clone(),
+                        ));
+
+                        let lua_result = match crate::apps::migration::comparison::entity_lua::execute_entity_lua(
+                            script,
+                            &source_records,
+                            &em.source_entity,
+                            &em.target_entity,
+                            &lua_source_entity_records,
+                            &entity_lua_target,
+                        ) {
+                            Ok(r) => r,
+                            Err(e) => {
+                                return Err(format!(
+                                    "Lua script failed for {}: {}",
+                                    em.name, e
+                                ));
                             }
-                        } else {
-                            return Err(format!(
-                                "Mapping {} uses Lua match strategy but has no script",
-                                em.name
-                            ));
+                        };
+
+                        updater.update(format!("Comparing {}...", em.name));
+
+                        // Wrap Lua results into MappingResult + use Lua match strategy
+                        match pipeline::compare_mapping_results(
+                            pipeline::ComparisonInput {
+                                source_records: &source_records,
+                                mapping_result: pipeline::MappingResult {
+                                    record_results: lua_result.record_results,
+                                },
+                                target_records: &target_records,
+                                strategy: crate::apps::migration::types::MatchStrategy::Lua,
+                                source_primary_key: source_pk,
+                                target_primary_key: target_pk,
+                                match_conditions: &[],
+                                source_entity: &em.source_entity,
+                                target_entity: &em.target_entity,
+                                find_cache: &find_cache,
+                                no_match_fallback: em.no_match_fallback,
+                                orphan_strategy: em.orphan_strategy,
+                                lua_match_index: Some(&lua_result.match_index),
+                            },
+                        ) {
+                            Ok(c) => c,
+                            Err(e) => {
+                                return Err(format!(
+                                    "Failed to compare {}: {}",
+                                    em.name, e
+                                ));
+                            }
                         }
                     } else {
-                        None
-                    };
+                        // === Declarative path ===
+                        updater.update(format!(
+                            "Transforming {} ({} records)...",
+                            em.name, record_count
+                        ));
+                        let mapping_result = pipeline::execute_mapping(
+                            &source_records,
+                            &materialized_variables[i],
+                            &materialized_field_mappings[i],
+                            &em.source_entity,
+                            &em.target_entity,
+                            &find_cache,
+                        );
 
-                    let mut comparison = match pipeline::compare_mapping_results(
-                        pipeline::ComparisonInput {
-                            source_records: &source_records,
-                            mapping_result,
-                            target_records: &target_records,
-                            strategy: em.match_strategy,
-                            source_primary_key: source_pk,
-                            target_primary_key: target_pk,
-                            match_conditions: &materialized_match_conditions[i],
-                            source_entity: &em.source_entity,
-                            target_entity: &em.target_entity,
-                            find_cache: &find_cache,
-                            no_match_fallback: em.no_match_fallback,
-                            orphan_strategy: em.orphan_strategy,
-                            lua_match_index: lua_match_index.as_ref(),
-                        },
-                    ) {
-                        Ok(c) => c,
-                        Err(e) => {
-                            return Err(format!(
-                                "Failed to compare {}: {}",
-                                em.name, e
-                            ));
+                        updater.update(format!("Comparing {}...", em.name));
+
+                        // Build Lua match index if strategy is Lua (match-level Lua)
+                        let lua_match_index = if em.match_strategy
+                            == crate::apps::migration::types::MatchStrategy::Lua
+                        {
+                            if let Some(ref script) = em.match_lua_script {
+                                let mut source_data: std::collections::HashMap<String, &[dataverse_lib::model::Record]> =
+                                    std::collections::HashMap::new();
+                                source_data.insert(
+                                    em.source_entity.clone(),
+                                    source_records.as_slice(),
+                                );
+                                let mut target_data: std::collections::HashMap<String, &[dataverse_lib::model::Record]> =
+                                    std::collections::HashMap::new();
+                                target_data.insert(
+                                    em.target_entity.clone(),
+                                    target_records.as_slice(),
+                                );
+                                for (entity, records) in &lua_source_entity_records {
+                                    source_data
+                                        .insert(entity.clone(), records.as_slice());
+                                }
+                                for (entity, records) in &lua_target_entity_records {
+                                    target_data
+                                        .insert(entity.clone(), records.as_slice());
+                                }
+
+                                match crate::apps::migration::comparison::matching::build_lua_match_index(
+                                    script,
+                                    &source_data,
+                                    &target_data,
+                                ) {
+                                    Ok(index) => Some(index),
+                                    Err(e) => {
+                                        return Err(format!(
+                                            "Failed to build Lua match index for {}: {}",
+                                            em.name, e
+                                        ));
+                                    }
+                                }
+                            } else {
+                                return Err(format!(
+                                    "Mapping {} uses Lua match strategy but has no script",
+                                    em.name
+                                ));
+                            }
+                        } else {
+                            None
+                        };
+
+                        match pipeline::compare_mapping_results(
+                            pipeline::ComparisonInput {
+                                source_records: &source_records,
+                                mapping_result,
+                                target_records: &target_records,
+                                strategy: em.match_strategy,
+                                source_primary_key: source_pk,
+                                target_primary_key: target_pk,
+                                match_conditions: &materialized_match_conditions[i],
+                                source_entity: &em.source_entity,
+                                target_entity: &em.target_entity,
+                                find_cache: &find_cache,
+                                no_match_fallback: em.no_match_fallback,
+                                orphan_strategy: em.orphan_strategy,
+                                lua_match_index: lua_match_index.as_ref(),
+                            },
+                        ) {
+                            Ok(c) => c,
+                            Err(e) => {
+                                return Err(format!(
+                                    "Failed to compare {}: {}",
+                                    em.name, e
+                                ));
+                            }
                         }
                     };
 
@@ -2090,4 +2144,21 @@ impl MigrationEditor {
             }
         }
     }
+}
+
+/// Collect extra Lua entity records for a specific mapping index from the
+/// phase-level split results. Takes ownership via `std::mem::take` so each
+/// set of records is only consumed once.
+fn collect_lua_extra_records(
+    mapping_index: usize,
+    specs: &[(usize, crate::apps::migration::pipeline::FindCacheSpec)],
+    records: &mut [(usize, Vec<dataverse_lib::model::Record>)],
+) -> Vec<(String, Vec<dataverse_lib::model::Record>)> {
+    let mut result = Vec::new();
+    for ((idx, spec), rec) in specs.iter().zip(records.iter_mut()) {
+        if *idx == mapping_index {
+            result.push((spec.entity.clone(), std::mem::take(&mut rec.1)));
+        }
+    }
+    result
 }

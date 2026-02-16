@@ -4,6 +4,7 @@
 //! entity mapping's records.
 
 pub mod diff;
+pub mod entity_lua;
 pub mod matching;
 
 use std::collections::HashMap;

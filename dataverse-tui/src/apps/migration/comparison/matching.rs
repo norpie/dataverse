@@ -68,6 +68,10 @@ pub struct LuaDeclare {
     pub source: Option<String>,
     /// Primary target entity logical name (entity-level Lua only).
     pub target: Option<String>,
+    /// Fields to fetch for the primary source entity.
+    pub source_fields: Vec<String>,
+    /// Fields to fetch for the primary target entity.
+    pub target_fields: Vec<String>,
     /// Additional source entities to fetch: (entity_name, fields).
     pub source_entities: Vec<(String, Vec<String>)>,
     /// Additional target entities to fetch: (entity_name, fields).
@@ -409,7 +413,7 @@ pub fn build_lua_match_index(
 }
 
 /// Build a Lua table keyed by entity name, each containing an array of records.
-fn build_entity_table(
+pub(crate) fn build_entity_table(
     runtime: &LuaRuntime,
     data: &HashMap<String, &[Record]>,
 ) -> Result<Table, String> {
@@ -465,38 +469,60 @@ pub fn parse_lua_declare(script: &str) -> Result<LuaDeclare, String> {
 
     let mut declare = LuaDeclare::default();
 
-    // Parse "source" — either a string (primary entity) or a table (extra entities, legacy format)
-    match result.get::<mlua::String>("source") {
-        Ok(s) => {
+    // Parse "source" — three formats:
+    //   1. String: just entity name (backward compat, no field list)
+    //   2. Table with "entity" key: { entity = "name", fields = { ... } }
+    //   3. Table without "entity" key: legacy extra-entities map
+    match result.get::<mlua::Value>("source") {
+        Ok(mlua::Value::String(s)) => {
             declare.source = Some(
                 s.to_str()
                     .map_err(|e| format!("Invalid UTF-8 in source entity: {e}"))?
                     .to_string(),
             );
         }
-        Err(_) => {
-            // Legacy format: source is a table of extra entity declarations
-            if let Ok(source_table) = result.get::<Table>("source") {
-                declare.source_entities = parse_entity_declarations(&source_table)?;
+        Ok(mlua::Value::Table(table)) => {
+            // New format: table with entity + fields
+            if let Ok(entity_str) = table.get::<mlua::String>("entity") {
+                declare.source = Some(
+                    entity_str
+                        .to_str()
+                        .map_err(|e| format!("Invalid UTF-8 in source entity: {e}"))?
+                        .to_string(),
+                );
+                declare.source_fields = parse_fields_list(&table)?;
+            } else {
+                // Legacy format: source is a table of extra entity declarations
+                declare.source_entities = parse_entity_declarations(&table)?;
             }
         }
+        _ => {}
     }
 
-    // Parse "target" — either a string (primary entity) or a table (extra entities, legacy format)
-    match result.get::<mlua::String>("target") {
-        Ok(s) => {
+    // Parse "target" — same three formats as source
+    match result.get::<mlua::Value>("target") {
+        Ok(mlua::Value::String(s)) => {
             declare.target = Some(
                 s.to_str()
                     .map_err(|e| format!("Invalid UTF-8 in target entity: {e}"))?
                     .to_string(),
             );
         }
-        Err(_) => {
-            // Legacy format: target is a table of extra entity declarations
-            if let Ok(target_table) = result.get::<Table>("target") {
-                declare.target_entities = parse_entity_declarations(&target_table)?;
+        Ok(mlua::Value::Table(table)) => {
+            if let Ok(entity_str) = table.get::<mlua::String>("entity") {
+                declare.target = Some(
+                    entity_str
+                        .to_str()
+                        .map_err(|e| format!("Invalid UTF-8 in target entity: {e}"))?
+                        .to_string(),
+                );
+                declare.target_fields = parse_fields_list(&table)?;
+            } else {
+                // Legacy format: target is a table of extra entity declarations
+                declare.target_entities = parse_entity_declarations(&table)?;
             }
         }
+        _ => {}
     }
 
     // Parse "source_entities" — extra source entities (new format, used alongside string source/target)
@@ -544,6 +570,23 @@ fn parse_entity_declarations(table: &Table) -> Result<Vec<(String, Vec<String>)>
     }
 
     Ok(entities)
+}
+
+/// Parse a `fields` array from a Lua table: { fields = { "f1", "f2", ... } }
+fn parse_fields_list(table: &Table) -> Result<Vec<String>, String> {
+    let mut fields = Vec::new();
+    if let Ok(fields_table) = table.get::<Table>("fields") {
+        for field_pair in fields_table.pairs::<i64, mlua::String>() {
+            let (_, field_val) =
+                field_pair.map_err(|e| format!("Invalid field in fields list: {e}"))?;
+            let field_str = field_val
+                .to_str()
+                .map_err(|e| format!("Invalid UTF-8 in field: {e}"))?
+                .to_string();
+            fields.push(field_str);
+        }
+    }
+    Ok(fields)
 }
 
 // =============================================================================
@@ -1118,8 +1161,45 @@ return M
         let declare = parse_lua_declare(script).unwrap();
         assert_eq!(declare.source.as_deref(), Some("cgk_account"));
         assert_eq!(declare.target.as_deref(), Some("nrq_account"));
+        assert!(declare.source_fields.is_empty());
+        assert!(declare.target_fields.is_empty());
         assert!(declare.source_entities.is_empty());
         assert!(declare.target_entities.is_empty());
+    }
+
+    #[test]
+    fn parse_lua_declare_table_with_entity_and_fields() {
+        // New format: source/target are tables with entity + fields
+        let script = r#"
+local M = {}
+function M.declare()
+    return {
+        source = { entity = "cgk_folder", fields = {"cgk_folderid", "cgk_name", "cgk_foldernumber"} },
+        target = { entity = "nrq_project", fields = {"nrq_projectid", "nrq_dossiernummerguid"} },
+        source_entities = {
+            cgk_film = { fields = {"cgk_filmid"} },
+        },
+    }
+end
+function M.resolve(source, target)
+    return { results = {} }
+end
+return M
+"#;
+
+        let declare = parse_lua_declare(script).unwrap();
+        assert_eq!(declare.source.as_deref(), Some("cgk_folder"));
+        assert_eq!(declare.target.as_deref(), Some("nrq_project"));
+        assert_eq!(
+            declare.source_fields,
+            vec!["cgk_folderid", "cgk_name", "cgk_foldernumber"]
+        );
+        assert_eq!(
+            declare.target_fields,
+            vec!["nrq_projectid", "nrq_dossiernummerguid"]
+        );
+        assert_eq!(declare.source_entities.len(), 1);
+        assert_eq!(declare.source_entities[0].0, "cgk_film");
     }
 
     #[test]

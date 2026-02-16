@@ -112,20 +112,22 @@ pub fn analyze_mapping(input: &AnalysisInput<'_>) -> FetchPlan {
         collector.target.select.insert("statuscode".to_string());
     }
 
-    // Build the fetch plan
-    let target = if collector.target.has_fields() {
-        Some(collector.target.build_target())
-    } else {
-        None
-    };
-
-    // 6. Parse Lua M.declare() for extra entity specs.
+    // 6. Parse Lua M.declare() for extra entity specs and primary entity fields.
     //    Entity-level Lua takes priority over match-level Lua (they shouldn't coexist,
     //    but if they do, entity_lua_script covers everything the match script would).
+    //    Must run BEFORE building source/target so declared fields are included.
     let lua_script_for_extras = input.entity_lua_script.or(input.match_lua_script);
     let (lua_source_specs, lua_target_specs) = if let Some(script) = lua_script_for_extras {
         match crate::apps::migration::comparison::matching::parse_lua_declare(script) {
             Ok(declare) => {
+                // Add declared primary source/target fields to the fetch selects
+                for field in &declare.source_fields {
+                    collector.source.select.insert(field.clone());
+                }
+                for field in &declare.target_fields {
+                    collector.target.select.insert(field.clone());
+                }
+
                 let source_specs = declare
                     .source_entities
                     .into_iter()
@@ -153,6 +155,13 @@ pub fn analyze_mapping(input: &AnalysisInput<'_>) -> FetchPlan {
         }
     } else {
         (vec![], vec![])
+    };
+
+    // Build the fetch plan (after all fields have been collected)
+    let target = if collector.target.has_fields() {
+        Some(collector.target.build_target())
+    } else {
+        None
     };
 
     FetchPlan {
