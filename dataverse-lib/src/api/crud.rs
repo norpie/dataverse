@@ -744,6 +744,18 @@ impl AssociateBuilder {
         self
     }
 
+    /// Skip synchronous business logic.
+    pub fn bypass_sync_logic(mut self) -> Self {
+        self.options.bypass_sync_logic = true;
+        self
+    }
+
+    /// Skip duplicate detection.
+    pub fn suppress_duplicate_detection(mut self) -> Self {
+        self.options.suppress_duplicate_detection = true;
+        self
+    }
+
     /// Builds the operation.
     pub fn build(self) -> Operation {
         Operation::Associate {
@@ -789,6 +801,18 @@ impl DisassociateBuilder {
     /// Skip Power Automate flows.
     pub fn bypass_flows(mut self) -> Self {
         self.options.bypass_flows = true;
+        self
+    }
+
+    /// Skip synchronous business logic.
+    pub fn bypass_sync_logic(mut self) -> Self {
+        self.options.bypass_sync_logic = true;
+        self
+    }
+
+    /// Skip duplicate detection.
+    pub fn suppress_duplicate_detection(mut self) -> Self {
+        self.options.suppress_duplicate_detection = true;
         self
     }
 
@@ -840,6 +864,18 @@ impl SetLookupBuilder {
         self
     }
 
+    /// Skip synchronous business logic.
+    pub fn bypass_sync_logic(mut self) -> Self {
+        self.options.bypass_sync_logic = true;
+        self
+    }
+
+    /// Skip duplicate detection.
+    pub fn suppress_duplicate_detection(mut self) -> Self {
+        self.options.suppress_duplicate_detection = true;
+        self
+    }
+
     /// Builds the operation.
     pub fn build(self) -> Operation {
         Operation::SetLookup {
@@ -884,6 +920,18 @@ impl ClearLookupBuilder {
     /// Skip Power Automate flows.
     pub fn bypass_flows(mut self) -> Self {
         self.options.bypass_flows = true;
+        self
+    }
+
+    /// Skip synchronous business logic.
+    pub fn bypass_sync_logic(mut self) -> Self {
+        self.options.bypass_sync_logic = true;
+        self
+    }
+
+    /// Skip duplicate detection.
+    pub fn suppress_duplicate_detection(mut self) -> Self {
+        self.options.suppress_duplicate_detection = true;
         self
     }
 

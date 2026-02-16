@@ -188,6 +188,7 @@ pub fn generate_create_pass(
                 .content_id(&content_id)
                 .bypass_plugins()
                 .bypass_flows()
+                .bypass_sync_logic()
                 .suppress_duplicate_detection()
                 .build();
 
@@ -288,6 +289,7 @@ pub fn generate_activate_pass(
             )
             .bypass_plugins()
             .bypass_flows()
+            .bypass_sync_logic()
             .build();
 
             operations.push(op);
@@ -371,6 +373,8 @@ pub fn generate_update_pass(
                 let op = Op::update(Entity::set(&pending.entity_set), target_id, update_record)
                     .bypass_plugins()
                     .bypass_flows()
+                    .bypass_sync_logic()
+                    .suppress_duplicate_detection()
                     .build();
 
                 operations.push(op);
@@ -417,6 +421,8 @@ pub fn generate_update_pass(
             let op = Op::update(Entity::set(&meta.entity_set_name), target_id, update_record)
                 .bypass_plugins()
                 .bypass_flows()
+                .bypass_sync_logic()
+                .suppress_duplicate_detection()
                 .build();
 
             operations.push(op);
@@ -606,6 +612,7 @@ pub fn generate_deactivate_pass(
             )
             .bypass_plugins()
             .bypass_flows()
+            .bypass_sync_logic()
             .build();
 
             operations.push(op);
@@ -681,6 +688,7 @@ pub fn generate_deactivate_pass(
             )
             .bypass_plugins()
             .bypass_flows()
+            .bypass_sync_logic()
             .build();
 
             operations.push(op);
@@ -736,6 +744,7 @@ pub fn generate_delete_pass(
             let op = Op::delete(Entity::set(&meta.entity_set_name), record_id)
                 .bypass_plugins()
                 .bypass_flows()
+                .bypass_sync_logic()
                 .build();
 
             operations.push(op);
@@ -887,6 +896,7 @@ fn build_associate_op(
         )
         .bypass_plugins()
         .bypass_flows()
+        .bypass_sync_logic()
         .build(),
     )
 }
@@ -909,6 +919,7 @@ fn build_disassociate_op(
         Op::delete(Entity::set(&rel.intersect_entity_name), record_id)
             .bypass_plugins()
             .bypass_flows()
+            .bypass_sync_logic()
             .build(),
     )
 }
@@ -932,6 +943,7 @@ fn build_batches(operations: Vec<dataverse_lib::api::Operation>) -> Vec<Batch> {
                 .continue_on_error()
                 .bypass_plugins()
                 .bypass_flows()
+                .bypass_sync_logic()
                 .suppress_duplicate_detection();
             for op in chunk {
                 batch = batch.add(op.clone());
