@@ -724,10 +724,23 @@ fn analyze_find(entity: &str, mode: &FindMode, collector: &mut Collector) {
             // target_fields from FindConditionItems are handled in analyze_item(),
             // which has access to both the Find transform data and its children.
         }
-        FindMode::Lua { .. } => {
-            // Lua find: would need to call declare() to get field requirements.
-            // For now, we ensure the entity is tracked; Lua declare() integration
-            // will be added when the Lua runtime integration is implemented.
+        FindMode::Lua { script } => {
+            // Parse M.declare() from the Lua find script to get source field requirements.
+            match crate::apps::migration::comparison::matching::parse_lua_declare(script) {
+                Ok(declare) => {
+                    // Add declared source fields to the source fetch select
+                    for field in &declare.source_fields {
+                        collector.source.select.insert(field.clone());
+                    }
+                    // Add declared target fields to the find cache entity
+                    for field in &declare.target_fields {
+                        collector.find_caches.add_field(entity, field);
+                    }
+                }
+                Err(e) => {
+                    log::warn!("[analysis] Failed to parse Lua find M.declare(): {e}");
+                }
+            }
         }
     }
 }
