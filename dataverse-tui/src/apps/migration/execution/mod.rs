@@ -13,13 +13,13 @@ use std::collections::HashMap;
 
 use dataverse_lib::api::Batch;
 use dataverse_lib::api::Op;
-use dataverse_lib::model::Entity;
-use dataverse_lib::model::Record;
-use dataverse_lib::model::Value;
 use dataverse_lib::model::metadata::ExecutionMetadata;
 use dataverse_lib::model::metadata::ManyToManyRelationship;
 use dataverse_lib::model::types::EntityBinding;
 use dataverse_lib::model::types::OptionSetValue;
+use dataverse_lib::model::Entity;
+use dataverse_lib::model::Record;
+use dataverse_lib::model::Value;
 use uuid::Uuid;
 
 use super::comparison::MappingComparison;
@@ -759,11 +759,20 @@ pub fn generate_delete_pass(
 
 /// Check if a value is a lookup field (EntityReference or null lookup).
 fn is_lookup_value(value: &Value, field: &str, meta: &ExecutionMetadata) -> bool {
-    match value {
+    let result = match value {
         Value::EntityReference { .. } => true,
+        Value::EntityBinding(_) => meta.lookup_attributes.contains(field),
         Value::Null => meta.lookup_attributes.contains(field),
         _ => false,
-    }
+    };
+    log::debug!(
+        "is_lookup_value check: field={}, value_type={:?}, is_lookup_attr={}, result={}",
+        field,
+        std::mem::discriminant(value),
+        meta.lookup_attributes.contains(field),
+        result
+    );
+    result
 }
 
 /// Convert a lookup value to the write format (`EntityBinding`) that serializes
