@@ -1117,8 +1117,10 @@ impl Queue {
             }
         });
 
-        // Track failures for auto-pause
-        if event.status == ItemStatus::Failed {
+        // Track failures for auto-pause (both Failed and PartiallyFailed count)
+        if event.status == ItemStatus::Failed
+            || event.status == ItemStatus::PartiallyFailed
+        {
             let failures = self.failure_count.get() + 1;
             self.failure_count.set(failures);
 
