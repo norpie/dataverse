@@ -64,6 +64,10 @@ pub type LuaMatchIndex = HashMap<Uuid, Uuid>;
 /// Parsed result of calling `M.declare()` on a Lua match script.
 #[derive(Debug, Clone, Default)]
 pub struct LuaDeclare {
+    /// Primary source entity logical name (entity-level Lua only).
+    pub source: Option<String>,
+    /// Primary target entity logical name (entity-level Lua only).
+    pub target: Option<String>,
     /// Additional source entities to fetch: (entity_name, fields).
     pub source_entities: Vec<(String, Vec<String>)>,
     /// Additional target entities to fetch: (entity_name, fields).
@@ -461,14 +465,52 @@ pub fn parse_lua_declare(script: &str) -> Result<LuaDeclare, String> {
 
     let mut declare = LuaDeclare::default();
 
-    // Parse source entities
-    if let Ok(source_table) = result.get::<Table>("source") {
-        declare.source_entities = parse_entity_declarations(&source_table)?;
+    // Parse "source" — either a string (primary entity) or a table (extra entities, legacy format)
+    match result.get::<mlua::String>("source") {
+        Ok(s) => {
+            declare.source = Some(
+                s.to_str()
+                    .map_err(|e| format!("Invalid UTF-8 in source entity: {e}"))?
+                    .to_string(),
+            );
+        }
+        Err(_) => {
+            // Legacy format: source is a table of extra entity declarations
+            if let Ok(source_table) = result.get::<Table>("source") {
+                declare.source_entities = parse_entity_declarations(&source_table)?;
+            }
+        }
     }
 
-    // Parse target entities
-    if let Ok(target_table) = result.get::<Table>("target") {
-        declare.target_entities = parse_entity_declarations(&target_table)?;
+    // Parse "target" — either a string (primary entity) or a table (extra entities, legacy format)
+    match result.get::<mlua::String>("target") {
+        Ok(s) => {
+            declare.target = Some(
+                s.to_str()
+                    .map_err(|e| format!("Invalid UTF-8 in target entity: {e}"))?
+                    .to_string(),
+            );
+        }
+        Err(_) => {
+            // Legacy format: target is a table of extra entity declarations
+            if let Ok(target_table) = result.get::<Table>("target") {
+                declare.target_entities = parse_entity_declarations(&target_table)?;
+            }
+        }
+    }
+
+    // Parse "source_entities" — extra source entities (new format, used alongside string source/target)
+    if let Ok(source_entities_table) = result.get::<Table>("source_entities") {
+        declare
+            .source_entities
+            .extend(parse_entity_declarations(&source_entities_table)?);
+    }
+
+    // Parse "target_entities" — extra target entities (new format, used alongside string source/target)
+    if let Ok(target_entities_table) = result.get::<Table>("target_entities") {
+        declare
+            .target_entities
+            .extend(parse_entity_declarations(&target_entities_table)?);
     }
 
     Ok(declare)
@@ -986,7 +1028,8 @@ return M
     }
 
     #[test]
-    fn parse_lua_declare_with_entities() {
+    fn parse_lua_declare_legacy_table_format() {
+        // Legacy format: source/target are tables of extra entity declarations
         let script = r#"
 local M = {}
 function M.declare()
@@ -1006,6 +1049,8 @@ return M
 "#;
 
         let declare = parse_lua_declare(script).unwrap();
+        assert!(declare.source.is_none());
+        assert!(declare.target.is_none());
         assert_eq!(declare.source_entities.len(), 1);
         assert_eq!(declare.source_entities[0].0, "cgk_support");
         assert_eq!(
@@ -1021,6 +1066,63 @@ return M
     }
 
     #[test]
+    fn parse_lua_declare_with_primary_entities() {
+        // New format: source/target are strings, extras in source_entities/target_entities
+        let script = r#"
+local M = {}
+function M.declare()
+    return {
+        source = "cgk_account",
+        target = "nrq_account",
+        source_entities = {
+            cgk_contact = { fields = {"fullname"} },
+        },
+        target_entities = {
+            nrq_contact = { fields = {"fullname"} },
+        },
+    }
+end
+function M.resolve(source, target)
+    return { results = {} }
+end
+return M
+"#;
+
+        let declare = parse_lua_declare(script).unwrap();
+        assert_eq!(declare.source.as_deref(), Some("cgk_account"));
+        assert_eq!(declare.target.as_deref(), Some("nrq_account"));
+        assert_eq!(declare.source_entities.len(), 1);
+        assert_eq!(declare.source_entities[0].0, "cgk_contact");
+        assert_eq!(declare.source_entities[0].1, vec!["fullname"]);
+        assert_eq!(declare.target_entities.len(), 1);
+        assert_eq!(declare.target_entities[0].0, "nrq_contact");
+        assert_eq!(declare.target_entities[0].1, vec!["fullname"]);
+    }
+
+    #[test]
+    fn parse_lua_declare_primary_entities_no_extras() {
+        let script = r#"
+local M = {}
+function M.declare()
+    return {
+        source = "cgk_account",
+        target = "nrq_account",
+    }
+end
+function M.resolve(source, target)
+    return { results = {} }
+end
+return M
+"#;
+
+        let declare = parse_lua_declare(script).unwrap();
+        assert_eq!(declare.source.as_deref(), Some("cgk_account"));
+        assert_eq!(declare.target.as_deref(), Some("nrq_account"));
+        assert!(declare.source_entities.is_empty());
+        assert!(declare.target_entities.is_empty());
+    }
+
+    #[test]
     fn parse_lua_declare_without_declare_fn() {
         let script = r#"
 local M = {}
@@ -1031,6 +1133,8 @@ return M
 "#;
 
         let declare = parse_lua_declare(script).unwrap();
+        assert!(declare.source.is_none());
+        assert!(declare.target.is_none());
         assert!(declare.source_entities.is_empty());
         assert!(declare.target_entities.is_empty());
     }

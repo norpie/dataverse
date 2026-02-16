@@ -2,7 +2,7 @@
 //!
 //! Uses page routing for mode selection:
 //! - Declarative tab: name, source entity, target entity
-//! - Lua tab: name only + script import/export
+//! - Lua tab: name + script import/export, entities parsed from M.declare()
 
 use std::fs;
 use std::path::PathBuf;
@@ -15,6 +15,7 @@ use rafter::widgets::Button;
 use rafter::widgets::Input;
 use rafter::widgets::Text;
 
+use crate::apps::migration::comparison::matching::parse_lua_declare;
 use crate::apps::migration::repository::MigrationRepository;
 use crate::apps::migration::types::EntityMapping;
 use crate::apps::migration::types::Mode;
@@ -39,8 +40,13 @@ pub enum EntityMappingResult {
         source_entity: String,
         target_entity: String,
     },
-    /// Lua mode with a script.
-    Lua { name: String, lua_script: String },
+    /// Lua mode with a script and entities parsed from M.declare().
+    Lua {
+        name: String,
+        lua_script: String,
+        source_entity: String,
+        target_entity: String,
+    },
 }
 
 /// Modal for creating/editing an entity mapping.
@@ -54,6 +60,10 @@ pub struct EditEntityMappingModal {
     source_entity: AutocompleteState<String>,
     target_entity: AutocompleteState<String>,
     lua_script: Option<String>,
+    /// Source entity parsed from Lua script's M.declare().
+    lua_source_entity: Option<String>,
+    /// Target entity parsed from Lua script's M.declare().
+    lua_target_entity: Option<String>,
     error: Option<String>,
 }
 
@@ -75,6 +85,8 @@ impl EditEntityMappingModal {
             String::new(),
             AutocompleteState::new(source_options),
             AutocompleteState::new(target_options),
+            None,
+            None,
             None,
             None,
         )
@@ -101,6 +113,18 @@ impl EditEntityMappingModal {
         let target_state =
             AutocompleteState::new(target_options).with_value(em.target_entity.clone());
 
+        // Parse entities from Lua script if available
+        let (lua_source, lua_target) = em
+            .lua_script
+            .as_deref()
+            .and_then(|script| {
+                parse_lua_declare(script)
+                    .ok()
+                    .and_then(|d| Some((d.source?, d.target?)))
+            })
+            .map(|(s, t)| (Some(s), Some(t)))
+            .unwrap_or((None, None));
+
         Self::new(
             em.id,
             em.mode,
@@ -108,6 +132,8 @@ impl EditEntityMappingModal {
             source_state,
             target_state,
             em.lua_script.clone(),
+            lua_source,
+            lua_target,
             None,
         )
     }
@@ -161,6 +187,8 @@ impl EditEntityMappingModal {
                 return;
             }
             self.lua_script.set(None);
+            self.lua_source_entity.set(None);
+            self.lua_target_entity.set(None);
         }
 
         // Check if config nodes exist (only if editing)
@@ -229,7 +257,20 @@ impl EditEntityMappingModal {
                         .set(Some("Lua mode requires a script".to_string()));
                     return;
                 };
-                EntityMappingResult::Lua { name, lua_script }
+                let (Some(source_entity), Some(target_entity)) =
+                    (self.lua_source_entity.get(), self.lua_target_entity.get())
+                else {
+                    self.error.set(Some(
+                        "Script must declare source and target in M.declare()".to_string(),
+                    ));
+                    return;
+                };
+                EntityMappingResult::Lua {
+                    name,
+                    lua_script,
+                    source_entity,
+                    target_entity,
+                }
             }
         };
 
@@ -252,6 +293,21 @@ impl EditEntityMappingModal {
 
         match fs::read_to_string(&result.path) {
             Ok(content) => {
+                // Parse M.declare() to extract source/target entities
+                match parse_lua_declare(&content) {
+                    Ok(declare) => {
+                        self.lua_source_entity.set(declare.source);
+                        self.lua_target_entity.set(declare.target);
+                        self.error.set(None);
+                    }
+                    Err(e) => {
+                        log::warn!("Failed to parse M.declare() from script: {}", e);
+                        self.lua_source_entity.set(None);
+                        self.lua_target_entity.set(None);
+                        self.error
+                            .set(Some(format!("Script parse error: {}", e)));
+                    }
+                }
                 self.lua_script.set(Some(content));
                 gx.toast(Toast::info("Script imported"));
             }
@@ -295,6 +351,8 @@ impl EditEntityMappingModal {
     #[handler]
     async fn clear_script(&self, gx: &GlobalContext) {
         self.lua_script.set(None);
+        self.lua_source_entity.set(None);
+        self.lua_target_entity.set(None);
         gx.toast(Toast::info("Script cleared"));
     }
 
@@ -360,6 +418,9 @@ impl EditEntityMappingModal {
     #[page(Lua)]
     fn lua_page(&self) -> Element {
         let has_script = self.lua_script.get().is_some();
+        let lua_source = self.lua_source_entity.get();
+        let lua_target = self.lua_target_entity.get();
+        let has_entities = lua_source.is_some() && lua_target.is_some();
 
         page! {
             column (width: fill, height: fill) {
@@ -372,6 +433,19 @@ impl EditEntityMappingModal {
                     }
                     if !has_script {
                         text (content: "No script loaded") style (fg: muted)
+                    }
+                    if has_entities {
+                        row (gap: 1) {
+                            text (content: "Source:") style (fg: muted)
+                            text (content: {lua_source.unwrap()}) style (fg: primary)
+                        }
+                        row (gap: 1) {
+                            text (content: "Target:") style (fg: muted)
+                            text (content: {lua_target.unwrap()}) style (fg: primary)
+                        }
+                    }
+                    if has_script && !has_entities {
+                        text (content: "Script missing M.declare() with source/target") style (fg: warning)
                     }
                 }
 
