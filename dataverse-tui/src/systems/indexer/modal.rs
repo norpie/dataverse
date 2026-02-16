@@ -313,50 +313,104 @@ impl IndexerDashboardModal {
     // Cache handlers
     // =========================================================================
 
+    // -- Active environment clear handlers --
+
     #[handler]
     async fn clear_entities(&self, gx: &GlobalContext) {
-        self.confirm_and_clear(gx, CacheCategory::Entities).await;
+        self.confirm_and_clear(gx, CacheCategory::Entities, false)
+            .await;
     }
 
     #[handler]
     async fn clear_attributes(&self, gx: &GlobalContext) {
-        self.confirm_and_clear(gx, CacheCategory::Attributes).await;
+        self.confirm_and_clear(gx, CacheCategory::Attributes, false)
+            .await;
     }
 
     #[handler]
     async fn clear_relationships(&self, gx: &GlobalContext) {
-        self.confirm_and_clear(gx, CacheCategory::Relationships)
+        self.confirm_and_clear(gx, CacheCategory::Relationships, false)
             .await;
     }
 
     #[handler]
     async fn clear_global_option_sets(&self, gx: &GlobalContext) {
-        self.confirm_and_clear(gx, CacheCategory::GlobalOptionSets)
+        self.confirm_and_clear(gx, CacheCategory::GlobalOptionSets, false)
             .await;
     }
 
     #[handler]
     async fn clear_queries(&self, gx: &GlobalContext) {
-        self.confirm_and_clear(gx, CacheCategory::Queries).await;
+        self.confirm_and_clear(gx, CacheCategory::Queries, false)
+            .await;
     }
 
     #[handler]
     async fn clear_all(&self, gx: &GlobalContext) {
-        self.confirm_and_clear(gx, CacheCategory::All).await;
+        self.confirm_and_clear(gx, CacheCategory::All, false).await;
+    }
+
+    // -- All environments clear handlers --
+
+    #[handler]
+    async fn clear_entities_all(&self, gx: &GlobalContext) {
+        self.confirm_and_clear(gx, CacheCategory::Entities, true)
+            .await;
+    }
+
+    #[handler]
+    async fn clear_attributes_all(&self, gx: &GlobalContext) {
+        self.confirm_and_clear(gx, CacheCategory::Attributes, true)
+            .await;
+    }
+
+    #[handler]
+    async fn clear_relationships_all(&self, gx: &GlobalContext) {
+        self.confirm_and_clear(gx, CacheCategory::Relationships, true)
+            .await;
+    }
+
+    #[handler]
+    async fn clear_global_option_sets_all(&self, gx: &GlobalContext) {
+        self.confirm_and_clear(gx, CacheCategory::GlobalOptionSets, true)
+            .await;
+    }
+
+    #[handler]
+    async fn clear_queries_all(&self, gx: &GlobalContext) {
+        self.confirm_and_clear(gx, CacheCategory::Queries, true)
+            .await;
+    }
+
+    #[handler]
+    async fn clear_all_all(&self, gx: &GlobalContext) {
+        self.confirm_and_clear(gx, CacheCategory::All, true).await;
     }
 
     /// Show a confirmation modal and, if confirmed, publish the clear event.
-    async fn confirm_and_clear(&self, gx: &GlobalContext, category: CacheCategory) {
-        let env_name = self
-            .active_env_name
-            .get()
-            .unwrap_or_else(|| "active environment".to_string());
+    async fn confirm_and_clear(
+        &self,
+        gx: &GlobalContext,
+        category: CacheCategory,
+        all_environments: bool,
+    ) {
+        let message = if all_environments {
+            format!("Clear {} cache for all environments?", category)
+        } else {
+            let env_name = self
+                .active_env_name
+                .get()
+                .unwrap_or_else(|| "active environment".to_string());
+            format!("Clear {} cache for {}?", category, env_name)
+        };
 
-        let message = format!("Clear {} cache for {}?", category, env_name);
         let confirmed = gx.modal(ConfirmModal::with_message(message)).await;
 
         if confirmed {
-            gx.publish(ClearCacheCategoryEvent { category });
+            gx.publish(ClearCacheCategoryEvent {
+                category,
+                all_environments,
+            });
         }
     }
 
@@ -529,25 +583,60 @@ impl IndexerDashboardModal {
                     }
 
                     if has_env {
-                        // Category buttons
-                        text (content: "Clear by category") style (fg: muted)
-                        column (gap: 0, width: fill) {
-                            button (label: "Entities", id: "clear-entities")
-                                on_activate: clear_entities()
-                            button (label: "Attributes", id: "clear-attributes")
-                                on_activate: clear_attributes()
-                            button (label: "Relationships", id: "clear-relationships")
-                                on_activate: clear_relationships()
-                            button (label: "Global Option Sets", id: "clear-global-option-sets")
-                                on_activate: clear_global_option_sets()
-                            button (label: "Queries", id: "clear-queries")
-                                on_activate: clear_queries()
+                        // Category headers
+                        row (gap: 1, width: fill) {
+                            text (content: "Clear by category") style (fg: muted)
                         }
 
+                        // Category rows: Active + All Envs buttons
+                        column (gap: 0, width: fill) {
+                            row (gap: 1, width: fill) {
+                                button (label: "Entities", id: "clear-entities")
+                                    on_activate: clear_entities()
+                                button (label: "All Envs", id: "clear-entities-all")
+                                    style (fg: muted)
+                                    on_activate: clear_entities_all()
+                            }
+                            row (gap: 1, width: fill) {
+                                button (label: "Attributes", id: "clear-attributes")
+                                    on_activate: clear_attributes()
+                                button (label: "All Envs", id: "clear-attributes-all")
+                                    style (fg: muted)
+                                    on_activate: clear_attributes_all()
+                            }
+                            row (gap: 1, width: fill) {
+                                button (label: "Relationships", id: "clear-relationships")
+                                    on_activate: clear_relationships()
+                                button (label: "All Envs", id: "clear-relationships-all")
+                                    style (fg: muted)
+                                    on_activate: clear_relationships_all()
+                            }
+                            row (gap: 1, width: fill) {
+                                button (label: "Global Option Sets", id: "clear-global-option-sets")
+                                    on_activate: clear_global_option_sets()
+                                button (label: "All Envs", id: "clear-global-option-sets-all")
+                                    style (fg: muted)
+                                    on_activate: clear_global_option_sets_all()
+                            }
+                            row (gap: 1, width: fill) {
+                                button (label: "Queries", id: "clear-queries")
+                                    on_activate: clear_queries()
+                                button (label: "All Envs", id: "clear-queries-all")
+                                    style (fg: muted)
+                                    on_activate: clear_queries_all()
+                            }
+                        }
+
+                        // Clear everything
                         text (content: "Clear everything") style (fg: muted)
-                        button (label: "Clear All", id: "clear-all")
-                            style (fg: error)
-                            on_activate: clear_all()
+                        row (gap: 1, width: fill) {
+                            button (label: "Clear All", id: "clear-all")
+                                style (fg: error)
+                                on_activate: clear_all()
+                            button (label: "All Envs", id: "clear-all-all")
+                                style (fg: error)
+                                on_activate: clear_all_all()
+                        }
                     }
                 }
 

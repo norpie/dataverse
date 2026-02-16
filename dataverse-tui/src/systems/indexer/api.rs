@@ -192,11 +192,13 @@ pub struct UpdateIndexerSettingsEvent {
 #[derive(Clone, Event)]
 pub struct OpenIndexerDashboard;
 
-/// Event to clear a specific cache category for the active environment.
+/// Event to clear a specific cache category.
 #[derive(Clone, Event)]
 pub struct ClearCacheCategoryEvent {
     /// Which cache category to clear.
     pub category: CacheCategory,
+    /// If true, clear across all cached environments instead of just the active one.
+    pub all_environments: bool,
 }
 
 // =============================================================================

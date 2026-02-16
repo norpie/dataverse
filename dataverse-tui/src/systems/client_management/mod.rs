@@ -288,6 +288,18 @@ impl ClientManagement {
     }
 
     #[request_handler]
+    async fn handle_get_all_cached_clients(
+        &self,
+        _request: GetAllCachedClients,
+        _gx: &GlobalContext,
+    ) -> Vec<dataverse_lib::DataverseClient> {
+        match self.manager.get().as_ref() {
+            Some(manager) => manager.all_cached_clients(),
+            None => vec![],
+        }
+    }
+
+    #[request_handler]
     async fn handle_get_active_session(
         &self,
         _request: GetActiveSession,

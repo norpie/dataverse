@@ -43,6 +43,11 @@ pub struct GetAnyClient {
     pub env_id: i64,
 }
 
+/// Request to get all currently cached clients (no new clients created).
+#[derive(Request)]
+#[response(Vec<DataverseClient>)]
+pub struct GetAllCachedClients;
+
 /// Request to get the current active session info (lightweight, no client creation).
 #[derive(Request)]
 #[response(Option<SessionInfo>)]

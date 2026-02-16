@@ -26,7 +26,7 @@ use crate::paths;
 use crate::settings::Settings;
 use crate::systems::client_management::{
     ClientManagement, EnvironmentAdded, EnvironmentRemoved, GetActiveClient, GetActiveSession,
-    GetAuthenticatedEnvironments, SessionChanged,
+    GetAllCachedClients, GetAuthenticatedEnvironments, SessionChanged,
 };
 use crate::systems::taskbar::StatusIndicator;
 
@@ -649,11 +649,26 @@ impl IndexerSystem {
     #[event_handler]
     async fn on_clear_cache_category(&self, event: ClearCacheCategoryEvent, gx: &GlobalContext) {
         log::info!(
-            "[Indexer] Clear cache category requested: {}",
-            event.category
+            "[Indexer] Clear cache category requested: {} (all_environments: {})",
+            event.category,
+            event.all_environments
         );
 
-        // Get the active client to access its cache
+        if event.all_environments {
+            self.clear_cache_all_environments(&event.category, gx)
+                .await;
+        } else {
+            self.clear_cache_active_environment(&event.category, gx)
+                .await;
+        }
+    }
+
+    /// Clear cache for the active environment only.
+    async fn clear_cache_active_environment(
+        &self,
+        category: &CacheCategory,
+        gx: &GlobalContext,
+    ) {
         let client = match gx
             .request_system::<ClientManagement, GetActiveClient>(GetActiveClient)
             .await
@@ -679,22 +694,82 @@ impl IndexerSystem {
             return;
         };
 
-        let removed = if event.category == CacheCategory::All {
-            // For "All", use clear() and report as generic
+        let removed = if *category == CacheCategory::All {
             cache.clear().await;
-            0usize // We don't know the exact count from clear()
+            0usize
         } else {
             let mut total = 0usize;
-            for prefix in event.category.prefixes() {
+            for prefix in category.prefixes() {
                 total += cache.clear_by_prefix(prefix).await;
             }
             total
         };
 
-        let msg = if event.category == CacheCategory::All {
-            format!("{} cache cleared", event.category)
+        let msg = if *category == CacheCategory::All {
+            format!("{} cache cleared", category)
         } else {
-            format!("{} cache cleared ({} entries)", event.category, removed)
+            format!("{} cache cleared ({} entries)", category, removed)
+        };
+        log::info!("[Indexer] {}", msg);
+        gx.toast(Toast::success(msg));
+    }
+
+    /// Clear cache across all cached environments.
+    async fn clear_cache_all_environments(
+        &self,
+        category: &CacheCategory,
+        gx: &GlobalContext,
+    ) {
+        let clients = match gx
+            .request_system::<ClientManagement, GetAllCachedClients>(GetAllCachedClients)
+            .await
+        {
+            Ok(clients) => clients,
+            Err(e) => {
+                log::error!("[Indexer] Failed to get cached clients: {}", e);
+                gx.toast(Toast::error("Failed to get cached clients"));
+                return;
+            }
+        };
+
+        if clients.is_empty() {
+            gx.toast(Toast::warning("No cached environments to clear"));
+            return;
+        }
+
+        let mut env_count = 0usize;
+        let mut total_removed = 0usize;
+
+        for client in &clients {
+            let Some(cache) = client.cache() else {
+                continue;
+            };
+
+            if *category == CacheCategory::All {
+                cache.clear().await;
+            } else {
+                for prefix in category.prefixes() {
+                    total_removed += cache.clear_by_prefix(prefix).await;
+                }
+            }
+            env_count += 1;
+        }
+
+        let msg = if *category == CacheCategory::All {
+            format!(
+                "{} cache cleared across {} environment{}",
+                category,
+                env_count,
+                if env_count == 1 { "" } else { "s" }
+            )
+        } else {
+            format!(
+                "{} cache cleared ({} entries across {} environment{})",
+                category,
+                total_removed,
+                env_count,
+                if env_count == 1 { "" } else { "s" }
+            )
         };
         log::info!("[Indexer] {}", msg);
         gx.toast(Toast::success(msg));
