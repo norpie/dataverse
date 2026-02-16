@@ -15,6 +15,7 @@ mod tree;
 mod tree_builder;
 mod tree_types;
 mod value_map_helpers;
+mod yank;
 
 use crate::apps::migration::types::CoalesceChain;
 use crate::apps::migration::types::EntityMapping;
@@ -58,6 +59,7 @@ use crate::systems::client_management::GetAnyClient;
 use dataverse_lib::model::metadata::ExecutionMetadata;
 use preview::PreviewRow;
 use tree::MigrationTreeNode;
+use yank::YankedTransform;
 
 /// Page routing for the migration editor.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -97,6 +99,8 @@ pub struct MigrationEditor {
     find_conditions: Vec<FindCondition>,
     /// All match conditions (for tree building).
     match_conditions: Vec<MatchCondition>,
+    /// Yanked (copied) transform for paste operations.
+    yanked: Option<YankedTransform>,
     // =========================================================================
     // Preview state
     // =========================================================================
@@ -176,6 +180,7 @@ impl MigrationEditor {
             Vec::new(),                       // coalesce_chains
             Vec::new(),                       // find_conditions
             Vec::new(),                       // match_conditions
+            None,                             // yanked
             0,                                // preview_phase_id
             String::new(),                    // preview_phase_name
             Vec::new(),                       // preview_results
@@ -365,6 +370,8 @@ impl MigrationEditor {
         bind("d", delete_item);
         bind("J", move_item_down);
         bind("K", move_item_up);
+        bind("y", yank_item);
+        bind("p", paste_item);
     }
 
     #[keybinds(page = Preview)]
@@ -1331,6 +1338,16 @@ impl MigrationEditor {
     }
 
     #[handler]
+    async fn yank_item(&self, gx: &GlobalContext) {
+        self.yank_item_impl(gx).await;
+    }
+
+    #[handler]
+    async fn paste_item(&self, gx: &GlobalContext) {
+        self.paste_item_impl(gx).await;
+    }
+
+    #[handler]
     async fn add_item(&self, gx: &GlobalContext) {
         let focused_node = self.tree_state.with_ref(|s| {
             s.focused_key
@@ -1703,6 +1720,10 @@ impl MigrationEditor {
             Some(_) => (false, "Add"), // Other config nodes - can't add
         };
 
+        let can_yank = matches!(&focused, Some(MigrationTreeNode::Transform(_)));
+        let has_yanked = self.yanked.with_ref(|y| y.is_some());
+        let can_paste = has_yanked && self.get_transform_insert_target().is_some();
+
         let edit_label = match &focused {
             Some(MigrationTreeNode::CoalesceChain(_)) => "Add Transform",
             _ => "Edit",
@@ -1839,13 +1860,31 @@ impl MigrationEditor {
 
                 row (width: fill, justify: between) {
                     button (label: "Close", hint: "esc", id: "close-btn") on_activate: back()
-                    row (gap: 1) {
-                        button (label: {add_label}, hint: "a", id: "add-btn", disabled: {!can_add}) on_activate: add_item()
-                        if has_selection {
-                            button (label: {edit_label}, hint: "enter", id: "edit-btn") on_activate: edit_item()
+                    row (gap: 2) {
+                        if can_yank || can_paste {
+                            row (gap: 1) {
+                                if can_yank {
+                                    row {
+                                        text (content: "y") style (fg: primary)
+                                        text (content: " yank") style (fg: muted)
+                                    }
+                                }
+                                if can_paste {
+                                    row {
+                                        text (content: "p") style (fg: primary)
+                                        text (content: " paste") style (fg: muted)
+                                    }
+                                }
+                            }
                         }
-                        if has_selection {
-                            button (label: "Delete", hint: "d", id: "delete-btn") on_activate: delete_item()
+                        row (gap: 1) {
+                            button (label: {add_label}, hint: "a", id: "add-btn", disabled: {!can_add}) on_activate: add_item()
+                            if has_selection {
+                                button (label: {edit_label}, hint: "enter", id: "edit-btn") on_activate: edit_item()
+                            }
+                            if has_selection {
+                                button (label: "Delete", hint: "d", id: "delete-btn") on_activate: delete_item()
+                            }
                         }
                     }
                 }
