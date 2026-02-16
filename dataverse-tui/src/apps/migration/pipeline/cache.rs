@@ -314,7 +314,7 @@ impl FindCache for LiveFindCache {
             .call((source_lua, target_table))
             .map_err(|e| FindError::LuaError(format!("M.resolve() failed: {e}")))?;
 
-        // Parse result: { target = "guid" } or { error = "msg" }
+        // Parse result: { target = "guid" } or { target = nil } or { error = "msg" }
         if let Ok(error_msg) = result.get::<mlua::String>("error") {
             return Err(FindError::LuaError(
                 error_msg
@@ -324,17 +324,24 @@ impl FindCache for LiveFindCache {
             ));
         }
 
-        let guid_str: mlua::String = result
+        let target_value: mlua::Value = result
             .get("target")
             .map_err(|e| FindError::LuaError(format!("Result missing 'target' field: {e}")))?;
 
-        let guid_str = guid_str
-            .to_str()
-            .map_err(|e| FindError::LuaError(format!("Invalid UTF-8 in target GUID: {e}")))?;
-
-        guid_str
-            .parse::<Uuid>()
-            .map_err(|e| FindError::LuaError(format!("Invalid GUID '{guid_str}': {e}")))
+        match target_value {
+            mlua::Value::Nil => Err(FindError::NotFound),
+            mlua::Value::String(s) => {
+                let guid_str = s.to_str().map_err(|e| {
+                    FindError::LuaError(format!("Invalid UTF-8 in target GUID: {e}"))
+                })?;
+                guid_str
+                    .parse::<Uuid>()
+                    .map_err(|e| FindError::LuaError(format!("Invalid GUID '{guid_str}': {e}")))
+            }
+            other => Err(FindError::LuaError(format!(
+                "Expected string or nil for 'target', got: {other:?}"
+            ))),
+        }
     }
 
     fn get(&self, entity: &str, id: Uuid) -> Option<Arc<Record>> {
