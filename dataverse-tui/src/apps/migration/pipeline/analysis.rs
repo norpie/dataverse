@@ -54,6 +54,8 @@ pub struct AnalysisInput<'a> {
     pub is_target_junction: bool,
     /// Lua match script (if match strategy is Lua).
     pub match_lua_script: Option<&'a str>,
+    /// Entity-level Lua script (if entity mapping mode is Lua).
+    pub entity_lua_script: Option<&'a str>,
 }
 
 /// Analyze an entity mapping to determine what data needs to be fetched.
@@ -117,8 +119,11 @@ pub fn analyze_mapping(input: &AnalysisInput<'_>) -> FetchPlan {
         None
     };
 
-    // 6. Parse Lua M.declare() for extra entity specs
-    let (lua_source_specs, lua_target_specs) = if let Some(script) = input.match_lua_script {
+    // 6. Parse Lua M.declare() for extra entity specs.
+    //    Entity-level Lua takes priority over match-level Lua (they shouldn't coexist,
+    //    but if they do, entity_lua_script covers everything the match script would).
+    let lua_script_for_extras = input.entity_lua_script.or(input.match_lua_script);
+    let (lua_source_specs, lua_target_specs) = if let Some(script) = lua_script_for_extras {
         match crate::apps::migration::comparison::matching::parse_lua_declare(script) {
             Ok(declare) => {
                 let source_specs = declare
@@ -784,6 +789,7 @@ mod tests {
             match_config_chain: None,
             is_target_junction: false,
             match_lua_script: None,
+            entity_lua_script: None,
         }
     }
 
@@ -1124,6 +1130,7 @@ mod tests {
             match_config_chain: Some(&match_chain),
             is_target_junction: false,
             match_lua_script: None,
+            entity_lua_script: None,
         };
         let plan = analyze_mapping(&input);
 

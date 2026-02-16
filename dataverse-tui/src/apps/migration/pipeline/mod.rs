@@ -159,6 +159,8 @@ pub struct MappingInput<'a> {
     pub is_target_junction: bool,
     /// Lua match script (if match strategy is Lua).
     pub match_lua_script: Option<&'a str>,
+    /// Entity-level Lua script (if entity mapping mode is Lua).
+    pub entity_lua_script: Option<&'a str>,
 }
 
 // =============================================================================
@@ -197,6 +199,7 @@ pub fn analyze_phase(inputs: &[MappingInput<'_>]) -> PhaseFetchPlan {
                 match_config_chain: input.match_config_chain,
                 is_target_junction: input.is_target_junction,
                 match_lua_script: input.match_lua_script,
+                entity_lua_script: input.entity_lua_script,
             })
         })
         .collect();
@@ -918,6 +921,7 @@ mod tests {
             mapping_name: "account → account",
             is_target_junction: false,
             match_lua_script: None,
+            entity_lua_script: None,
         }];
 
         let plan = analyze_phase(&inputs);

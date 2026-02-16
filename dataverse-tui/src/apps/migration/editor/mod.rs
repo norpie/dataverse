@@ -666,6 +666,11 @@ impl MigrationEditor {
                     mapping_name: &em.name,
                     is_target_junction: junction_fk_attrs.contains_key(&em.target_entity),
                     match_lua_script: em.match_lua_script.as_deref(),
+                    entity_lua_script: if em.mode == Mode::Lua {
+                        em.lua_script.as_deref()
+                    } else {
+                        None
+                    },
                 }
             })
             .collect();
