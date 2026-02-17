@@ -1,8 +1,8 @@
 //! Design-time value type for type tracking.
 
-use super::Value;
 use super::metadata::AttributeMetadata;
 use super::metadata::AttributeType;
+use super::Value;
 
 /// Lightweight option set value + label pair for design-time type tracking.
 ///
@@ -34,11 +34,14 @@ pub enum FieldType {
     /// Option set type with name and available options for compatibility checking.
     /// `name` identifies the option set (e.g., "statusreason").
     /// Empty name means unknown — treated as wildcard for compatibility.
+    /// `entity` is the entity this option set belongs to (for navigated lookups).
+    /// Empty entity means the mapping's own source/target entity.
     /// `options` contains the available value+label pairs.
     /// Empty options means unknown — treated as wildcard for compatibility.
     OptionSet {
         kind: AttributeType,
         name: String,
+        entity: String,
         options: Vec<OptionInfo>,
     },
 }
@@ -75,11 +78,13 @@ impl FieldType {
                     kind: ka,
                     name: na,
                     options: oa,
+                    ..
                 },
                 FieldType::OptionSet {
                     kind: kb,
                     name: nb,
                     options: ob,
+                    ..
                 },
             ) => {
                 // Kinds must be in the same compatibility group
@@ -154,6 +159,7 @@ impl From<AttributeType> for FieldType {
             FieldType::OptionSet {
                 kind: attr,
                 name: String::new(),
+                entity: String::new(),
                 options: vec![],
             }
         } else {
@@ -186,6 +192,7 @@ impl From<&AttributeMetadata> for FieldType {
             FieldType::OptionSet {
                 kind: attr.attribute_type,
                 name,
+                entity: String::new(),
                 options,
             }
         } else {
@@ -224,11 +231,12 @@ impl ValueType {
         ValueType::Known(FieldType::Lookup { kind, targets })
     }
 
-    /// Convenience: create a `Known(OptionSet { kind, name, options })`.
+    /// Convenience: create a `Known(OptionSet { kind, name, entity, options })`.
     pub fn option_set(kind: AttributeType, name: String, options: Vec<OptionInfo>) -> Self {
         ValueType::Known(FieldType::OptionSet {
             kind,
             name,
+            entity: String::new(),
             options,
         })
     }

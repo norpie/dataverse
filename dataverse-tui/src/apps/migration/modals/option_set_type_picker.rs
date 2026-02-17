@@ -143,6 +143,7 @@ impl OptionSetTypePickerModal {
         mx.close(Some(FieldType::OptionSet {
             kind: entry.kind,
             name,
+            entity: String::new(),
             options: vec![],
         }));
     }

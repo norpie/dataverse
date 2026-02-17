@@ -18,10 +18,12 @@ use crate::apps::migration::types::TransformData;
 use super::MigrationEditor;
 use super::insert_target::InsertTarget;
 
-/// Extracted option set kind + name for ValueMap resolution.
+/// Extracted option set kind + name + entity for ValueMap resolution.
 pub(super) struct OptionSetInfo {
     pub kind: AttributeType,
     pub name: String,
+    /// The entity this option set belongs to (may be empty for unknown).
+    pub entity: String,
 }
 
 impl MigrationEditor {
@@ -75,22 +77,32 @@ impl MigrationEditor {
             .unwrap_or_default();
 
         log::debug!(
-            "create_value_map_data: source option set kind={:?} name='{}' on entity '{}'",
+            "create_value_map_data: source option set kind={:?} name='{}' os_entity='{}' mapping_entity='{}'",
             source_os_info.kind,
             source_os_info.name,
+            source_os_info.entity,
             source_entity,
         );
         log::debug!(
-            "create_value_map_data: target option set kind={:?} name='{}' on entity '{}'",
+            "create_value_map_data: target option set kind={:?} name='{}' os_entity='{}' mapping_entity='{}'",
             target_os_info.kind,
             target_os_info.name,
+            target_os_info.entity,
             target_entity,
         );
 
         let src_name = source_os_info.name.clone();
-        let src_entity = source_entity.clone();
+        let src_entity = if source_os_info.entity.is_empty() {
+            source_entity.clone()
+        } else {
+            source_os_info.entity.clone()
+        };
         let tgt_name = target_os_info.name.clone();
-        let tgt_entity = target_entity.clone();
+        let tgt_entity = if target_os_info.entity.is_empty() {
+            target_entity.clone()
+        } else {
+            target_os_info.entity.clone()
+        };
 
         let (source_result, target_result) = crate::modals::parallel_load!(gx, {
             "Loading source option set" => async move {
@@ -201,15 +213,27 @@ impl MigrationEditor {
     /// Extract option set kind + name from a ValueType, if it's an option set.
     pub(super) fn extract_option_set_info(vt: &ValueType) -> Option<OptionSetInfo> {
         match vt {
-            ValueType::Known(FieldType::OptionSet { kind, name, .. }) => Some(OptionSetInfo {
+            ValueType::Known(FieldType::OptionSet {
+                kind,
+                name,
+                entity,
+                ..
+            }) => Some(OptionSetInfo {
                 kind: *kind,
                 name: name.clone(),
+                entity: entity.clone(),
             }),
             // If it's a union, pick the first option set
             ValueType::Union(types) => types.iter().find_map(|ft| match ft {
-                FieldType::OptionSet { kind, name, .. } => Some(OptionSetInfo {
+                FieldType::OptionSet {
+                    kind,
+                    name,
+                    entity,
+                    ..
+                } => Some(OptionSetInfo {
                     kind: *kind,
                     name: name.clone(),
+                    entity: entity.clone(),
                 }),
                 _ => None,
             }),

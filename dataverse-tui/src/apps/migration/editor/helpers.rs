@@ -172,6 +172,7 @@ fn resolve_picklist_field_type(
     FieldType::OptionSet {
         kind: AttributeType::Picklist,
         name,
+        entity: metadata.logical_name.clone(),
         options,
     }
 }
@@ -200,6 +201,7 @@ fn resolve_state_field_type(
     FieldType::OptionSet {
         kind: AttributeType::State,
         name,
+        entity: metadata.logical_name.clone(),
         options,
     }
 }
@@ -228,6 +230,7 @@ fn resolve_status_field_type(
     FieldType::OptionSet {
         kind: AttributeType::Status,
         name,
+        entity: metadata.logical_name.clone(),
         options,
     }
 }
@@ -256,6 +259,7 @@ fn resolve_multi_select_field_type(
     FieldType::OptionSet {
         kind: AttributeType::MultiSelectPicklist,
         name,
+        entity: metadata.logical_name.clone(),
         options,
     }
 }
