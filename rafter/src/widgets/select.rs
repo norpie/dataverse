@@ -47,6 +47,8 @@ pub struct SelectState<T: Clone + Eq + Hash> {
     scrollbar_rect: Option<(u16, u16, u16, u16)>,
     /// Drag grab offset for scrollbar.
     drag_grab_offset: Option<u16>,
+    /// Toggle Y position from on_layout (used for dropdown direction).
+    layout_y: Option<u16>,
 }
 
 impl<T: Clone + Eq + Hash> Default for SelectState<T> {
@@ -59,6 +61,7 @@ impl<T: Clone + Eq + Hash> Default for SelectState<T> {
             scroller: VirtualScroller::new(),
             scrollbar_rect: None,
             drag_grab_offset: None,
+            layout_y: None,
         }
     }
 }
@@ -396,6 +399,20 @@ impl<'a, T: Clone + Eq + Hash + PartialEq + Send + Sync + 'static> Select<HasSta
             toggle = toggle.transitions(transitions);
         }
 
+        // Register on_layout handler to track toggle position (for dropdown direction)
+        {
+            let state_clone = state.clone();
+            registry.register(
+                &id,
+                "on_layout",
+                Arc::new(move |hx| {
+                    if let Some((_, y, _, _)) = hx.event().layout() {
+                        state_clone.update(|s| s.layout_y = Some(y));
+                    }
+                }),
+            );
+        }
+
         // Register toggle handler
         if !self.disabled {
             let state_clone = state.clone();
@@ -454,9 +471,37 @@ impl<'a, T: Clone + Eq + Hash + PartialEq + Send + Sync + 'static> Select<HasSta
                 .clone()
                 .unwrap_or_else(|| Style::new().background(Color::var("list.item_selected")));
 
-            // Calculate dropdown height - cap at 10 items
+            // Calculate dropdown height and direction based on available space
             let max_visible = 10u16;
-            let dropdown_height = (current.options.len() as u16).min(max_visible);
+            let ideal_height = (current.options.len() as u16).min(max_visible);
+
+            // Determine if we should open upward based on available space
+            let (dropdown_height, open_upward) = if let Some(toggle_y) = current.layout_y {
+                let term_height = crossterm::terminal::size()
+                    .map(|(_, h)| h)
+                    .unwrap_or(u16::MAX);
+                // Space below the toggle (toggle is 1 row)
+                let space_below = term_height.saturating_sub(toggle_y + 1);
+                // Space above the toggle
+                let space_above = toggle_y;
+
+                if space_below >= ideal_height {
+                    // Enough room below — open downward
+                    (ideal_height, false)
+                } else if space_above >= ideal_height {
+                    // Enough room above — open upward at full size
+                    (ideal_height, true)
+                } else if space_below >= space_above {
+                    // Neither fits fully, but more room below — clamp to below
+                    (space_below.max(1), false)
+                } else {
+                    // More room above — clamp to above
+                    (space_above.max(1), true)
+                }
+            } else {
+                // No layout info yet (first frame) — default to downward
+                (ideal_height, false)
+            };
 
             // Set viewport for virtualization
             state.update(|s| {
@@ -659,15 +704,20 @@ impl<'a, T: Clone + Eq + Hash + PartialEq + Send + Sync + 'static> Select<HasSta
                     .height(Size::Fixed(dropdown_height))
             };
 
-            let dropdown = dropdown_content
+            let mut dropdown = dropdown_content
                 .id(&dropdown_id)
                 .position(Position::Absolute)
-                .top(1)
                 .left(-1)
                 .padding(tuidom::Edges::left(1))
                 .z_index(2)
                 .interaction_scope(true)
                 .style(Style::new().background(Color::var("select.dropdown_bg")));
+
+            if open_upward {
+                dropdown = dropdown.top(-(dropdown_height as i16));
+            } else {
+                dropdown = dropdown.top(1);
+            }
 
             // Full-screen backdrop to capture clicks outside dropdown
             let backdrop_id = format!("{}-backdrop", id);
