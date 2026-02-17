@@ -86,15 +86,25 @@ impl TransformData {
                 }
             }
 
-            // ValueMap accepts any option set, outputs the target's type
-            TransformData::ValueMap { target, .. } => TransformSignature {
-                input: Some(ValueType::AnyOptionSet),
-                output: Some(ValueType::option_set(
-                    target.kind,
-                    target.name.clone(),
-                    target.options.clone(),
-                )),
-            },
+            // ValueMap accepts any option set, outputs the target's type.
+            // If not all source options are mapped, output may also be null.
+            TransformData::ValueMap {
+                source,
+                target,
+                mappings,
+            } => {
+                let target_type =
+                    ValueType::option_set(target.kind, target.name.clone(), target.options.clone());
+                let complete = mappings.len() >= source.options.len();
+                TransformSignature {
+                    input: Some(ValueType::AnyOptionSet),
+                    output: Some(if complete {
+                        target_type
+                    } else {
+                        resolve_branch_union(&[target_type, ValueType::Null])
+                    }),
+                }
+            }
 
             // Math (numeric -> numeric)
             TransformData::Math { .. } => TransformSignature {
