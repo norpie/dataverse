@@ -243,12 +243,20 @@ impl Default for TypeResolutionContext {
 ///
 /// This performs synchronous type propagation. Dynamic types (copy paths)
 /// should be pre-resolved and passed via the `resolve_fn` callback.
-pub fn propagate_chain_types<F>(transforms: &[Transform], mut resolve_fn: F) -> ChainTypeResult
+///
+/// `initial_type` sets the starting `#value` type. Use `ValueType::Null` for
+/// top-level chains; for match/coalesce branches, pass the parent's input type
+/// so that `copy #value` resolves correctly.
+pub fn propagate_chain_types<F>(
+    transforms: &[Transform],
+    initial_type: ValueType,
+    mut resolve_fn: F,
+) -> ChainTypeResult
 where
     F: FnMut(i64, &TransformData, &ValueType) -> Option<ValueType>,
 {
     let mut result = ChainTypeResult::new();
-    let mut current_type = ValueType::Null;
+    let mut current_type = initial_type;
 
     for transform in transforms {
         let sig = transform.data.signature();
@@ -330,7 +338,7 @@ where
 
 /// Simple propagation without dynamic resolution (uses passthrough for unknowns).
 pub fn propagate_chain_types_simple(transforms: &[Transform]) -> ChainTypeResult {
-    propagate_chain_types(transforms, |_, _, _| None)
+    propagate_chain_types(transforms, ValueType::Null, |_, _, _| None)
 }
 
 // =============================================================================

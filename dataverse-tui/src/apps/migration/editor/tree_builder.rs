@@ -482,7 +482,7 @@ fn build_variable_node(v: Variable, ctx: &mut TreeBuildContext) -> TreeNode<Migr
     } else {
         // Compute types for this chain
         let source_entity = ctx.source_entity_for(v.entity_mapping_id).to_owned();
-        let chain_result = compute_chain_types(&transforms, &source_entity, ctx);
+        let chain_result = compute_chain_types(&transforms, &source_entity, ctx, ValueType::Null);
         ctx.types.merge(&chain_result);
 
         // Check chain output against declared type
@@ -536,7 +536,7 @@ fn build_field_mapping_node(
             source_entity,
             target_entity,
         );
-        let chain_result = compute_chain_types(&transforms, &source_entity, ctx);
+        let chain_result = compute_chain_types(&transforms, &source_entity, ctx, ValueType::Null);
         ctx.types.merge(&chain_result);
 
         // Check chain output against target field type
@@ -662,14 +662,26 @@ fn build_transform_node(t: Transform, ctx: &mut TreeBuildContext) -> TreeNode<Mi
             if !has_branches {
                 TreeNode::leaf(make_transform_node(t, ctx))
             } else {
+                // The match's input type is #value for all branches
+                let match_input_type = ctx
+                    .types
+                    .transform_input_types
+                    .get(&t.id)
+                    .cloned()
+                    .unwrap_or(ValueType::Null);
+
                 // Compute types for each branch, then union them
                 let mut branch_output_types = Vec::new();
                 for mb in &branches {
                     let branch_transforms =
                         ctx.lookup.get_transforms(ParentType::MatchBranch, mb.id);
                     if !branch_transforms.is_empty() {
-                        let branch_result =
-                            compute_chain_types(&branch_transforms, &source_entity, ctx);
+                        let branch_result = compute_chain_types(
+                            &branch_transforms,
+                            &source_entity,
+                            ctx,
+                            match_input_type.clone(),
+                        );
                         branch_output_types.push(branch_result.output_type.clone());
                         ctx.types.merge(&branch_result);
                     }
@@ -680,8 +692,12 @@ fn build_transform_node(t: Transform, ctx: &mut TreeBuildContext) -> TreeNode<Mi
                     let default_transforms =
                         ctx.lookup.get_transforms(ParentType::MatchDefault, t.id);
                     if !default_transforms.is_empty() {
-                        let default_result =
-                            compute_chain_types(&default_transforms, &source_entity, ctx);
+                        let default_result = compute_chain_types(
+                            &default_transforms,
+                            &source_entity,
+                            ctx,
+                            match_input_type.clone(),
+                        );
                         branch_output_types.push(default_result.output_type.clone());
                         ctx.types.merge(&default_result);
                     }
@@ -714,14 +730,26 @@ fn build_transform_node(t: Transform, ctx: &mut TreeBuildContext) -> TreeNode<Mi
             if chains.is_empty() {
                 TreeNode::leaf(make_transform_node(t, ctx))
             } else {
+                // The coalesce's input type is #value for all chains
+                let coalesce_input_type = ctx
+                    .types
+                    .transform_input_types
+                    .get(&t.id)
+                    .cloned()
+                    .unwrap_or(ValueType::Null);
+
                 // Compute types for each fallback chain, then union them
                 let mut chain_output_types = Vec::new();
                 for cc in &chains {
                     let chain_transforms =
                         ctx.lookup.get_transforms(ParentType::CoalesceChain, cc.id);
                     if !chain_transforms.is_empty() {
-                        let chain_result =
-                            compute_chain_types(&chain_transforms, &source_entity, ctx);
+                        let chain_result = compute_chain_types(
+                            &chain_transforms,
+                            &source_entity,
+                            ctx,
+                            coalesce_input_type.clone(),
+                        );
                         chain_output_types.push(chain_result.output_type.clone());
                         ctx.types.merge(&chain_result);
                     }
@@ -755,8 +783,12 @@ fn build_transform_node(t: Transform, ctx: &mut TreeBuildContext) -> TreeNode<Mi
                         let cond_transforms =
                             ctx.lookup.get_transforms(ParentType::FindCondition, fc.id);
                         if !cond_transforms.is_empty() {
-                            let cond_result =
-                                compute_chain_types(&cond_transforms, &source_entity, ctx);
+                            let cond_result = compute_chain_types(
+                                &cond_transforms,
+                                &source_entity,
+                                ctx,
+                                ValueType::Null,
+                            );
                             ctx.types.merge(&cond_result);
                         }
                     }
@@ -766,8 +798,12 @@ fn build_transform_node(t: Transform, ctx: &mut TreeBuildContext) -> TreeNode<Mi
                         let default_transforms =
                             ctx.lookup.get_transforms(ParentType::FindDefault, t.id);
                         if !default_transforms.is_empty() {
-                            let default_result =
-                                compute_chain_types(&default_transforms, &source_entity, ctx);
+                            let default_result = compute_chain_types(
+                                &default_transforms,
+                                &source_entity,
+                                ctx,
+                                ValueType::Null,
+                            );
                             ctx.types.merge(&default_result);
                         }
                     }
@@ -911,7 +947,7 @@ fn build_match_condition_node(
     // Compute types for the condition's chain
     if !transforms.is_empty() {
         let source_entity = ctx.source_entity_for(mc.entity_mapping_id).to_string();
-        let chain_result = compute_chain_types(&transforms, &source_entity, ctx);
+        let chain_result = compute_chain_types(&transforms, &source_entity, ctx, ValueType::Null);
         ctx.types.merge(&chain_result);
     }
 

@@ -26,137 +26,158 @@ use super::tree_builder::TreeBuildContext;
 ///
 /// Resolves `copy($var)` references using already-computed variable types,
 /// and `copy(field)` paths using the field type cache from entity metadata.
+///
+/// `initial_type` sets the starting `#value` type for this chain. Top-level
+/// chains use `ValueType::Null`; match/coalesce branch chains pass the
+/// parent transform's input type so `copy #value` resolves correctly.
 pub(super) fn compute_chain_types(
     transforms: &[Transform],
     source_entity: &str,
     ctx: &mut TreeBuildContext,
+    initial_type: ValueType,
 ) -> ChainTypeResult {
     let variable_types = ctx.types.variable_types.clone();
     let _field_types = ctx.field_type_cache.get(source_entity);
 
-    propagate_chain_types(transforms, |transform_id, data, current_type| {
-        match data {
-            TransformData::Copy { path } => {
-                // Use the structured parser for all path resolution
-                match parse_path(path) {
-                    Ok(PathExpr::Variable(var_name)) => Some(
-                        variable_types
-                            .get(&var_name)
-                            .cloned()
-                            .unwrap_or(ValueType::Null),
-                    ),
-                    Ok(PathExpr::VariableNavigation {
-                        name,
-                        target,
-                        path: field_path,
-                        ..
-                    }) => resolve_variable_navigation(
-                        &name,
-                        target.as_deref(),
-                        &field_path,
-                        &variable_types,
-                        ctx,
-                    ),
-                    Ok(PathExpr::SystemVar(sys_var)) => match sys_var {
-                        SystemVar::Value => Some(current_type.clone()),
-                        SystemVar::Index => Some(ValueType::simple(AttributeType::Integer)),
-                        SystemVar::Type | SystemVar::SourceEntity | SystemVar::TargetEntity => {
-                            Some(ValueType::simple(AttributeType::String))
+    propagate_chain_types(
+        transforms,
+        initial_type,
+        |transform_id, data, current_type| {
+            match data {
+                TransformData::Copy { path } => {
+                    // Use the structured parser for all path resolution
+                    match parse_path(path) {
+                        Ok(PathExpr::Variable(var_name)) => Some(
+                            variable_types
+                                .get(&var_name)
+                                .cloned()
+                                .unwrap_or(ValueType::Null),
+                        ),
+                        Ok(PathExpr::VariableNavigation {
+                            name,
+                            target,
+                            path: field_path,
+                            ..
+                        }) => resolve_variable_navigation(
+                            &name,
+                            target.as_deref(),
+                            &field_path,
+                            &variable_types,
+                            ctx,
+                        ),
+                        Ok(PathExpr::SystemVar(sys_var)) => match sys_var {
+                            SystemVar::Value => Some(current_type.clone()),
+                            SystemVar::Index => Some(ValueType::simple(AttributeType::Integer)),
+                            SystemVar::Type | SystemVar::SourceEntity | SystemVar::TargetEntity => {
+                                Some(ValueType::simple(AttributeType::String))
+                            }
+                        },
+                        Ok(PathExpr::SystemVarNavigation {
+                            var,
+                            path: field_path,
+                            ..
+                        }) => {
+                            // #value.field — navigate from #value's type
+                            if var != SystemVar::Value {
+                                return None;
+                            }
+                            // current_type is #value's type; resolve the entity then walk the path
+                            let targets = match current_type {
+                                ValueType::Known(FieldType::Lookup { targets, .. }) => targets,
+                                _ => return None,
+                            };
+                            let target_entity = if targets.len() == 1 {
+                                &targets[0]
+                            } else {
+                                return None;
+                            };
+                            resolve_variable_navigation_from_entity(target_entity, &field_path, ctx)
                         }
-                    },
-                    Ok(PathExpr::SystemVarNavigation {
-                        var,
-                        path: field_path,
-                        ..
-                    }) => {
-                        // #value.field — navigate from #value's type
-                        if var != SystemVar::Value {
-                            return None;
+                        Ok(PathExpr::Field(_)) => {
+                            // Field path - resolve from metadata cache.
+                            resolve_field_path(path, source_entity, ctx)
                         }
-                        // current_type is #value's type; resolve the entity then walk the path
-                        let targets = match current_type {
-                            ValueType::Known(FieldType::Lookup { targets, .. }) => targets,
-                            _ => return None,
-                        };
-                        let target_entity = if targets.len() == 1 {
-                            &targets[0]
-                        } else {
-                            return None;
-                        };
-                        resolve_variable_navigation_from_entity(target_entity, &field_path, ctx)
+                        Ok(PathExpr::EntityRef { entity, .. }) => {
+                            // Entity ref produces a Lookup targeting the specified entity
+                            Some(ValueType::lookup(
+                                AttributeType::Lookup,
+                                vec![entity.clone()],
+                            ))
+                        }
+                        Err(_) => None,
                     }
-                    Ok(PathExpr::Field(_)) => {
-                        // Field path - resolve from metadata cache.
-                        resolve_field_path(path, source_entity, ctx)
-                    }
-                    Ok(PathExpr::EntityRef { entity, .. }) => {
-                        // Entity ref produces a Lookup targeting the specified entity
-                        Some(ValueType::lookup(
-                            AttributeType::Lookup,
-                            vec![entity.clone()],
-                        ))
-                    }
-                    Err(_) => None,
                 }
+                TransformData::Match { has_default } => {
+                    // Compute branch union by recursively resolving each branch's chain
+                    let mut branch_output_types = Vec::new();
+
+                    let branches = ctx.lookup.get_match_branches(transform_id);
+                    for mb in &branches {
+                        let branch_transforms =
+                            ctx.lookup.get_transforms(ParentType::MatchBranch, mb.id);
+                        if !branch_transforms.is_empty() {
+                            let branch_result = compute_chain_types(
+                                &branch_transforms,
+                                source_entity,
+                                ctx,
+                                current_type.clone(),
+                            );
+                            branch_output_types.push(branch_result.output_type.clone());
+                            ctx.types.merge(&branch_result);
+                        }
+                    }
+
+                    if *has_default {
+                        let default_transforms = ctx
+                            .lookup
+                            .get_transforms(ParentType::MatchDefault, transform_id);
+                        if !default_transforms.is_empty() {
+                            let default_result = compute_chain_types(
+                                &default_transforms,
+                                source_entity,
+                                ctx,
+                                current_type.clone(),
+                            );
+                            branch_output_types.push(default_result.output_type.clone());
+                            ctx.types.merge(&default_result);
+                        }
+                    }
+
+                    if branch_output_types.is_empty() {
+                        None // Passthrough
+                    } else {
+                        Some(resolve_branch_union(&branch_output_types))
+                    }
+                }
+                TransformData::Coalesce => {
+                    // Compute chain union by recursively resolving each fallback chain
+                    let chains = ctx.lookup.get_coalesce_chains(transform_id);
+                    let mut chain_output_types = Vec::new();
+                    for cc in &chains {
+                        let chain_transforms =
+                            ctx.lookup.get_transforms(ParentType::CoalesceChain, cc.id);
+                        if !chain_transforms.is_empty() {
+                            let chain_result = compute_chain_types(
+                                &chain_transforms,
+                                source_entity,
+                                ctx,
+                                current_type.clone(),
+                            );
+                            chain_output_types.push(chain_result.output_type.clone());
+                            ctx.types.merge(&chain_result);
+                        }
+                    }
+
+                    if chain_output_types.is_empty() {
+                        None // Passthrough
+                    } else {
+                        Some(resolve_branch_union(&chain_output_types))
+                    }
+                }
+                _ => None, // Passthrough for all other dynamic cases (Guard, etc.)
             }
-            TransformData::Match { has_default } => {
-                // Compute branch union by recursively resolving each branch's chain
-                let mut branch_output_types = Vec::new();
-
-                let branches = ctx.lookup.get_match_branches(transform_id);
-                for mb in &branches {
-                    let branch_transforms =
-                        ctx.lookup.get_transforms(ParentType::MatchBranch, mb.id);
-                    if !branch_transforms.is_empty() {
-                        let branch_result =
-                            compute_chain_types(&branch_transforms, source_entity, ctx);
-                        branch_output_types.push(branch_result.output_type.clone());
-                        ctx.types.merge(&branch_result);
-                    }
-                }
-
-                if *has_default {
-                    let default_transforms = ctx
-                        .lookup
-                        .get_transforms(ParentType::MatchDefault, transform_id);
-                    if !default_transforms.is_empty() {
-                        let default_result =
-                            compute_chain_types(&default_transforms, source_entity, ctx);
-                        branch_output_types.push(default_result.output_type.clone());
-                        ctx.types.merge(&default_result);
-                    }
-                }
-
-                if branch_output_types.is_empty() {
-                    None // Passthrough
-                } else {
-                    Some(resolve_branch_union(&branch_output_types))
-                }
-            }
-            TransformData::Coalesce => {
-                // Compute chain union by recursively resolving each fallback chain
-                let chains = ctx.lookup.get_coalesce_chains(transform_id);
-                let mut chain_output_types = Vec::new();
-                for cc in &chains {
-                    let chain_transforms =
-                        ctx.lookup.get_transforms(ParentType::CoalesceChain, cc.id);
-                    if !chain_transforms.is_empty() {
-                        let chain_result =
-                            compute_chain_types(&chain_transforms, source_entity, ctx);
-                        chain_output_types.push(chain_result.output_type.clone());
-                        ctx.types.merge(&chain_result);
-                    }
-                }
-
-                if chain_output_types.is_empty() {
-                    None // Passthrough
-                } else {
-                    Some(resolve_branch_union(&chain_output_types))
-                }
-            }
-            _ => None, // Passthrough for all other dynamic cases (Guard, etc.)
-        }
-    })
+        },
+    )
 }
 
 /// Resolve a variable navigation path (`$var.field` or `$var[target].field`).
