@@ -46,7 +46,7 @@ impl ValueMapping {
 ///
 /// # Errors
 ///
-/// - `ValueMapNotFound` if no mapping exists for the value
+/// - Returns `Value::Null` if no mapping exists for the value
 pub fn execute_value_map(value: &Value, mappings: &[ValueMapping]) -> TransformResult {
     match value {
         Value::Null => TransformResult::Value(Value::Null),
@@ -62,9 +62,7 @@ fn map_single_value(value: &Value, mappings: &[ValueMapping]) -> TransformResult
         }
     }
 
-    TransformResult::Error(TransformError::ValueMapNotFound {
-        value: value.clone(),
-    })
+    TransformResult::Value(Value::Null)
 }
 
 fn map_multi_select(mos: &MultiSelectOptionSetValue, mappings: &[ValueMapping]) -> TransformResult {
@@ -98,7 +96,8 @@ fn map_multi_select(mos: &MultiSelectOptionSetValue, mappings: &[ValueMapping]) 
         }
 
         if !found {
-            return TransformResult::Error(TransformError::ValueMapNotFound { value: from_value });
+            // Skip unmapped values in multi-select
+            continue;
         }
     }
 
@@ -159,13 +158,10 @@ mod tests {
     }
 
     #[test]
-    fn map_not_found_returns_error() {
+    fn map_not_found_returns_null() {
         let mappings = status_mappings();
         let result = execute_value_map(&Value::Int(99), &mappings);
-        assert!(matches!(
-            result,
-            TransformResult::Error(TransformError::ValueMapNotFound { .. })
-        ));
+        assert!(matches!(result, TransformResult::Value(Value::Null)));
     }
 
     #[test]
@@ -205,12 +201,9 @@ mod tests {
     }
 
     #[test]
-    fn map_empty_mappings_returns_error() {
+    fn map_empty_mappings_returns_null() {
         let result = execute_value_map(&Value::Int(1), &[]);
-        assert!(matches!(
-            result,
-            TransformResult::Error(TransformError::ValueMapNotFound { .. })
-        ));
+        assert!(matches!(result, TransformResult::Value(Value::Null)));
     }
 
     #[test]
