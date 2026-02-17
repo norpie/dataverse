@@ -77,6 +77,9 @@ pub struct FetchPlan {
     /// Entity ref cache specifications — source-side entities referenced via `/entity()` syntax
     /// that need field navigation (e.g., `/cgk_deadline(fk_id)` followed by `#value.name`).
     pub entity_ref_caches: Vec<FindCacheSpec>,
+    /// Source-side entities declared by Lua find scripts via `source_entities` in `M.declare()`.
+    /// Merged across all find scripts (like `find_caches`).
+    pub find_lua_source_caches: Vec<FindCacheSpec>,
     /// Lua match source entity specs — extra source-side entities from M.declare().
     pub lua_source_specs: Vec<FindCacheSpec>,
     /// Lua match target entity specs — extra target-side entities from M.declare().
@@ -175,6 +178,8 @@ pub struct PhaseFetchPlan {
     pub merged_find_caches: Vec<FindCacheSpec>,
     /// Merged entity ref cache specs — source-side entities from `/entity()` syntax.
     pub merged_entity_ref_caches: Vec<FindCacheSpec>,
+    /// Merged find-lua source entity specs — source-side entities from Lua find `M.declare()`.
+    pub merged_find_lua_source_caches: Vec<FindCacheSpec>,
     /// Lua match source entity specs — (mapping_index, spec) pairs.
     pub lua_source_specs: Vec<(usize, FindCacheSpec)>,
     /// Lua match target entity specs — (mapping_index, spec) pairs.
@@ -216,6 +221,12 @@ pub fn analyze_phase(inputs: &[MappingInput<'_>]) -> PhaseFetchPlan {
         .collect();
     let merged_entity_ref_caches = merge_find_cache_specs(all_entity_ref_caches);
 
+    let all_find_lua_source_caches: Vec<Vec<FindCacheSpec>> = mapping_plans
+        .iter()
+        .map(|plan| plan.find_lua_source_caches.clone())
+        .collect();
+    let merged_find_lua_source_caches = merge_find_cache_specs(all_find_lua_source_caches);
+
     // Collect Lua M.declare() specs per-mapping (with mapping index)
     let mut lua_source_specs = Vec::new();
     let mut lua_target_specs = Vec::new();
@@ -232,6 +243,7 @@ pub fn analyze_phase(inputs: &[MappingInput<'_>]) -> PhaseFetchPlan {
         mapping_plans,
         merged_find_caches,
         merged_entity_ref_caches,
+        merged_find_lua_source_caches,
         lua_source_specs,
         lua_target_specs,
     }
@@ -252,6 +264,8 @@ pub struct PhaseFetchTasks {
     pub find_cache_tasks: Vec<ODataFetchTask>,
     /// Entity ref cache fetch tasks — source-side entities from `/entity()` syntax.
     pub entity_ref_tasks: Vec<ODataFetchTask>,
+    /// Find-lua source entity fetch tasks — source-side entities from Lua find `M.declare()`.
+    pub find_lua_source_tasks: Vec<ODataFetchTask>,
     /// Lua match source entity fetch tasks — (mapping_index, task) pairs.
     pub lua_source_tasks: Vec<(usize, ODataFetchTask)>,
     /// Lua match target entity fetch tasks — (mapping_index, task) pairs.
@@ -332,6 +346,20 @@ pub fn build_phase_fetch_tasks(
         })
         .collect();
 
+    // Find-lua source entity tasks (from Lua find M.declare(), fetched from source env)
+    let find_lua_source_queries = build_find_cache_tasks(&phase_plan.merged_find_lua_source_caches);
+    let find_lua_source_tasks = find_lua_source_queries
+        .into_iter()
+        .zip(phase_plan.merged_find_lua_source_caches.iter())
+        .map(|(query, spec)| {
+            into_fetch_task(
+                format!("Find Lua source: {}", spec.entity),
+                query,
+                source_client.clone(),
+            )
+        })
+        .collect();
+
     // Lua M.declare() source entity tasks (fetched from source env)
     let lua_source_specs_refs: Vec<FindCacheSpec> = phase_plan
         .lua_source_specs
@@ -381,6 +409,7 @@ pub fn build_phase_fetch_tasks(
         target_tasks,
         find_cache_tasks,
         entity_ref_tasks,
+        find_lua_source_tasks,
         lua_source_tasks,
         lua_target_tasks,
     })
@@ -397,6 +426,7 @@ pub fn collect_all_tasks(tasks: PhaseFetchTasks) -> (Vec<ODataFetchTask>, FetchT
     let target_count = tasks.target_tasks.len();
     let find_cache_count = tasks.find_cache_tasks.len();
     let entity_ref_count = tasks.entity_ref_tasks.len();
+    let find_lua_source_count = tasks.find_lua_source_tasks.len();
     let lua_source_mapping_indices: Vec<usize> =
         tasks.lua_source_tasks.iter().map(|(i, _)| *i).collect();
     let lua_source_count = tasks.lua_source_tasks.len();
@@ -408,6 +438,7 @@ pub fn collect_all_tasks(tasks: PhaseFetchTasks) -> (Vec<ODataFetchTask>, FetchT
         + target_count
         + find_cache_count
         + entity_ref_count
+        + find_lua_source_count
         + lua_source_count
         + lua_target_count;
     let mut all_tasks = Vec::with_capacity(total);
@@ -415,6 +446,7 @@ pub fn collect_all_tasks(tasks: PhaseFetchTasks) -> (Vec<ODataFetchTask>, FetchT
     all_tasks.extend(tasks.target_tasks.into_iter().map(|(_, task)| task));
     all_tasks.extend(tasks.find_cache_tasks);
     all_tasks.extend(tasks.entity_ref_tasks);
+    all_tasks.extend(tasks.find_lua_source_tasks);
     all_tasks.extend(tasks.lua_source_tasks.into_iter().map(|(_, task)| task));
     all_tasks.extend(tasks.lua_target_tasks.into_iter().map(|(_, task)| task));
 
@@ -424,6 +456,7 @@ pub fn collect_all_tasks(tasks: PhaseFetchTasks) -> (Vec<ODataFetchTask>, FetchT
         target_mapping_indices,
         find_cache_count,
         entity_ref_count,
+        find_lua_source_count,
         lua_source_count,
         lua_source_mapping_indices,
         lua_target_count,
@@ -445,6 +478,8 @@ pub struct FetchTaskIndex {
     pub find_cache_count: usize,
     /// Number of entity ref cache tasks.
     pub entity_ref_count: usize,
+    /// Number of find-lua source entity tasks.
+    pub find_lua_source_count: usize,
     /// Number of Lua source entity tasks.
     pub lua_source_count: usize,
     /// For each Lua source task, which mapping index it belongs to.
@@ -466,6 +501,8 @@ pub struct PhaseFetchResults {
     pub find_cache_records: Vec<Vec<Record>>,
     /// Entity ref cache records per entity (same order as merged_entity_ref_caches).
     pub entity_ref_records: Vec<Vec<Record>>,
+    /// Find-lua source entity records per entity (same order as merged_find_lua_source_caches).
+    pub find_lua_source_records: Vec<Vec<Record>>,
     /// Lua source entity records — (mapping_index, records) pairs.
     pub lua_source_records: Vec<(usize, Vec<Record>)>,
     /// Lua target entity records — (mapping_index, records) pairs.
@@ -489,6 +526,9 @@ pub fn split_fetch_results(results: Vec<Vec<Record>>, index: &FetchTaskIndex) ->
 
     let entity_ref_records: Vec<Vec<Record>> = iter.by_ref().take(index.entity_ref_count).collect();
 
+    let find_lua_source_records: Vec<Vec<Record>> =
+        iter.by_ref().take(index.find_lua_source_count).collect();
+
     let lua_source_records: Vec<(usize, Vec<Record>)> = iter
         .by_ref()
         .take(index.lua_source_count)
@@ -508,6 +548,7 @@ pub fn split_fetch_results(results: Vec<Vec<Record>>, index: &FetchTaskIndex) ->
         target_records,
         find_cache_records,
         entity_ref_records,
+        find_lua_source_records,
         lua_source_records,
         lua_target_records,
     }
@@ -952,6 +993,7 @@ mod tests {
             target_mapping_indices: vec![0],
             find_cache_count: 1,
             entity_ref_count: 0,
+            find_lua_source_count: 0,
             lua_source_count: 0,
             lua_source_mapping_indices: vec![],
             lua_target_count: 0,
@@ -979,6 +1021,7 @@ mod tests {
             target_mapping_indices: vec![],
             find_cache_count: 0,
             entity_ref_count: 0,
+            find_lua_source_count: 0,
             lua_source_count: 0,
             lua_source_mapping_indices: vec![],
             lua_target_count: 0,

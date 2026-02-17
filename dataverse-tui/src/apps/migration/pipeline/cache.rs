@@ -96,6 +96,10 @@ pub struct LiveFindCache {
     /// Lazy single-field indexes: (entity, field) → (value → record indices).
     /// Built on first `find_where` call for a given entity+field combo.
     field_indexes: Mutex<HashMap<(String, String), FieldIndex>>,
+    /// Source-side entity records from Lua find `M.declare()` source_entities.
+    /// Stored separately from `records` to avoid collisions when the same entity
+    /// (e.g., `systemuser`) exists on both source and target.
+    source_records: HashMap<String, Vec<Arc<Record>>>,
 }
 
 impl Default for LiveFindCache {
@@ -111,6 +115,7 @@ impl LiveFindCache {
             records: HashMap::new(),
             id_index: HashMap::new(),
             field_indexes: Mutex::new(HashMap::new()),
+            source_records: HashMap::new(),
         }
     }
 
@@ -134,6 +139,15 @@ impl LiveFindCache {
             fi.retain(|(e, _), _| e != &entity);
         }
         self.records.insert(entity, arc_records);
+    }
+
+    /// Insert source-side entity records (from Lua find `M.declare()` source_entities).
+    ///
+    /// These are stored separately from target records so there's no collision
+    /// when the same entity name exists on both source and target (e.g., `systemuser`).
+    pub fn insert_source_records(&mut self, entity: impl Into<String>, records: Vec<Record>) {
+        let arc_records: Vec<Arc<Record>> = records.into_iter().map(Arc::new).collect();
+        self.source_records.insert(entity.into(), arc_records);
     }
 
     /// Get or build a single-field index for an entity+field combination.
@@ -305,13 +319,45 @@ impl FindCache for LiveFindCache {
                 .map_err(|e| FindError::LuaError(e.to_string()))?;
         }
 
-        // Call M.resolve(source, target)
+        // Build extra context table with source entity records (if any)
+        let extra_table = runtime
+            .create_table()
+            .map_err(|e| FindError::LuaError(e.to_string()))?;
+        if !self.source_records.is_empty() {
+            let source_entities_table = runtime
+                .create_table()
+                .map_err(|e| FindError::LuaError(e.to_string()))?;
+            for (entity_name, entity_records) in &self.source_records {
+                let entity_array = runtime
+                    .create_table()
+                    .map_err(|e| FindError::LuaError(e.to_string()))?;
+                for (i, record) in entity_records.iter().enumerate() {
+                    let record_json = serde_json::to_value(record.as_ref())
+                        .map_err(|e| FindError::LuaError(e.to_string()))?;
+                    let record_lua = runtime
+                        .json_to_lua(&record_json)
+                        .map_err(|e| FindError::LuaError(e.to_string()))?;
+                    entity_array
+                        .set(i + 1, record_lua)
+                        .map_err(|e| FindError::LuaError(e.to_string()))?;
+                }
+                source_entities_table
+                    .set(entity_name.as_str(), entity_array)
+                    .map_err(|e| FindError::LuaError(e.to_string()))?;
+            }
+            extra_table
+                .set("source", source_entities_table)
+                .map_err(|e| FindError::LuaError(e.to_string()))?;
+        }
+
+        // Call M.resolve(source, target, extra)
+        // Lua silently ignores extra arguments, so existing scripts are unaffected.
         let resolve: mlua::Function = module
             .get("resolve")
             .map_err(|e| FindError::LuaError(format!("Script missing M.resolve(): {e}")))?;
 
         let result: Table = resolve
-            .call((source_lua, target_table))
+            .call((source_lua, target_table, extra_table))
             .map_err(|e| FindError::LuaError(format!("M.resolve() failed: {e}")))?;
 
         // Parse result: { target = "guid" } or { target = nil } or { error = "msg" }

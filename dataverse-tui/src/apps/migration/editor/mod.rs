@@ -809,6 +809,14 @@ impl MigrationEditor {
                 {
                     find_cache.insert_records(&spec.entity, records);
                 }
+                // Insert find-lua source entity records (source-side, separate namespace)
+                for (records, spec) in split
+                    .find_lua_source_records
+                    .into_iter()
+                    .zip(phase_plan.merged_find_lua_source_caches.iter())
+                {
+                    find_cache.insert_source_records(&spec.entity, records);
+                }
 
                 // 6. Execute transforms + 7. Compare — per entity mapping
                 let mut comparisons: Vec<MappingComparison> = Vec::new();

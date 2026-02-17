@@ -169,6 +169,7 @@ pub fn analyze_mapping(input: &AnalysisInput<'_>) -> FetchPlan {
         target,
         find_caches: collector.find_caches.build(),
         entity_ref_caches: collector.entity_ref_caches.build(),
+        find_lua_source_caches: collector.find_lua_source_caches.build(),
         lua_source_specs,
         lua_target_specs,
     }
@@ -185,6 +186,8 @@ struct Collector {
     find_caches: FindCacheBuilder,
     /// Source-side entities referenced via `/entity()` that need field navigation.
     entity_ref_caches: FindCacheBuilder,
+    /// Source-side entities declared by Lua find scripts via `source_entities` in `M.declare()`.
+    find_lua_source_caches: FindCacheBuilder,
 }
 
 impl Collector {
@@ -194,6 +197,7 @@ impl Collector {
             target: EntityFetchBuilder::new(target_entity.to_string()),
             find_caches: FindCacheBuilder::new(),
             entity_ref_caches: FindCacheBuilder::new(),
+            find_lua_source_caches: FindCacheBuilder::new(),
         }
     }
 }
@@ -735,6 +739,20 @@ fn analyze_find(entity: &str, mode: &FindMode, collector: &mut Collector) {
                     // Add declared target fields to the find cache entity
                     for field in &declare.target_fields {
                         collector.find_caches.add_field(entity, field);
+                    }
+                    // Add declared source entities to the find-lua source cache
+                    for (src_entity, fields) in &declare.source_entities {
+                        for field in fields {
+                            collector
+                                .find_lua_source_caches
+                                .add_field(src_entity, field);
+                        }
+                    }
+                    // Add declared target entities to the find cache (same target env)
+                    for (tgt_entity, fields) in &declare.target_entities {
+                        for field in fields {
+                            collector.find_caches.add_field(tgt_entity, field);
+                        }
                     }
                 }
                 Err(e) => {
