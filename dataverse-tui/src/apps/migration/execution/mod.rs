@@ -1,7 +1,7 @@
 //! Execution module — converts comparison results into Dataverse batch operations.
 //!
 //! Generates operations per sub-phase:
-//! 1. **Create** — scalar fields only (lookups deferred to Update)
+//! 1. **Create** — scalar fields, plus lookups for entities with Update pass disabled
 //! 2. **Activate** — reactivate inactive target records before Update
 //! 3. **Update** — lookup fields on created records + diffs on existing
 //! 4. **Associate** — N:N junction associations
@@ -10,6 +10,7 @@
 //! 7. **Delete** — orphan record deletion
 
 use std::collections::HashMap;
+use std::collections::HashSet;
 
 use dataverse_lib::api::Batch;
 use dataverse_lib::api::Op;
@@ -127,7 +128,8 @@ pub struct CreatePassResult {
 pub fn generate_create_pass(
     comparisons: &[MappingComparison],
     metadata: &HashMap<String, ExecutionMetadata>,
-) -> CreatePassResult {
+    update_disabled_entities: &HashSet<String>,
+) -> Result<CreatePassResult, String> {
     let mut all_entity_batches = Vec::new();
     let mut all_pending = Vec::new();
 
@@ -141,6 +143,7 @@ pub fn generate_create_pass(
             continue;
         }
 
+        let include_lookups = update_disabled_entities.contains(&mapping.target_entity);
         let mut operations = Vec::new();
 
         for record in &mapping.records {
@@ -174,9 +177,16 @@ pub fn generate_create_pass(
                     continue;
                 }
 
-                // Lookup fields: defer to Update pass
+                // Lookup fields: include directly when Update pass is disabled,
+                // otherwise defer to the Update pass.
                 if is_lookup_value(value, field, meta) {
-                    lookup_fields.insert(field.clone(), value.clone());
+                    if include_lookups {
+                        let bound = to_binding(value, field, meta, metadata)?;
+                        let odata_name = lookup_odata_name(field, meta)?;
+                        create_record.insert(odata_name.to_string(), bound);
+                    } else {
+                        lookup_fields.insert(field.clone(), value.clone());
+                    }
                     continue;
                 }
 
@@ -215,10 +225,10 @@ pub fn generate_create_pass(
         }
     }
 
-    CreatePassResult {
+    Ok(CreatePassResult {
         entity_batches: all_entity_batches,
         pending_lookups: all_pending,
-    }
+    })
 }
 
 // =============================================================================

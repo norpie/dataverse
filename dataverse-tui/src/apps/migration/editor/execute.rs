@@ -1,6 +1,7 @@
 //! Execution state machine logic for the migration editor.
 
 use std::collections::HashMap;
+use std::collections::HashSet;
 
 use chrono::Utc;
 use rafter::prelude::*;
@@ -22,6 +23,7 @@ use crate::apps::migration::repository::MigrationRepository;
 use crate::apps::migration::repository::NewPhaseRun;
 use crate::apps::migration::types::EntityMapping;
 use crate::apps::migration::types::PhaseRunStatus;
+use crate::modals::ErrorModal;
 use crate::apps::queue::Queue;
 use crate::apps::queue::api::AddItems;
 use crate::apps::queue::api::GetItemResults;
@@ -123,7 +125,26 @@ impl MigrationEditor {
 
         let entity_batches: Vec<EntityBatches> = match sub_phase {
             SubPhase::Create => {
-                let result = generate_create_pass(&comparisons, &metadata);
+                let update_disabled: HashSet<String> = entity_mappings
+                    .iter()
+                    .filter(|em| !em.update_pass_enabled)
+                    .map(|em| em.target_entity.clone())
+                    .collect();
+                let result = match generate_create_pass(
+                    &comparisons,
+                    &metadata,
+                    &update_disabled,
+                ) {
+                    Ok(result) => result,
+                    Err(e) => {
+                        log::error!("[execution] Create pass failed: {}", e);
+                        gx.modal(ErrorModal::with_message("Create pass failed", &e))
+                            .await;
+                        self.update_sub_phase_status(sub_phase, SubPhaseStatus::Complete);
+                        self.exec_status.set(ExecutionStatus::Failed);
+                        return;
+                    }
+                };
                 // Store pending lookups for the Update pass
                 self.exec_pending_lookups.set(result.pending_lookups);
                 result.entity_batches
@@ -136,7 +157,8 @@ impl MigrationEditor {
                     Ok(batches) => batches,
                     Err(e) => {
                         log::error!("[execution] Update pass failed: {}", e);
-                        gx.toast(Toast::error(format!("Update pass failed: {}", e)));
+                        gx.modal(ErrorModal::with_message("Update pass failed", &e))
+                            .await;
                         self.update_sub_phase_status(sub_phase, SubPhaseStatus::Complete);
                         self.exec_status.set(ExecutionStatus::Failed);
                         return;
