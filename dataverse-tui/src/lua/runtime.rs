@@ -29,8 +29,8 @@ impl LuaRuntime {
         )
         .map_err(LuaError::creation)?;
 
-        // Set memory limit (1GB - scripts can handle large datasets)
-        lua.set_memory_limit(1024 * 1024 * 1024)
+        // Set memory limit (4GB - scripts can handle very large datasets like contacts/accounts)
+        lua.set_memory_limit(4 * 1024 * 1024 * 1024)
             .map_err(LuaError::memory_limit)?;
 
         // Register our standard library
