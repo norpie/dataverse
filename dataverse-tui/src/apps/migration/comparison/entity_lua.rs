@@ -109,6 +109,7 @@ pub fn execute_entity_lua(
                     "_script".to_string(),
                     TransformError::other("Source record has no ID"),
                 )],
+                skipped: false,
             });
             continue;
         };
@@ -128,6 +129,7 @@ pub fn execute_entity_lua(
                     record_results.push(RecordResult {
                         fields: HashMap::new(),
                         errors: vec![("_script".to_string(), TransformError::other(msg))],
+                        skipped: false,
                     });
                     continue;
                 }
@@ -166,18 +168,17 @@ pub fn execute_entity_lua(
                 record_results.push(RecordResult {
                     fields,
                     errors: vec![],
+                    skipped: false,
                 });
             }
             mlua::Value::Nil => {
-                // Record not in results — per-record error
+                // Record not in results — script intentionally skipped it.
+                // Mark as skipped so the comparison engine emits IgnoreSource
+                // without consulting matching or NoMatchFallback.
                 record_results.push(RecordResult {
                     fields: HashMap::new(),
-                    errors: vec![(
-                        "_script".to_string(),
-                        TransformError::other(format!(
-                            "Script produced no output for record {source_id_str}"
-                        )),
-                    )],
+                    errors: vec![],
+                    skipped: true,
                 });
             }
             other => {
@@ -626,11 +627,11 @@ return M
             execute_entity_lua(script, &source_records, "account", "account", &[], &[]).unwrap();
 
         assert_eq!(result.record_results.len(), 1);
-        assert_eq!(result.record_results[0].errors.len(), 1);
-        assert!(result.record_results[0].errors[0]
-            .1
-            .to_string()
-            .contains("no output"));
+        // Missing records are marked as skipped — the comparison engine
+        // emits IgnoreSource directly without consulting matching.
+        assert!(result.record_results[0].skipped);
+        assert!(result.record_results[0].errors.is_empty());
+        assert!(result.record_results[0].fields.is_empty());
     }
 
     #[test]

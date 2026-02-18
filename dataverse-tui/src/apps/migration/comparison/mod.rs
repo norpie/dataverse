@@ -238,6 +238,22 @@ pub fn compare_mapping(input: CompareInput<'_>) -> Result<MappingComparison, Tar
             lua_match_index: input.lua_match_index,
         };
 
+        // Script intentionally skipped this record — emit IgnoreSource directly,
+        // without consulting matching or NoMatchFallback.
+        if record_result.skipped {
+            records.push(RecordComparison {
+                operation: OperationType::IgnoreSource,
+                source_id: source_record.id(),
+                target_id: None,
+                transformed: HashMap::new(),
+                diffs: vec![],
+                errors: vec![],
+                target_statecode: None,
+                target_statuscode: None,
+            });
+            continue;
+        }
+
         let has_errors = !record_result.errors.is_empty();
         let match_result = match_target(&match_input, input.target_records, &target_index);
 
@@ -432,6 +448,7 @@ mod tests {
                 .map(|(k, v)| (k.to_string(), v))
                 .collect(),
             errors: vec![],
+            skipped: false,
         }
     }
 
@@ -448,6 +465,7 @@ mod tests {
                 .into_iter()
                 .map(|(k, e)| (k.to_string(), e))
                 .collect(),
+            skipped: false,
         }
     }
 

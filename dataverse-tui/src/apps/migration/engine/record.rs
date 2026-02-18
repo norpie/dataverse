@@ -8,8 +8,8 @@ use std::collections::HashMap;
 use dataverse_lib::model::Record;
 use dataverse_lib::model::Value;
 
-use super::executor::ChainItem;
 use super::executor::execute_chain;
+use super::executor::ChainItem;
 use super::types::FindCache;
 use super::types::PathCache;
 use super::types::SystemVars;
@@ -29,6 +29,10 @@ pub struct RecordResult {
     pub fields: HashMap<String, Value>,
     /// Per-field errors (field name, error).
     pub errors: Vec<(String, TransformError)>,
+    /// Whether the record was intentionally skipped (e.g. Lua script returned
+    /// no output for this record). When true, the comparison engine emits
+    /// `IgnoreSource` without consulting matching or `NoMatchFallback`.
+    pub skipped: bool,
 }
 
 impl RecordResult {
@@ -83,6 +87,7 @@ pub fn execute_record(
                 return RecordResult {
                     fields: HashMap::new(),
                     errors: vec![(format!("${}", var_name), error)],
+                    skipped: false,
                 };
             }
         };
@@ -118,7 +123,11 @@ pub fn execute_record(
         }
     }
 
-    RecordResult { fields, errors }
+    RecordResult {
+        fields,
+        errors,
+        skipped: false,
+    }
 }
 
 // =============================================================================
