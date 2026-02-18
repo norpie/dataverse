@@ -291,12 +291,8 @@ pub trait FindCache: Send + Sync {
     ///
     /// The script's `resolve()` function is called with the source record
     /// and target data. Returns the matched record ID.
-    fn find_lua(
-        &self,
-        entity: &str,
-        script: &str,
-        source_record: &Record,
-    ) -> Result<Uuid, FindError>;
+    fn find_lua(&self, entity: &str, script: &str, source_value: &Value)
+        -> Result<Uuid, FindError>;
 
     /// Get a record by ID from the cache.
     ///
@@ -327,7 +323,7 @@ impl FindCache for StubFindCache {
         &self,
         entity: &str,
         _script: &str,
-        _source_record: &Record,
+        _source_value: &Value,
     ) -> Result<Uuid, FindError> {
         Err(FindError::NotCached(entity.to_string()))
     }

@@ -801,7 +801,7 @@ mod tests {
             &self,
             entity: &str,
             _script: &str,
-            _source_record: &Record,
+            _source_value: &Value,
         ) -> Result<uuid::Uuid, FindError> {
             Err(FindError::NotCached(entity.to_string()))
         }

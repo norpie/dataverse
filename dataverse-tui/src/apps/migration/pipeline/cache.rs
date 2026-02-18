@@ -283,7 +283,7 @@ impl FindCache for LiveFindCache {
         &self,
         entity: &str,
         script: &str,
-        source_record: &Record,
+        source_value: &Value,
     ) -> Result<Uuid, FindError> {
         let records = self
             .records
@@ -297,9 +297,9 @@ impl FindCache for LiveFindCache {
             .load(script)
             .map_err(|e| FindError::LuaError(e.to_string()))?;
 
-        // Convert source record to Lua table
+        // Convert source value (typically an EntityReference) to Lua
         let source_json =
-            serde_json::to_value(source_record).map_err(|e| FindError::LuaError(e.to_string()))?;
+            serde_json::to_value(source_value).map_err(|e| FindError::LuaError(e.to_string()))?;
         let source_lua = runtime
             .json_to_lua(&source_json)
             .map_err(|e| FindError::LuaError(e.to_string()))?;
@@ -675,17 +675,15 @@ mod tests {
             ],
         );
 
-        let source = make_record(
-            "account",
-            id(100),
-            vec![("contact_email", Value::from("b@x.com"))],
-        );
+        // source is now a Value (e.g. an EntityReference), not a Record.
+        // For this test, use a simple string value that the script matches on.
+        let source_value = Value::from("b@x.com");
 
         let script = r#"
             local M = {}
             function M.resolve(source, target)
                 for _, record in ipairs(target) do
-                    if record.email == source.contact_email then
+                    if record.email == source then
                         return { target = record.contactid }
                     end
                 end
@@ -694,7 +692,7 @@ mod tests {
             return M
         "#;
 
-        let result = cache.find_lua("contact", script, &source);
+        let result = cache.find_lua("contact", script, &source_value);
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), target_id);
     }
@@ -704,7 +702,7 @@ mod tests {
         let mut cache = LiveFindCache::new();
         cache.insert_records("contact", vec![]);
 
-        let source = make_record("account", id(1), vec![]);
+        let source_value = Value::Null;
 
         let script = r#"
             local M = {}
@@ -714,7 +712,7 @@ mod tests {
             return M
         "#;
 
-        let result = cache.find_lua("contact", script, &source);
+        let result = cache.find_lua("contact", script, &source_value);
         assert!(matches!(result, Err(FindError::LuaError(msg)) if msg == "custom error message"));
     }
 
@@ -723,19 +721,19 @@ mod tests {
         let mut cache = LiveFindCache::new();
         cache.insert_records("contact", vec![]);
 
-        let source = make_record("account", id(1), vec![]);
+        let source_value = Value::Null;
         let script = "local M = {} return M";
 
-        let result = cache.find_lua("contact", script, &source);
+        let result = cache.find_lua("contact", script, &source_value);
         assert!(matches!(result, Err(FindError::LuaError(msg)) if msg.contains("M.resolve()")));
     }
 
     #[test]
     fn find_lua_not_cached() {
         let cache = LiveFindCache::new();
-        let source = make_record("account", id(1), vec![]);
+        let source_value = Value::Null;
 
-        let result = cache.find_lua("contact", "return {}", &source);
+        let result = cache.find_lua("contact", "return {}", &source_value);
         assert!(matches!(result, Err(FindError::NotCached(_))));
     }
 

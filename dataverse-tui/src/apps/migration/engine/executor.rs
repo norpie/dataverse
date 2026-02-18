@@ -481,7 +481,15 @@ fn execute_find_lua(
     script: &str,
     ctx: &TransformContext<'_>,
 ) -> Result<Arc<Record>, FindError> {
-    let id = ctx.find_cache.find_lua(entity, script, ctx.source_record)?;
+    log::debug!(
+        "execute_find_lua: entity={}, #value={:?}, type={}",
+        entity,
+        ctx.system_vars.value,
+        ctx.system_vars.value.type_name()
+    );
+    let id = ctx
+        .find_cache
+        .find_lua(entity, script, &ctx.system_vars.value)?;
 
     ctx.find_cache.get(entity, id).ok_or_else(|| {
         FindError::Other(format!("Lua find returned ID {id} but record not in cache"))
