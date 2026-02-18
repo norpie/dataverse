@@ -122,6 +122,8 @@ pub struct FetchTaskInfo {
 enum TaskMessage {
     /// Count query completed for a task.
     CountReady { index: usize, count: usize },
+    /// Count query failed (e.g. >50k records). Task will proceed without a total.
+    CountFailed { index: usize },
     /// A page was fetched for a task.
     PageFetched {
         index: usize,
@@ -207,25 +209,21 @@ impl ODataFetchModal {
             });
 
             let handle = tokio::spawn(async move {
-                // Phase 1: Count
+                // Phase 1: Count (best-effort; >50k records will fail)
                 let count_query = query.clone();
-                let count = tokio::select! {
+                let count_result = tokio::select! {
                     _ = token.cancelled() => return,
-                    result = count_query.count(&client) => {
-                        match result {
-                            Ok(c) => c,
-                            Err(e) => {
-                                let _ = tx.send(TaskMessage::Failed {
-                                    index,
-                                    error: e.to_string(),
-                                });
-                                return;
-                            }
-                        }
-                    }
+                    result = count_query.count(&client) => result,
                 };
 
-                let _ = tx.send(TaskMessage::CountReady { index, count });
+                match count_result {
+                    Ok(count) => {
+                        let _ = tx.send(TaskMessage::CountReady { index, count });
+                    }
+                    Err(_) => {
+                        let _ = tx.send(TaskMessage::CountFailed { index });
+                    }
+                }
 
                 // Phase 2: Paginate
                 let mut pages = query.into_async_iter(&client);
@@ -280,6 +278,12 @@ impl ODataFetchModal {
                         infos[index].total_count = Some(count);
                         infos[index].status = FetchTaskStatus::Fetching;
                         infos[index].fetch_start = Some(Instant::now());
+                    });
+                }
+                TaskMessage::CountFailed { index } => {
+                    self.task_infos.update(|infos| {
+                        infos[index].total_count = None;
+                        infos[index].status = FetchTaskStatus::Fetching;
                     });
                 }
                 TaskMessage::PageFetched {
@@ -402,7 +406,9 @@ impl ODataFetchModal {
                 let spinner = BrailleSpinner::new()
                     .id(format!("task-spinner-{}", idx))
                     .build_standalone();
-                let eta_text = if info.eta.is_empty() {
+                let eta_text = if info.total_count.is_none() {
+                    format!("{}  ~N/A", progress_text)
+                } else if info.eta.is_empty() {
                     progress_text
                 } else {
                     format!("{}  ~{}", progress_text, info.eta)
@@ -509,7 +515,7 @@ fn format_progress(info: &FetchTaskInfo) -> String {
             )
         }
         (_, None) => {
-            format!("{} records", format_number(info.records_fetched))
+            format!("{} / 50k+ records", format_number(info.records_fetched))
         }
     }
 }
