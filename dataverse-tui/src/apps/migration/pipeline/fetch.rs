@@ -286,6 +286,7 @@ mod tests {
             entity_ref_caches: vec![],
             lua_source_specs: vec![],
             lua_target_specs: vec![],
+            find_lua_source_caches: vec![],
         }
     }
 
@@ -458,6 +459,7 @@ mod tests {
             entity_ref_caches: vec![],
             lua_source_specs: vec![],
             lua_target_specs: vec![],
+            find_lua_source_caches: vec![],
         };
         let config = simple_config(&plan);
         let result = build_target_task(&config).unwrap();
