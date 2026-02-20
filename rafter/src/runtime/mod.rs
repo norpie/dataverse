@@ -2097,43 +2097,51 @@ fn scroll_to_element(
 
     let current = scroll.get(&scrollable_id);
 
+    // Use i32 intermediate arithmetic: rect positions are i16, scroll offsets are u16
     // Calculate target position relative to scrollable content (vertical)
-    let target_top = target_rect.y.saturating_sub(viewport_rect.y) + current.y;
-    let target_bottom = target_top + target_rect.height;
+    let target_top = (target_rect.y as i32 - viewport_rect.y as i32) + current.y as i32;
+    let target_bottom = target_top + target_rect.height as i32;
 
     // Calculate target position relative to scrollable content (horizontal)
-    let target_left = target_rect.x.saturating_sub(viewport_rect.x) + current.x;
-    let target_right = target_left + target_rect.width;
+    let target_left = (target_rect.x as i32 - viewport_rect.x as i32) + current.x as i32;
+    let target_right = target_left + target_rect.width as i32;
+
+    let current_y = current.y as i32;
+    let current_x = current.x as i32;
 
     // Compute new vertical scroll offset to bring target into view
     // If content fits within viewport, no scrolling needed
     let new_y = if content_height <= viewport_height {
-        0
-    } else if target_top < current.y {
+        0i32
+    } else if target_top < current_y {
         // Target is above viewport - scroll up
         target_top
-    } else if target_bottom > current.y + viewport_height {
+    } else if target_bottom > current_y + viewport_height as i32 {
         // Target is below viewport - scroll down
-        target_bottom.saturating_sub(viewport_height)
+        target_bottom - viewport_height as i32
     } else {
         // Already visible vertically
-        current.y
+        current_y
     };
 
     // Compute new horizontal scroll offset to bring target into view
     // If content fits within viewport, no scrolling needed
     let new_x = if content_width <= viewport_width {
-        0
-    } else if target_left < current.x {
+        0i32
+    } else if target_left < current_x {
         // Target is left of viewport - scroll left
         target_left
-    } else if target_right > current.x + viewport_width {
+    } else if target_right > current_x + viewport_width as i32 {
         // Target is right of viewport - scroll right
-        target_right.saturating_sub(viewport_width)
+        target_right - viewport_width as i32
     } else {
         // Already visible horizontally
-        current.x
+        current_x
     };
+
+    // Clamp back to u16 range for scroll offsets (always non-negative)
+    let new_x = new_x.clamp(0, u16::MAX as i32) as u16;
+    let new_y = new_y.clamp(0, u16::MAX as i32) as u16;
 
     if new_x != current.x || new_y != current.y {
         scroll.set(&scrollable_id, new_x, new_y);

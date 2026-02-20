@@ -103,9 +103,9 @@ pub enum EventData {
     /// Layout dimensions available (for `on_layout` handlers).
     Layout {
         /// Element X position.
-        x: u16,
+        x: i16,
         /// Element Y position.
-        y: u16,
+        y: i16,
         /// Element width.
         width: u16,
         /// Element height.
@@ -243,7 +243,7 @@ impl EventData {
     }
 
     /// Get layout dimensions (x, y, width, height) from a Layout event.
-    pub fn layout(&self) -> Option<(u16, u16, u16, u16)> {
+    pub fn layout(&self) -> Option<(i16, i16, u16, u16)> {
         match self {
             EventData::Layout {
                 x,
@@ -618,7 +618,7 @@ impl HandlerCallResult {
 ///
 /// Panics are always logged at ERROR level.
 pub fn call_handler(handler: &Handler, hx: &HandlerContext) -> HandlerCallResult {
-    use std::panic::{AssertUnwindSafe, catch_unwind};
+    use std::panic::{catch_unwind, AssertUnwindSafe};
 
     let result = catch_unwind(AssertUnwindSafe(|| {
         handler(hx);
@@ -643,7 +643,7 @@ pub fn call_handler_for_app(
     app_name: &str,
     instance_id: crate::InstanceId,
 ) -> HandlerCallResult {
-    use std::panic::{AssertUnwindSafe, catch_unwind};
+    use std::panic::{catch_unwind, AssertUnwindSafe};
 
     let result = catch_unwind(AssertUnwindSafe(|| {
         handler(hx);

@@ -101,7 +101,7 @@ pub struct ListState<T: ListItem> {
 
     /// Scrollbar screen rect (x, y, width, height) for drag calculations.
     /// Updated via on_layout handler.
-    scrollbar_rect: Option<(u16, u16, u16, u16)>,
+    scrollbar_rect: Option<(i16, i16, u16, u16)>,
 
     /// Grab offset within thumb for smooth dragging.
     /// Set on click, cleared on release.
@@ -247,11 +247,11 @@ impl<T: ListItem> ScrollableWidgetState for ListState<T> {
         &mut self.scroll
     }
 
-    fn scrollbar_rect(&self) -> Option<(u16, u16, u16, u16)> {
+    fn scrollbar_rect(&self) -> Option<(i16, i16, u16, u16)> {
         self.scrollbar_rect
     }
 
-    fn set_scrollbar_rect(&mut self, rect: Option<(u16, u16, u16, u16)>) {
+    fn set_scrollbar_rect(&mut self, rect: Option<(i16, i16, u16, u16)>) {
         self.scrollbar_rect = rect;
     }
 

@@ -131,10 +131,11 @@ impl ContextMenuDemo {
         // Otherwise (keybind), use focused element rect or mouse position as fallback.
         let (x, y) = if let Some(rect) = event.element_rect() {
             // Position menu at bottom-left of the activated element
-            (rect.x, rect.y + rect.height)
+            // Cast i16 -> u16: element was just clicked/focused so it's on-screen
+            (rect.x.max(0) as u16, (rect.y + rect.height as i16).max(0) as u16)
         } else if let Some(rect) = gx.focused_element_rect() {
             // Fallback: use focused element rect (for keybind activation)
-            (rect.x, rect.y + rect.height)
+            (rect.x.max(0) as u16, (rect.y + rect.height as i16).max(0) as u16)
         } else {
             // Final fallback: use mouse position
             gx.mouse_position()

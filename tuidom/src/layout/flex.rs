@@ -128,16 +128,16 @@ fn layout_element(
     // Handle relative positioning - offset from normal flow position
     if element.position == Position::Relative {
         if let Some(left) = element.left {
-            rect.x = (rect.x as i16 + left).max(0) as u16;
+            rect.x = (rect.x + left).max(0);
         }
         if let Some(right) = element.right {
-            rect.x = (rect.x as i16 - right).max(0) as u16;
+            rect.x = (rect.x - right).max(0);
         }
         if let Some(top) = element.top {
-            rect.y = (rect.y as i16 + top).max(0) as u16;
+            rect.y = (rect.y + top).max(0);
         }
         if let Some(bottom) = element.bottom {
-            rect.y = (rect.y as i16 - bottom).max(0) as u16;
+            rect.y = (rect.y - bottom).max(0);
         }
     }
 
@@ -174,20 +174,20 @@ fn layout_absolute(element: &Element, container: Rect) -> Rect {
 
     // Determine x position
     let x = match (element.left, element.right) {
-        (Some(left), _) => container.x.saturating_add_signed(left),
+        (Some(left), _) => container.x.saturating_add(left),
         (None, Some(right)) => {
             // Anchor to right edge
-            (container.right() as i16 - width as i16 - right).max(0) as u16
+            (container.right() - width as i16 - right).max(0)
         }
         (None, None) => container.x,
     };
 
     // Determine y position
     let y = match (element.top, element.bottom) {
-        (Some(top), _) => container.y.saturating_add_signed(top),
+        (Some(top), _) => container.y.saturating_add(top),
         (None, Some(bottom)) => {
             // Anchor to bottom edge
-            (container.bottom() as i16 - height as i16 - bottom).max(0) as u16
+            (container.bottom() - height as i16 - bottom).max(0)
         }
         (None, None) => container.y,
     };
@@ -507,8 +507,8 @@ fn apply_scroll_offset_recursive(
     result: &mut LayoutResult,
 ) {
     if let Some(rect) = result.get_mut(&element.id) {
-        rect.x = rect.x.saturating_sub(scroll_x);
-        rect.y = rect.y.saturating_sub(scroll_y);
+        rect.x = rect.x - scroll_x as i16;
+        rect.y = rect.y - scroll_y as i16;
     }
 
     if let Content::Children(children) = &element.content {
@@ -796,15 +796,15 @@ fn layout_line(
 
         let mut child_rect = if is_row {
             Rect::new(
-                inner.x + main_offset + margin_before,
-                inner.y + cross_offset + child_cross_offset,
+                inner.x + main_offset as i16 + margin_before as i16,
+                inner.y + cross_offset as i16 + child_cross_offset as i16,
                 main,
                 cross,
             )
         } else {
             Rect::new(
-                inner.x + cross_offset + child_cross_offset,
-                inner.y + main_offset + margin_before,
+                inner.x + cross_offset as i16 + child_cross_offset as i16,
+                inner.y + main_offset as i16 + margin_before as i16,
                 cross,
                 main,
             )
@@ -813,16 +813,16 @@ fn layout_line(
         // Apply relative positioning
         if child.position == Position::Relative {
             if let Some(left) = child.left {
-                child_rect.x = (child_rect.x as i16 + left).max(0) as u16;
+                child_rect.x = (child_rect.x + left).max(0);
             }
             if let Some(right) = child.right {
-                child_rect.x = (child_rect.x as i16 - right).max(0) as u16;
+                child_rect.x = (child_rect.x - right).max(0);
             }
             if let Some(top) = child.top {
-                child_rect.y = (child_rect.y as i16 + top).max(0) as u16;
+                child_rect.y = (child_rect.y + top).max(0);
             }
             if let Some(bottom) = child.bottom {
-                child_rect.y = (child_rect.y as i16 - bottom).max(0) as u16;
+                child_rect.y = (child_rect.y - bottom).max(0);
             }
         }
 
@@ -1221,8 +1221,8 @@ fn layout_children_virtualized(
         });
 
         // Calculate child rect
-        let child_x = inner.x + child.margin.left;
-        let child_y = inner.y + y_offset + child.margin.top;
+        let child_x = inner.x + child.margin.left as i16;
+        let child_y = inner.y + y_offset as i16 + child.margin.top as i16;
         let child_width = inner
             .width
             .saturating_sub(child.margin.left + child.margin.right);

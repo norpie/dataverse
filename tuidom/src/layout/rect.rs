@@ -1,13 +1,13 @@
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct Rect {
-    pub x: u16,
-    pub y: u16,
+    pub x: i16,
+    pub y: i16,
     pub width: u16,
     pub height: u16,
 }
 
 impl Rect {
-    pub const fn new(x: u16, y: u16, width: u16, height: u16) -> Self {
+    pub const fn new(x: i16, y: i16, width: u16, height: u16) -> Self {
         Self {
             x,
             y,
@@ -33,25 +33,25 @@ impl Rect {
         self.width == 0 || self.height == 0
     }
 
-    pub const fn left(&self) -> u16 {
+    pub const fn left(&self) -> i16 {
         self.x
     }
 
-    pub const fn right(&self) -> u16 {
-        self.x + self.width
+    pub const fn right(&self) -> i16 {
+        self.x + self.width as i16
     }
 
-    pub const fn top(&self) -> u16 {
+    pub const fn top(&self) -> i16 {
         self.y
     }
 
-    pub const fn bottom(&self) -> u16 {
-        self.y + self.height
+    pub const fn bottom(&self) -> i16 {
+        self.y + self.height as i16
     }
 
     pub fn shrink(self, top: u16, right: u16, bottom: u16, left: u16) -> Self {
-        let x = self.x.saturating_add(left);
-        let y = self.y.saturating_add(top);
+        let x = self.x.saturating_add(left as i16);
+        let y = self.y.saturating_add(top as i16);
         let width = self.width.saturating_sub(left + right);
         let height = self.height.saturating_sub(top + bottom);
         Self {
@@ -63,7 +63,10 @@ impl Rect {
     }
 
     pub fn contains(&self, x: u16, y: u16) -> bool {
-        x >= self.x && x < self.right() && y >= self.y && y < self.bottom()
+        x as i16 >= self.x
+            && (x as i16) < self.right()
+            && y as i16 >= self.y
+            && (y as i16) < self.bottom()
     }
 
     /// Intersect this rect with an optional clip rect.
@@ -77,13 +80,16 @@ impl Rect {
                 let y = self.y.max(clip.y);
                 let right = self.right().min(clip.right());
                 let bottom = self.bottom().min(clip.bottom());
-                Rect::new(x, y, right.saturating_sub(x), bottom.saturating_sub(y))
+                Rect::new(x, y, (right - x).max(0) as u16, (bottom - y).max(0) as u16)
             }
         }
     }
 
     /// Get the center point of this rectangle.
-    pub const fn center(&self) -> (u16, u16) {
-        (self.x + self.width / 2, self.y + self.height / 2)
+    pub const fn center(&self) -> (i16, i16) {
+        (
+            self.x + self.width as i16 / 2,
+            self.y + self.height as i16 / 2,
+        )
     }
 }

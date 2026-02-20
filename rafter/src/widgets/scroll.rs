@@ -503,21 +503,25 @@ impl<'a, S: ScrollableWidgetState> Scrollbar<HasScrollState<'a, S>> {
                         )) = scroll_data
                             && track_height > 0
                         {
+                            // Scrollbar is always on-screen, so track_y is non-negative.
+                            // Cast mouse coords to i16 for arithmetic with i16 track_y.
+                            let click_y = click_y as i16;
+
                             // Calculate thumb size and position
                             let thumb_size = if content_size == 0 {
-                                track_height
+                                track_height as i16
                             } else {
                                 let ratio = viewport as f32 / content_size as f32;
-                                ((ratio * track_height as f32).round() as u16)
-                                    .clamp(1, track_height)
+                                ((ratio * track_height as f32).round() as i16)
+                                    .clamp(1, track_height as i16)
                             };
 
                             let thumb_pos = if max_offset == 0 {
-                                0
+                                0i16
                             } else {
                                 let progress = current_offset as f32 / max_offset as f32;
-                                let available_space = track_height.saturating_sub(thumb_size);
-                                (progress * available_space as f32).round() as u16
+                                let available_space = track_height as i16 - thumb_size;
+                                (progress * available_space as f32).round() as i16
                             };
 
                             let thumb_screen_start = track_y + thumb_pos;
@@ -525,35 +529,37 @@ impl<'a, S: ScrollableWidgetState> Scrollbar<HasScrollState<'a, S>> {
 
                             if click_y >= thumb_screen_start && click_y < thumb_screen_end {
                                 // Clicked on thumb - store grab offset
-                                let grab_offset = click_y - thumb_screen_start;
+                                let grab_offset = (click_y - thumb_screen_start).max(0) as u16;
                                 state_clone.update(|s| {
                                     s.set_drag_grab_offset(Some(grab_offset));
                                 });
                             } else {
                                 // Clicked on track - jump to position
-                                let relative_y = click_y.saturating_sub(track_y);
-                                let track_ratio = relative_y as f32 / track_height.max(1) as f32;
+                                let relative_y = (click_y - track_y).max(0);
+                                let track_ratio = relative_y as f32 / (track_height.max(1)) as f32;
                                 let grab_offset = ((track_ratio * thumb_size as f32).round()
-                                    as u16)
-                                    .min(thumb_size.saturating_sub(1));
+                                    as i16)
+                                    .clamp(0, thumb_size - 1);
 
-                                let scroll_range = track_height.saturating_sub(thumb_size);
-                                let thumb_start = click_y.saturating_sub(grab_offset);
+                                let scroll_range = track_height as i16 - thumb_size;
+                                let thumb_start = click_y - grab_offset;
                                 let clamped_thumb_start =
                                     thumb_start.clamp(track_y, track_y + scroll_range);
                                 let thumb_pos_in_track =
-                                    clamped_thumb_start.saturating_sub(track_y);
+                                    (clamped_thumb_start - track_y).max(0) as u16;
 
-                                let new_offset = if scroll_range == 0 {
+                                let scroll_range_u16 = scroll_range.max(0) as u16;
+                                let new_offset = if scroll_range_u16 == 0 {
                                     0
                                 } else {
                                     ((thumb_pos_in_track as u32 * max_offset as u32
-                                        + scroll_range as u32 / 2)
-                                        / scroll_range as u32)
+                                        + scroll_range_u16 as u32 / 2)
+                                        / scroll_range_u16 as u32)
                                         .min(max_offset as u32)
                                         as u16
                                 };
 
+                                let grab_offset = grab_offset.max(0) as u16;
                                 state_clone.update(|s| {
                                     s.scroll_mut().offset = new_offset;
                                     s.set_drag_grab_offset(Some(grab_offset));
@@ -613,26 +619,31 @@ impl<'a, S: ScrollableWidgetState> Scrollbar<HasScrollState<'a, S>> {
                         )) = scroll_data
                             && track_height > 0
                         {
+                            // Scrollbar is always on-screen, cast mouse coord to i16
+                            let drag_y = drag_y as i16;
+
                             let thumb_size = if content_size == 0 {
-                                track_height
+                                track_height as i16
                             } else {
                                 let ratio = viewport as f32 / content_size as f32;
-                                ((ratio * track_height as f32).round() as u16)
-                                    .clamp(1, track_height)
+                                ((ratio * track_height as f32).round() as i16)
+                                    .clamp(1, track_height as i16)
                             };
 
-                            let scroll_range = track_height.saturating_sub(thumb_size);
-                            let thumb_start = drag_y.saturating_sub(grab_offset);
+                            let scroll_range = track_height as i16 - thumb_size;
+                            let thumb_start = drag_y - grab_offset as i16;
                             let clamped_thumb_start =
                                 thumb_start.clamp(track_y, track_y + scroll_range);
-                            let thumb_pos_in_track = clamped_thumb_start.saturating_sub(track_y);
+                            let thumb_pos_in_track =
+                                (clamped_thumb_start - track_y).max(0) as u16;
 
-                            let new_offset = if scroll_range == 0 {
+                            let scroll_range_u16 = scroll_range.max(0) as u16;
+                            let new_offset = if scroll_range_u16 == 0 {
                                 0
                             } else {
                                 ((thumb_pos_in_track as u32 * max_offset as u32
-                                    + scroll_range as u32 / 2)
-                                    / scroll_range as u32)
+                                    + scroll_range_u16 as u32 / 2)
+                                    / scroll_range_u16 as u32)
                                     .min(max_offset as u32) as u16
                             };
 
@@ -745,10 +756,10 @@ pub trait ScrollableWidgetState: Clone + Send + Sync + 'static {
     fn scroll_mut(&mut self) -> &mut ScrollState;
 
     /// Get the scrollbar's screen rect (x, y, width, height).
-    fn scrollbar_rect(&self) -> Option<(u16, u16, u16, u16)>;
+    fn scrollbar_rect(&self) -> Option<(i16, i16, u16, u16)>;
 
     /// Set the scrollbar's screen rect.
-    fn set_scrollbar_rect(&mut self, rect: Option<(u16, u16, u16, u16)>);
+    fn set_scrollbar_rect(&mut self, rect: Option<(i16, i16, u16, u16)>);
 
     /// Get the drag grab offset within the thumb.
     fn drag_grab_offset(&self) -> Option<u16>;

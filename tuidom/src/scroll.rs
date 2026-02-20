@@ -743,16 +743,23 @@ fn check_scrollbar_hit(
         1
     };
 
-    // Check vertical scrollbar (right edge)
-    let scrollbar_x = rect.right().saturating_sub(1).saturating_sub(border_size);
-    let v_track_start = rect.y + border_size;
-    let v_track_end = rect.bottom().saturating_sub(border_size);
-    let v_track_length = v_track_end.saturating_sub(v_track_start);
+    // Work in i16 space for comparisons with rect positions
+    let mx = x as i16;
+    let my = y as i16;
 
-    if x == scrollbar_x && y >= v_track_start && y < v_track_end {
-        if let Some(geom) =
-            ScrollbarGeometry::new(v_track_start, v_track_length, inner_height, content_height)
-        {
+    // Check vertical scrollbar (right edge)
+    let scrollbar_x = rect.right() - 1 - border_size as i16;
+    let v_track_start = rect.y + border_size as i16;
+    let v_track_end = rect.bottom() - border_size as i16;
+    let v_track_length = (v_track_end - v_track_start).max(0) as u16;
+
+    if mx == scrollbar_x && my >= v_track_start && my < v_track_end && v_track_start >= 0 {
+        if let Some(geom) = ScrollbarGeometry::new(
+            v_track_start as u16,
+            v_track_length,
+            inner_height,
+            content_height,
+        ) {
             let thumb_offset = geom.hit_test_thumb(y, current.y);
             return Some(ScrollbarHit {
                 geom,
@@ -763,14 +770,14 @@ fn check_scrollbar_hit(
     }
 
     // Check horizontal scrollbar (bottom edge)
-    let scrollbar_y = rect.bottom().saturating_sub(1).saturating_sub(border_size);
-    let h_track_start = rect.x + border_size;
-    let mut h_track_end = rect.right().saturating_sub(border_size);
+    let scrollbar_y = rect.bottom() - 1 - border_size as i16;
+    let h_track_start = rect.x + border_size as i16;
+    let mut h_track_end = rect.right() - border_size as i16;
     // Reduce for vertical scrollbar if present
     if content_height > inner_height {
-        h_track_end = h_track_end.saturating_sub(1);
+        h_track_end -= 1;
     }
-    let h_track_length = h_track_end.saturating_sub(h_track_start);
+    let h_track_length = (h_track_end - h_track_start).max(0) as u16;
 
     log::debug!(
         "[scrollbar-hit] horizontal: scrollbar_y={} h_track={}..{} (len={}) click_y={} in_y_range={} in_x_range={}",
@@ -779,14 +786,17 @@ fn check_scrollbar_hit(
         h_track_end,
         h_track_length,
         y,
-        y == scrollbar_y,
-        x >= h_track_start && x < h_track_end
+        my == scrollbar_y,
+        mx >= h_track_start && mx < h_track_end
     );
 
-    if y == scrollbar_y && x >= h_track_start && x < h_track_end {
-        if let Some(geom) =
-            ScrollbarGeometry::new(h_track_start, h_track_length, inner_width, content_width)
-        {
+    if my == scrollbar_y && mx >= h_track_start && mx < h_track_end && h_track_start >= 0 {
+        if let Some(geom) = ScrollbarGeometry::new(
+            h_track_start as u16,
+            h_track_length,
+            inner_width,
+            content_width,
+        ) {
             let thumb_offset = geom.hit_test_thumb(x, current.x);
             log::debug!(
                 "[scrollbar-hit] HORIZONTAL HIT! geom={:?} thumb_offset={:?}",
@@ -824,7 +834,7 @@ fn find_scrollable_at(root: &Element, layout: &LayoutResult, x: u16, y: u16) -> 
     // to find the deepest/innermost one first
     for id in scrollables.iter().rev() {
         if let Some(rect) = layout.get(id) {
-            let contains = x >= rect.x && x < rect.right() && y >= rect.y && y < rect.bottom();
+            let contains = rect.contains(x, y);
             log::debug!(
                 "[scroll] checking {} rect={:?} contains={}",
                 id,

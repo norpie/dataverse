@@ -44,11 +44,11 @@ pub struct SelectState<T: Clone + Eq + Hash> {
     /// Virtual scroller for dropdown virtualization.
     pub(crate) scroller: VirtualScroller,
     /// Scrollbar rect for drag calculations.
-    scrollbar_rect: Option<(u16, u16, u16, u16)>,
+    scrollbar_rect: Option<(i16, i16, u16, u16)>,
     /// Drag grab offset for scrollbar.
     drag_grab_offset: Option<u16>,
     /// Toggle Y position from on_layout (used for dropdown direction).
-    layout_y: Option<u16>,
+    layout_y: Option<i16>,
 }
 
 impl<T: Clone + Eq + Hash> Default for SelectState<T> {
@@ -140,11 +140,11 @@ impl<T: Clone + Eq + Hash + Send + Sync + 'static> ScrollableWidgetState for Sel
         &mut self.scroll
     }
 
-    fn scrollbar_rect(&self) -> Option<(u16, u16, u16, u16)> {
+    fn scrollbar_rect(&self) -> Option<(i16, i16, u16, u16)> {
         self.scrollbar_rect
     }
 
-    fn set_scrollbar_rect(&mut self, rect: Option<(u16, u16, u16, u16)>) {
+    fn set_scrollbar_rect(&mut self, rect: Option<(i16, i16, u16, u16)>) {
         self.scrollbar_rect = rect;
     }
 
@@ -478,12 +478,12 @@ impl<'a, T: Clone + Eq + Hash + PartialEq + Send + Sync + 'static> Select<HasSta
             // Determine if we should open upward based on available space
             let (dropdown_height, open_upward) = if let Some(toggle_y) = current.layout_y {
                 let term_height = crossterm::terminal::size()
-                    .map(|(_, h)| h)
-                    .unwrap_or(u16::MAX);
+                    .map(|(_, h)| h as i16)
+                    .unwrap_or(i16::MAX);
                 // Space below the toggle (toggle is 1 row)
-                let space_below = term_height.saturating_sub(toggle_y + 1);
+                let space_below = (term_height - (toggle_y + 1)).max(0) as u16;
                 // Space above the toggle
-                let space_above = toggle_y;
+                let space_above = toggle_y.max(0) as u16;
 
                 if space_below >= ideal_height {
                     // Enough room below — open downward

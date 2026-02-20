@@ -58,14 +58,14 @@ struct FrameState {
 #[derive(Debug, Clone)]
 struct PositionTransition {
     // X transition (if active)
-    from_x: Option<u16>,
-    to_x: Option<u16>,
+    from_x: Option<i16>,
+    to_x: Option<i16>,
     x_start: Option<Instant>,
     x_duration: Duration,
     x_easing: Easing,
     // Y transition (if active)
-    from_y: Option<u16>,
-    to_y: Option<u16>,
+    from_y: Option<i16>,
+    to_y: Option<i16>,
     y_start: Option<Instant>,
     y_duration: Duration,
     y_easing: Easing,
@@ -105,7 +105,7 @@ pub struct AnimationState {
     /// Reduced motion flag - when true, transitions complete instantly.
     reduced_motion: bool,
     /// Previous frame's computed positions per element.
-    positions: HashMap<String, (u16, u16)>,
+    positions: HashMap<String, (i16, i16)>,
     /// Active position transitions per element.
     position_transitions: HashMap<String, PositionTransition>,
 }
@@ -265,7 +265,7 @@ impl AnimationState {
     }
 
     /// Get interpolated X position for an element.
-    fn get_interpolated_x(&self, id: &str, now: Instant) -> Option<u16> {
+    fn get_interpolated_x(&self, id: &str, now: Instant) -> Option<i16> {
         let transition = self.position_transitions.get(id)?;
         let start = transition.x_start?;
         let from = transition.from_x?;
@@ -278,11 +278,11 @@ impl AnimationState {
 
         let progress = elapsed.as_secs_f32() / transition.x_duration.as_secs_f32();
         let eased = transition.x_easing.apply(progress);
-        Some(lerp_u16(from, to, eased))
+        Some(lerp_i16(from, to, eased))
     }
 
     /// Get interpolated Y position for an element.
-    fn get_interpolated_y(&self, id: &str, now: Instant) -> Option<u16> {
+    fn get_interpolated_y(&self, id: &str, now: Instant) -> Option<i16> {
         let transition = self.position_transitions.get(id)?;
         let start = transition.y_start?;
         let from = transition.from_y?;
@@ -295,12 +295,12 @@ impl AnimationState {
 
         let progress = elapsed.as_secs_f32() / transition.y_duration.as_secs_f32();
         let eased = transition.y_easing.apply(progress);
-        Some(lerp_u16(from, to, eased))
+        Some(lerp_i16(from, to, eased))
     }
 
     /// Get interpolated position for an element.
     /// Returns (interpolated_x, interpolated_y) where each is Some if active, None if not.
-    pub fn get_interpolated_position(&self, id: &str, now: Instant) -> (Option<u16>, Option<u16>) {
+    pub fn get_interpolated_position(&self, id: &str, now: Instant) -> (Option<i16>, Option<i16>) {
         (
             self.get_interpolated_x(id, now),
             self.get_interpolated_y(id, now),
@@ -634,11 +634,18 @@ impl AnimationState {
     }
 }
 
-/// Linear interpolation for u16 values.
+/// Linear interpolation for u16 values (used for width/height transitions).
 fn lerp_u16(from: u16, to: u16, t: f32) -> u16 {
     let from = from as f32;
     let to = to as f32;
     (from + (to - from) * t).round() as u16
+}
+
+/// Linear interpolation for i16 values (used for position transitions).
+fn lerp_i16(from: i16, to: i16, t: f32) -> i16 {
+    let from = from as f32;
+    let to = to as f32;
+    (from + (to - from) * t).round() as i16
 }
 
 /// Interpolate colors in OKLCH space.

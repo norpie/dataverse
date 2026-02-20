@@ -157,7 +157,7 @@ pub struct TableState<T: TableRow> {
     frozen_count: usize,
 
     /// Scrollbar screen rect for drag calculations.
-    scrollbar_rect: Option<(u16, u16, u16, u16)>,
+    scrollbar_rect: Option<(i16, i16, u16, u16)>,
 
     /// Grab offset within thumb for smooth dragging.
     drag_grab_offset: Option<u16>,
@@ -374,11 +374,11 @@ impl<T: TableRow> ScrollableWidgetState for TableState<T> {
         &mut self.scroll
     }
 
-    fn scrollbar_rect(&self) -> Option<(u16, u16, u16, u16)> {
+    fn scrollbar_rect(&self) -> Option<(i16, i16, u16, u16)> {
         self.scrollbar_rect
     }
 
-    fn set_scrollbar_rect(&mut self, rect: Option<(u16, u16, u16, u16)>) {
+    fn set_scrollbar_rect(&mut self, rect: Option<(i16, i16, u16, u16)>) {
         self.scrollbar_rect = rect;
     }
 

@@ -177,12 +177,8 @@ fn collect_elements<'a>(
     let now = Instant::now();
     let position_offset = if let Some(layout_rect) = layout.get(&element.id) {
         let (interp_x, interp_y) = animation.get_interpolated_position(&element.id, now);
-        let dx = interp_x
-            .map(|x| x as i16 - layout_rect.x as i16)
-            .unwrap_or(0);
-        let dy = interp_y
-            .map(|y| y as i16 - layout_rect.y as i16)
-            .unwrap_or(0);
+        let dx = interp_x.map(|x| x - layout_rect.x).unwrap_or(0);
+        let dy = interp_y.map(|y| y - layout_rect.y).unwrap_or(0);
         (dx, dy)
     } else {
         (0, 0)
@@ -369,7 +365,7 @@ fn intersect_rects(rect: Rect, parent_clip: Option<Rect>) -> Rect {
             let y = rect.y.max(clip.y);
             let right = rect.right().min(clip.right());
             let bottom = rect.bottom().min(clip.bottom());
-            Rect::new(x, y, right.saturating_sub(x), bottom.saturating_sub(y))
+            Rect::new(x, y, (right - x).max(0) as u16, (bottom - y).max(0) as u16)
         }
     }
 }
@@ -399,8 +395,8 @@ fn render_single_element_timed(
     // Note: Scroll offset is already applied during layout (apply_scroll_offset_recursive),
     // so we don't apply it again here. The layout positions are already scroll-adjusted.
     let rect = Rect::new(
-        (layout_rect.x as i16 + layout_offset.0).max(0) as u16,
-        (layout_rect.y as i16 + layout_offset.1).max(0) as u16,
+        layout_rect.x + layout_offset.0,
+        layout_rect.y + layout_offset.1,
         layout_rect.width,
         layout_rect.height,
     );
@@ -533,9 +529,9 @@ fn get_interpolated_color(
 
 fn fill_rect(buf: &mut Buffer, rect: Rect, bg: Option<Oklch>) {
     let Some(bg_color) = bg else { return }; // Skip if transparent
-    for y in rect.y..rect.bottom().min(buf.height()) {
-        for x in rect.x..rect.right().min(buf.width()) {
-            if let Some(cell) = buf.get_mut(x, y) {
+    for y in rect.y.max(0)..rect.bottom().min(buf.height() as i16) {
+        for x in rect.x.max(0)..rect.right().min(buf.width() as i16) {
+            if let Some(cell) = buf.get_mut(x as u16, y as u16) {
                 // Skip if cell already has correct state
                 if cell.bg == Some(bg_color) && cell.char == ' ' && !cell.wide_continuation {
                     continue;
@@ -617,14 +613,17 @@ fn render_text(
 
     // Render each line
     for (line_idx, line) in lines.iter().enumerate() {
-        let y = inner.y + line_idx as u16;
+        let y = inner.y + line_idx as i16;
 
         // Clip if beyond height
         if y >= inner.bottom() {
             break;
         }
 
-        // Skip if clipped vertically
+        // Skip if off-screen or clipped vertically
+        if y < 0 {
+            continue;
+        }
         if let Some(c) = clip {
             if y < c.y || y >= c.bottom() {
                 continue;
@@ -632,16 +631,16 @@ fn render_text(
         }
 
         // Calculate alignment offset (skip width calculation for left-align)
-        let x_offset = if element.text_align == crate::types::TextAlign::Left {
+        let x_offset: i16 = if element.text_align == crate::types::TextAlign::Left {
             0
         } else {
             let line_width = display_width(line);
-            align_offset(line_width, max_width, element.text_align) as u16
+            align_offset(line_width, max_width, element.text_align) as i16
         };
 
         // Track logical position within content (before scroll)
         // logical_x is the offset from (inner.x + x_offset)
-        let mut logical_x = 0u16;
+        let mut logical_x: i16 = 0;
 
         // Render characters with scroll offset applied
         for ch in line.chars() {
@@ -656,24 +655,28 @@ fn render_text(
             let render_x = inner.x + x_offset + logical_x;
 
             // Check if we have room for the full character width
-            if render_x + ch_w as u16 > inner.right() {
+            if render_x + ch_w as i16 > inner.right() {
                 break;
             }
 
-            // Skip if clipped horizontally
+            // Skip if off-screen or clipped horizontally
+            if render_x < 0 {
+                logical_x += ch_w as i16;
+                continue;
+            }
             if let Some(c) = clip {
                 if render_x < c.x || render_x >= c.right() {
-                    logical_x += ch_w as u16;
+                    logical_x += ch_w as i16;
                     continue;
                 }
             }
 
             // Preserve existing background if no explicit background set
-            let bg = explicit_bg.or_else(|| buf.get(render_x, y).and_then(|c| c.bg));
+            let bg = explicit_bg.or_else(|| buf.get(render_x as u16, y as u16).and_then(|c| c.bg));
 
             buf.set(
-                render_x,
-                y,
+                render_x as u16,
+                y as u16,
                 Cell::new(ch)
                     .with_fg(fg)
                     .with_bg(bg)
@@ -684,17 +687,17 @@ fn render_text(
             if ch_w == 2 && render_x + 1 < inner.right() {
                 // Only render continuation if not clipped
                 let cont_x = render_x + 1;
-                if clip.is_none_or(|c| cont_x >= c.x && cont_x < c.right()) {
+                if cont_x >= 0 && clip.is_none_or(|c| cont_x >= c.x && cont_x < c.right()) {
                     let mut continuation = Cell::new(' ')
                         .with_fg(fg)
                         .with_bg(bg)
                         .with_style(element.style.text_style);
                     continuation.wide_continuation = true;
-                    buf.set(cont_x, y, continuation);
+                    buf.set(cont_x as u16, y as u16, continuation);
                 }
             }
 
-            logical_x += ch_w as u16;
+            logical_x += ch_w as i16;
         }
     }
 }
@@ -775,7 +778,10 @@ fn render_text_input(
     let chars: Vec<char> = display_text.chars().collect();
     let y = inner.y;
 
-    // Check vertical clip
+    // Check off-screen or vertical clip
+    if y < 0 || y >= inner.bottom() {
+        return;
+    }
     if let Some(c) = clip {
         if y < c.y || y >= c.bottom() {
             return;
@@ -842,10 +848,16 @@ fn render_text_input(
             mask.unwrap_or(ch)
         };
 
+        // Skip if off-screen left
+        if x < 0 {
+            x += char_width(display_ch) as i16;
+            continue;
+        }
+
         // Check horizontal clip
         if let Some(c) = clip {
             if x < c.x {
-                x += char_width(display_ch) as u16;
+                x += char_width(display_ch) as i16;
                 continue;
             }
             if x >= c.right() {
@@ -874,8 +886,8 @@ fn render_text_input(
         };
 
         buf.set(
-            x,
-            y,
+            x as u16,
+            y as u16,
             Cell::new(display_ch)
                 .with_fg(char_fg)
                 .with_bg(char_bg)
@@ -885,17 +897,17 @@ fn render_text_input(
         let ch_w = char_width(display_ch);
         if ch_w == 2 && x + 1 < inner.right() {
             let cont_x = x + 1;
-            if clip.is_none_or(|c| cont_x >= c.x && cont_x < c.right()) {
+            if cont_x >= 0 && clip.is_none_or(|c| cont_x >= c.x && cont_x < c.right()) {
                 let mut continuation = Cell::new(' ')
                     .with_fg(char_fg)
                     .with_bg(char_bg)
                     .with_style(element.style.text_style);
                 continuation.wide_continuation = true;
-                buf.set(cont_x, y, continuation);
+                buf.set(cont_x as u16, y as u16, continuation);
             }
         }
 
-        x += ch_w as u16;
+        x += ch_w as i16;
     }
 
     // If cursor is at end and focused, render cursor block
@@ -906,12 +918,14 @@ fn render_text_input(
             .skip(scroll_offset)
             .map(|&c| display_char_width(c))
             .sum();
-        let cursor_x = inner.x + width_to_cursor as u16;
-        if cursor_x < inner.right() && clip.is_none_or(|c| cursor_x >= c.x && cursor_x < c.right())
+        let cursor_x = inner.x + width_to_cursor as i16;
+        if cursor_x >= 0
+            && cursor_x < inner.right()
+            && clip.is_none_or(|c| cursor_x >= c.x && cursor_x < c.right())
         {
             buf.set(
-                cursor_x,
-                y,
+                cursor_x as u16,
+                y as u16,
                 Cell::new(' ').with_fg(cursor_fg).with_bg(cursor_bg),
             );
         }
@@ -952,9 +966,11 @@ fn render_border(
         return;
     }
 
-    // Helper to check if a point is within clip bounds
-    let is_visible = |x: u16, y: u16| -> bool {
-        clip.is_none_or(|c| x >= c.x && x < c.right() && y >= c.y && y < c.bottom())
+    // Helper to check if a point is within clip bounds and on-screen
+    let is_visible = |x: i16, y: i16| -> bool {
+        x >= 0
+            && y >= 0
+            && clip.is_none_or(|c| x >= c.x && x < c.right() && y >= c.y && y < c.bottom())
     };
 
     // Corners
@@ -992,8 +1008,11 @@ fn render_border(
     }
 }
 
-fn set_char(buf: &mut Buffer, x: u16, y: u16, ch: char, fg: Oklch) {
-    if let Some(cell) = buf.get_mut(x, y) {
+fn set_char(buf: &mut Buffer, x: i16, y: i16, ch: char, fg: Oklch) {
+    if x < 0 || y < 0 {
+        return;
+    }
+    if let Some(cell) = buf.get_mut(x as u16, y as u16) {
         cell.char = ch;
         cell.fg = fg;
         // Preserve existing background
@@ -1068,30 +1087,38 @@ fn render_scrollbar(
     let track_color = Oklch::from_rgb(crate::types::Rgb::new(60, 60, 60));
     let thumb_color = Oklch::from_rgb(crate::types::Rgb::new(150, 150, 150));
 
-    // Helper to check if a point is within clip bounds
-    let is_visible = |x: u16, y: u16| -> bool {
-        clip.is_none_or(|c| x >= c.x && x < c.right() && y >= c.y && y < c.bottom())
+    // Helper to check if a point is within clip bounds and on-screen
+    let is_visible = |x: i16, y: i16| -> bool {
+        x >= 0
+            && y >= 0
+            && clip.is_none_or(|c| x >= c.x && x < c.right() && y >= c.y && y < c.bottom())
     };
 
     // Vertical scrollbar (right edge, inside border)
     if show_vertical && rect.height > 2 + border_size * 2 {
-        let x = rect.right() - 1 - border_size;
-        let track_start = rect.y + border_size;
-        let track_end = rect.bottom() - border_size;
-        let track_height = track_end.saturating_sub(track_start);
+        let x = rect.right() - 1 - border_size as i16;
+        let track_start = rect.y + border_size as i16;
+        let track_end = rect.bottom() - border_size as i16;
+        let track_height = (track_end - track_start).max(0) as u16;
 
-        if let Some(geom) =
-            crate::ScrollbarGeometry::new(track_start, track_height, inner_height, content_height)
-        {
-            let thumb_start = geom.thumb_screen_start(scroll_y);
-            let thumb_end = thumb_start + geom.thumb_size;
+        // ScrollbarGeometry works in u16 screen space — scrollbar is always on-screen
+        if track_start >= 0 {
+            if let Some(geom) = crate::ScrollbarGeometry::new(
+                track_start as u16,
+                track_height,
+                inner_height,
+                content_height,
+            ) {
+                let thumb_start = geom.thumb_screen_start(scroll_y) as i16;
+                let thumb_end = thumb_start + geom.thumb_size as i16;
 
-            for y in track_start..track_end {
-                if is_visible(x, y) {
-                    if let Some(cell) = buf.get_mut(x, y) {
-                        let in_thumb = y >= thumb_start && y < thumb_end;
-                        cell.char = if in_thumb { '█' } else { '░' };
-                        cell.fg = if in_thumb { thumb_color } else { track_color };
+                for y in track_start..track_end {
+                    if is_visible(x, y) {
+                        if let Some(cell) = buf.get_mut(x as u16, y as u16) {
+                            let in_thumb = y >= thumb_start && y < thumb_end;
+                            cell.char = if in_thumb { '█' } else { '░' };
+                            cell.fg = if in_thumb { thumb_color } else { track_color };
+                        }
                     }
                 }
             }
@@ -1100,29 +1127,35 @@ fn render_scrollbar(
 
     // Horizontal scrollbar (bottom edge, inside border)
     if show_horizontal && rect.width > 2 + border_size * 2 {
-        let y = rect.bottom() - 1 - border_size;
-        let track_start = rect.x + border_size;
-        let track_end = rect.right() - border_size;
+        let y = rect.bottom() - 1 - border_size as i16;
+        let track_start = rect.x + border_size as i16;
+        let track_end = rect.right() - border_size as i16;
         // Reduce width if vertical scrollbar is shown
         let track_end = if show_vertical {
-            track_end.saturating_sub(1)
+            track_end - 1
         } else {
             track_end
         };
-        let track_width = track_end.saturating_sub(track_start);
+        let track_width = (track_end - track_start).max(0) as u16;
 
-        if let Some(geom) =
-            crate::ScrollbarGeometry::new(track_start, track_width, inner_width, content_width)
-        {
-            let thumb_start = geom.thumb_screen_start(scroll_x);
-            let thumb_end = thumb_start + geom.thumb_size;
+        // ScrollbarGeometry works in u16 screen space — scrollbar is always on-screen
+        if track_start >= 0 {
+            if let Some(geom) = crate::ScrollbarGeometry::new(
+                track_start as u16,
+                track_width,
+                inner_width,
+                content_width,
+            ) {
+                let thumb_start = geom.thumb_screen_start(scroll_x) as i16;
+                let thumb_end = thumb_start + geom.thumb_size as i16;
 
-            for x in track_start..track_end {
-                if is_visible(x, y) {
-                    if let Some(cell) = buf.get_mut(x, y) {
-                        let in_thumb = x >= thumb_start && x < thumb_end;
-                        cell.char = if in_thumb { '█' } else { '░' };
-                        cell.fg = if in_thumb { thumb_color } else { track_color };
+                for x in track_start..track_end {
+                    if is_visible(x, y) {
+                        if let Some(cell) = buf.get_mut(x as u16, y as u16) {
+                            let in_thumb = x >= thumb_start && x < thumb_end;
+                            cell.char = if in_thumb { '█' } else { '░' };
+                            cell.fg = if in_thumb { thumb_color } else { track_color };
+                        }
                     }
                 }
             }

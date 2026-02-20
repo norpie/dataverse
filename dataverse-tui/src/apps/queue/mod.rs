@@ -544,7 +544,7 @@ impl Queue {
         let is_non_terminal = !item.status.is_terminal() && item.status != ItemStatus::Running;
 
         let (x, y) = if let Some(rect) = gx.focused_element_rect() {
-            (rect.x, rect.y + rect.height)
+            (rect.x.max(0) as u16, (rect.y + rect.height as i16).max(0) as u16)
         } else {
             gx.mouse_position()
         };
