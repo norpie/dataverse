@@ -327,8 +327,11 @@ pub fn generate_activate_pass(
 /// 1. Lookup fields deferred from Create pass (using known or captured target IDs)
 /// 2. Diff-based updates on existing records (`OperationType::Update`)
 ///
-/// State fields (statecode/statuscode) are excluded from diffs — they are
-/// handled by the Activate and Deactivate passes.
+/// Statecode is always excluded from diffs — it is handled by the Activate
+/// and Deactivate passes. Statuscode is excluded only when the record ends
+/// up inactive (the Deactivate pass will set both statecode and statuscode);
+/// otherwise statuscode changes are applied here since no other pass handles
+/// them for active records.
 pub fn generate_update_pass(
     comparisons: &[MappingComparison],
     metadata: &HashMap<String, ExecutionMetadata>,
@@ -405,10 +408,28 @@ pub fn generate_update_pass(
                 continue;
             }
 
+            // Check if the Deactivate pass will handle statuscode. The Deactivate
+            // pass only acts when the transformed statecode is inactive (!= 0),
+            // so we skip statuscode here only in that case. When the record ends
+            // up active (statecode 0), no other pass will set statuscode, so the
+            // Update pass must handle it.
+            let deactivate_will_handle = record
+                .transformed
+                .get("statecode")
+                .map(|v| !is_active_statecode(v))
+                .unwrap_or(false);
+
             let mut update_record = Record::new(Entity::set(&meta.entity_set_name));
             for diff in &record.diffs {
-                // State fields are handled by Activate/Deactivate passes
-                if diff.field == "statecode" || diff.field == "statuscode" {
+                // Statecode is always handled by Activate/Deactivate passes
+                if diff.field == "statecode" {
+                    continue;
+                }
+
+                // Statuscode: skip when the Deactivate pass will set both
+                // statecode and statuscode. Include otherwise (record stays
+                // active — no other pass will apply the statuscode change).
+                if diff.field == "statuscode" && deactivate_will_handle {
                     continue;
                 }
 
@@ -423,7 +444,7 @@ pub fn generate_update_pass(
                 update_record.insert(diff.field.clone(), diff.new_value.clone());
             }
 
-            // Skip if all diffs were state fields (nothing left to update)
+            // Skip if all diffs were skipped (nothing left to update)
             if update_record.fields().is_empty() {
                 continue;
             }
@@ -513,9 +534,8 @@ pub fn generate_associate_pass(
 /// Generate Disassociate pass operations for orphan junction records.
 ///
 /// For each `OrphanRecord` with `OperationType::Disassociate`:
-/// - We don't have the FK values from the orphan (only record_id)
-/// - We'd need the junction record's fields to know which records to disassociate
-/// - For now, this falls back to Delete on the junction entity
+/// - Extracts both FK values from the orphan's fields
+/// - Issues a proper Disassociate call via the navigation property
 pub fn generate_disassociate_pass(
     comparisons: &[MappingComparison],
     metadata: &HashMap<String, ExecutionMetadata>,
@@ -913,24 +933,39 @@ fn build_associate_op(
 
 /// Build a Disassociate operation from an orphan junction record.
 ///
-/// Orphan records only have `record_id` (the junction row's PK), which is not
-/// enough for a proper Disassociate call (we need both FK values). Since junction
-/// rows ARE regular records, we fall back to deleting the junction row directly.
+/// Extracts both FK values from the orphan's fields and issues a proper
+/// Disassociate call using the navigation property name (not the schema name).
+/// Junction/intersect entities are not addressable as OData entity sets, so
+/// a direct Delete on the junction row does not work.
 fn build_disassociate_op(
     orphan: &OrphanRecord,
     rel: &ManyToManyRelationship,
-    _metadata: &HashMap<String, ExecutionMetadata>,
+    metadata: &HashMap<String, ExecutionMetadata>,
 ) -> Option<dataverse_lib::api::Operation> {
-    let record_id = orphan.record_id?;
+    // Extract entity1 and entity2 IDs from the junction's FK fields
+    let e1_attr = rel.entity1_intersect_attribute.as_deref()?;
+    let e2_attr = rel.entity2_intersect_attribute.as_deref()?;
 
-    // Junction rows can be deleted directly — we don't need to call Disassociate.
-    // The intersect entity is the junction table itself.
+    let e1_id = extract_uuid_from_value(orphan.fields.get(e1_attr)?)?;
+    let e2_id = extract_uuid_from_value(orphan.fields.get(e2_attr)?)?;
+
+    // Get entity set name for entity1 (the entity we navigate from)
+    let e1_meta = metadata.get(&rel.entity1_logical_name)?;
+
+    // Disassociate from entity1's perspective using the navigation property name
+    let nav_property = rel.entity1_navigation_property_name.as_deref()?;
+
     Some(
-        Op::delete(Entity::set(&rel.intersect_entity_name), record_id)
-            .bypass_plugins()
-            .bypass_flows()
-            .bypass_sync_logic()
-            .build(),
+        Op::disassociate(
+            Entity::set(&e1_meta.entity_set_name),
+            e1_id,
+            nav_property,
+            e2_id,
+        )
+        .bypass_plugins()
+        .bypass_flows()
+        .bypass_sync_logic()
+        .build(),
     )
 }
 

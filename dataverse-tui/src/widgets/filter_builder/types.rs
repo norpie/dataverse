@@ -3,6 +3,16 @@
 use dataverse_lib::model::Value;
 use serde::{Deserialize, Serialize};
 
+/// Internal result for tree move operations.
+enum MoveResult {
+    /// The move was handled within this subtree.
+    Handled,
+    /// The node needs to be moved out of its current parent.
+    MoveOut(FilterNode),
+    /// The target was not found in this subtree.
+    NotFound,
+}
+
 /// A node in the filter tree.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub enum FilterNode {
@@ -253,6 +263,145 @@ impl FilterNode {
             Self::Empty => 0,
             Self::Condition { .. } => 1,
             Self::Group { children, .. } => children.iter().map(|c| c.count_conditions()).sum(),
+        }
+    }
+
+    /// Move a node up in the tree. Swaps with previous sibling, moves into
+    /// a previous sibling group (as last child), or moves out of the current
+    /// group (placed before it in the grandparent).
+    pub fn move_node_up(&mut self, target_id: usize) -> bool {
+        if self.node_id() == Some(target_id) {
+            return false;
+        }
+        match self.move_node_up_impl(target_id) {
+            MoveResult::Handled => true,
+            MoveResult::MoveOut(node) => {
+                // At root level, can't move out further — put it back
+                if let Self::Group { children, .. } = self {
+                    children.insert(0, node);
+                }
+                false
+            }
+            MoveResult::NotFound => false,
+        }
+    }
+
+    fn move_node_up_impl(&mut self, target_id: usize) -> MoveResult {
+        let Self::Group { children, .. } = self else {
+            return MoveResult::NotFound;
+        };
+
+        // Check direct children
+        if let Some(idx) = children.iter().position(|c| c.node_id() == Some(target_id)) {
+            if idx > 0 {
+                // Previous sibling is a group → move into it as last child
+                if matches!(children[idx - 1], Self::Group { .. }) {
+                    let node = children.remove(idx);
+                    if let Self::Group {
+                        children: prev_children,
+                        ..
+                    } = &mut children[idx - 1]
+                    {
+                        prev_children.push(node);
+                    }
+                    return MoveResult::Handled;
+                }
+                // Otherwise swap with previous sibling
+                children.swap(idx, idx - 1);
+                return MoveResult::Handled;
+            }
+            // First child → move out to parent
+            let node = children.remove(0);
+            return MoveResult::MoveOut(node);
+        }
+
+        // Recurse into children
+        let child_count = children.len();
+        for i in 0..child_count {
+            match children[i].move_node_up_impl(target_id) {
+                MoveResult::Handled => return MoveResult::Handled,
+                MoveResult::MoveOut(node) => {
+                    // Insert before the child group that returned MoveOut
+                    children.insert(i, node);
+                    return MoveResult::Handled;
+                }
+                MoveResult::NotFound => {}
+            }
+        }
+        MoveResult::NotFound
+    }
+
+    /// Move a node down in the tree. Swaps with next sibling, moves into
+    /// a next sibling group (as first child), or moves out of the current
+    /// group (placed after it in the grandparent).
+    pub fn move_node_down(&mut self, target_id: usize) -> bool {
+        if self.node_id() == Some(target_id) {
+            return false;
+        }
+        match self.move_node_down_impl(target_id) {
+            MoveResult::Handled => true,
+            MoveResult::MoveOut(node) => {
+                // At root level, can't move out further — put it back
+                if let Self::Group { children, .. } = self {
+                    children.push(node);
+                }
+                false
+            }
+            MoveResult::NotFound => false,
+        }
+    }
+
+    fn move_node_down_impl(&mut self, target_id: usize) -> MoveResult {
+        let Self::Group { children, .. } = self else {
+            return MoveResult::NotFound;
+        };
+
+        // Check direct children
+        if let Some(idx) = children.iter().position(|c| c.node_id() == Some(target_id)) {
+            if idx + 1 < children.len() {
+                // Next sibling is a group → move into it as first child
+                if matches!(children[idx + 1], Self::Group { .. }) {
+                    let node = children.remove(idx);
+                    // After removal, the group that was at idx+1 is now at idx
+                    if let Self::Group {
+                        children: next_children,
+                        ..
+                    } = &mut children[idx]
+                    {
+                        next_children.insert(0, node);
+                    }
+                    return MoveResult::Handled;
+                }
+                // Otherwise swap with next sibling
+                children.swap(idx, idx + 1);
+                return MoveResult::Handled;
+            }
+            // Last child → move out to parent
+            let node = children.remove(idx);
+            return MoveResult::MoveOut(node);
+        }
+
+        // Recurse into children
+        let child_count = children.len();
+        for i in 0..child_count {
+            match children[i].move_node_down_impl(target_id) {
+                MoveResult::Handled => return MoveResult::Handled,
+                MoveResult::MoveOut(node) => {
+                    // Insert after the child group that returned MoveOut
+                    children.insert(i + 1, node);
+                    return MoveResult::Handled;
+                }
+                MoveResult::NotFound => {}
+            }
+        }
+        MoveResult::NotFound
+    }
+
+    /// Get the ID of this node, if it has one.
+    fn node_id(&self) -> Option<usize> {
+        match self {
+            Self::Condition { id, .. } | Self::Group { id, .. } => Some(*id),
+            Self::Empty => None,
         }
     }
 }
