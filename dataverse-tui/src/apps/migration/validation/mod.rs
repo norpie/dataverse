@@ -1,5 +1,6 @@
 //! Validation utilities for migration transforms.
 
+pub mod lookup;
 mod path;
 
 pub use path::FieldPath;

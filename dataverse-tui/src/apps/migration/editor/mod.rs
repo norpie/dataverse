@@ -458,6 +458,7 @@ impl MigrationEditor {
         use crate::apps::migration::types::ParentType;
         use crate::modals::ErrorAcknowledgmentModal;
         use crate::modals::odata_fetch::ODataFetchModal;
+        use crate::modals::odata_fetch::ODataFetchTask;
 
         let phases = self.phases.get();
         if phases.is_empty() {
@@ -513,6 +514,11 @@ impl MigrationEditor {
         // For junction entities: maps entity_name -> (fk_attr1, fk_attr2)
         let mut junction_fk_attrs: std::collections::HashMap<String, (String, String)> =
             std::collections::HashMap::new();
+        // For lookup validation: target_entity -> { field -> [lookup_target_entity, ...] }
+        let mut target_lookup_targets: std::collections::HashMap<
+            String,
+            std::collections::HashMap<String, Vec<String>>,
+        > = std::collections::HashMap::new();
         for em in &phase_mappings {
             for entity in [&em.source_entity, &em.target_entity] {
                 if !entity.is_empty() && !primary_keys.contains_key(entity.as_str()) {
@@ -525,6 +531,14 @@ impl MigrationEditor {
                         Ok(meta) => {
                             primary_keys
                                 .insert(entity.clone(), meta.primary_id_attribute().to_string());
+
+                            // For target entities, capture lookup targets for validation
+                            if entity == &em.target_entity {
+                                if let Ok(exec_meta) = meta.execution_metadata() {
+                                    target_lookup_targets
+                                        .insert(entity.clone(), exec_meta.lookup_targets);
+                                }
+                            }
 
                             // For junction entities, extract the FK attribute names
                             // from the ManyToManyRelationship metadata
@@ -636,6 +650,64 @@ impl MigrationEditor {
             materialized_field_mappings.push(fm_chains);
             materialized_variables.push(var_chains);
             materialized_match_conditions.push(mc_chains);
+        }
+
+        // Build lookup validation specs: for each mapped target field that is a lookup,
+        // collect the target entities and their primary keys for ID validation.
+        use crate::apps::migration::validation::lookup::LookupValidationSpec;
+        let mut lookup_validation_specs: Vec<LookupValidationSpec> = Vec::new();
+        {
+            let mut seen_lookup_entities: std::collections::HashSet<String> =
+                std::collections::HashSet::new();
+            for (i, em) in phase_mappings.iter().enumerate() {
+                let Some(lt_map) = target_lookup_targets.get(&em.target_entity) else {
+                    continue;
+                };
+                for (target_field, _chain) in &materialized_field_mappings[i] {
+                    let Some(target_entities) = lt_map.get(target_field) else {
+                        continue;
+                    };
+                    for target_entity in target_entities {
+                        if !seen_lookup_entities.insert(target_entity.clone()) {
+                            continue;
+                        }
+                        // Get primary key — fetch metadata if not already known
+                        let pk = if let Some(pk) = primary_keys.get(target_entity) {
+                            pk.clone()
+                        } else {
+                            match target_client
+                                .metadata()
+                                .entity(target_entity.as_str())
+                                .await
+                            {
+                                Ok(meta) => {
+                                    let pk = meta.primary_id_attribute().to_string();
+                                    primary_keys.insert(target_entity.clone(), pk.clone());
+                                    pk
+                                }
+                                Err(e) => {
+                                    log::warn!(
+                                        "[preview] Failed to fetch metadata for lookup target \
+                                         '{}': {} — skipping validation for this entity",
+                                        target_entity,
+                                        e,
+                                    );
+                                    continue;
+                                }
+                            }
+                        };
+                        log::debug!(
+                            "[preview] Lookup validation: entity='{}', pk='{}'",
+                            target_entity,
+                            pk,
+                        );
+                        lookup_validation_specs.push(LookupValidationSpec {
+                            entity: target_entity.clone(),
+                            primary_key: pk,
+                        });
+                    }
+                }
+            }
         }
 
         // Build MappingInputs
@@ -765,13 +837,26 @@ impl MigrationEditor {
         };
 
         // 3. Collect and execute fetches
-        let (all_tasks, index) = pipeline::collect_all_tasks(fetch_tasks);
+        let (mut all_tasks, index) = pipeline::collect_all_tasks(fetch_tasks);
+
+        // Append lookup validation fetch tasks (fetch all primary IDs for lookup target entities)
+        let lookup_validation_task_count = lookup_validation_specs.len();
+        for spec in &lookup_validation_specs {
+            all_tasks.push(ODataFetchTask::new(
+                format!("Lookup check: {}", spec.entity),
+                target_client.clone(),
+                target_client
+                    .query(dataverse_lib::model::Entity::logical(&spec.entity))
+                    .select(&[spec.primary_key.as_str()]),
+            ));
+        }
+
         if all_tasks.is_empty() {
             gx.toast(Toast::warning("No data to fetch"));
             return;
         }
 
-        let fetch_results = match gx.modal(ODataFetchModal::create(all_tasks)).await {
+        let mut fetch_results = match gx.modal(ODataFetchModal::create(all_tasks)).await {
             Ok(results) => results,
             Err(e) => {
                 gx.modal(ErrorAcknowledgmentModal::new(
@@ -782,6 +867,19 @@ impl MigrationEditor {
                 return;
             }
         };
+
+        // Split off lookup validation results (appended at the end of the task list)
+        let lookup_validation_records: Vec<Vec<dataverse_lib::model::Record>> =
+            if lookup_validation_task_count > 0 {
+                fetch_results.split_off(fetch_results.len() - lookup_validation_task_count)
+            } else {
+                Vec::new()
+            };
+        let lookup_validation_cache =
+            crate::apps::migration::validation::lookup::build_validation_cache(
+                &lookup_validation_records,
+                &lookup_validation_specs,
+            );
 
         use crate::modals::LoadingModal;
         use crate::modals::LoadingUpdater;
@@ -909,6 +1007,19 @@ impl MigrationEditor {
                             }
                         };
 
+                        // Validate lookups before comparison
+                        let mut lua_record_results = lua_result.record_results;
+                        let nulled = crate::apps::migration::validation::lookup::validate_lookups(
+                            &mut lua_record_results,
+                            &lookup_validation_cache,
+                        );
+                        if nulled > 0 {
+                            updater.update(format!(
+                                "Validated {} lookups for {}...",
+                                nulled, em.name
+                            ));
+                        }
+
                         updater.update(format!("Comparing {}...", em.name));
 
                         // Wrap Lua results into MappingResult + use Lua match strategy
@@ -916,7 +1027,7 @@ impl MigrationEditor {
                             pipeline::ComparisonInput {
                                 source_records: &source_records,
                                 mapping_result: pipeline::MappingResult {
-                                    record_results: lua_result.record_results,
+                                    record_results: lua_record_results,
                                 },
                                 target_records: &target_records,
                                 strategy: crate::apps::migration::types::MatchStrategy::Lua,
@@ -945,7 +1056,7 @@ impl MigrationEditor {
                             "Transforming {} ({} records)...",
                             em.name, record_count
                         ));
-                        let mapping_result = pipeline::execute_mapping(
+                        let mut mapping_result = pipeline::execute_mapping(
                             &source_records,
                             &materialized_variables[i],
                             &materialized_field_mappings[i],
@@ -953,6 +1064,18 @@ impl MigrationEditor {
                             &em.target_entity,
                             &find_cache,
                         );
+
+                        // Validate lookups before comparison
+                        let nulled = crate::apps::migration::validation::lookup::validate_lookups(
+                            &mut mapping_result.record_results,
+                            &lookup_validation_cache,
+                        );
+                        if nulled > 0 {
+                            updater.update(format!(
+                                "Validated {} lookups for {}...",
+                                nulled, em.name
+                            ));
+                        }
 
                         updater.update(format!("Comparing {}...", em.name));
 
