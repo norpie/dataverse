@@ -4,6 +4,7 @@
 //! per-source-record results: desired field values and optional target GUID matches.
 
 use std::collections::HashMap;
+use std::collections::HashSet;
 
 use chrono::DateTime;
 use dataverse_lib::model::types::EntityBinding;
@@ -14,8 +15,11 @@ use dataverse_lib::model::Value;
 use mlua::Table;
 use uuid::Uuid;
 
+use super::diff::diff_fields;
 use super::matching::build_entity_table;
 use super::matching::LuaMatchIndex;
+use super::OperationType;
+use super::RecordComparison;
 use crate::apps::migration::engine::record::RecordResult;
 use crate::apps::migration::engine::TransformError;
 use crate::lua::runtime::LuaRuntime;
@@ -24,6 +28,15 @@ use crate::lua::runtime::LuaRuntime;
 // Public API
 // =============================================================================
 
+/// An independent record to create/update, not tied to any source record.
+#[derive(Debug, Clone)]
+pub struct LuaCreateEntry {
+    /// The desired target record primary key (e.g., a deterministic GUID).
+    pub id: Uuid,
+    /// Field values for the target record.
+    pub fields: HashMap<String, Value>,
+}
+
 /// Result of executing an entity-level Lua script.
 #[derive(Debug)]
 pub struct EntityLuaResult {
@@ -31,6 +44,8 @@ pub struct EntityLuaResult {
     pub record_results: Vec<RecordResult>,
     /// Source GUID → target GUID mapping (for comparison engine).
     pub match_index: LuaMatchIndex,
+    /// Independent creates — results keyed by IDs not in source records.
+    pub creates: Vec<LuaCreateEntry>,
 }
 
 /// Execute an entity-level Lua script against source/target records.
@@ -94,6 +109,12 @@ pub fn execute_entity_lua(
     let results_table: Table = result
         .get("results")
         .map_err(|e| format!("Result missing 'results' field: {e}"))?;
+
+    // Build set of source record IDs for detecting independent creates
+    let source_id_set: HashSet<String> = source_records
+        .iter()
+        .filter_map(|r| r.id().map(|id| id.to_string()))
+        .collect();
 
     // Build results for each source record (in order)
     let mut record_results = Vec::with_capacity(source_records.len());
@@ -190,16 +211,165 @@ pub fn execute_entity_lua(
         }
     }
 
+    // Collect independent creates: results table keys that are NOT source record IDs.
+    let mut creates = Vec::new();
+    for pair in results_table.pairs::<mlua::String, mlua::Value>() {
+        let (key, value) = pair.map_err(|e| format!("Failed to iterate results table: {e}"))?;
+        let key_str = key
+            .to_str()
+            .map_err(|e| format!("Invalid UTF-8 in results key: {e}"))?;
+
+        // Skip source-record-keyed entries (already processed above)
+        if source_id_set.contains(&key_str.to_string()) {
+            continue;
+        }
+
+        // Parse the key as a UUID
+        let create_id: Uuid = key_str
+            .parse()
+            .map_err(|e| format!("Invalid GUID key '{key_str}' in results table: {e}"))?;
+
+        match value {
+            mlua::Value::Table(entry_table) => {
+                // Check for per-record error
+                if let Ok(error_msg) = entry_table.get::<mlua::String>("error") {
+                    let msg = error_msg.to_string_lossy();
+                    log::warn!("[entity_lua] Independent create {key_str} has error: {msg}");
+                    continue;
+                }
+
+                // Extract fields table
+                let fields = match entry_table.get::<Table>("fields") {
+                    Ok(fields_table) => parse_fields_table(&runtime, &fields_table)?,
+                    Err(_) => HashMap::new(),
+                };
+
+                creates.push(LuaCreateEntry {
+                    id: create_id,
+                    fields,
+                });
+            }
+            mlua::Value::Nil => {
+                // Explicitly nil — skip
+            }
+            other => {
+                return Err(format!(
+                    "Expected table or nil for independent create {key_str}, got {:?}",
+                    other.type_name()
+                ));
+            }
+        }
+    }
+
     log::info!(
-        "[entity_lua] Executed: {} record results, {} match entries",
+        "[entity_lua] Executed: {} record results, {} match entries, {} independent creates",
         record_results.len(),
         match_index.len(),
+        creates.len(),
     );
 
     Ok(EntityLuaResult {
         record_results,
         match_index,
+        creates,
     })
+}
+
+// =============================================================================
+// Independent Creates Processing
+// =============================================================================
+
+/// Process independent creates from a Lua entity script.
+///
+/// For each `LuaCreateEntry`:
+/// - If the ID exists in `target_records` → diff fields → `Update` or `Skip`
+/// - If not → `Create`
+///
+/// Returns the comparison entries and the set of target IDs that were matched
+/// (so the caller can remove them from orphan detection).
+pub fn process_lua_creates(
+    creates: Vec<LuaCreateEntry>,
+    target_records: &[Record],
+    target_primary_key: &str,
+) -> (Vec<RecordComparison>, HashSet<Uuid>) {
+    // Build target index: GUID → index into target_records
+    let target_index: HashMap<Uuid, usize> = target_records
+        .iter()
+        .enumerate()
+        .filter_map(|(i, r)| {
+            let id = r.id().or_else(|| match r.get(target_primary_key) {
+                Some(Value::Guid(id)) => Some(*id),
+                _ => None,
+            });
+            id.map(|id| (id, i))
+        })
+        .collect();
+
+    let mut comparisons = Vec::with_capacity(creates.len());
+    let mut matched_ids = HashSet::new();
+
+    for create in creates {
+        if let Some(&target_idx) = target_index.get(&create.id) {
+            // Target exists — diff to determine Update or Skip
+            let target = &target_records[target_idx];
+            let target_id = target.id();
+            if let Some(tid) = target_id {
+                matched_ids.insert(tid);
+            }
+
+            let target_statecode = target.get("statecode").cloned();
+            let target_statuscode = target.get("statuscode").cloned();
+
+            let diffs = diff_fields(&create.fields, target);
+            let operation = if diffs.is_empty() {
+                OperationType::Skip
+            } else {
+                OperationType::Update
+            };
+
+            comparisons.push(RecordComparison {
+                operation,
+                source_id: Some(create.id),
+                target_id,
+                transformed: create.fields,
+                diffs,
+                errors: vec![],
+                target_statecode,
+                target_statuscode,
+            });
+        } else {
+            // Target doesn't exist — Create
+            comparisons.push(RecordComparison {
+                operation: OperationType::Create,
+                source_id: Some(create.id),
+                target_id: None,
+                transformed: create.fields,
+                diffs: vec![],
+                errors: vec![],
+                target_statecode: None,
+                target_statuscode: None,
+            });
+        }
+    }
+
+    log::info!(
+        "[entity_lua] Processed {} independent creates: {} create, {} update, {} skip",
+        comparisons.len(),
+        comparisons
+            .iter()
+            .filter(|c| c.operation == OperationType::Create)
+            .count(),
+        comparisons
+            .iter()
+            .filter(|c| c.operation == OperationType::Update)
+            .count(),
+        comparisons
+            .iter()
+            .filter(|c| c.operation == OperationType::Skip)
+            .count(),
+    );
+
+    (comparisons, matched_ids)
 }
 
 // =============================================================================
@@ -681,5 +851,202 @@ return M
         let result = execute_entity_lua(script, &[], "account", "account", &[], &[]);
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("M.resolve()"));
+    }
+
+    // ---- Independent creates tests ----
+
+    #[test]
+    fn entity_lua_independent_creates_detected() {
+        // Script returns results keyed by IDs that are NOT in source records
+        let script = r#"
+local M = {}
+function M.declare()
+    return { source = "account", target = "account" }
+end
+function M.resolve(source, target)
+    local results = {}
+    -- Skip all source records (return nil for them)
+    -- Add an independent create with a new GUID
+    results["aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"] = {
+        fields = { name = "Independent Record" },
+    }
+    return { results = results }
+end
+return M
+"#;
+
+        let id1 = Uuid::parse_str("11111111-1111-1111-1111-111111111111").unwrap();
+        let source_records = vec![Record::with_id(Entity::logical("account"), id1)
+            .set("accountid", Value::Guid(id1))
+            .set("name", "Acme")];
+
+        let result =
+            execute_entity_lua(script, &source_records, "account", "account", &[], &[]).unwrap();
+
+        // Source record should be skipped (not in results)
+        assert_eq!(result.record_results.len(), 1);
+        assert!(result.record_results[0].skipped);
+
+        // Independent create should be detected
+        assert_eq!(result.creates.len(), 1);
+        assert_eq!(
+            result.creates[0].id,
+            Uuid::parse_str("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee").unwrap()
+        );
+        assert_eq!(
+            result.creates[0].fields.get("name"),
+            Some(&Value::String("Independent Record".to_string()))
+        );
+    }
+
+    #[test]
+    fn entity_lua_mixed_source_and_independent() {
+        // Script returns both source-keyed results and independent creates
+        let script = r#"
+local M = {}
+function M.declare()
+    return { source = "account", target = "account" }
+end
+function M.resolve(source, target)
+    local results = {}
+    -- Process source records normally
+    for _, record in ipairs(source["account"]) do
+        local id = record["accountid"]
+        results[id] = {
+            target = id,
+            fields = { name = record["name"] },
+        }
+    end
+    -- Also add independent creates
+    results["aaaaaaaa-0000-0000-0000-000000000001"] = {
+        fields = { name = "Created 1" },
+    }
+    results["aaaaaaaa-0000-0000-0000-000000000002"] = {
+        fields = { name = "Created 2" },
+    }
+    return { results = results }
+end
+return M
+"#;
+
+        let id1 = Uuid::parse_str("11111111-1111-1111-1111-111111111111").unwrap();
+        let source_records = vec![Record::with_id(Entity::logical("account"), id1)
+            .set("accountid", Value::Guid(id1))
+            .set("name", "Acme")];
+
+        let result =
+            execute_entity_lua(script, &source_records, "account", "account", &[], &[]).unwrap();
+
+        // Source record processed normally
+        assert_eq!(result.record_results.len(), 1);
+        assert!(!result.record_results[0].skipped);
+        assert_eq!(result.match_index.get(&id1), Some(&id1));
+
+        // Two independent creates
+        assert_eq!(result.creates.len(), 2);
+    }
+
+    #[test]
+    fn entity_lua_no_independent_creates_backward_compatible() {
+        // Standard script with only source-keyed results — creates should be empty
+        let script = r#"
+local M = {}
+function M.declare()
+    return { source = "account", target = "account" }
+end
+function M.resolve(source, target)
+    local results = {}
+    for _, record in ipairs(source["account"]) do
+        local id = record["accountid"]
+        results[id] = {
+            target = id,
+            fields = { name = record["name"] },
+        }
+    end
+    return { results = results }
+end
+return M
+"#;
+
+        let id1 = Uuid::parse_str("11111111-1111-1111-1111-111111111111").unwrap();
+        let source_records = vec![Record::with_id(Entity::logical("account"), id1)
+            .set("accountid", Value::Guid(id1))
+            .set("name", "Acme")];
+
+        let result =
+            execute_entity_lua(script, &source_records, "account", "account", &[], &[]).unwrap();
+
+        assert_eq!(result.record_results.len(), 1);
+        assert!(result.creates.is_empty());
+    }
+
+    // ---- process_lua_creates tests ----
+
+    #[test]
+    fn process_creates_no_target_means_create() {
+        let creates = vec![LuaCreateEntry {
+            id: Uuid::parse_str("aaaaaaaa-0000-0000-0000-000000000001").unwrap(),
+            fields: [("name".to_string(), Value::String("New".to_string()))]
+                .into_iter()
+                .collect(),
+        }];
+
+        let target_records: Vec<Record> = vec![];
+        let (comps, matched) = process_lua_creates(creates, &target_records, "accountid");
+
+        assert_eq!(comps.len(), 1);
+        assert_eq!(comps[0].operation, OperationType::Create);
+        assert!(comps[0].target_id.is_none());
+        assert_eq!(
+            comps[0].source_id,
+            Some(Uuid::parse_str("aaaaaaaa-0000-0000-0000-000000000001").unwrap())
+        );
+        assert!(matched.is_empty());
+    }
+
+    #[test]
+    fn process_creates_existing_target_with_diff_means_update() {
+        let create_id = Uuid::parse_str("aaaaaaaa-0000-0000-0000-000000000001").unwrap();
+        let creates = vec![LuaCreateEntry {
+            id: create_id,
+            fields: [("name".to_string(), Value::String("Updated".to_string()))]
+                .into_iter()
+                .collect(),
+        }];
+
+        let target_records = vec![Record::with_id(Entity::logical("account"), create_id)
+            .set("accountid", Value::Guid(create_id))
+            .set("name", "Old")];
+
+        let (comps, matched) = process_lua_creates(creates, &target_records, "accountid");
+
+        assert_eq!(comps.len(), 1);
+        assert_eq!(comps[0].operation, OperationType::Update);
+        assert_eq!(comps[0].target_id, Some(create_id));
+        assert_eq!(comps[0].diffs.len(), 1);
+        assert_eq!(comps[0].diffs[0].field, "name");
+        assert!(matched.contains(&create_id));
+    }
+
+    #[test]
+    fn process_creates_existing_target_no_diff_means_skip() {
+        let create_id = Uuid::parse_str("aaaaaaaa-0000-0000-0000-000000000001").unwrap();
+        let creates = vec![LuaCreateEntry {
+            id: create_id,
+            fields: [("name".to_string(), Value::String("Same".to_string()))]
+                .into_iter()
+                .collect(),
+        }];
+
+        let target_records = vec![Record::with_id(Entity::logical("account"), create_id)
+            .set("accountid", Value::Guid(create_id))
+            .set("name", "Same")];
+
+        let (comps, matched) = process_lua_creates(creates, &target_records, "accountid");
+
+        assert_eq!(comps.len(), 1);
+        assert_eq!(comps[0].operation, OperationType::Skip);
+        assert!(comps[0].diffs.is_empty());
+        assert!(matched.contains(&create_id));
     }
 }

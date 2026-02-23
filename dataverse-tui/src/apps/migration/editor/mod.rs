@@ -1009,6 +1009,7 @@ impl MigrationEditor {
 
                         // Validate lookups before comparison
                         let mut lua_record_results = lua_result.record_results;
+                        let lua_creates = lua_result.creates;
                         let nulled = crate::apps::migration::validation::lookup::validate_lookups(
                             &mut lua_record_results,
                             &lookup_validation_cache,
@@ -1023,7 +1024,7 @@ impl MigrationEditor {
                         updater.update(format!("Comparing {}...", em.name));
 
                         // Wrap Lua results into MappingResult + use Lua match strategy
-                        match pipeline::compare_mapping_results(
+                        let mut comp = match pipeline::compare_mapping_results(
                             pipeline::ComparisonInput {
                                 source_records: &source_records,
                                 mapping_result: pipeline::MappingResult {
@@ -1049,7 +1050,22 @@ impl MigrationEditor {
                                     em.name, e
                                 ));
                             }
+                        };
+
+                        // Merge independent creates into the comparison
+                        if !lua_creates.is_empty() {
+                            let (create_comps, matched_ids) =
+                                crate::apps::migration::comparison::entity_lua::process_lua_creates(
+                                    lua_creates,
+                                    &target_records,
+                                    target_pk,
+                                );
+                            comp.records.extend(create_comps);
+                            comp.orphans
+                                .retain(|o| o.record_id.map_or(true, |id| !matched_ids.contains(&id)));
                         }
+
+                        comp
                     } else {
                         // === Declarative path ===
                         updater.update(format!(
