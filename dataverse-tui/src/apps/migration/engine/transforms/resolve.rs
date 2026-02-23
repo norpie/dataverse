@@ -199,6 +199,12 @@ pub fn resolve_path(
         PathExpr::EntityRef { entity, inner } => {
             // Resolve the inner path to get a UUID
             let (inner_result, _) = resolve_path(inner, ctx);
+            log::debug!(
+                "EntityRef /{}: inner={:?}, #value={}",
+                entity,
+                &inner_result,
+                ctx.value.type_name(),
+            );
             match inner_result {
                 TransformResult::Value(Value::Null) => (TransformResult::Value(Value::Null), None),
                 TransformResult::Value(value) => {

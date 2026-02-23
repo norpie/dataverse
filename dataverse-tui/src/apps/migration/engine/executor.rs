@@ -422,10 +422,24 @@ fn execute_find(
 
     match result {
         Ok(record) => {
+            log::debug!(
+                "execute_find: entity={} OK, id={:?}, nrq_supportid={:?}",
+                entity,
+                record.id(),
+                record.get("nrq_supportid"),
+            );
             ctx.system_vars.value_type = Some(record.entity().clone());
             TransformResult::Value(Value::Record(record))
         }
-        Err(find_err) => apply_find_fallback(find_err, entity, fallback, children, ctx),
+        Err(find_err) => {
+            log::warn!(
+                "execute_find: entity={} FAILED: {:?}, fallback={:?}",
+                entity,
+                find_err,
+                fallback,
+            );
+            apply_find_fallback(find_err, entity, fallback, children, ctx)
+        }
     }
 }
 
