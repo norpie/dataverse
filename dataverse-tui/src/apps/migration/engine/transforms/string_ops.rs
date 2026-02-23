@@ -31,6 +31,7 @@ use crate::apps::migration::types::StringOp;
 pub fn execute_string_ops(value: &Value, ops: &[StringOp]) -> TransformResult {
     let input = match value {
         Value::String(s) => s.clone(),
+        Value::Guid(g) => g.to_string(),
         Value::Null => return TransformResult::Value(Value::Null),
         other => {
             return TransformResult::Error(TransformError::type_mismatch(
