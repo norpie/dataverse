@@ -231,10 +231,19 @@ impl EntityFetchBuilder {
 
         if path.segments.len() == 1 {
             // Single segment → direct select
+            log::debug!(
+                "[analysis] add_field_path: single segment select={:?}",
+                path.segments[0].field
+            );
             self.select.insert(path.segments[0].field.clone());
         } else {
             // Multi-segment → first is nav property, rest goes into expand
             let nav = &path.segments[0];
+            log::debug!(
+                "[analysis] add_field_path: multi-segment expand nav={:?}, remaining={}",
+                nav.field,
+                path.segments.len() - 1
+            );
             let expand = self
                 .expands
                 .entry(nav.field.clone())
@@ -247,6 +256,19 @@ impl EntityFetchBuilder {
     }
 
     fn build_source(self) -> SourceFetchSpec {
+        log::debug!(
+            "[analysis] build_source: entity={}, select={}, expands={}",
+            self.entity,
+            self.select.len(),
+            self.expands.len()
+        );
+        for (k, v) in &self.expands {
+            log::debug!(
+                "[analysis] build_source: expand key={:?}, nav={:?}",
+                k,
+                v.nav_property
+            );
+        }
         SourceFetchSpec {
             entity: self.entity,
             select: self.select,
@@ -619,11 +641,30 @@ fn analyze_path_string(
         PathExpr::SystemVarNavigation { .. } => {
             // #value.field — #value is a pipeline value, no source fields to fetch
         }
-        PathExpr::EntityRef { inner, .. } => {
+        PathExpr::EntityRef { entity, inner } => {
             // The inner path may reference source fields that need fetching.
             // Re-dispatch on the inner path expression.
+            log::debug!(
+                "[analysis] EntityRef /{}: inner={:?}, segments={}",
+                entity,
+                std::mem::discriminant(inner.as_ref()),
+                match inner.as_ref() {
+                    PathExpr::Field(fp) => fp.segments.len(),
+                    _ => 0,
+                }
+            );
             match inner.as_ref() {
                 PathExpr::Field(field_path) => {
+                    log::debug!(
+                        "[analysis] EntityRef /{}: adding field_path with {} segments: {:?}",
+                        entity,
+                        field_path.segments.len(),
+                        field_path
+                            .segments
+                            .iter()
+                            .map(|s| &s.field)
+                            .collect::<Vec<_>>()
+                    );
                     collector.source.add_field_path(field_path);
                 }
                 PathExpr::VariableNavigation { name, path, .. } => {
