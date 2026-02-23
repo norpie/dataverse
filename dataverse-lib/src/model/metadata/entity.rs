@@ -314,39 +314,32 @@ impl EntityMetadata {
             None
         };
 
-        // Find default active/inactive statuscodes from status attribute options
-        let status_options = self.status_attributes.first().ok_or_else(|| {
-            format!(
-                "Entity '{}' has no status attributes — cannot determine valid statuscodes",
-                self.logical_name,
-            )
-        })?;
-
-        let default_active_statuscode = status_options
-            .option_set
-            .options
-            .iter()
-            .find(|o| o.state == 0)
-            .ok_or_else(|| {
-                format!(
-                    "Entity '{}' has no statuscode option for statecode=0 (active)",
-                    self.logical_name,
-                )
-            })?
-            .value;
-
-        let default_inactive_statuscode = status_options
-            .option_set
-            .options
-            .iter()
-            .find(|o| o.state == 1)
-            .ok_or_else(|| {
-                format!(
-                    "Entity '{}' has no statuscode option for statecode=1 (inactive)",
-                    self.logical_name,
-                )
-            })?
-            .value;
+        // Find default active/inactive statuscodes from status attribute options.
+        // Some system entities (e.g., systemuser, organization) have no status
+        // attributes; default to 0 so execution_metadata() still succeeds —
+        // these values are only used by Activate/Deactivate passes which won't
+        // run against such entities.
+        let (default_active_statuscode, default_inactive_statuscode) =
+            match self.status_attributes.first() {
+                Some(status_options) => {
+                    let active = status_options
+                        .option_set
+                        .options
+                        .iter()
+                        .find(|o| o.state == 0)
+                        .map(|o| o.value)
+                        .unwrap_or(0);
+                    let inactive = status_options
+                        .option_set
+                        .options
+                        .iter()
+                        .find(|o| o.state == 1)
+                        .map(|o| o.value)
+                        .unwrap_or(0);
+                    (active, inactive)
+                }
+                None => (0, 0),
+            };
 
         let lookup_targets: HashMap<String, Vec<String>> = self
             .attributes
