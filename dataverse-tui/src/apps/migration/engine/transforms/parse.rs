@@ -11,7 +11,8 @@ use crate::apps::migration::engine::TransformResult;
 
 /// Execute the parse_int transform.
 ///
-/// Parses `#value` string to an integer.
+/// Parses `#value` string to an integer. Returns null (with a warning) if the
+/// value cannot be parsed.
 ///
 /// # Examples
 ///
@@ -21,19 +22,26 @@ use crate::apps::migration::engine::TransformResult;
 ///
 /// // #value = "  -456  "
 /// // Result: -456 (Int)
+///
+/// // #value = "abc"
+/// // Result: Null (with warning)
 /// ```
 pub fn execute_parse_int(value: &Value) -> TransformResult {
     match value {
         Value::String(s) => match s.trim().parse::<i32>() {
             Ok(n) => TransformResult::Value(Value::Int(n)),
-            Err(e) => TransformResult::Error(TransformError::ParseError {
-                message: format!("Cannot parse '{}' as integer: {}", s, e),
-            }),
+            Err(e) => {
+                log::warn!("Cannot parse '{}' as integer: {}", s, e);
+                TransformResult::Value(Value::Null)
+            }
         },
         Value::Null => TransformResult::Value(Value::Null),
         Value::Int(n) => TransformResult::Value(Value::Int(*n)),
         Value::Long(n) => TransformResult::Value(Value::Int(*n as i32)),
-        other => TransformResult::Error(TransformError::type_mismatch("string", other.type_name())),
+        other => {
+            log::warn!("Cannot parse {:?} as integer: expected string", other);
+            TransformResult::Value(Value::Null)
+        }
     }
 }
 
@@ -151,19 +159,13 @@ mod tests {
     #[test]
     fn parse_int_invalid() {
         let result = execute_parse_int(&Value::String("abc".to_string()));
-        assert!(matches!(
-            result,
-            TransformResult::Error(TransformError::ParseError { .. })
-        ));
+        assert!(matches!(result, TransformResult::Value(Value::Null)));
     }
 
     #[test]
     fn parse_int_float_string_fails() {
         let result = execute_parse_int(&Value::String("12.34".to_string()));
-        assert!(matches!(
-            result,
-            TransformResult::Error(TransformError::ParseError { .. })
-        ));
+        assert!(matches!(result, TransformResult::Value(Value::Null)));
     }
 
     #[test]
