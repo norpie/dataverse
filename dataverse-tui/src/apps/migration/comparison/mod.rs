@@ -6,6 +6,7 @@
 pub mod diff;
 pub mod entity_lua;
 pub mod matching;
+pub mod phase_lua;
 
 use std::collections::HashMap;
 use std::collections::HashSet;

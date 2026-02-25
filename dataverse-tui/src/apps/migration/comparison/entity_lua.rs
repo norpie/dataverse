@@ -377,7 +377,7 @@ pub fn process_lua_creates(
 // =============================================================================
 
 /// Parse the `fields` table from a record entry into a HashMap of Values.
-fn parse_fields_table(
+pub(crate) fn parse_fields_table(
     runtime: &LuaRuntime,
     table: &Table,
 ) -> Result<HashMap<String, Value>, String> {
@@ -415,7 +415,7 @@ fn parse_fields_table(
 /// - String → try UUID parse → Guid, else try DateTime parse → DateTime, else String
 /// - Object with "id" key → EntityReference
 /// - Array → Json (preserved as-is)
-fn json_field_to_value(json: serde_json::Value) -> Value {
+pub(crate) fn json_field_to_value(json: serde_json::Value) -> Value {
     match json {
         serde_json::Value::Null => Value::Null,
         serde_json::Value::Bool(b) => Value::Bool(b),

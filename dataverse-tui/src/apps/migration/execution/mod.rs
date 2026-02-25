@@ -9,6 +9,8 @@
 //! 6. **Deactivate** — set inactive state on records and orphans
 //! 7. **Delete** — orphan record deletion
 
+pub mod phase_lua;
+
 use std::collections::HashMap;
 use std::collections::HashSet;
 
@@ -36,7 +38,7 @@ const BATCH_SIZE: usize = 50;
 // =============================================================================
 
 /// The sequential sub-phases of execution.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum SubPhase {
     Create,
     Activate,
@@ -797,7 +799,7 @@ pub fn generate_delete_pass(
 // =============================================================================
 
 /// Check if a value is a lookup field (EntityReference or null lookup).
-fn is_lookup_value(value: &Value, field: &str, meta: &ExecutionMetadata) -> bool {
+pub(crate) fn is_lookup_value(value: &Value, field: &str, meta: &ExecutionMetadata) -> bool {
     let result = match value {
         Value::EntityReference { .. } => true,
         Value::EntityBinding(_) => meta.lookup_attributes.contains(field),
@@ -826,7 +828,7 @@ fn is_lookup_value(value: &Value, field: &str, meta: &ExecutionMetadata) -> bool
 ///
 /// Returns `None` if the entity reference target is not in the metadata map
 /// (unknown entity — can't resolve set name).
-fn to_binding(
+pub(crate) fn to_binding(
     value: &Value,
     field: &str,
     entity_meta: &ExecutionMetadata,
@@ -874,7 +876,10 @@ fn to_binding(
 /// for `@odata.bind` annotations, not the logical attribute name (`nrq_countryid`).
 ///
 /// Returns an error if the navigation property mapping is not found.
-fn lookup_odata_name<'a>(field: &str, meta: &'a ExecutionMetadata) -> Result<&'a str, String> {
+pub(crate) fn lookup_odata_name<'a>(
+    field: &str,
+    meta: &'a ExecutionMetadata,
+) -> Result<&'a str, String> {
     meta.lookup_nav_properties
         .get(field)
         .map(|s| s.as_str())
@@ -980,7 +985,7 @@ fn extract_uuid_from_value(value: &Value) -> Option<Uuid> {
 }
 
 /// Group operations into batches of BATCH_SIZE with bypass headers.
-fn build_batches(operations: Vec<dataverse_lib::api::Operation>) -> Vec<Batch> {
+pub(crate) fn build_batches(operations: Vec<dataverse_lib::api::Operation>) -> Vec<Batch> {
     operations
         .chunks(BATCH_SIZE)
         .map(|chunk| {
