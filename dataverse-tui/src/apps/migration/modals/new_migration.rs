@@ -80,12 +80,6 @@ impl NewMigrationModal {
             return;
         };
 
-        if source_id == target_id {
-            self.error
-                .set(Some("Source and target must be different".to_string()));
-            return;
-        }
-
         let description = {
             let desc = self.description.get().trim().to_string();
             if desc.is_empty() { None } else { Some(desc) }
