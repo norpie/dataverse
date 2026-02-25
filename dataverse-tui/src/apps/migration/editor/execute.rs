@@ -42,9 +42,15 @@ impl MigrationEditor {
     /// - Already navigated to Page::Execute
     pub(super) async fn start_execution(&self, gx: &GlobalContext) {
         // Create PhaseRun in DB
-        let phase_id = self
-            .exec_entity_mappings
-            .with_ref(|ems| ems.first().map(|em| em.phase_id).unwrap_or(0));
+        let phase_id = {
+            let lua_phase_id = self.exec_phase_id.get();
+            if lua_phase_id != 0 {
+                lua_phase_id
+            } else {
+                self.exec_entity_mappings
+                    .with_ref(|ems| ems.first().map(|em| em.phase_id).unwrap_or(0))
+            }
+        };
 
         let repo = gx.data::<MigrationRepository>();
         let phase_run_id = match repo
@@ -102,6 +108,24 @@ impl MigrationEditor {
 
         // Update this sub-phase's status to Running
         self.update_sub_phase_status(sub_phase, SubPhaseStatus::Running);
+
+        // Lua phase path: use pre-built batches directly
+        let lua_batches = self.exec_lua_batches.with_ref(|lb| {
+            lb.as_ref()
+                .and_then(|batches| batches.get(&sub_phase).cloned())
+        });
+
+        if let Some(entity_batches) = lua_batches {
+            log::info!(
+                "[execution] Sub-phase {:?}: using pre-built Lua batches",
+                sub_phase,
+            );
+            self.submit_sub_phase_batches(sub_phase, entity_batches, gx)
+                .await;
+            return;
+        }
+
+        // Declarative phase path: generate batches from comparisons
 
         // Check if any entity mapping has this pass enabled
         let entity_mappings = self.exec_entity_mappings.get();
@@ -185,6 +209,20 @@ impl MigrationEditor {
             })
             .collect();
 
+        self.submit_sub_phase_batches(sub_phase, entity_batches, gx)
+            .await;
+    }
+
+    /// Submit pre-built entity batches to the queue for a sub-phase.
+    ///
+    /// Shared by both the declarative path (after `generate_*_pass`) and the
+    /// Lua path (pre-built batches from `exec_lua_batches`).
+    async fn submit_sub_phase_batches(
+        &self,
+        sub_phase: SubPhase,
+        entity_batches: Vec<EntityBatches>,
+        gx: &GlobalContext,
+    ) {
         let total_ops = total_operations(&entity_batches);
 
         if total_ops == 0 {

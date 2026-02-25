@@ -42,6 +42,7 @@ use rafter::widgets::TreeState;
 
 use crate::apps::migration::comparison::MappingComparison;
 use crate::apps::migration::comparison::OperationTypeCounts;
+use crate::apps::migration::execution::EntityBatches;
 use crate::apps::migration::execution::ExecutionError;
 use crate::apps::migration::execution::ExecutionStatus;
 use crate::apps::migration::execution::ExecutionTreeNode;
@@ -147,6 +148,10 @@ pub struct MigrationEditor {
     exec_metadata: std::collections::HashMap<String, ExecutionMetadata>,
     /// Entity mappings for the executing phase (for pass-enabled flags).
     exec_entity_mappings: Vec<EntityMapping>,
+    /// Pre-built batches for Lua phase execution (bypasses generate_*_pass).
+    exec_lua_batches: Option<std::collections::HashMap<SubPhase, Vec<EntityBatches>>>,
+    /// Phase ID for Lua phase execution (since exec_entity_mappings is empty).
+    exec_phase_id: i64,
     /// Current sub-phase being executed.
     exec_current_sub_phase: Option<SubPhase>,
     /// Map from queue item ID to entity name (for progress tracking).
@@ -201,6 +206,8 @@ impl MigrationEditor {
             Vec::new(),                       // exec_comparisons
             std::collections::HashMap::new(), // exec_metadata
             Vec::new(),                       // exec_entity_mappings
+            None,                             // exec_lua_batches
+            0,                                // exec_phase_id
             None,                             // exec_current_sub_phase
             std::collections::HashMap::new(), // exec_item_entity_map
             std::collections::HashMap::new(), // exec_item_op_counts
@@ -439,6 +446,8 @@ impl MigrationEditor {
         self.exec_comparisons.set(Vec::new());
         self.exec_metadata.set(std::collections::HashMap::new());
         self.exec_entity_mappings.set(Vec::new());
+        self.exec_lua_batches.set(None);
+        self.exec_phase_id.set(0);
         self.exec_current_sub_phase.set(None);
         self.exec_item_entity_map
             .set(std::collections::HashMap::new());

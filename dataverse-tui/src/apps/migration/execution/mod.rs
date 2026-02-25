@@ -80,7 +80,7 @@ impl SubPhase {
 // =============================================================================
 
 /// Batches for a single entity within a sub-phase.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct EntityBatches {
     /// Target entity logical name.
     pub entity: String,
