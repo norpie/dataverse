@@ -8,6 +8,7 @@ mod execute;
 mod helpers;
 mod insert_target;
 mod item_operations;
+mod phase_lua_operations;
 mod phase_operations;
 pub(crate) mod preview;
 mod transform_operations;
@@ -482,11 +483,14 @@ impl MigrationEditor {
             return;
         };
 
-        let phase_name = phases
-            .iter()
-            .find(|p| p.id == phase_id)
-            .map(|p| p.name.clone())
-            .unwrap_or_default();
+        let phase = phases.iter().find(|p| p.id == phase_id).unwrap();
+
+        if phase.mode == Mode::Lua {
+            self.run_lua_phase(phase.clone(), gx).await;
+            return;
+        }
+
+        let phase_name = phase.name.clone();
 
         // Gather entity mappings for this phase
         let entity_mappings = self.entity_mappings.get();
@@ -1577,6 +1581,10 @@ impl MigrationEditor {
                 self.add_phase_impl(gx).await;
             }
             Some(MigrationTreeNode::Phase(phase)) => {
+                if phase.mode == Mode::Lua {
+                    gx.toast(Toast::warning("Lua phases don't have entity mappings"));
+                    return;
+                }
                 // Phase selected -> add entity mapping under it
                 self.add_entity_mapping_impl(phase.id, gx).await;
             }
