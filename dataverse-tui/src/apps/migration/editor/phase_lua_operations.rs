@@ -130,51 +130,33 @@ impl MigrationEditor {
             }
         }
 
-        // 6. Run M.resolve()
-        let operations = match execute_phase_lua(&script, &source_data, &target_data) {
-            Ok(ops) => ops,
-            Err(e) => {
-                gx.modal(ErrorAcknowledgmentModal::new(
-                    "Lua Script Error".into(),
-                    format!("M.resolve() failed:\n{e}"),
-                ))
-                .await;
-                return;
-            }
-        };
-
-        if operations.is_empty() {
-            gx.toast(Toast::info("Lua script returned 0 operations"));
-            return;
-        }
-
-        // 7. Collect referenced entities for metadata resolution
-        let referenced_entities = collect_referenced_entities(&operations);
-        let referenced_relationships = collect_referenced_relationships(&operations);
-
-        // 8. Resolve metadata + relationships via LoadingModal
+        // 6–9. Run M.resolve(), collect refs, resolve metadata, build batches
+        //       — all in a single loading modal for continuous feedback.
         let tc = target_client.clone();
-        let ref_ents = referenced_entities.clone();
-        let ref_rels = referenced_relationships.clone();
 
-        let metadata_result: Result<
-            (
-                HashMap<String, ExecutionMetadata>,
-                HashMap<String, ResolvedRelationship>,
-            ),
-            String,
-        > = gx
+        let pipeline_result = gx
             .modal(LoadingModal::run_with_default_updates(
-                "Resolving metadata...",
+                "Running M.resolve()...",
                 || Err("Cancelled".to_string()),
                 |updater| {
                     let tc = tc.clone();
-                    let ref_ents = ref_ents.clone();
-                    let ref_rels = ref_rels.clone();
                     async move {
+                        // 6. Run M.resolve()
+                        let operations =
+                            execute_phase_lua(&script, &source_data, &target_data)?;
+
+                        if operations.is_empty() {
+                            return Err("Lua script returned 0 operations".to_string());
+                        }
+
+                        // 7. Collect referenced entities
+                        updater.update("Collecting referenced entities...".to_string());
+                        let ref_ents = collect_referenced_entities(&operations);
+                        let ref_rels = collect_referenced_relationships(&operations);
+
+                        // 8. Resolve metadata
                         let mut metadata: HashMap<String, ExecutionMetadata> = HashMap::new();
 
-                        // Resolve execution metadata for each referenced entity
                         for entity_name in &ref_ents {
                             updater.update(format!("Resolving metadata: {entity_name}"));
                             match tc.metadata().entity(entity_name.as_str()).await {
@@ -226,7 +208,7 @@ impl MigrationEditor {
                             }
                         }
 
-                        // Step 10: Resolve N:N relationship metadata
+                        // Resolve N:N relationship metadata
                         let mut relationships: HashMap<String, ResolvedRelationship> =
                             HashMap::new();
 
@@ -318,32 +300,27 @@ impl MigrationEditor {
                             );
                         }
 
-                        Ok((metadata, relationships))
+                        // 9. Build batches
+                        updater.update("Building operation batches...".to_string());
+                        let result = build_phase_lua_batches(
+                            operations,
+                            &metadata,
+                            &relationships,
+                        )?;
+
+                        Ok((result, metadata))
                     }
                 },
             ))
             .await;
 
-        let (metadata, relationships) = match metadata_result {
+        let (result, metadata) = match pipeline_result {
             Ok(data) => data,
             Err(e) => {
-                log::error!("[lua_phase] Failed to resolve metadata: {e}");
+                log::error!("[lua_phase] Pipeline failed: {e}");
                 gx.modal(ErrorAcknowledgmentModal::new(
-                    "Metadata Error".into(),
-                    format!("Failed to resolve metadata:\n{e}"),
-                ))
-                .await;
-                return;
-            }
-        };
-
-        // 9. Build batches
-        let result = match build_phase_lua_batches(operations, &metadata, &relationships) {
-            Ok(r) => r,
-            Err(e) => {
-                gx.modal(ErrorAcknowledgmentModal::new(
-                    "Batch Build Error".into(),
-                    format!("Failed to build operation batches:\n{e}"),
+                    "Lua Phase Error".into(),
+                    e.to_string(),
                 ))
                 .await;
                 return;
