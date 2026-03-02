@@ -2,7 +2,7 @@
 
 use std::path::Path;
 
-use calamine::{Data, Reader, Xlsx, open_workbook};
+use calamine::{open_workbook, Data, Reader, Xlsx};
 use rust_xlsxwriter::{Format, Workbook};
 
 use super::{FileIoError, FileRow, ParsedFile};
@@ -91,6 +91,52 @@ pub fn write_excel(
     Ok(())
 }
 
+/// A single sheet definition for multi-sheet Excel writing.
+pub struct ExcelSheet<'a> {
+    /// Sheet name (max 31 chars, no `\ / * ? : [ ]`).
+    pub name: &'a str,
+    /// Column headers.
+    pub headers: &'a [String],
+    /// Data rows.
+    pub rows: &'a [Vec<String>],
+}
+
+/// Write multiple sheets to a single Excel file.
+///
+/// This is a blocking operation - caller should use spawn_blocking.
+pub fn write_excel_multi(path: &Path, sheets: &[ExcelSheet<'_>]) -> Result<(), FileIoError> {
+    let mut workbook = Workbook::new();
+    let header_format = Format::new().set_bold();
+
+    for sheet in sheets {
+        validate_sheet_name(sheet.name)?;
+        let worksheet = workbook.add_worksheet().set_name(sheet.name)?;
+
+        // Column widths
+        for col_idx in 0..sheet.headers.len() {
+            worksheet.set_column_width(col_idx as u16, 20)?;
+        }
+
+        // Header row
+        for (col_idx, header) in sheet.headers.iter().enumerate() {
+            worksheet.write_string_with_format(0, col_idx as u16, header, &header_format)?;
+        }
+
+        // Data rows
+        for (row_idx, row) in sheet.rows.iter().enumerate() {
+            let excel_row = (row_idx + 1) as u32;
+            for (col_idx, value) in row.iter().enumerate() {
+                if !value.is_empty() {
+                    worksheet.write_string(excel_row, col_idx as u16, value)?;
+                }
+            }
+        }
+    }
+
+    workbook.save(path)?;
+    Ok(())
+}
+
 /// List available sheet names in an Excel file.
 ///
 /// This is a blocking operation - caller should use spawn_blocking.
@@ -145,7 +191,11 @@ pub fn read_excel(path: &Path, sheet_name: Option<&str>) -> Result<ParsedFile, F
             .iter()
             .map(|cell| {
                 let s = cell_to_string(cell);
-                if s.is_empty() { None } else { Some(s) }
+                if s.is_empty() {
+                    None
+                } else {
+                    Some(s)
+                }
             })
             .collect();
 

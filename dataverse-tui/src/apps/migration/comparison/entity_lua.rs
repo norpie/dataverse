@@ -37,6 +37,17 @@ pub struct LuaCreateEntry {
     pub fields: HashMap<String, Value>,
 }
 
+/// An Excel export produced by a Lua script.
+#[derive(Debug, Clone)]
+pub struct LuaExport {
+    /// Sheet/file name (e.g., "impulspremies").
+    pub name: String,
+    /// Column headers.
+    pub headers: Vec<String>,
+    /// Data rows (each row is a vector of string cell values).
+    pub rows: Vec<Vec<String>>,
+}
+
 /// Result of executing an entity-level Lua script.
 #[derive(Debug)]
 pub struct EntityLuaResult {
@@ -46,6 +57,8 @@ pub struct EntityLuaResult {
     pub match_index: LuaMatchIndex,
     /// Independent creates — results keyed by IDs not in source records.
     pub creates: Vec<LuaCreateEntry>,
+    /// Excel exports to write to disk.
+    pub exports: Vec<LuaExport>,
 }
 
 /// Execute an entity-level Lua script against source/target records.
@@ -261,17 +274,25 @@ pub fn execute_entity_lua(
         }
     }
 
+    // Parse optional exports table
+    let exports = match result.get::<Table>("exports") {
+        Ok(exports_table) => parse_exports_table(&exports_table)?,
+        Err(_) => Vec::new(),
+    };
+
     log::info!(
-        "[entity_lua] Executed: {} record results, {} match entries, {} independent creates",
+        "[entity_lua] Executed: {} record results, {} match entries, {} independent creates, {} exports",
         record_results.len(),
         match_index.len(),
         creates.len(),
+        exports.len(),
     );
 
     Ok(EntityLuaResult {
         record_results,
         match_index,
         creates,
+        exports,
     })
 }
 
@@ -375,6 +396,90 @@ pub fn process_lua_creates(
 // =============================================================================
 // Field parsing
 // =============================================================================
+
+/// Parse the optional `exports` table from the Lua result.
+///
+/// Expected shape: `{ sheet_name = { headers = { "A", "B" }, rows = { { "1", "2" }, ... } } }`
+fn parse_exports_table(table: &Table) -> Result<Vec<LuaExport>, String> {
+    let mut exports = Vec::new();
+
+    for pair in table.pairs::<mlua::String, mlua::Value>() {
+        let (key, value) = pair.map_err(|e| format!("Failed to iterate exports table: {e}"))?;
+        let name = key
+            .to_str()
+            .map_err(|e| format!("Invalid UTF-8 in export name: {e}"))?
+            .to_string();
+
+        let export_table = match value {
+            mlua::Value::Table(t) => t,
+            other => {
+                return Err(format!(
+                    "Expected table for export '{name}', got {:?}",
+                    other.type_name()
+                ));
+            }
+        };
+
+        // Parse headers
+        let headers_table: Table = export_table
+            .get("headers")
+            .map_err(|e| format!("Export '{name}' missing 'headers': {e}"))?;
+        let mut headers = Vec::new();
+        for pair in headers_table.pairs::<mlua::Integer, mlua::String>() {
+            let (_, val) = pair.map_err(|e| format!("Invalid header in export '{name}': {e}"))?;
+            headers.push(
+                val.to_str()
+                    .map_err(|e| format!("Invalid UTF-8 in header: {e}"))?
+                    .to_string(),
+            );
+        }
+
+        // Parse rows
+        let rows_table: Table = export_table
+            .get("rows")
+            .map_err(|e| format!("Export '{name}' missing 'rows': {e}"))?;
+        let mut rows = Vec::new();
+        for row_pair in rows_table.pairs::<mlua::Integer, mlua::Value>() {
+            let (_, row_val) =
+                row_pair.map_err(|e| format!("Invalid row in export '{name}': {e}"))?;
+            let row_table = match row_val {
+                mlua::Value::Table(t) => t,
+                other => {
+                    return Err(format!(
+                        "Expected table for row in export '{name}', got {:?}",
+                        other.type_name()
+                    ));
+                }
+            };
+            let mut row = Vec::new();
+            for cell_pair in row_table.pairs::<mlua::Integer, mlua::Value>() {
+                let (_, cell_val) =
+                    cell_pair.map_err(|e| format!("Invalid cell in export '{name}': {e}"))?;
+                let cell_str = match cell_val {
+                    mlua::Value::String(s) => s
+                        .to_str()
+                        .map_err(|e| format!("Invalid UTF-8 in cell: {e}"))?
+                        .to_string(),
+                    mlua::Value::Integer(n) => n.to_string(),
+                    mlua::Value::Number(n) => n.to_string(),
+                    mlua::Value::Boolean(b) => b.to_string(),
+                    mlua::Value::Nil => String::new(),
+                    other => format!("{:?}", other),
+                };
+                row.push(cell_str);
+            }
+            rows.push(row);
+        }
+
+        exports.push(LuaExport {
+            name,
+            headers,
+            rows,
+        });
+    }
+
+    Ok(exports)
+}
 
 /// Parse the `fields` table from a record entry into a HashMap of Values.
 pub(crate) fn parse_fields_table(

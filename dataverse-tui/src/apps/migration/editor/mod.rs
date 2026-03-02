@@ -1020,6 +1020,61 @@ impl MigrationEditor {
                             }
                         };
 
+                        // Write Lua exports to a single Excel file with multiple sheets
+                        if !lua_result.exports.is_empty() {
+                            if let Some(exports_dir) = crate::paths::exports_dir() {
+                                if let Err(e) = std::fs::create_dir_all(&exports_dir) {
+                                    log::error!("[entity_lua] Failed to create exports directory: {e}");
+                                } else {
+                                    let sanitized_name = em.name.replace(' ', "_").to_lowercase();
+                                    let filename = format!("{}.xlsx", sanitized_name);
+                                    let path = exports_dir.join(&filename);
+
+                                    let sheets: Vec<crate::file_io::ExcelSheet<'_>> = lua_result
+                                        .exports
+                                        .iter()
+                                        .map(|export| crate::file_io::ExcelSheet {
+                                            name: &export.name,
+                                            headers: &export.headers,
+                                            rows: &export.rows,
+                                        })
+                                        .collect();
+
+                                    match crate::file_io::write_excel_multi(&path, &sheets) {
+                                        Ok(()) => {
+                                            let total_rows: usize = lua_result.exports.iter().map(|e| e.rows.len()).sum();
+                                            let sheet_names: Vec<&str> = lua_result.exports.iter().map(|e| e.name.as_str()).collect();
+                                            log::info!(
+                                                "[entity_lua] Wrote {} sheets ({} total rows) to {}",
+                                                sheets.len(),
+                                                total_rows,
+                                                path.display()
+                                            );
+                                            updater.update(format!(
+                                                "Exported {} sheets ({} rows) to {}",
+                                                sheets.len(),
+                                                total_rows,
+                                                filename,
+                                            ));
+                                            for export in &lua_result.exports {
+                                                log::info!(
+                                                    "[entity_lua]   - {}: {} rows",
+                                                    export.name,
+                                                    export.rows.len()
+                                                );
+                                            }
+                                        }
+                                        Err(e) => {
+                                            log::error!(
+                                                "[entity_lua] Failed to write exports to {}: {e}",
+                                                path.display()
+                                            );
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
                         // Validate lookups before comparison
                         let mut lua_record_results = lua_result.record_results;
                         let lua_creates = lua_result.creates;

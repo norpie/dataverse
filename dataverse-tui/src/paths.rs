@@ -87,6 +87,13 @@ pub fn log_file() -> Option<PathBuf> {
     logs_dir().map(|dir| dir.join("latest.log"))
 }
 
+/// Get the exports directory for Lua script exports.
+///
+/// - Linux: `$XDG_CACHE_HOME/dataverse/exports` or `~/.cache/dataverse/exports`
+pub fn exports_dir() -> Option<PathBuf> {
+    cache_dir().map(|dir| dir.join("exports"))
+}
+
 /// Get the user's Downloads directory.
 ///
 /// - Linux: `$XDG_DOWNLOAD_DIR` or `~/Downloads`
