@@ -277,19 +277,17 @@ pub(super) struct NavigationPath {
 /// Includes:
 /// - Dotted field paths (`parentaccountid.name`) — start from the source entity
 /// - Variable navigation paths (`$var.field`) — start from the variable's Lookup target entity
+/// - System var navigation paths (`#value.field`) — start entity inferred from preceding chain transforms
 pub(super) fn collect_navigation_paths(
     transforms: &[crate::apps::migration::types::Transform],
     entity_mappings: &[crate::apps::migration::types::EntityMapping],
     variables: &[crate::apps::migration::types::Variable],
+    source_field_types: &FieldTypeCache,
 ) -> Vec<NavigationPath> {
     let mut paths = Vec::new();
 
     for t in transforms {
         if let TransformData::Copy { path } = &t.data {
-            if path.starts_with('#') {
-                continue;
-            }
-
             match parse_path(path) {
                 Ok(PathExpr::Field(field_path)) if field_path.segments.len() >= 2 => {
                     // Dotted field path — start from source entity
@@ -327,12 +325,143 @@ pub(super) fn collect_navigation_paths(
                         });
                     }
                 }
+                Ok(PathExpr::SystemVarNavigation {
+                    var: crate::apps::migration::types::SystemVar::Value,
+                    path: field_path,
+                    ..
+                }) => {
+                    // #value.field — infer start entity from preceding transforms in the same chain
+                    if let Some(start_entity) = infer_value_entity_from_chain(
+                        t,
+                        transforms,
+                        entity_mappings,
+                        source_field_types,
+                    ) {
+                        paths.push(NavigationPath {
+                            start_entity,
+                            path: field_path,
+                        });
+                    }
+                }
                 _ => {}
             }
         }
     }
 
     paths
+}
+
+/// Infer the entity that `#value` points to by walking preceding transforms in the same chain.
+///
+/// Walks siblings in order, tracking what type each transform would produce.
+/// Only handles the common cases (Copy field → Lookup, Find → Record).
+fn infer_value_entity_from_chain(
+    current: &crate::apps::migration::types::Transform,
+    all_transforms: &[crate::apps::migration::types::Transform],
+    entity_mappings: &[crate::apps::migration::types::EntityMapping],
+    source_field_types: &FieldTypeCache,
+) -> Option<String> {
+    let source_entity = entity_mappings
+        .iter()
+        .find(|em| em.id == current.entity_mapping_id)
+        .map(|em| em.source_entity.as_str())
+        .unwrap_or_default();
+
+    // Collect preceding transforms in the same chain (same parent_type + parent_id, lower order)
+    let mut preceding: Vec<_> = all_transforms
+        .iter()
+        .filter(|t| {
+            t.parent_type == current.parent_type
+                && t.parent_id == current.parent_id
+                && t.entity_mapping_id == current.entity_mapping_id
+                && t.order < current.order
+        })
+        .collect();
+    preceding.sort_by_key(|t| t.order);
+
+    // Walk the chain to determine what entity #value would point to
+    let mut current_entity: Option<String> = None;
+
+    for t in preceding {
+        match &t.data {
+            TransformData::Copy { path } => {
+                // Resolve field type from source entity metadata
+                match parse_path(path) {
+                    Ok(PathExpr::Field(field_path)) => {
+                        current_entity = resolve_field_to_lookup_target(
+                            &field_path,
+                            source_entity,
+                            source_field_types,
+                        );
+                    }
+                    Ok(PathExpr::SystemVarNavigation { path: field_path, .. }) => {
+                        // #value.field on preceding value — resolve from current_entity
+                        if let Some(ref entity) = current_entity {
+                            current_entity = resolve_field_to_lookup_target(
+                                &field_path,
+                                entity,
+                                source_field_types,
+                            );
+                        }
+                    }
+                    _ => {
+                        current_entity = None;
+                    }
+                }
+            }
+            TransformData::Find { entity, .. } => {
+                // Find produces a Record of the target entity
+                current_entity = Some(entity.clone());
+            }
+            _ => {
+                // Other transforms may pass through or change the type;
+                // conservatively give up tracking
+                current_entity = None;
+            }
+        }
+    }
+
+    current_entity
+}
+
+/// Resolve the final segment of a field path to a Lookup target entity.
+fn resolve_field_to_lookup_target(
+    field_path: &FieldPath,
+    start_entity: &str,
+    source_field_types: &FieldTypeCache,
+) -> Option<String> {
+    let fields = source_field_types.get(start_entity)?;
+    let mut current_entity = start_entity.to_string();
+
+    for (i, segment) in field_path.segments.iter().enumerate() {
+        let segment_fields = if i == 0 {
+            fields
+        } else {
+            source_field_types.get(&current_entity)?
+        };
+
+        let field_type = segment_fields.get(&segment.field)?;
+        match field_type {
+            FieldType::Lookup { targets, .. } if targets.len() == 1 => {
+                current_entity = targets[0].clone();
+            }
+            FieldType::Lookup { targets, .. } => {
+                // Polymorphic — check for explicit target
+                if let Some(target) = &segment.target {
+                    if targets.contains(target) {
+                        current_entity = target.clone();
+                    } else {
+                        return None;
+                    }
+                } else {
+                    return None;
+                }
+            }
+            _ => return None,
+        }
+    }
+
+    Some(current_entity)
 }
 
 /// Resolve the target entity from a Lookup ValueType, with optional polymorphic target.

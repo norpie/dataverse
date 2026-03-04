@@ -284,7 +284,7 @@ impl MigrationEditor {
         };
 
         // 4. Discover and fetch navigation entities (dotted copy paths + variable navigation)
-        let nav_paths = collect_navigation_paths(&transforms, &entity_mappings, &variables);
+        let nav_paths = collect_navigation_paths(&transforms, &entity_mappings, &variables, &source_field_types);
         if !nav_paths.is_empty() {
             log::debug!(
                 "watch rebuild: found {} navigation paths for entity scanning",
