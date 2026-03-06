@@ -1,5 +1,6 @@
 //! OData query builder.
 
+use std::collections::HashMap;
 use std::collections::HashSet;
 
 use crate::DataverseClient;
@@ -170,6 +171,15 @@ impl QueryBuilder {
             .map(|attr| attr.logical_name.clone())
             .collect();
 
+        // Build a mapping from lookup logical name → schema name for nav properties.
+        // In Dataverse OData, navigation property names use the SchemaName (PascalCase),
+        // not the LogicalName (lowercase). e.g., "nrq_projectid" → "nrq_ProjectId".
+        let lookup_nav_names: HashMap<String, String> = attributes
+            .iter()
+            .filter(|attr| attr.is_lookup())
+            .map(|attr| (attr.logical_name.clone(), attr.schema_name.clone()))
+            .collect();
+
         // Transform select fields
         self.select = self
             .select
@@ -186,6 +196,9 @@ impl QueryBuilder {
         if let Some(ref order) = self.order_by {
             self.order_by = Some(transform_order_by(order, &lookup_fields));
         }
+
+        // Transform expand navigation property names from logical to schema names
+        transform_expand_nav_properties(&mut self.expands, &lookup_nav_names);
 
         Ok(())
     }
@@ -439,6 +452,34 @@ fn transform_filter(filter: &Filter, lookup_fields: &HashSet<String>) -> Filter 
         ),
         Filter::Not(inner) => Filter::Not(Box::new(transform_filter(inner, lookup_fields))),
         Filter::Raw(s) => Filter::Raw(s.clone()),
+    }
+}
+
+/// Transforms expand navigation property names from logical to schema names.
+///
+/// In Dataverse OData, navigation property names use the SchemaName (PascalCase),
+/// not the LogicalName (lowercase). For example, a lookup attribute with logical
+/// name `nrq_projectid` has navigation property name `nrq_ProjectId`.
+///
+/// This only transforms the top-level navigation property names using the provided
+/// entity's lookup metadata. Nested expand contents (select/filter) would need
+/// metadata from the expanded entity and are not transformed here.
+fn transform_expand_nav_properties(
+    expands: &mut [ExpandBuilder],
+    lookup_nav_names: &HashMap<String, String>,
+) {
+    for expand in expands.iter_mut() {
+        let nav = expand.navigation_property();
+        if let Some(schema_name) = lookup_nav_names.get(nav) {
+            if nav != schema_name {
+                log::debug!(
+                    "[QueryBuilder] Transforming expand nav property: {} → {}",
+                    nav,
+                    schema_name
+                );
+                expand.set_navigation_property(schema_name.clone());
+            }
+        }
     }
 }
 

@@ -102,6 +102,19 @@ impl ExpandBuilder {
         &self.navigation_property
     }
 
+    /// Sets the navigation property name.
+    ///
+    /// Used by [`QueryBuilder::transform_lookup_fields`] to rename logical names
+    /// to OData navigation property names (e.g., `nrq_projectid` → `nrq_ProjectId`).
+    pub(crate) fn set_navigation_property(&mut self, name: String) {
+        self.navigation_property = name;
+    }
+
+    /// Returns a mutable reference to the nested expands.
+    pub(crate) fn expands_mut(&mut self) -> &mut Vec<ExpandBuilder> {
+        &mut self.expands
+    }
+
     /// Converts this expand builder to an OData `$expand` clause.
     ///
     /// Returns the full expand expression including nested options.
