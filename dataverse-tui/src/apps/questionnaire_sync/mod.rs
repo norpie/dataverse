@@ -1,6 +1,7 @@
 //! Questionnaire Sync app.
 
 pub mod modals;
+pub mod types;
 
 use std::collections::HashMap;
 
@@ -19,20 +20,10 @@ use crate::modals::odata_fetch::ODataFetchModal;
 use crate::modals::odata_fetch::ODataFetchTask;
 use crate::systems::client_management::ClientManagement;
 use crate::systems::client_management::GetAnyClient;
-
-#[derive(Clone)]
-struct EntitySnapshot {
-    entity: String,
-    record_count: usize,
-    records: Vec<Record>,
-}
-
-#[derive(Clone)]
-struct EnvironmentSnapshot {
-    environment_id: i64,
-    environment_name: String,
-    entities: Vec<EntitySnapshot>,
-}
+use crate::apps::questionnaire_sync::types::{
+    QuestionnaireEnvironmentSnapshot,
+    QuestionnaireEntitySnapshot,
+};
 
 #[derive(Clone)]
 struct FetchSpec {
@@ -93,8 +84,8 @@ pub struct QuestionnaireSync {
     target_environment_id: Option<i64>,
     source_environment_name: Option<String>,
     target_environment_name: Option<String>,
-    source_snapshot: Option<EnvironmentSnapshot>,
-    target_snapshot: Option<EnvironmentSnapshot>,
+    source_snapshot: Option<QuestionnaireEnvironmentSnapshot>,
+    target_snapshot: Option<QuestionnaireEnvironmentSnapshot>,
     fetch_error: Option<String>,
 }
 
@@ -265,9 +256,8 @@ impl QuestionnaireSync {
         let mut source_entities = Vec::new();
         let mut target_entities = Vec::new();
         for (spec, records) in specs.into_iter().zip(results.into_iter()) {
-            let entity_snapshot = EntitySnapshot {
+            let entity_snapshot = QuestionnaireEntitySnapshot {
                 entity: spec.entity.to_string(),
-                record_count: records.len(),
                 records,
             };
             if spec.environment_id == source_env_id {
@@ -277,12 +267,12 @@ impl QuestionnaireSync {
             }
         }
 
-        self.source_snapshot.set(Some(EnvironmentSnapshot {
+        self.source_snapshot.set(Some(QuestionnaireEnvironmentSnapshot {
             environment_id: source_env_id,
             environment_name: source_env_name,
             entities: source_entities,
         }));
-        self.target_snapshot.set(Some(EnvironmentSnapshot {
+        self.target_snapshot.set(Some(QuestionnaireEnvironmentSnapshot {
             environment_id: target_env_id,
             environment_name: target_env_name,
             entities: target_entities,
@@ -422,11 +412,11 @@ impl QuestionnaireSync {
     }
 }
 
-fn environment_total_records(snapshot: &EnvironmentSnapshot) -> usize {
-    snapshot.entities.iter().map(|entity| entity.record_count).sum()
+fn environment_total_records(snapshot: &QuestionnaireEnvironmentSnapshot) -> usize {
+    snapshot.total_records()
 }
 
-fn render_snapshot(title: &str, snapshot: &EnvironmentSnapshot) -> Element {
+fn render_snapshot(title: &str, snapshot: &QuestionnaireEnvironmentSnapshot) -> Element {
     let entity_rows: Vec<Element> = snapshot
         .entities
         .iter()
@@ -434,7 +424,7 @@ fn render_snapshot(title: &str, snapshot: &EnvironmentSnapshot) -> Element {
             element! {
                 row (width: fill, justify: between) {
                     text (content: {entity.entity.clone()}) style (fg: primary)
-                    text (content: {format!("{}", entity.record_count)}) style (fg: muted)
+                    text (content: {format!("{}", entity.record_count())}) style (fg: muted)
                 }
             }
         })
