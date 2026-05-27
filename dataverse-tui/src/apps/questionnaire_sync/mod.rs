@@ -1,6 +1,7 @@
 //! Questionnaire Sync app.
 
 pub mod modals;
+pub mod scope;
 pub mod types;
 
 use std::collections::HashMap;
@@ -20,6 +21,7 @@ use crate::modals::odata_fetch::ODataFetchModal;
 use crate::modals::odata_fetch::ODataFetchTask;
 use crate::systems::client_management::ClientManagement;
 use crate::systems::client_management::GetAnyClient;
+use crate::apps::questionnaire_sync::scope::QUESTIONNAIRE_ENTITIES;
 use crate::apps::questionnaire_sync::types::{
     QuestionnaireEnvironmentSnapshot,
     QuestionnaireEntitySnapshot,
@@ -47,32 +49,10 @@ impl FetchSpec {
 }
 
 fn questionnaire_sync_entities() -> Vec<&'static str> {
-    vec![
-        "nrq_questionnaire",
-        "nrq_questionnairepage",
-        "nrq_questionnairepageline",
-        "nrq_questiongroup",
-        "nrq_questiongroupline",
-        "nrq_question",
-        "nrq_questiontemplateline",
-        "nrq_questioncondition",
-        "nrq_questionconditionaction",
-        "nrq_questiontemplate",
-        "nrq_questiontag",
-        "nrq_role",
-        "nrq_pdfreport",
-        "nrq_domain",
-        "nrq_type",
-        "nrq_fund",
-        "nrq_support",
-        "nrq_category",
-        "nrq_subcategory",
-        "nrq_flemishshare",
-        "nrq_betalingsschijf",
-        "nrq_betalingsschijflijn",
-        "nrq_grootboekrekening",
-        "nrq_kostenplaats",
-    ]
+    QUESTIONNAIRE_ENTITIES
+        .iter()
+        .map(|spec| spec.logical_name)
+        .collect()
 }
 
 /// Questionnaire sync app.
