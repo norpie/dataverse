@@ -2,4 +2,4 @@
 //!
 //! Re-exports from [`crate::formatting`] for backwards compatibility.
 
-pub use crate::formatting::{string_to_value, ParseError as ConvertError};
+pub use crate::formatting::{ParseError as ConvertError, string_to_value};

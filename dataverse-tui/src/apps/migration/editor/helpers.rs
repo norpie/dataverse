@@ -394,7 +394,9 @@ fn infer_value_entity_from_chain(
                             source_field_types,
                         );
                     }
-                    Ok(PathExpr::SystemVarNavigation { path: field_path, .. }) => {
+                    Ok(PathExpr::SystemVarNavigation {
+                        path: field_path, ..
+                    }) => {
                         // #value.field on preceding value — resolve from current_entity
                         if let Some(ref entity) = current_entity {
                             current_entity = resolve_field_to_lookup_target(

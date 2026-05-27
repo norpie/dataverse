@@ -325,7 +325,10 @@ impl QueryBuilder {
     #[handler]
     async fn show_select_menu(&self, idx: usize, cx: &AppContext, gx: &GlobalContext) {
         let (x, y) = if let Some(rect) = gx.focused_element_rect() {
-            (rect.x.max(0) as u16, (rect.y + rect.height as i16).max(0) as u16)
+            (
+                rect.x.max(0) as u16,
+                (rect.y + rect.height as i16).max(0) as u16,
+            )
         } else {
             gx.mouse_position()
         };
@@ -360,7 +363,10 @@ impl QueryBuilder {
     #[handler]
     async fn show_sort_menu(&self, id: usize, cx: &AppContext, gx: &GlobalContext) {
         let (x, y) = if let Some(rect) = gx.focused_element_rect() {
-            (rect.x.max(0) as u16, (rect.y + rect.height as i16).max(0) as u16)
+            (
+                rect.x.max(0) as u16,
+                (rect.y + rect.height as i16).max(0) as u16,
+            )
         } else {
             gx.mouse_position()
         };

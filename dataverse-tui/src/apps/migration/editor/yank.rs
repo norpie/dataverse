@@ -38,26 +38,18 @@ pub enum YankedChild {
         transforms: Vec<YankedTransform>,
     },
     /// A coalesce fallback chain with its nested transforms.
-    CoalesceChain {
-        transforms: Vec<YankedTransform>,
-    },
+    CoalesceChain { transforms: Vec<YankedTransform> },
     /// A find condition with its target field and nested transform chain.
     FindCondition {
         target_field: String,
         transforms: Vec<YankedTransform>,
     },
     /// A guard's fallback chain.
-    GuardFallback {
-        transforms: Vec<YankedTransform>,
-    },
+    GuardFallback { transforms: Vec<YankedTransform> },
     /// A match's default branch chain.
-    MatchDefault {
-        transforms: Vec<YankedTransform>,
-    },
+    MatchDefault { transforms: Vec<YankedTransform> },
     /// A find's default chain.
-    FindDefault {
-        transforms: Vec<YankedTransform>,
-    },
+    FindDefault { transforms: Vec<YankedTransform> },
 }
 
 impl YankedTransform {
@@ -114,9 +106,7 @@ pub fn build_yanked_tree(
             if yanked.is_empty() {
                 vec![]
             } else {
-                vec![YankedChild::GuardFallback {
-                    transforms: yanked,
-                }]
+                vec![YankedChild::GuardFallback { transforms: yanked }]
             }
         }
         TransformData::Match { has_default } => {
@@ -156,9 +146,7 @@ pub fn build_yanked_tree(
                     all_coalesce_chains,
                     all_find_conditions,
                 );
-                children.push(YankedChild::MatchDefault {
-                    transforms: yanked,
-                });
+                children.push(YankedChild::MatchDefault { transforms: yanked });
             }
 
             children
@@ -182,9 +170,7 @@ pub fn build_yanked_tree(
                         all_coalesce_chains,
                         all_find_conditions,
                     );
-                    YankedChild::CoalesceChain {
-                        transforms: yanked,
-                    }
+                    YankedChild::CoalesceChain { transforms: yanked }
                 })
                 .collect()
         }
@@ -227,9 +213,7 @@ pub fn build_yanked_tree(
                     all_coalesce_chains,
                     all_find_conditions,
                 );
-                children.push(YankedChild::FindDefault {
-                    transforms: yanked,
-                });
+                children.push(YankedChild::FindDefault { transforms: yanked });
             }
 
             children
@@ -363,7 +347,12 @@ pub async fn paste_yanked_tree(
                 for child in &yt.children {
                     match child {
                         YankedChild::GuardFallback { transforms } => {
-                            enqueue_chain(transforms, ParentType::GuardFallback, tid, &mut child_work);
+                            enqueue_chain(
+                                transforms,
+                                ParentType::GuardFallback,
+                                tid,
+                                &mut child_work,
+                            );
                         }
                         YankedChild::MatchBranch {
                             condition,
@@ -384,10 +373,20 @@ pub async fn paste_yanked_tree(
                                 .await
                                 .map_err(|e| format!("Failed to create match branch: {}", e))?;
 
-                            enqueue_chain(transforms, ParentType::MatchBranch, branch_id, &mut child_work);
+                            enqueue_chain(
+                                transforms,
+                                ParentType::MatchBranch,
+                                branch_id,
+                                &mut child_work,
+                            );
                         }
                         YankedChild::MatchDefault { transforms } => {
-                            enqueue_chain(transforms, ParentType::MatchDefault, tid, &mut child_work);
+                            enqueue_chain(
+                                transforms,
+                                ParentType::MatchDefault,
+                                tid,
+                                &mut child_work,
+                            );
                         }
                         YankedChild::CoalesceChain { transforms } => {
                             let chain_count = repo
@@ -404,7 +403,12 @@ pub async fn paste_yanked_tree(
                                 .await
                                 .map_err(|e| format!("Failed to create coalesce chain: {}", e))?;
 
-                            enqueue_chain(transforms, ParentType::CoalesceChain, chain_id, &mut child_work);
+                            enqueue_chain(
+                                transforms,
+                                ParentType::CoalesceChain,
+                                chain_id,
+                                &mut child_work,
+                            );
                         }
                         YankedChild::FindCondition {
                             target_field,
@@ -425,10 +429,20 @@ pub async fn paste_yanked_tree(
                                 .await
                                 .map_err(|e| format!("Failed to create find condition: {}", e))?;
 
-                            enqueue_chain(transforms, ParentType::FindCondition, cond_id, &mut child_work);
+                            enqueue_chain(
+                                transforms,
+                                ParentType::FindCondition,
+                                cond_id,
+                                &mut child_work,
+                            );
                         }
                         YankedChild::FindDefault { transforms } => {
-                            enqueue_chain(transforms, ParentType::FindDefault, tid, &mut child_work);
+                            enqueue_chain(
+                                transforms,
+                                ParentType::FindDefault,
+                                tid,
+                                &mut child_work,
+                            );
                         }
                     }
                 }

@@ -150,7 +150,10 @@ impl ClientManager {
 
     /// Returns all currently cached clients (without creating new ones).
     pub fn all_cached_clients(&self) -> Vec<DataverseClient> {
-        self.clients.iter().map(|entry| entry.value().clone()).collect()
+        self.clients
+            .iter()
+            .map(|entry| entry.value().clone())
+            .collect()
     }
 
     /// Invalidates the cached client for the given account and environment.

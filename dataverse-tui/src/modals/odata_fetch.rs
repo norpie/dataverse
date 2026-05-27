@@ -303,7 +303,12 @@ impl ODataFetchModal {
                 }
                 TaskMessage::Failed { index, error } => {
                     let label = self.task_infos.get()[index].label.clone();
-                    log::error!("OData fetch task \"{}\" (index {}) failed: {}", label, index, error);
+                    log::error!(
+                        "OData fetch task \"{}\" (index {}) failed: {}",
+                        label,
+                        index,
+                        error
+                    );
 
                     self.task_infos.update(|infos| {
                         infos[index].status = FetchTaskStatus::Failed;

@@ -5,13 +5,13 @@ use std::sync::Arc;
 use dataverse_lib::model::Value;
 
 use super::convert::value_to_plain_string;
-use super::resolve::resolve_path_str;
 use super::resolve::ResolveContext;
+use super::resolve::resolve_path_str;
 use crate::apps::migration::engine::TransformError;
 use crate::apps::migration::engine::TransformResult;
-use crate::apps::migration::validation::parse_path;
 use crate::apps::migration::validation::FieldPath;
 use crate::apps::migration::validation::PathExpr;
+use crate::apps::migration::validation::parse_path;
 
 /// Execute the format transform.
 ///

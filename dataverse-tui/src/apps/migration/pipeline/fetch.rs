@@ -10,15 +10,15 @@
 use std::collections::HashMap;
 use std::collections::HashSet;
 
-use dataverse_lib::api::query::odata::QueryBuilder;
+use dataverse_lib::DataverseClient;
 use dataverse_lib::api::query::Filter;
+use dataverse_lib::api::query::odata::QueryBuilder;
 use dataverse_lib::model::Entity;
 use dataverse_lib::model::Value;
-use dataverse_lib::DataverseClient;
 
 use crate::modals::odata_fetch::ODataFetchTask;
-use crate::widgets::filter_builder::convert_filter;
 use crate::widgets::filter_builder::FilterNode;
+use crate::widgets::filter_builder::convert_filter;
 
 use super::ExpandSpec;
 use super::FetchPlan;
@@ -110,15 +110,20 @@ pub fn build_target_task(config: &FetchTaskConfig<'_>) -> Result<Option<QueryBui
 /// Build fetch tasks for find cache entities.
 ///
 /// Takes the **merged** find cache specs (already deduplicated across mappings).
+/// Always sets `$select` to avoid fetching all columns — includes the primary key
+/// (convention: `{entity}id`) plus any explicitly required fields.
 pub fn build_find_cache_tasks(specs: &[FindCacheSpec]) -> Vec<QueryBuilder> {
     specs
         .iter()
         .map(|spec| {
-            let select_vec: Vec<&str> = spec.select.iter().map(|s| s.as_str()).collect();
+            // Always include the primary key in $select (convention: {entity}id).
+            let primary_key = format!("{}id", spec.entity);
+            let mut select_set: HashSet<&str> = spec.select.iter().map(|s| s.as_str()).collect();
+            select_set.insert(&primary_key);
+            let select_vec: Vec<&str> = select_set.into_iter().collect();
+
             let mut query = QueryBuilder::new(Entity::logical(&spec.entity));
-            if !select_vec.is_empty() {
-                query = query.select(&select_vec);
-            }
+            query = query.select(&select_vec);
             for expand_spec in &spec.expands {
                 query = apply_expand(query, expand_spec);
             }

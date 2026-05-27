@@ -23,13 +23,13 @@ use crate::apps::migration::repository::MigrationRepository;
 use crate::apps::migration::repository::NewPhaseRun;
 use crate::apps::migration::types::EntityMapping;
 use crate::apps::migration::types::PhaseRunStatus;
-use crate::modals::ErrorModal;
 use crate::apps::queue::Queue;
 use crate::apps::queue::api::AddItems;
 use crate::apps::queue::api::GetItemResults;
 use crate::apps::queue::api::NewItem;
 use crate::apps::queue::api::QueueItemCompleted;
 use crate::apps::queue::types::QueuePayload;
+use crate::modals::ErrorModal;
 
 use super::MigrationEditor;
 
@@ -154,11 +154,7 @@ impl MigrationEditor {
                     .filter(|em| !em.update_pass_enabled)
                     .map(|em| em.target_entity.clone())
                     .collect();
-                let result = match generate_create_pass(
-                    &comparisons,
-                    &metadata,
-                    &update_disabled,
-                ) {
+                let result = match generate_create_pass(&comparisons, &metadata, &update_disabled) {
                     Ok(result) => result,
                     Err(e) => {
                         log::error!("[execution] Create pass failed: {}", e);

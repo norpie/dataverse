@@ -68,6 +68,10 @@ pub fn values_equal(a: &Value, b: &Value) -> bool {
 /// Simpler than `traverse_record` in resolve.rs — no TransformResult/entity tracking,
 /// just walks through `Value::Record(nested)` following each segment.
 ///
+/// Uses case-insensitive fallback for field lookups to handle the mismatch between
+/// user-configured logical names (lowercase, e.g., `nrq_projectid`) and OData
+/// navigation property keys (SchemaName/PascalCase, e.g., `nrq_ProjectId`).
+///
 /// # Examples
 ///
 /// - `traverse_path(record, "name")` → `record.get("name")`
@@ -80,7 +84,7 @@ pub fn traverse_path<'a>(record: &'a Record, path: &str) -> Option<&'a Value> {
     }
 
     if segments.len() == 1 {
-        return record.get(segments[0]);
+        return record_get_insensitive(record, segments[0]);
     }
 
     // Walk through nested records
@@ -88,11 +92,11 @@ pub fn traverse_path<'a>(record: &'a Record, path: &str) -> Option<&'a Value> {
     for (i, segment) in segments.iter().enumerate() {
         if i == segments.len() - 1 {
             // Last segment — return the value
-            return current_record.get(segment);
+            return record_get_insensitive(current_record, segment);
         }
 
         // Intermediate segment — must be a nested Record
-        match current_record.get(segment) {
+        match record_get_insensitive(current_record, segment) {
             Some(Value::Record(nested)) => {
                 current_record = nested;
             }
@@ -101,6 +105,28 @@ pub fn traverse_path<'a>(record: &'a Record, path: &str) -> Option<&'a Value> {
     }
 
     None
+}
+
+/// Get a field from a record, falling back to case-insensitive matching.
+///
+/// Dataverse OData responses use SchemaName (PascalCase) for navigation property keys
+/// (e.g., `nrq_ProjectId`), but user configuration uses logical names (lowercase,
+/// e.g., `nrq_projectid`). This function tries an exact match first, then falls back
+/// to case-insensitive comparison.
+pub fn record_get_insensitive<'a>(record: &'a Record, field: &str) -> Option<&'a Value> {
+    // Fast path: exact match
+    if let Some(v) = record.get(field) {
+        return Some(v);
+    }
+    // Fallback: case-insensitive search for navigation property keys
+    let field_lower = field.to_lowercase();
+    record.fields().iter().find_map(|(k, v)| {
+        if k.to_lowercase() == field_lower {
+            Some(v)
+        } else {
+            None
+        }
+    })
 }
 
 #[cfg(test)]

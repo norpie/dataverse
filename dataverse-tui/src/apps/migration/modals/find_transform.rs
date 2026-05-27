@@ -20,7 +20,6 @@ use crate::apps::migration::types::FindFallback;
 use crate::apps::migration::types::FindMode;
 use crate::modals::FileBrowserModal;
 
-
 /// Page enum — each page represents a mode.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum Page {

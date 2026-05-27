@@ -655,8 +655,7 @@ impl IndexerSystem {
         );
 
         if event.all_environments {
-            self.clear_cache_all_environments(&event.category, gx)
-                .await;
+            self.clear_cache_all_environments(&event.category, gx).await;
         } else {
             self.clear_cache_active_environment(&event.category, gx)
                 .await;
@@ -664,11 +663,7 @@ impl IndexerSystem {
     }
 
     /// Clear cache for the active environment only.
-    async fn clear_cache_active_environment(
-        &self,
-        category: &CacheCategory,
-        gx: &GlobalContext,
-    ) {
+    async fn clear_cache_active_environment(&self, category: &CacheCategory, gx: &GlobalContext) {
         let client = match gx
             .request_system::<ClientManagement, GetActiveClient>(GetActiveClient)
             .await
@@ -715,11 +710,7 @@ impl IndexerSystem {
     }
 
     /// Clear cache across all cached environments.
-    async fn clear_cache_all_environments(
-        &self,
-        category: &CacheCategory,
-        gx: &GlobalContext,
-    ) {
+    async fn clear_cache_all_environments(&self, category: &CacheCategory, gx: &GlobalContext) {
         let clients = match gx
             .request_system::<ClientManagement, GetAllCachedClients>(GetAllCachedClients)
             .await

@@ -544,7 +544,10 @@ impl Queue {
         let is_non_terminal = !item.status.is_terminal() && item.status != ItemStatus::Running;
 
         let (x, y) = if let Some(rect) = gx.focused_element_rect() {
-            (rect.x.max(0) as u16, (rect.y + rect.height as i16).max(0) as u16)
+            (
+                rect.x.max(0) as u16,
+                (rect.y + rect.height as i16).max(0) as u16,
+            )
         } else {
             gx.mouse_position()
         };
@@ -1118,9 +1121,7 @@ impl Queue {
         });
 
         // Track failures for auto-pause (both Failed and PartiallyFailed count)
-        if event.status == ItemStatus::Failed
-            || event.status == ItemStatus::PartiallyFailed
-        {
+        if event.status == ItemStatus::Failed || event.status == ItemStatus::PartiallyFailed {
             let failures = self.failure_count.get() + 1;
             self.failure_count.set(failures);
 

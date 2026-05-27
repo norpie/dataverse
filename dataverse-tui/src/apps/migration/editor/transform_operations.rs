@@ -22,9 +22,9 @@ use crate::apps::migration::modals::VariableInfo;
 use crate::apps::migration::repository::MigrationRepository;
 use crate::apps::migration::repository::NewTransform;
 use crate::apps::migration::repository::UpdateTransform;
+use crate::apps::migration::types::CoalesceChain;
 use crate::apps::migration::types::Condition;
 use crate::apps::migration::types::Expr;
-use crate::apps::migration::types::CoalesceChain;
 use crate::apps::migration::types::FindCondition;
 use crate::apps::migration::types::FindFallback;
 use crate::apps::migration::types::FindMode;
@@ -163,7 +163,9 @@ fn parent_scope(
         // parent_id is a child table row ID — look up the parent transform
         ParentType::MatchBranch => {
             let branch = match_branches.iter().find(|mb| mb.id == pid)?;
-            let parent_transform = all_transforms.iter().find(|t| t.id == branch.transform_id)?;
+            let parent_transform = all_transforms
+                .iter()
+                .find(|t| t.id == branch.transform_id)?;
             Some((
                 parent_transform.id,
                 parent_transform.parent_type,
@@ -210,7 +212,9 @@ fn scope_index_in_parent(
         find_conditions,
         match_conditions,
     );
-    scopes.iter().position(|(s_pt, s_pid)| *s_pt == pt && *s_pid == pid)
+    scopes
+        .iter()
+        .position(|(s_pt, s_pid)| *s_pt == pt && *s_pid == pid)
 }
 
 /// Enter a scope-owning transform from the given direction.
@@ -621,7 +625,8 @@ impl MigrationEditor {
         let find_conditions = self.find_conditions.get();
         let match_conditions = self.match_conditions.get();
 
-        let siblings = transforms_in_scope(&all_transforms, transform.parent_type, transform.parent_id);
+        let siblings =
+            transforms_in_scope(&all_transforms, transform.parent_type, transform.parent_id);
 
         let Some(current_idx) = siblings.iter().position(|t| t.id == transform.id) else {
             return;
@@ -661,8 +666,7 @@ impl MigrationEditor {
                 // No movement possible
             }
             Some(t)
-                if t.parent_type == transform.parent_type
-                    && t.parent_id == transform.parent_id =>
+                if t.parent_type == transform.parent_type && t.parent_id == transform.parent_id =>
             {
                 // Same scope — use simple reorder
                 let new_idx = t.order as usize;
@@ -686,12 +690,7 @@ impl MigrationEditor {
             Some(t) => {
                 // Cross-scope move
                 match repo
-                    .move_transform_to_scope(
-                        transform.id,
-                        t.parent_type,
-                        t.parent_id,
-                        t.order,
-                    )
+                    .move_transform_to_scope(transform.id, t.parent_type, t.parent_id, t.order)
                     .await
                 {
                     Ok(()) => {

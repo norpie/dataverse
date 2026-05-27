@@ -7,19 +7,19 @@
 use std::collections::HashMap;
 
 use dataverse_lib::api::Op;
-use dataverse_lib::model::metadata::ExecutionMetadata;
-use dataverse_lib::model::types::OptionSetValue;
 use dataverse_lib::model::Entity;
 use dataverse_lib::model::Record;
 use dataverse_lib::model::Value;
+use dataverse_lib::model::metadata::ExecutionMetadata;
+use dataverse_lib::model::types::OptionSetValue;
 use uuid::Uuid;
 
+use super::EntityBatches;
+use super::SubPhase;
 use super::build_batches;
 use super::is_lookup_value;
 use super::lookup_odata_name;
 use super::to_binding;
-use super::EntityBatches;
-use super::SubPhase;
 use crate::apps::migration::comparison::OperationTypeCounts;
 
 // =============================================================================

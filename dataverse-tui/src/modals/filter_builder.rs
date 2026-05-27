@@ -16,13 +16,13 @@ use rafter::widgets::TreeState;
 
 use crate::formatting::parse_filter_value;
 use crate::modals::LoadingModal;
+use crate::widgets::filter_builder::CondOp;
 use crate::widgets::filter_builder::ConditionData;
 use crate::widgets::filter_builder::ConditionEditorModal;
 use crate::widgets::filter_builder::FilterNode;
 use crate::widgets::filter_builder::FilterTreeItem;
 use crate::widgets::filter_builder::FilterTreeKey;
 use crate::widgets::filter_builder::build_tree;
-use crate::widgets::filter_builder::CondOp;
 
 /// Modal for building filter conditions.
 #[modal(size = Md)]
@@ -507,10 +507,7 @@ struct PasteConditionsModal {
 }
 
 impl PasteConditionsModal {
-    fn new_modal(
-        options: Vec<(String, String)>,
-        metadata: EntityMetadata,
-    ) -> Self {
+    fn new_modal(options: Vec<(String, String)>, metadata: EntityMetadata) -> Self {
         let op_options: Vec<(CondOp, String)> = vec![
             (CondOp::Eq, "eq".to_string()),
             (CondOp::Ne, "ne".to_string()),
@@ -535,8 +532,7 @@ impl PasteConditionsModal {
 
     #[on_start]
     async fn on_start(&self, mx: &ModalContext<Option<Vec<ConditionData>>>) {
-        self.field
-            .set(AutocompleteState::new(self.options.clone()));
+        self.field.set(AutocompleteState::new(self.options.clone()));
         mx.focus("paste-field-autocomplete");
     }
 
@@ -567,8 +563,7 @@ impl PasteConditionsModal {
         let input = self.paste_input.get();
         let raw_values = parse_pasted_values(&input);
         if raw_values.is_empty() {
-            self.error
-                .set(Some("Paste at least one value".to_string()));
+            self.error.set(Some("Paste at least one value".to_string()));
             return;
         }
 

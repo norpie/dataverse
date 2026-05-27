@@ -22,7 +22,6 @@ use crate::apps::migration::types::Mode;
 use crate::modals::ConfirmModal;
 use crate::modals::FileBrowserModal;
 
-
 /// Page enum - each page represents a mode.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum Page {
@@ -304,8 +303,7 @@ impl EditEntityMappingModal {
                         log::warn!("Failed to parse M.declare() from script: {}", e);
                         self.lua_source_entity.set(None);
                         self.lua_target_entity.set(None);
-                        self.error
-                            .set(Some(format!("Script parse error: {}", e)));
+                        self.error.set(Some(format!("Script parse error: {}", e)));
                     }
                 }
                 self.lua_script.set(Some(content));

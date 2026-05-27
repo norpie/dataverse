@@ -162,7 +162,9 @@ pub enum TransformError {
     FindMultiple { entity: String, count: usize },
 
     /// Entity reference record not found in cache.
-    #[error("Entity ref not cached: {entity}({id}) — was this entity included in entity ref fetch specs?")]
+    #[error(
+        "Entity ref not cached: {entity}({id}) — was this entity included in entity ref fetch specs?"
+    )]
     EntityRefNotCached { entity: String, id: uuid::Uuid },
 
     /// Invalid regex pattern.
@@ -292,7 +294,7 @@ pub trait FindCache: Send + Sync {
     /// The script's `resolve()` function is called with the source record
     /// and target data. Returns the matched record ID.
     fn find_lua(&self, entity: &str, script: &str, source_value: &Value)
-        -> Result<Uuid, FindError>;
+    -> Result<Uuid, FindError>;
 
     /// Get a record by ID from the cache.
     ///

@@ -19,7 +19,6 @@ use crate::apps::migration::types::Phase;
 use crate::modals::ConfirmModal;
 use crate::modals::FileBrowserModal;
 
-
 /// Page enum - each page represents a mode.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum Page {

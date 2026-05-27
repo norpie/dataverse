@@ -22,35 +22,35 @@ pub mod fetch;
 
 use std::collections::HashSet;
 
+use dataverse_lib::DataverseClient;
 use dataverse_lib::model::Entity;
 use dataverse_lib::model::Record;
-use dataverse_lib::DataverseClient;
 use rayon::prelude::*;
 
 use self::analysis::AnalysisInput;
 use self::cache::LiveFindCache;
+use self::fetch::BuildError;
+use self::fetch::FetchTaskConfig;
 use self::fetch::build_find_cache_tasks;
 use self::fetch::build_source_task;
 use self::fetch::build_target_task;
 use self::fetch::into_fetch_task;
 use self::fetch::merge_find_cache_specs;
-use self::fetch::BuildError;
-use self::fetch::FetchTaskConfig;
 
+use super::comparison::CompareInput;
+use super::comparison::MappingComparison;
 use super::comparison::compare_mapping;
 use super::comparison::matching::LuaMatchIndex;
 use super::comparison::matching::TargetIndexError;
-use super::comparison::CompareInput;
-use super::comparison::MappingComparison;
-use super::engine::record::execute_record;
-use super::engine::record::RecordResult;
-use super::engine::transforms::extract_placeholders;
-use super::engine::transforms::split_format_spec;
 use super::engine::ChainChildren;
 use super::engine::ChainItem;
 use super::engine::FindCache;
 use super::engine::PathCache;
 use super::engine::SystemVars;
+use super::engine::record::RecordResult;
+use super::engine::record::execute_record;
+use super::engine::transforms::extract_placeholders;
+use super::engine::transforms::split_format_spec;
 use super::types::Condition;
 use super::types::Expr;
 use super::types::MatchStrategy;
@@ -968,10 +968,12 @@ mod tests {
         let plan = analyze_phase(&inputs);
         assert_eq!(plan.mapping_plans.len(), 1);
         assert!(plan.mapping_plans[0].source.select.contains("name"));
-        assert!(plan.mapping_plans[0]
-            .source
-            .select
-            .contains("address1_city"));
+        assert!(
+            plan.mapping_plans[0]
+                .source
+                .select
+                .contains("address1_city")
+        );
         assert!(plan.mapping_plans[0].source.select.contains("accountid"));
         assert!(plan.merged_find_caches.is_empty());
     }

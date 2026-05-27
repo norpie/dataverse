@@ -355,7 +355,10 @@ impl MigrationEditor {
         let current_lua_script = em.match_lua_script.clone();
 
         let Some(result) = gx
-            .modal(MatchConfigModal::new_modal(current_strategy, current_lua_script.clone()))
+            .modal(MatchConfigModal::new_modal(
+                current_strategy,
+                current_lua_script.clone(),
+            ))
             .await
         else {
             return;

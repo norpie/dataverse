@@ -189,7 +189,7 @@ impl MigrationEditor {
                 source_filter: None,
                 target_filter: None,
                 test_guids: None,
-            }
+            },
         };
 
         match repo.create_entity_mapping(new_mapping).await {
@@ -324,7 +324,7 @@ impl MigrationEditor {
                 source_filter: Update::Keep,
                 target_filter: Update::Keep,
                 test_guids: None,
-            }
+            },
         };
 
         match repo.update_entity_mapping(em.id, update).await {

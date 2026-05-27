@@ -6,15 +6,16 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use dataverse_lib::model::types::EntityReference;
 use dataverse_lib::model::Entity;
 use dataverse_lib::model::Record;
 use dataverse_lib::model::Value;
+use dataverse_lib::model::types::EntityReference;
 
 use crate::apps::migration::engine::FindCache;
 use crate::apps::migration::engine::PathCache;
 use crate::apps::migration::engine::TransformError;
 use crate::apps::migration::engine::TransformResult;
+use crate::apps::migration::engine::util::record_get_insensitive;
 use crate::apps::migration::types::SystemVar;
 use crate::apps::migration::validation::FieldPath;
 use crate::apps::migration::validation::PathExpr;
@@ -278,7 +279,7 @@ fn traverse_record(
     // Traverse through lookup segments (all except last)
     let lookups = &field_path.segments[..field_path.segments.len() - 1];
     for segment in lookups {
-        match current_record.get(&segment.field) {
+        match record_get_insensitive(current_record, &segment.field) {
             Some(Value::Record(nested)) => {
                 last_entity = Some(nested.entity().clone());
                 current_record = nested;
@@ -304,7 +305,7 @@ fn traverse_record(
 
     // Get the leaf value
     let leaf = &field_path.segments[field_path.segments.len() - 1];
-    match current_record.get(&leaf.field) {
+    match record_get_insensitive(current_record, &leaf.field) {
         Some(value) => {
             // Only propagate the entity type annotation when the leaf value is
             // a lookup-like type (Record, EntityReference). For scalar values

@@ -19,10 +19,10 @@ use crate::apps::migration::types::Expr;
 use crate::apps::migration::types::FindMode;
 use crate::apps::migration::types::SystemVar;
 use crate::apps::migration::types::TransformData;
-use crate::apps::migration::validation::parse_path;
 use crate::apps::migration::validation::FieldPath;
 use crate::apps::migration::validation::FieldSegment;
 use crate::apps::migration::validation::PathExpr;
+use crate::apps::migration::validation::parse_path;
 
 use super::ExpandSpec;
 use super::FetchPlan;
@@ -411,6 +411,12 @@ fn analyze_chain(
     // the entity ref's entity (source-side).
     let mut entity_ref_ctx: Option<EntityRefContext> = None;
 
+    // Track the find context from the most recent `find(entity)` in this chain.
+    // When set, any subsequent `#value.field` navigation (including inside entity
+    // refs like `/nrq_fund(#value?.nrq_fundid)`) adds those fields to the find
+    // cache so they're fetched with the find cache query.
+    let mut find_ref_ctx: Option<FindRefContext> = None;
+
     for item in chain {
         // If the previous transform produced an entity ref, check if this
         // transform navigates #value.field — if so, add the needed fields
@@ -419,8 +425,18 @@ fn analyze_chain(
             collect_entity_ref_navigations(&item.data, ctx, collector);
         }
 
+        // If a previous transform was a find, check if this transform (and all
+        // its descendants — match branches, coalesce alternatives, etc.)
+        // navigates #value.field — if so, add those fields to the find cache.
+        if let Some(ref ctx) = find_ref_ctx {
+            collect_find_navigations_recursive(item, ctx, collector);
+        }
+
         // Check if this item establishes a new entity ref context
         entity_ref_ctx = extract_entity_ref_context(&item.data);
+
+        // Check if this item establishes a new find context
+        find_ref_ctx = extract_find_context(&item.data);
 
         analyze_item(item, var_find_entities, collector);
     }
@@ -429,6 +445,16 @@ fn analyze_chain(
 /// Context from a `/entity(field)` transform in the chain.
 struct EntityRefContext {
     /// The entity name from the `/entity()` syntax (e.g., "cgk_deadline").
+    entity: String,
+}
+
+/// Context from a `find(entity)` transform in the chain.
+///
+/// When a find transform produces a record, subsequent transforms may navigate
+/// `#value.field` to read fields from the found record. Those fields need to be
+/// included in the find cache query.
+struct FindRefContext {
+    /// The entity being found (e.g., "nrq_request").
     entity: String,
 }
 
@@ -478,6 +504,133 @@ fn collect_entity_ref_navigations(
                 collector
                     .entity_ref_caches
                     .add_field_path(&ctx.entity, &path);
+            }
+        }
+    }
+}
+
+/// If this transform is a `Find`, extract the find context.
+fn extract_find_context(data: &TransformData) -> Option<FindRefContext> {
+    if let TransformData::Find { entity, .. } = data {
+        return Some(FindRefContext {
+            entity: entity.clone(),
+        });
+    }
+    None
+}
+
+/// If this transform navigates `#value.field`, add the field to the find cache.
+///
+/// This handles both direct `#value.field` paths and `#value.field` nested inside
+/// entity refs like `/nrq_fund(#value?.nrq_fundid.nrq_fundid)`.
+fn collect_find_navigations(data: &TransformData, ctx: &FindRefContext, collector: &mut Collector) {
+    let paths = match data {
+        TransformData::Copy { path } => {
+            use crate::apps::migration::engine::transforms::split_coalesce;
+            split_coalesce(path)
+                .into_iter()
+                .map(String::from)
+                .collect::<Vec<_>>()
+        }
+        TransformData::Format { template } => {
+            use crate::apps::migration::engine::transforms::extract_placeholders;
+            use crate::apps::migration::engine::transforms::split_coalesce;
+            use crate::apps::migration::engine::transforms::split_format_spec;
+            let mut all = Vec::new();
+            for placeholder in extract_placeholders(template) {
+                let (expr, _) = split_format_spec(&placeholder);
+                for alt in split_coalesce(expr) {
+                    all.push(alt.to_string());
+                }
+            }
+            all
+        }
+        _ => return,
+    };
+
+    for path_str in &paths {
+        let parsed = match parse_path(path_str) {
+            Ok(p) => p,
+            Err(_) => continue,
+        };
+        // Extract #value field paths from any position (top-level or inside entity refs)
+        extract_value_paths_for_find(&parsed, &ctx.entity, collector);
+    }
+}
+
+/// Recursively extract `#value.field` paths from a parsed expression and add them
+/// to the find cache for the given entity.
+fn extract_value_paths_for_find(expr: &PathExpr, entity: &str, collector: &mut Collector) {
+    match expr {
+        PathExpr::SystemVarNavigation { var, path, .. } => {
+            if matches!(var, SystemVar::Value) {
+                collector.find_caches.add_field_path(entity, path);
+            }
+        }
+        PathExpr::EntityRef { inner, .. } => {
+            // Look inside entity refs for #value references
+            extract_value_paths_for_find(inner, entity, collector);
+        }
+        _ => {
+            // Field, Variable, VariableNavigation, SystemVar — not #value navigation
+        }
+    }
+}
+
+/// Recursively scan a chain item and all its descendants for `#value.field` paths,
+/// adding them to the find cache for the given find entity.
+///
+/// This handles cases where `#value` navigation occurs inside match branches,
+/// coalesce alternatives, or other nested chains that follow a find transform.
+fn collect_find_navigations_recursive(
+    item: &ChainItem,
+    ctx: &FindRefContext,
+    collector: &mut Collector,
+) {
+    // Check this item's transform data
+    collect_find_navigations(&item.data, ctx, collector);
+
+    // Recurse into children — #value from the find is available to all descendants
+    match &item.children {
+        ChainChildren::None => {}
+        ChainChildren::Fallback(chain) => {
+            for child in chain {
+                collect_find_navigations_recursive(child, ctx, collector);
+            }
+        }
+        ChainChildren::Branches(branches, default) => {
+            for branch in branches {
+                for child in &branch.chain {
+                    collect_find_navigations_recursive(child, ctx, collector);
+                }
+            }
+            if let Some(default) = default {
+                for child in default {
+                    collect_find_navigations_recursive(child, ctx, collector);
+                }
+            }
+        }
+        ChainChildren::Alternatives(alternatives) => {
+            for alt in alternatives {
+                for child in alt {
+                    collect_find_navigations_recursive(child, ctx, collector);
+                }
+            }
+        }
+        ChainChildren::FindConditions(conditions, default) => {
+            // Don't scan find condition source chains — those produce values
+            // for the find, they don't read from the find result.
+            if let Some(default) = default {
+                for child in default {
+                    collect_find_navigations_recursive(child, ctx, collector);
+                }
+            }
+            // But do check if any condition source chains reference #value
+            // (unlikely but possible for nested finds)
+            for cond in conditions {
+                for child in &cond.source_chain {
+                    collect_find_navigations_recursive(child, ctx, collector);
+                }
             }
         }
     }

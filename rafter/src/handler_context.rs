@@ -618,7 +618,7 @@ impl HandlerCallResult {
 ///
 /// Panics are always logged at ERROR level.
 pub fn call_handler(handler: &Handler, hx: &HandlerContext) -> HandlerCallResult {
-    use std::panic::{catch_unwind, AssertUnwindSafe};
+    use std::panic::{AssertUnwindSafe, catch_unwind};
 
     let result = catch_unwind(AssertUnwindSafe(|| {
         handler(hx);
@@ -643,7 +643,7 @@ pub fn call_handler_for_app(
     app_name: &str,
     instance_id: crate::InstanceId,
 ) -> HandlerCallResult {
-    use std::panic::{catch_unwind, AssertUnwindSafe};
+    use std::panic::{AssertUnwindSafe, catch_unwind};
 
     let result = catch_unwind(AssertUnwindSafe(|| {
         handler(hx);

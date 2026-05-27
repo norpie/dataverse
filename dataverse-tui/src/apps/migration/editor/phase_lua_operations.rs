@@ -9,21 +9,21 @@ use rafter::prelude::*;
 
 use crate::apps::migration::comparison::matching::parse_lua_declare;
 use crate::apps::migration::comparison::phase_lua::execute_phase_lua;
+use crate::apps::migration::execution::phase_lua::ResolvedRelationship;
 use crate::apps::migration::execution::phase_lua::build_phase_lua_batches;
 use crate::apps::migration::execution::phase_lua::collect_referenced_entities;
 use crate::apps::migration::execution::phase_lua::collect_referenced_relationships;
-use crate::apps::migration::execution::phase_lua::ResolvedRelationship;
 use crate::apps::migration::types::Phase;
-use crate::modals::odata_fetch::ODataFetchModal;
-use crate::modals::odata_fetch::ODataFetchTask;
 use crate::modals::ConfirmModal;
 use crate::modals::ErrorAcknowledgmentModal;
 use crate::modals::LoadingModal;
+use crate::modals::odata_fetch::ODataFetchModal;
+use crate::modals::odata_fetch::ODataFetchTask;
 use crate::systems::client_management::ClientManagement;
 use crate::systems::client_management::GetAnyClient;
 use dataverse_lib::api::query::odata::QueryBuilder;
-use dataverse_lib::model::metadata::ExecutionMetadata;
 use dataverse_lib::model::Entity;
+use dataverse_lib::model::metadata::ExecutionMetadata;
 
 use super::MigrationEditor;
 use super::Page;
@@ -98,9 +98,7 @@ impl MigrationEditor {
         }
 
         if tasks.is_empty() {
-            gx.toast(Toast::warning(
-                "M.declare() returned no entities to fetch",
-            ));
+            gx.toast(Toast::warning("M.declare() returned no entities to fetch"));
             return;
         }
 
@@ -142,8 +140,7 @@ impl MigrationEditor {
                     let tc = tc.clone();
                     async move {
                         // 6. Run M.resolve()
-                        let operations =
-                            execute_phase_lua(&script, &source_data, &target_data)?;
+                        let operations = execute_phase_lua(&script, &source_data, &target_data)?;
 
                         if operations.is_empty() {
                             return Err("Lua script returned 0 operations".to_string());
@@ -185,8 +182,7 @@ impl MigrationEditor {
                             .collect();
 
                         for entity_name in &lookup_targets {
-                            updater
-                                .update(format!("Resolving lookup target: {entity_name}"));
+                            updater.update(format!("Resolving lookup target: {entity_name}"));
                             match tc.metadata().entity(entity_name.as_str()).await {
                                 Ok(em) => match em.execution_metadata() {
                                     Ok(exec_meta) => {
@@ -213,15 +209,11 @@ impl MigrationEditor {
                             HashMap::new();
 
                         for (entity1, rel_schema_name) in &ref_rels {
-                            updater.update(format!(
-                                "Resolving relationship: {rel_schema_name}"
-                            ));
+                            updater.update(format!("Resolving relationship: {rel_schema_name}"));
 
                             let entity_meta =
                                 tc.metadata().entity(entity1.as_str()).await.map_err(|e| {
-                                    format!(
-                                        "Failed to fetch entity metadata for '{entity1}': {e}"
-                                    )
+                                    format!("Failed to fetch entity metadata for '{entity1}': {e}")
                                 })?;
 
                             let m2m = entity_meta
@@ -245,27 +237,21 @@ impl MigrationEditor {
                                 })?
                                 .to_string();
 
-                            let other_entity =
-                                m2m.other_entity(entity1).ok_or_else(|| {
-                                    format!(
-                                        "Cannot determine other entity for '{rel_schema_name}' \
+                            let other_entity = m2m.other_entity(entity1).ok_or_else(|| {
+                                format!(
+                                    "Cannot determine other entity for '{rel_schema_name}' \
                                          from '{entity1}'"
-                                    )
-                                })?;
+                                )
+                            })?;
 
                             // Ensure the other entity's metadata is resolved
                             if !metadata.contains_key(other_entity) {
-                                updater.update(format!(
-                                    "Resolving metadata: {other_entity}"
-                                ));
+                                updater.update(format!("Resolving metadata: {other_entity}"));
                                 match tc.metadata().entity(other_entity).await {
                                     Ok(em) => {
-                                        let exec_meta =
-                                            em.execution_metadata().map_err(|e| {
-                                                format!(
-                                                    "Metadata error for {other_entity}: {e}"
-                                                )
-                                            })?;
+                                        let exec_meta = em.execution_metadata().map_err(|e| {
+                                            format!("Metadata error for {other_entity}: {e}")
+                                        })?;
                                         metadata.insert(other_entity.to_string(), exec_meta);
                                     }
                                     Err(e) => {
@@ -279,9 +265,7 @@ impl MigrationEditor {
                             let entity1_set = metadata
                                 .get(entity1)
                                 .map(|m| m.entity_set_name.clone())
-                                .ok_or_else(|| {
-                                    format!("No metadata for entity '{entity1}'")
-                                })?;
+                                .ok_or_else(|| format!("No metadata for entity '{entity1}'"))?;
 
                             let entity2_set = metadata
                                 .get(other_entity)
@@ -302,11 +286,8 @@ impl MigrationEditor {
 
                         // 9. Build batches
                         updater.update("Building operation batches...".to_string());
-                        let result = build_phase_lua_batches(
-                            operations,
-                            &metadata,
-                            &relationships,
-                        )?;
+                        let result =
+                            build_phase_lua_batches(operations, &metadata, &relationships)?;
 
                         Ok((result, metadata))
                     }

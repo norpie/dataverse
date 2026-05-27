@@ -634,8 +634,7 @@ impl<'a, S: ScrollableWidgetState> Scrollbar<HasScrollState<'a, S>> {
                             let thumb_start = drag_y - grab_offset as i16;
                             let clamped_thumb_start =
                                 thumb_start.clamp(track_y, track_y + scroll_range);
-                            let thumb_pos_in_track =
-                                (clamped_thumb_start - track_y).max(0) as u16;
+                            let thumb_pos_in_track = (clamped_thumb_start - track_y).max(0) as u16;
 
                             let scroll_range_u16 = scroll_range.max(0) as u16;
                             let new_offset = if scroll_range_u16 == 0 {

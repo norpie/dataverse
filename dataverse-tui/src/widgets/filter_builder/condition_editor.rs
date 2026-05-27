@@ -36,10 +36,7 @@ pub struct ConditionEditorModal {
 
 impl ConditionEditorModal {
     /// Create with pre-fetched field options and entity metadata.
-    pub fn with_options(
-        options: Vec<(String, String)>,
-        metadata: EntityMetadata,
-    ) -> Self {
+    pub fn with_options(options: Vec<(String, String)>, metadata: EntityMetadata) -> Self {
         Self::new(
             options,
             metadata,
@@ -207,8 +204,7 @@ impl ConditionEditorModal {
                     match self.optionset_select.with_ref(|s| s.value().cloned()) {
                         Some(v) => Value::OptionSet(v.into()),
                         None => {
-                            self.error
-                                .set(Some("Please select an option".to_string()));
+                            self.error.set(Some("Please select an option".to_string()));
                             return;
                         }
                     }

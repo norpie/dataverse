@@ -7,21 +7,21 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 
 use chrono::DateTime;
-use dataverse_lib::model::types::EntityBinding;
-use dataverse_lib::model::types::EntityReference;
 use dataverse_lib::model::Entity;
 use dataverse_lib::model::Record;
 use dataverse_lib::model::Value;
+use dataverse_lib::model::types::EntityBinding;
+use dataverse_lib::model::types::EntityReference;
 use mlua::Table;
 use uuid::Uuid;
 
-use super::diff::diff_fields;
-use super::matching::build_entity_table;
-use super::matching::LuaMatchIndex;
 use super::OperationType;
 use super::RecordComparison;
-use crate::apps::migration::engine::record::RecordResult;
+use super::diff::diff_fields;
+use super::matching::LuaMatchIndex;
+use super::matching::build_entity_table;
 use crate::apps::migration::engine::TransformError;
+use crate::apps::migration::engine::record::RecordResult;
 use crate::lua::runtime::LuaRuntime;
 
 // =============================================================================
@@ -868,9 +868,11 @@ return M
 "#;
 
         let id1 = Uuid::parse_str("11111111-1111-1111-1111-111111111111").unwrap();
-        let source_records = vec![Record::with_id(Entity::logical("account"), id1)
-            .set("accountid", Value::Guid(id1))
-            .set("name", "Acme")];
+        let source_records = vec![
+            Record::with_id(Entity::logical("account"), id1)
+                .set("accountid", Value::Guid(id1))
+                .set("name", "Acme"),
+        ];
 
         let result =
             execute_entity_lua(script, &source_records, "account", "account", &[], &[]).unwrap();
@@ -895,7 +897,7 @@ return M
 
         let id1 = Uuid::parse_str("11111111-1111-1111-1111-111111111111").unwrap();
         let source_records = vec![
-            Record::with_id(Entity::logical("account"), id1).set("accountid", Value::Guid(id1))
+            Record::with_id(Entity::logical("account"), id1).set("accountid", Value::Guid(id1)),
         ];
 
         let result =
@@ -930,9 +932,11 @@ return M
 "#;
 
         let id1 = Uuid::parse_str("11111111-1111-1111-1111-111111111111").unwrap();
-        let source_records = vec![Record::with_id(Entity::logical("account"), id1)
-            .set("accountid", Value::Guid(id1))
-            .set("name", "Acme")];
+        let source_records = vec![
+            Record::with_id(Entity::logical("account"), id1)
+                .set("accountid", Value::Guid(id1))
+                .set("name", "Acme"),
+        ];
 
         let result =
             execute_entity_lua(script, &source_records, "account", "account", &[], &[]).unwrap();
@@ -981,9 +985,11 @@ return M
 "#;
 
         let id1 = Uuid::parse_str("11111111-1111-1111-1111-111111111111").unwrap();
-        let source_records = vec![Record::with_id(Entity::logical("account"), id1)
-            .set("accountid", Value::Guid(id1))
-            .set("name", "Acme")];
+        let source_records = vec![
+            Record::with_id(Entity::logical("account"), id1)
+                .set("accountid", Value::Guid(id1))
+                .set("name", "Acme"),
+        ];
 
         let result =
             execute_entity_lua(script, &source_records, "account", "account", &[], &[]).unwrap();
@@ -1035,9 +1041,11 @@ return M
 "#;
 
         let id1 = Uuid::parse_str("11111111-1111-1111-1111-111111111111").unwrap();
-        let source_records = vec![Record::with_id(Entity::logical("account"), id1)
-            .set("accountid", Value::Guid(id1))
-            .set("name", "Acme")];
+        let source_records = vec![
+            Record::with_id(Entity::logical("account"), id1)
+                .set("accountid", Value::Guid(id1))
+                .set("name", "Acme"),
+        ];
 
         let result =
             execute_entity_lua(script, &source_records, "account", "account", &[], &[]).unwrap();
@@ -1074,9 +1082,11 @@ return M
 "#;
 
         let id1 = Uuid::parse_str("11111111-1111-1111-1111-111111111111").unwrap();
-        let source_records = vec![Record::with_id(Entity::logical("account"), id1)
-            .set("accountid", Value::Guid(id1))
-            .set("name", "Acme")];
+        let source_records = vec![
+            Record::with_id(Entity::logical("account"), id1)
+                .set("accountid", Value::Guid(id1))
+                .set("name", "Acme"),
+        ];
 
         let result =
             execute_entity_lua(script, &source_records, "account", "account", &[], &[]).unwrap();
@@ -1119,9 +1129,11 @@ return M
                 .collect(),
         }];
 
-        let target_records = vec![Record::with_id(Entity::logical("account"), create_id)
-            .set("accountid", Value::Guid(create_id))
-            .set("name", "Old")];
+        let target_records = vec![
+            Record::with_id(Entity::logical("account"), create_id)
+                .set("accountid", Value::Guid(create_id))
+                .set("name", "Old"),
+        ];
 
         let (comps, matched) = process_lua_creates(creates, &target_records, "accountid");
 
@@ -1143,9 +1155,11 @@ return M
                 .collect(),
         }];
 
-        let target_records = vec![Record::with_id(Entity::logical("account"), create_id)
-            .set("accountid", Value::Guid(create_id))
-            .set("name", "Same")];
+        let target_records = vec![
+            Record::with_id(Entity::logical("account"), create_id)
+                .set("accountid", Value::Guid(create_id))
+                .set("name", "Same"),
+        ];
 
         let (comps, matched) = process_lua_creates(creates, &target_records, "accountid");
 

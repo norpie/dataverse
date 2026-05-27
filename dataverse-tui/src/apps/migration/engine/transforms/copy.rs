@@ -11,8 +11,8 @@ use dataverse_lib::model::Entity;
 use dataverse_lib::model::Value;
 
 use super::format::split_coalesce;
-use super::resolve::resolve_path_str;
 use super::resolve::ResolveContext;
+use super::resolve::resolve_path_str;
 use crate::apps::migration::engine::TransformError;
 use crate::apps::migration::engine::TransformResult;
 
