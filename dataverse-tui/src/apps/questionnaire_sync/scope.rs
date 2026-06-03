@@ -184,21 +184,13 @@ pub const QUESTIONNAIRE_ENTITIES: &[QuestionnaireEntitySpec] = &[
                 "nrq_questionnaireid",
                 "nrq_questionnaire"
             ),
-            lookup_field!(
-                "nrq_questiontagid",
-                "nrq_questiontagid",
-                "nrq_questiontag"
-            ),
+            lookup_field!("nrq_questiontagid", "nrq_questiontagid", "nrq_questiontag"),
             lookup_field!(
                 "nrq_questiontemplateid",
                 "nrq_questiontemplateid",
                 "nrq_questiontemplate"
             ),
-            lookup_field!(
-                "nrq_contactrole",
-                "nrq_contactrole",
-                "nrq_role"
-            ),
+            lookup_field!("nrq_contactrole", "nrq_contactrole", "nrq_role"),
             lookup_field!(
                 "nrq_questionpage",
                 "nrq_questionpage",
@@ -240,11 +232,7 @@ pub const QUESTIONNAIRE_ENTITIES: &[QuestionnaireEntitySpec] = &[
             value_field!("nrq_conditiontype"),
             value_field!("nrq_parametertype"),
             value_field!("nrq_parametervalue"),
-            lookup_field!(
-                "nrq_questionid",
-                "nrq_questionid",
-                "nrq_question"
-            ),
+            lookup_field!("nrq_questionid", "nrq_questionid", "nrq_question"),
             lookup_field!(
                 "nrq_questionnaireid",
                 "nrq_questionnaireid",
@@ -266,11 +254,7 @@ pub const QUESTIONNAIRE_ENTITIES: &[QuestionnaireEntitySpec] = &[
                 "nrq_questionconditionid",
                 "nrq_questioncondition"
             ),
-            lookup_field!(
-                "nrq_questionid",
-                "nrq_questionid",
-                "nrq_question"
-            ),
+            lookup_field!("nrq_questionid", "nrq_questionid", "nrq_question"),
         ],
         state_fields: state_fields!(),
     },
@@ -308,16 +292,8 @@ pub const QUESTIONNAIRE_ENTITIES: &[QuestionnaireEntitySpec] = &[
             value_field!("nrq_updatestrategy"),
             value_field!("nrq_uploadfolder"),
             value_field!("nrq_versionnumber"),
-            lookup_field!(
-                "nrq_questiontagid",
-                "nrq_questiontagid",
-                "nrq_questiontag"
-            ),
-            lookup_field!(
-                "nrq_replacedby",
-                "nrq_replacedby",
-                "nrq_questiontemplate"
-            ),
+            lookup_field!("nrq_questiontagid", "nrq_questiontagid", "nrq_questiontag"),
+            lookup_field!("nrq_replacedby", "nrq_replacedby", "nrq_questiontemplate"),
             lookup_field!(
                 "nrq_betalingsschijflijn",
                 "nrq_betalingsschijflijn",
@@ -417,11 +393,7 @@ pub const QUESTIONNAIRE_ENTITIES: &[QuestionnaireEntitySpec] = &[
             lookup_field!("nrq_category", "nrq_category", "nrq_category"),
             lookup_field!("nrq_fund", "nrq_fund", "nrq_fund"),
             lookup_field!("nrq_support", "nrq_support", "nrq_support"),
-            lookup_field!(
-                "nrq_flemishshare",
-                "nrq_flemishshare",
-                "nrq_flemishshare"
-            ),
+            lookup_field!("nrq_flemishshare", "nrq_flemishshare", "nrq_flemishshare"),
         ],
         state_fields: state_fields!(),
     },
@@ -465,7 +437,11 @@ pub const QUESTIONNAIRE_ENTITIES: &[QuestionnaireEntitySpec] = &[
         primary_key: "nrq_betalingsschijflijnid",
         fields: &[
             value_field!("nrq_name"),
-            lookup_field!("nrq_betalingsschijf", "nrq_betalingsschijf", "nrq_betalingsschijf"),
+            lookup_field!(
+                "nrq_betalingsschijf",
+                "nrq_betalingsschijf",
+                "nrq_betalingsschijf"
+            ),
             value_field!("nrq_contracttekst"),
             value_field!("nrq_percentage"),
             value_field!("nrq_volgorde"),

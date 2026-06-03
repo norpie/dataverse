@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use dataverse_lib::model::Record;
+use uuid::Uuid;
 
 use crate::apps::migration::execution::{EntityBatches, SubPhase};
 
@@ -16,20 +17,46 @@ impl QuestionnaireEntitySnapshot {
     }
 }
 
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
+pub struct QuestionnaireRelationMembership {
+    pub parent_id: Uuid,
+    pub related_id: Uuid,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct QuestionnaireRelationSnapshot {
+    pub relationship_name: String,
+    pub parent_entity: String,
+    pub related_entity: String,
+    pub memberships: Vec<QuestionnaireRelationMembership>,
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct QuestionnaireEnvironmentSnapshot {
     pub environment_id: i64,
     pub environment_name: String,
     pub entities: Vec<QuestionnaireEntitySnapshot>,
+    pub relations: Vec<QuestionnaireRelationSnapshot>,
 }
 
 impl QuestionnaireEnvironmentSnapshot {
     pub fn total_records(&self) -> usize {
-        self.entities.iter().map(QuestionnaireEntitySnapshot::record_count).sum()
+        self.entities
+            .iter()
+            .map(QuestionnaireEntitySnapshot::record_count)
+            .sum()
     }
 
     pub fn entity(&self, logical_name: &str) -> Option<&QuestionnaireEntitySnapshot> {
-        self.entities.iter().find(|entity| entity.entity == logical_name)
+        self.entities
+            .iter()
+            .find(|entity| entity.entity == logical_name)
+    }
+
+    pub fn relation(&self, relationship_name: &str) -> Option<&QuestionnaireRelationSnapshot> {
+        self.relations
+            .iter()
+            .find(|relation| relation.relationship_name == relationship_name)
     }
 }
 

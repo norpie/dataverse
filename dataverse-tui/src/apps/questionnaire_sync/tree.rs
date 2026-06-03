@@ -16,8 +16,8 @@ use crate::apps::migration::engine::util::values_equal;
 use crate::apps::questionnaire_sync::comparison::QuestionnaireComparison;
 use crate::apps::questionnaire_sync::comparison::QuestionnaireEntityComparison;
 use crate::apps::questionnaire_sync::comparison::QuestionnaireOperation;
-use crate::apps::questionnaire_sync::scope::QuestionnaireEntitySpec;
 use crate::apps::questionnaire_sync::scope::QUESTIONNAIRE_ENTITIES;
+use crate::apps::questionnaire_sync::scope::QuestionnaireEntitySpec;
 use crate::formatting::format_value;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -33,7 +33,6 @@ impl QuestionnaireTreeSide {
             Self::Target => "Target",
         }
     }
-
 }
 
 #[derive(Clone, Debug)]
@@ -84,9 +83,7 @@ impl TreeItem for QuestionnaireTreeNode {
         match self {
             Self::Entity { entity, .. } => format!("entity-{}", entity),
             Self::Record {
-                entity,
-                record_key,
-                ..
+                entity, record_key, ..
             } => format!("record-{}-{}", entity, record_key),
             Self::Field {
                 entity,
@@ -144,15 +141,14 @@ impl TreeItem for QuestionnaireTreeNode {
                     QuestionnaireTreeSide::Source => (*source_id).or(*target_id),
                     QuestionnaireTreeSide::Target => (*target_id).or(*source_id),
                 };
-                let id_text = id
-                    .map(short_guid)
-                    .unwrap_or_else(|| short_key(record_key));
+                let id_text = id.map(short_guid).unwrap_or_else(|| short_key(record_key));
                 let active_text = match side {
                     QuestionnaireTreeSide::Source => active_marker(*source_is_active),
                     QuestionnaireTreeSide::Target => active_marker(*target_is_active),
                 };
                 let source_side = matches!(side, QuestionnaireTreeSide::Source);
-                let (label, color) = record_label(operation, *source_present, *target_present, *side);
+                let (label, color) =
+                    record_label(operation, *source_present, *target_present, *side);
                 let display_name = match side {
                     QuestionnaireTreeSide::Source => source_name.clone(),
                     QuestionnaireTreeSide::Target => target_name.clone(),
@@ -354,20 +350,31 @@ fn build_record_entries(entity: &QuestionnaireEntityComparison) -> Vec<Questionn
     let mut entries: BTreeMap<String, QuestionnaireRecordEntry> = BTreeMap::new();
 
     for record in &entity.records {
-        let key = record_key(record.source_id, record.target_id, &record.entity, entries.len());
-        let entry = entries.entry(key.clone()).or_insert_with(|| QuestionnaireRecordEntry {
-            key: key.clone(),
-            source_record: None,
-            target_record: None,
-            source_name: "unknown name".to_string(),
-            target_name: "unknown name".to_string(),
-            operation: record.operation.clone(),
-            diff_count: record.diffs.len(),
-            source_is_active: record.source_is_active,
-            target_is_active: record.target_is_active,
-        });
+        let key = record_key(
+            record.source_id,
+            record.target_id,
+            &record.entity,
+            entries.len(),
+        );
+        let entry = entries
+            .entry(key.clone())
+            .or_insert_with(|| QuestionnaireRecordEntry {
+                key: key.clone(),
+                source_record: None,
+                target_record: None,
+                source_name: "unknown name".to_string(),
+                target_name: "unknown name".to_string(),
+                operation: record.operation.clone(),
+                diff_count: record.diffs.len(),
+                source_is_active: record.source_is_active,
+                target_is_active: record.target_is_active,
+            });
         entry.source_name = record_name(&record.source_record);
-        entry.target_name = record.target_record.as_ref().map(record_name).unwrap_or_else(|| "unknown name".to_string());
+        entry.target_name = record
+            .target_record
+            .as_ref()
+            .map(record_name)
+            .unwrap_or_else(|| "unknown name".to_string());
         entry.source_record = Some(record.source_record.clone());
         entry.target_record = record.target_record.clone();
         entry.operation = record.operation.clone();
@@ -378,17 +385,19 @@ fn build_record_entries(entity: &QuestionnaireEntityComparison) -> Vec<Questionn
 
     for orphan in &entity.orphans {
         let key = record_key(None, orphan.record_id, &entity.entity, entries.len());
-        let entry = entries.entry(key.clone()).or_insert_with(|| QuestionnaireRecordEntry {
-            key: key.clone(),
-            source_record: None,
-            target_record: None,
-            source_name: "unknown name".to_string(),
-            target_name: "unknown name".to_string(),
-            operation: orphan.operation.clone(),
-            diff_count: 0,
-            source_is_active: false,
-            target_is_active: false,
-        });
+        let entry = entries
+            .entry(key.clone())
+            .or_insert_with(|| QuestionnaireRecordEntry {
+                key: key.clone(),
+                source_record: None,
+                target_record: None,
+                source_name: "unknown name".to_string(),
+                target_name: "unknown name".to_string(),
+                operation: orphan.operation.clone(),
+                diff_count: 0,
+                source_is_active: false,
+                target_is_active: false,
+            });
         entry.target_name = record_name(&orphan.record);
         entry.target_record = Some(orphan.record.clone());
         entry.operation = orphan.operation.clone();
@@ -410,7 +419,12 @@ fn record_key(
 }
 
 fn target_record_count(entity: &QuestionnaireEntityComparison) -> usize {
-    entity.records.iter().filter(|record| record.target_record.is_some()).count() + entity.orphans.len()
+    entity
+        .records
+        .iter()
+        .filter(|record| record.target_record.is_some())
+        .count()
+        + entity.orphans.len()
 }
 
 fn record_label(
@@ -440,11 +454,7 @@ fn operation_label(operation: &QuestionnaireOperation) -> (&'static str, &'stati
 }
 
 fn active_marker(is_active: bool) -> &'static str {
-    if is_active {
-        "[active]"
-    } else {
-        "[inactive]"
-    }
+    if is_active { "[active]" } else { "[inactive]" }
 }
 
 fn record_name(record: &Record) -> String {

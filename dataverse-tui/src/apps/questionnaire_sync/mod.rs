@@ -1,6 +1,7 @@
 //! Questionnaire Sync app.
 
 pub mod comparison;
+pub mod execution;
 pub mod modals;
 pub mod scope;
 pub mod tree;
@@ -10,52 +11,147 @@ use std::collections::HashMap;
 
 use dataverse_lib::model::Entity;
 use dataverse_lib::model::Record;
-use dataverse_lib::DataverseClient;
+use dataverse_lib::model::Value;
 use rafter::page;
 use rafter::prelude::*;
 use tuidom::Element;
 
+use crate::apps::migration::execution::SubPhase;
+use crate::apps::questionnaire_sync::comparison::{QuestionnaireComparison, compare_questionnaire};
+use crate::apps::questionnaire_sync::execution::build_execution_plan;
+use crate::apps::questionnaire_sync::execution::fetch_execution_metadata;
 use crate::apps::questionnaire_sync::modals::{EnvironmentSelection, EnvironmentSelectorModal};
+use crate::apps::questionnaire_sync::scope::QUESTIONNAIRE_ENTITIES;
+use crate::apps::questionnaire_sync::scope::QUESTIONNAIRE_RELATIONS;
+use crate::apps::questionnaire_sync::scope::QuestionnaireEntitySpec;
+use crate::apps::questionnaire_sync::scope::QuestionnaireRelationSpec;
+use crate::apps::questionnaire_sync::tree::{
+    QuestionnaireTreeNode, QuestionnaireTreeSide, build_tree_nodes,
+};
+use crate::apps::questionnaire_sync::types::{
+    QuestionnaireEntitySnapshot, QuestionnaireEnvironmentSnapshot, QuestionnaireRelationMembership,
+    QuestionnaireRelationSnapshot,
+};
+use crate::apps::queue::Queue;
+use crate::apps::queue::api::AddItems;
+use crate::apps::queue::api::NewItem;
+use crate::apps::queue::types::QueuePayload;
 use crate::credentials::CredentialsProvider;
 use crate::modals::odata_fetch::ODataFetchError;
 use crate::modals::odata_fetch::ODataFetchModal;
 use crate::modals::odata_fetch::ODataFetchTask;
+use crate::systems::client_management::ActiveClientInfo;
 use crate::systems::client_management::ClientManagement;
 use crate::systems::client_management::GetAnyClient;
-use crate::apps::questionnaire_sync::comparison::{compare_questionnaire, QuestionnaireComparison};
-use crate::apps::questionnaire_sync::scope::QUESTIONNAIRE_ENTITIES;
-use crate::apps::questionnaire_sync::tree::{build_tree_nodes, QuestionnaireTreeNode, QuestionnaireTreeSide};
-use crate::apps::questionnaire_sync::types::{
-    QuestionnaireEnvironmentSnapshot,
-    QuestionnaireEntitySnapshot,
-};
+
+#[derive(Clone)]
+enum FetchSpecKind {
+    Entity(&'static QuestionnaireEntitySpec),
+    Relation(&'static QuestionnaireRelationSpec),
+}
 
 #[derive(Clone)]
 struct FetchSpec {
     environment_id: i64,
     environment_name: String,
-    entity: &'static str,
+    kind: FetchSpecKind,
 }
 
 impl FetchSpec {
-    fn new(environment_id: i64, environment_name: String, entity: &'static str) -> Self {
+    fn entity(
+        environment_id: i64,
+        environment_name: String,
+        entity: &'static QuestionnaireEntitySpec,
+    ) -> Self {
         Self {
             environment_id,
             environment_name,
-            entity,
+            kind: FetchSpecKind::Entity(entity),
+        }
+    }
+
+    fn relation(
+        environment_id: i64,
+        environment_name: String,
+        relation: &'static QuestionnaireRelationSpec,
+    ) -> Self {
+        Self {
+            environment_id,
+            environment_name,
+            kind: FetchSpecKind::Relation(relation),
         }
     }
 
     fn label(&self) -> String {
-        format!("{} — {}", self.environment_name, self.entity)
+        match self.kind {
+            FetchSpecKind::Entity(entity) => {
+                format!("{} — {}", self.environment_name, entity.logical_name)
+            }
+            FetchSpecKind::Relation(relation) => {
+                format!("{} — {}", self.environment_name, relation.relationship_name)
+            }
+        }
     }
 }
 
-fn questionnaire_sync_entities() -> Vec<&'static str> {
+fn entity_spec(logical_name: &str) -> &'static QuestionnaireEntitySpec {
     QUESTIONNAIRE_ENTITIES
         .iter()
-        .map(|spec| spec.logical_name)
-        .collect()
+        .find(|spec| spec.logical_name == logical_name)
+        .unwrap_or_else(|| panic!("missing questionnaire entity spec: {}", logical_name))
+}
+
+fn relation_snapshot_from_records(
+    relation: &QuestionnaireRelationSpec,
+    records: Vec<Record>,
+) -> QuestionnaireRelationSnapshot {
+    let parent = entity_spec(relation.parent_entity);
+    let related = entity_spec(relation.related_entity);
+    let mut memberships = Vec::new();
+
+    for record in records {
+        let Some(parent_id) = guid_field(&record, parent.primary_key) else {
+            continue;
+        };
+        let Some(Value::Records(related_records)) = record.get(relation.relationship_name) else {
+            continue;
+        };
+
+        for related_record in related_records {
+            if let Some(related_id) = guid_field(related_record, related.primary_key) {
+                memberships.push(QuestionnaireRelationMembership {
+                    parent_id,
+                    related_id,
+                });
+            }
+        }
+    }
+
+    QuestionnaireRelationSnapshot {
+        relationship_name: relation.relationship_name.to_string(),
+        parent_entity: relation.parent_entity.to_string(),
+        related_entity: relation.related_entity.to_string(),
+        memberships,
+    }
+}
+
+fn guid_field(record: &Record, field: &str) -> Option<uuid::Uuid> {
+    match record.get(field) {
+        Some(Value::Guid(id)) => Some(*id),
+        _ => None,
+    }
+}
+
+fn sub_phase_priority(sub_phase: SubPhase) -> i32 {
+    match sub_phase {
+        SubPhase::Create => 70,
+        SubPhase::Activate => 60,
+        SubPhase::Update => 50,
+        SubPhase::Associate => 40,
+        SubPhase::Disassociate => 30,
+        SubPhase::Deactivate => 20,
+        SubPhase::Delete => 10,
+    }
 }
 
 /// Questionnaire sync app.
@@ -65,6 +161,8 @@ pub struct QuestionnaireSync {
     env_options: Vec<(i64, String)>,
     source_environment_id: Option<i64>,
     target_environment_id: Option<i64>,
+    source_account_id: Option<i64>,
+    target_account_id: Option<i64>,
     source_environment_name: Option<String>,
     target_environment_name: Option<String>,
     source_snapshot: Option<QuestionnaireEnvironmentSnapshot>,
@@ -82,6 +180,8 @@ impl QuestionnaireSync {
         Self::new(
             HashMap::new(),
             Vec::new(),
+            None,
+            None,
             None,
             None,
             None,
@@ -133,12 +233,81 @@ impl QuestionnaireSync {
 
     #[handler]
     async fn queue(&self, gx: &GlobalContext) {
-        if self.comparison.get().is_none() {
+        let Some(comparison) = self.comparison.with_ref(|comparison| comparison.clone()) else {
             gx.toast(Toast::error("Fetch the environments first"));
+            return;
+        };
+        let Some(target_env_id) = self.target_environment_id.get() else {
+            gx.toast(Toast::error("Target environment is not selected"));
+            return;
+        };
+        let Some(target_account_id) = self.target_account_id.get() else {
+            gx.toast(Toast::error("Target account is not available"));
+            return;
+        };
+
+        let Some(target_info) = self.get_client_for_env(gx, target_env_id).await else {
+            return;
+        };
+        let metadata = match fetch_execution_metadata(&target_info.client).await {
+            Ok(metadata) => metadata,
+            Err(e) => {
+                log::error!("Failed to prepare questionnaire sync metadata: {}", e);
+                gx.toast(Toast::error("Failed to prepare queue metadata"));
+                return;
+            }
+        };
+        let plan = match build_execution_plan(&comparison, &metadata) {
+            Ok(plan) => plan,
+            Err(e) => {
+                log::error!("Failed to build questionnaire sync plan: {}", e);
+                gx.toast(Toast::error(format!("Failed to build sync plan: {}", e)));
+                return;
+            }
+        };
+
+        if plan.is_empty() {
+            gx.toast(Toast::info("No questionnaire sync operations to queue"));
             return;
         }
 
-        gx.toast(Toast::info("Queue phase coming soon"));
+        let mut items = Vec::new();
+        for sub_phase in SubPhase::ALL {
+            let priority = sub_phase_priority(*sub_phase);
+            for entity_batches in plan.batches_for(*sub_phase) {
+                for batch in &entity_batches.batches {
+                    let op_count = batch.operation_count();
+                    items.push(NewItem {
+                        priority,
+                        payload: QueuePayload::Batch(batch.clone()),
+                        env_id: target_env_id,
+                        account_id: target_account_id,
+                        source: "questionnaire-sync".to_string(),
+                        description: format!(
+                            "{} {} ({})",
+                            sub_phase.label(),
+                            entity_batches.entity,
+                            op_count
+                        ),
+                    });
+                }
+            }
+        }
+
+        let operation_count = plan.total_operations();
+        match gx.request::<Queue, AddItems>(AddItems { items }).await {
+            Ok(response) => gx.toast(Toast::success(format!(
+                "Queued {} questionnaire sync operations in {} items",
+                operation_count,
+                response.ids.len()
+            ))),
+            Err(e) => {
+                log::error!("Failed to queue questionnaire sync operations: {:?}", e);
+                gx.toast(Toast::error(
+                    "Failed to queue questionnaire sync operations",
+                ));
+            }
+        }
     }
 
     #[handler]
@@ -239,14 +408,18 @@ impl QuestionnaireSync {
             return;
         };
 
-        let source_client = match self.get_client_for_env(gx, source_env_id).await {
-            Some(client) => client,
+        let source_info = match self.get_client_for_env(gx, source_env_id).await {
+            Some(info) => info,
             None => return,
         };
-        let target_client = match self.get_client_for_env(gx, target_env_id).await {
-            Some(client) => client,
+        let target_info = match self.get_client_for_env(gx, target_env_id).await {
+            Some(info) => info,
             None => return,
         };
+        self.source_account_id.set(Some(source_info.account_id));
+        self.target_account_id.set(Some(target_info.account_id));
+        let source_client = source_info.client;
+        let target_client = target_info.client;
 
         let source_env_name = self
             .source_environment_name
@@ -260,9 +433,29 @@ impl QuestionnaireSync {
             .unwrap_or_else(|| format!("#{}", target_env_id));
 
         let mut specs = Vec::new();
-        for entity in questionnaire_sync_entities() {
-            specs.push(FetchSpec::new(source_env_id, source_env_name.clone(), entity));
-            specs.push(FetchSpec::new(target_env_id, target_env_name.clone(), entity));
+        for entity in QUESTIONNAIRE_ENTITIES {
+            specs.push(FetchSpec::entity(
+                source_env_id,
+                source_env_name.clone(),
+                entity,
+            ));
+            specs.push(FetchSpec::entity(
+                target_env_id,
+                target_env_name.clone(),
+                entity,
+            ));
+        }
+        for relation in QUESTIONNAIRE_RELATIONS {
+            specs.push(FetchSpec::relation(
+                source_env_id,
+                source_env_name.clone(),
+                relation,
+            ));
+            specs.push(FetchSpec::relation(
+                target_env_id,
+                target_env_name.clone(),
+                relation,
+            ));
         }
 
         let tasks: Vec<ODataFetchTask> = specs
@@ -273,7 +466,22 @@ impl QuestionnaireSync {
                 } else {
                     target_client.clone()
                 };
-                let query = client.query(Entity::logical(spec.entity)).page_size(1000);
+                let query = match spec.kind {
+                    FetchSpecKind::Entity(entity) => client
+                        .query(Entity::logical(entity.logical_name))
+                        .page_size(1000),
+                    FetchSpecKind::Relation(relation) => {
+                        let parent = entity_spec(relation.parent_entity);
+                        let related = entity_spec(relation.related_entity);
+                        client
+                            .query(Entity::logical(relation.parent_entity))
+                            .select(&[parent.primary_key])
+                            .expand(relation.relationship_name, |expand| {
+                                expand.select(&[related.primary_key])
+                            })
+                            .page_size(1000)
+                    }
+                };
                 ODataFetchTask::new(spec.label(), client, query)
             })
             .collect();
@@ -294,15 +502,29 @@ impl QuestionnaireSync {
 
         let mut source_entities = Vec::new();
         let mut target_entities = Vec::new();
+        let mut source_relations = Vec::new();
+        let mut target_relations = Vec::new();
         for (spec, records) in specs.into_iter().zip(results.into_iter()) {
-            let entity_snapshot = QuestionnaireEntitySnapshot {
-                entity: spec.entity.to_string(),
-                records,
-            };
-            if spec.environment_id == source_env_id {
-                source_entities.push(entity_snapshot);
-            } else {
-                target_entities.push(entity_snapshot);
+            match spec.kind {
+                FetchSpecKind::Entity(entity) => {
+                    let entity_snapshot = QuestionnaireEntitySnapshot {
+                        entity: entity.logical_name.to_string(),
+                        records,
+                    };
+                    if spec.environment_id == source_env_id {
+                        source_entities.push(entity_snapshot);
+                    } else {
+                        target_entities.push(entity_snapshot);
+                    }
+                }
+                FetchSpecKind::Relation(relation) => {
+                    let relation_snapshot = relation_snapshot_from_records(relation, records);
+                    if spec.environment_id == source_env_id {
+                        source_relations.push(relation_snapshot);
+                    } else {
+                        target_relations.push(relation_snapshot);
+                    }
+                }
             }
         }
 
@@ -310,11 +532,13 @@ impl QuestionnaireSync {
             environment_id: source_env_id,
             environment_name: source_env_name,
             entities: source_entities,
+            relations: source_relations,
         };
         let target_snapshot = QuestionnaireEnvironmentSnapshot {
             environment_id: target_env_id,
             environment_name: target_env_name,
             entities: target_entities,
+            relations: target_relations,
         };
         let comparison = compare_questionnaire(&source_snapshot, &target_snapshot);
 
@@ -331,14 +555,17 @@ impl QuestionnaireSync {
         &self,
         gx: &GlobalContext,
         env_id: i64,
-    ) -> Option<DataverseClient> {
+    ) -> Option<ActiveClientInfo> {
         match gx
             .request_system::<ClientManagement, GetAnyClient>(GetAnyClient { env_id })
             .await
         {
-            Ok(Ok(info)) => Some(info.client),
+            Ok(Ok(info)) => Some(info),
             Ok(Err(e)) => {
-                gx.toast(Toast::error(format!("Failed to connect to environment: {}", e)));
+                gx.toast(Toast::error(format!(
+                    "Failed to connect to environment: {}",
+                    e
+                )));
                 None
             }
             Err(e) => {
@@ -376,7 +603,10 @@ impl QuestionnaireSync {
         self.sync_target_tree_from_source(source_state);
     }
 
-    fn sync_target_tree_from_source(&self, source_state: rafter::widgets::TreeState<QuestionnaireTreeNode>) {
+    fn sync_target_tree_from_source(
+        &self,
+        source_state: rafter::widgets::TreeState<QuestionnaireTreeNode>,
+    ) {
         self.target_tree_state.update(|state| {
             state.expanded = source_state.expanded.clone();
             state.selection = source_state.selection.clone();

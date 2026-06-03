@@ -8,8 +8,11 @@ use uuid::Uuid;
 use crate::apps::migration::engine::util::values_equal;
 
 use super::scope::QUESTIONNAIRE_ENTITIES;
+use super::scope::QUESTIONNAIRE_RELATIONS;
 use super::scope::QuestionnaireEntitySpec;
+use super::scope::QuestionnaireRelationSpec;
 use super::types::QuestionnaireEnvironmentSnapshot;
+use super::types::QuestionnaireRelationMembership;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum QuestionnaireOperation {
@@ -106,27 +109,43 @@ pub struct QuestionnaireOperationCounts {
 }
 
 #[derive(Debug, Clone)]
+pub struct QuestionnaireRelationComparison {
+    pub relationship_name: String,
+    pub parent_entity: String,
+    pub related_entity: String,
+    pub associations: Vec<QuestionnaireRelationMembership>,
+    pub disassociations: Vec<QuestionnaireRelationMembership>,
+}
+
+#[derive(Debug, Clone)]
 pub struct QuestionnaireComparison {
     pub source: QuestionnaireEnvironmentSnapshot,
     pub target: QuestionnaireEnvironmentSnapshot,
     pub entities: Vec<QuestionnaireEntityComparison>,
+    pub relations: Vec<QuestionnaireRelationComparison>,
 }
 
 impl QuestionnaireComparison {
     pub fn total_records(&self) -> usize {
-        self.entities.iter().map(QuestionnaireEntityComparison::total_records).sum()
+        self.entities
+            .iter()
+            .map(QuestionnaireEntityComparison::total_records)
+            .sum()
     }
 
     pub fn count_operations(&self) -> QuestionnaireOperationCounts {
-        self.entities.iter().fold(QuestionnaireOperationCounts::default(), |mut acc, entity| {
-            let counts = entity.count_operations();
-            acc.create += counts.create;
-            acc.update += counts.update;
-            acc.skip += counts.skip;
-            acc.delete += counts.delete;
-            acc.error += counts.error;
-            acc
-        })
+        self.entities.iter().fold(
+            QuestionnaireOperationCounts::default(),
+            |mut acc, entity| {
+                let counts = entity.count_operations();
+                acc.create += counts.create;
+                acc.update += counts.update;
+                acc.skip += counts.skip;
+                acc.delete += counts.delete;
+                acc.error += counts.error;
+                acc
+            },
+        )
     }
 }
 
@@ -140,10 +159,48 @@ pub fn compare_questionnaire(
         entities.push(compare_entity(spec, source, target));
     }
 
+    let mut relations = Vec::with_capacity(QUESTIONNAIRE_RELATIONS.len());
+    for spec in QUESTIONNAIRE_RELATIONS {
+        relations.push(compare_relation(spec, source, target));
+    }
+
     QuestionnaireComparison {
         source: source.clone(),
         target: target.clone(),
         entities,
+        relations,
+    }
+}
+
+fn compare_relation(
+    spec: &QuestionnaireRelationSpec,
+    source: &QuestionnaireEnvironmentSnapshot,
+    target: &QuestionnaireEnvironmentSnapshot,
+) -> QuestionnaireRelationComparison {
+    let source_memberships: HashSet<QuestionnaireRelationMembership> = source
+        .relation(spec.relationship_name)
+        .map(|relation| relation.memberships.iter().cloned().collect())
+        .unwrap_or_default();
+    let target_memberships: HashSet<QuestionnaireRelationMembership> = target
+        .relation(spec.relationship_name)
+        .map(|relation| relation.memberships.iter().cloned().collect())
+        .unwrap_or_default();
+
+    let associations = source_memberships
+        .difference(&target_memberships)
+        .cloned()
+        .collect();
+    let disassociations = target_memberships
+        .difference(&source_memberships)
+        .cloned()
+        .collect();
+
+    QuestionnaireRelationComparison {
+        relationship_name: spec.relationship_name.to_string(),
+        parent_entity: spec.parent_entity.to_string(),
+        related_entity: spec.related_entity.to_string(),
+        associations,
+        disassociations,
     }
 }
 
@@ -155,8 +212,12 @@ fn compare_entity(
     let source_entity = source.entity(spec.logical_name);
     let target_entity = target.entity(spec.logical_name);
 
-    let source_records = source_entity.map(|entity| entity.records.as_slice()).unwrap_or(&[]);
-    let target_records = target_entity.map(|entity| entity.records.as_slice()).unwrap_or(&[]);
+    let source_records = source_entity
+        .map(|entity| entity.records.as_slice())
+        .unwrap_or(&[]);
+    let target_records = target_entity
+        .map(|entity| entity.records.as_slice())
+        .unwrap_or(&[]);
 
     let target_by_id = index_records(target_records, spec.primary_key);
     let mut matched_target_ids = HashSet::new();
@@ -296,7 +357,10 @@ fn diff_record(
     diffs
 }
 
-fn diff_record_against_empty(spec: &QuestionnaireEntitySpec, source: &Record) -> Vec<QuestionnaireFieldDiff> {
+fn diff_record_against_empty(
+    spec: &QuestionnaireEntitySpec,
+    source: &Record,
+) -> Vec<QuestionnaireFieldDiff> {
     let mut diffs = Vec::new();
 
     for field in spec
@@ -331,7 +395,9 @@ fn index_records<'a>(records: &'a [Record], primary_key: &str) -> HashMap<Uuid, 
 }
 
 fn record_id(record: &Record, primary_key: &str) -> Option<Uuid> {
-    record.id().or_else(|| record_value(record, primary_key).as_guid())
+    record
+        .id()
+        .or_else(|| record_value(record, primary_key).as_guid())
 }
 
 fn record_value(record: &Record, field: &str) -> Value {
