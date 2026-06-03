@@ -46,6 +46,19 @@ pub(super) fn guid_value(record: &Record, field: &str) -> Option<Uuid> {
     }
 }
 
+pub(super) fn lookup_guid_value(record: &Record, field: &str) -> Option<Uuid> {
+    raw_lookup_guid_value(record, field)
+        .or_else(|| raw_lookup_guid_value(record, &format!("_{}_value", field)))
+}
+
+fn raw_lookup_guid_value(record: &Record, field: &str) -> Option<Uuid> {
+    match record.get(field) {
+        Some(Value::Guid(value)) => Some(*value),
+        Some(Value::EntityReference(value)) => Some(value.id),
+        _ => None,
+    }
+}
+
 pub(super) fn option_value(record: &Record, field: &str) -> Option<i32> {
     match record.get(field) {
         Some(Value::OptionSet(value)) => Some(value.value),

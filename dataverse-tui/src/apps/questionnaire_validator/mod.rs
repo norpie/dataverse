@@ -1,5 +1,6 @@
 //! Questionnaire Validator app.
 
+mod export;
 mod fetch;
 mod tree;
 mod types;
@@ -15,8 +16,8 @@ use crate::systems::client_management::ActiveClientInfo;
 use crate::systems::client_management::ClientManagement;
 use crate::systems::client_management::GetActiveClient;
 
-use self::tree::{ValidationTreeNode, validation_color, validation_status};
-use self::types::{QuestionnaireSummary, ValidationReport, ValidatorView};
+use self::tree::{BulkValidationTreeNode, ValidationTreeNode, validation_color, validation_status};
+use self::types::{BulkValidationResult, QuestionnaireSummary, ValidationReport, ValidatorView};
 
 /// Questionnaire validator app.
 #[app(name = "VAF - Questionnaire Validator", singleton, on_blur = Close, default)]
@@ -28,6 +29,8 @@ pub struct QuestionnaireValidator {
     selected_questionnaire: Option<QuestionnaireSummary>,
     validation_report: Option<ValidationReport>,
     validation_tree: TreeState<ValidationTreeNode>,
+    bulk_result: Option<BulkValidationResult>,
+    bulk_tree: TreeState<BulkValidationTreeNode>,
     fetch_error: Option<String>,
 }
 
@@ -39,6 +42,8 @@ impl QuestionnaireValidator {
             Vec::new(),
             TreeState::default(),
             None,
+            None,
+            TreeState::default(),
             None,
             TreeState::default(),
             None,
@@ -88,6 +93,7 @@ impl QuestionnaireValidator {
                     .unwrap_or_else(|| "No questionnaire".to_string());
                 format!("Questionnaire Validator — {} — {}", env_name, name)
             }
+            ValidatorView::Bulk => format!("Questionnaire Validator — {} — Bulk", env_name),
         }
     }
 
@@ -96,18 +102,26 @@ impl QuestionnaireValidator {
         bind("escape", close_or_back);
         bind("enter", activate_questionnaire);
         bind("r", refresh);
+        bind("b", bulk_validation);
+        bind("e", export_bulk_validation);
     }
 
     #[handler]
     async fn close_or_back(&self, cx: &AppContext) {
-        if self.view.get() == ValidatorView::Detail {
-            self.view.set(ValidatorView::List);
-            self.selected_questionnaire.set(None);
-            self.validation_report.set(None);
-            self.validation_tree
-                .update(|tree| tree.set_roots(Vec::new()));
-        } else {
-            cx.close();
+        match self.view.get() {
+            ValidatorView::Detail => {
+                self.view.set(ValidatorView::List);
+                self.selected_questionnaire.set(None);
+                self.validation_report.set(None);
+                self.validation_tree
+                    .update(|tree| tree.set_roots(Vec::new()));
+            }
+            ValidatorView::Bulk => {
+                self.view.set(ValidatorView::List);
+            }
+            ValidatorView::List => {
+                cx.close();
+            }
         }
     }
 
@@ -151,7 +165,21 @@ impl QuestionnaireValidator {
                     self.load_questionnaire_detail(gx, questionnaire).await;
                 }
             }
+            ValidatorView::Bulk => self.run_bulk_validation(gx).await,
         }
+    }
+
+    #[handler]
+    async fn bulk_validation(&self, gx: &GlobalContext) {
+        if self.client_info.get().is_none() && !self.ensure_client(gx).await {
+            return;
+        }
+        self.run_bulk_validation(gx).await;
+    }
+
+    #[handler]
+    async fn export_bulk_validation(&self, gx: &GlobalContext) {
+        self.export_bulk_validation_results(gx).await;
     }
 
     async fn ensure_client(&self, gx: &GlobalContext) -> bool {
@@ -185,6 +213,7 @@ impl QuestionnaireValidator {
         match self.view.get() {
             ValidatorView::List => self.list_element(),
             ValidatorView::Detail => self.detail_element(),
+            ValidatorView::Bulk => self.bulk_element(),
         }
     }
 
@@ -205,7 +234,10 @@ impl QuestionnaireValidator {
                 text (content: "Questionnaire Validator") style (bold, fg: interact)
                 row (width: fill, justify: between) {
                     text (content: {format!("Environment: {}", env_name)}) style (fg: primary)
-                    text (content: {format!("{} questionnaires · {} active · {} inactive", count, active_count, inactive_count)}) style (fg: muted)
+                    row (gap: 1) {
+                        text (content: {format!("{} questionnaires · {} active · {} inactive", count, active_count, inactive_count)}) style (fg: muted)
+                        button (label: "Bulk Validation", hint: "b", id: "questionnaire-validator-bulk") on_activate: bulk_validation()
+                    }
                 }
 
                 if let Some(error) = fetch_error {
@@ -228,6 +260,59 @@ impl QuestionnaireValidator {
                 row (width: fill, justify: between) {
                     text (content: "enter validate · r refresh") style (fg: muted)
                     button (label: "Close", hint: "esc", id: "questionnaire-validator-close") on_activate: close_or_back()
+                }
+            }
+        }
+    }
+
+    fn bulk_element(&self) -> Element {
+        let fetch_error = self.fetch_error.get();
+        let result = self.bulk_result.get();
+        let (questionnaire_count, failed_questionnaire_count, finding_count) = result
+            .as_ref()
+            .map(|result| {
+                (
+                    result.questionnaire_count,
+                    result.failed_questionnaire_count,
+                    result.finding_count,
+                )
+            })
+            .unwrap_or((0, 0, 0));
+
+        page! {
+            column (padding: (1, 2), gap: 1, width: fill, height: fill) style (bg: background) {
+                text (content: "Bulk Questionnaire Validation") style (bold, fg: interact)
+                row (width: fill, justify: between) {
+                    text (content: {format!("{} findings · {} failed questionnaires · {} total questionnaires", finding_count, failed_questionnaire_count, questionnaire_count)}) style (fg: muted)
+                    button (label: "Export Excel", hint: "e", id: "questionnaire-validator-export-bulk") on_activate: export_bulk_validation()
+                }
+
+                if let Some(error) = fetch_error {
+                    text (content: {error}) style (fg: error)
+                }
+
+                if result.is_none() {
+                    box_ (width: fill, height: fill) style (bg: surface) {
+                        column (padding: (1, 2), gap: 1) {
+                            text (content: "Loading bulk validation...") style (fg: muted)
+                        }
+                    }
+                } else if finding_count == 0 {
+                    box_ (width: fill, height: fill) style (bg: surface) {
+                        column (padding: (1, 2), gap: 1) {
+                            text (content: "No validation failures found.") style (fg: success)
+                            text (content: "All fetched questionnaires passed the current checks.") style (fg: muted)
+                        }
+                    }
+                } else {
+                    box_ (id: "questionnaire-validator-bulk-container", width: fill, height: fill) style (bg: surface) {
+                        tree (state: self.bulk_tree, id: "questionnaire-validator-bulk-tree", width: fill, height: fill)
+                    }
+                }
+
+                row (width: fill, justify: between) {
+                    text (content: "r rerun · e export") style (fg: muted)
+                    button (label: "Back", hint: "esc", id: "questionnaire-validator-bulk-back") on_activate: close_or_back()
                 }
             }
         }

@@ -7,6 +7,7 @@ use super::util::{guid_value, option_value, short_id, string_value};
 pub(super) enum ValidatorView {
     List,
     Detail,
+    Bulk,
 }
 
 impl Default for ValidatorView {
@@ -162,4 +163,36 @@ pub(super) struct ValidationReport {
     pub(super) record_count: usize,
     pub(super) finding_count: usize,
     pub(super) entities: Vec<EntityValidation>,
+}
+
+#[derive(Clone, Debug)]
+pub(super) struct ValidationFindingRow {
+    pub(super) questionnaire_name: String,
+    pub(super) questionnaire_id: String,
+    pub(super) questionnaire_code: String,
+    pub(super) questionnaire_state: String,
+    pub(super) questionnaire_status: String,
+    pub(super) entity: String,
+    pub(super) record_name: String,
+    pub(super) record_id: String,
+    pub(super) category: String,
+    pub(super) item: String,
+    pub(super) value: String,
+    pub(super) detail: String,
+}
+
+#[derive(Clone, Debug)]
+pub(super) struct BulkQuestionnaireFailure {
+    pub(super) questionnaire: QuestionnaireSummary,
+    pub(super) finding_count: usize,
+    pub(super) rows: Vec<ValidationFindingRow>,
+}
+
+#[derive(Clone, Debug)]
+pub(super) struct BulkValidationResult {
+    pub(super) questionnaire_count: usize,
+    pub(super) failed_questionnaire_count: usize,
+    pub(super) finding_count: usize,
+    pub(super) failures: Vec<BulkQuestionnaireFailure>,
+    pub(super) rows: Vec<ValidationFindingRow>,
 }

@@ -6,12 +6,14 @@ use dataverse_lib::model::metadata::EntityMetadata;
 use serde_json::Value as JsonValue;
 
 use super::types::{
-    ConditionActionValidation, ConditionQuestionValidation, ConditionValidation, EntityRecordSet,
-    EntityValidation, QuestionnaireGraph, QuestionnaireSummary, RecordValidation, ValidatedField,
-    ValidationReport,
+    BulkQuestionnaireFailure, BulkValidationResult, ConditionActionValidation,
+    ConditionQuestionValidation, ConditionValidation, EntityRecordSet, EntityValidation,
+    QuestionnaireGraph, QuestionnaireSummary, RecordValidation, ValidatedField,
+    ValidationFindingRow, ValidationReport,
 };
 use super::util::{
-    bool_value, entity_spec, guid_value, json_value_to_string, record_name, string_value,
+    bool_value, entity_spec, guid_value, json_value_to_string, lookup_guid_value, option_value,
+    record_name, string_value,
 };
 
 pub(super) fn build_validation_report(
@@ -37,6 +39,10 @@ pub(super) fn build_validation_report(
         };
 
         for record in &set.records {
+            if set.entity == "nrq_questioncondition" && is_inactive(record) {
+                continue;
+            }
+
             record_count += 1;
             let record_id = guid_value(record, spec.primary_key)
                 .map(|id| id.to_string())
@@ -85,6 +91,216 @@ pub(super) fn build_validation_report(
         finding_count,
         entities,
     }
+}
+
+pub(super) fn build_bulk_validation_result(reports: Vec<ValidationReport>) -> BulkValidationResult {
+    let questionnaire_count = reports.len();
+    let mut failures = Vec::new();
+    let mut rows = Vec::new();
+
+    for report in reports {
+        if report.finding_count == 0 {
+            continue;
+        }
+        let report_rows = finding_rows_from_report(&report);
+        rows.extend(report_rows.clone());
+        failures.push(BulkQuestionnaireFailure {
+            questionnaire: report.questionnaire,
+            finding_count: report.finding_count,
+            rows: report_rows,
+        });
+    }
+
+    failures.sort_by(|a, b| {
+        a.questionnaire
+            .name
+            .to_lowercase()
+            .cmp(&b.questionnaire.name.to_lowercase())
+    });
+    rows.sort_by(|a, b| {
+        a.questionnaire_name
+            .to_lowercase()
+            .cmp(&b.questionnaire_name.to_lowercase())
+            .then(a.entity.cmp(&b.entity))
+            .then(
+                a.record_name
+                    .to_lowercase()
+                    .cmp(&b.record_name.to_lowercase()),
+            )
+            .then(a.category.cmp(&b.category))
+            .then(a.item.cmp(&b.item))
+    });
+
+    BulkValidationResult {
+        questionnaire_count,
+        failed_questionnaire_count: failures.len(),
+        finding_count: rows.len(),
+        failures,
+        rows,
+    }
+}
+
+fn finding_rows_from_report(report: &ValidationReport) -> Vec<ValidationFindingRow> {
+    let mut rows = Vec::new();
+    for entity in &report.entities {
+        for record in &entity.records {
+            for field in record.fields.iter().filter(|field| !field.valid) {
+                rows.push(finding_row(
+                    report,
+                    record,
+                    "option",
+                    field.field.clone(),
+                    field
+                        .value
+                        .map(|value| value.to_string())
+                        .unwrap_or_else(|| "not set".to_string()),
+                    format!(
+                        "value is outside accepted options: {}",
+                        accepted_values_detail(&field.accepted_values)
+                    ),
+                ));
+            }
+
+            let Some(condition) = &record.condition else {
+                continue;
+            };
+            if !condition.valid {
+                rows.push(finding_row(
+                    report,
+                    record,
+                    "condition",
+                    condition
+                        .mode
+                        .clone()
+                        .unwrap_or_else(|| "unknown mode".to_string()),
+                    format!(
+                        "{} {} {}",
+                        condition
+                            .trigger_question_id
+                            .clone()
+                            .unwrap_or_else(|| "unknown question".to_string()),
+                        condition
+                            .operator
+                            .clone()
+                            .unwrap_or_else(|| "?".to_string()),
+                        condition
+                            .value
+                            .clone()
+                            .unwrap_or_else(|| "not set".to_string())
+                    ),
+                    condition_detail(condition),
+                ));
+            }
+            for question in condition
+                .questions
+                .iter()
+                .filter(|question| !question.valid)
+            {
+                rows.push(finding_row(
+                    report,
+                    record,
+                    "condition_target",
+                    question.question_id.clone(),
+                    format!(
+                        "visible {} required {}",
+                        question.visible, question.required
+                    ),
+                    "target question is not part of this questionnaire graph".to_string(),
+                ));
+            }
+            for action in condition.actions.iter().filter(|action| !action.valid) {
+                rows.push(finding_row(
+                    report,
+                    record,
+                    "condition_action",
+                    action.name.clone(),
+                    action.id.clone(),
+                    "action is missing visible and/or required flag".to_string(),
+                ));
+            }
+        }
+    }
+    rows
+}
+
+fn finding_row(
+    report: &ValidationReport,
+    record: &RecordValidation,
+    category: &str,
+    item: String,
+    value: String,
+    detail: String,
+) -> ValidationFindingRow {
+    ValidationFindingRow {
+        questionnaire_name: report.questionnaire.name.clone(),
+        questionnaire_id: report.questionnaire.id.clone(),
+        questionnaire_code: report
+            .questionnaire
+            .code
+            .clone()
+            .unwrap_or_else(|| "".to_string()),
+        questionnaire_state: report.questionnaire.state_label().to_string(),
+        questionnaire_status: report
+            .questionnaire
+            .statuscode
+            .map(|value| value.to_string())
+            .unwrap_or_else(|| "".to_string()),
+        entity: record.entity.clone(),
+        record_name: record.name.clone(),
+        record_id: record.record_id.clone(),
+        category: category.to_string(),
+        item,
+        value,
+        detail,
+    }
+}
+
+fn condition_detail(condition: &ConditionValidation) -> String {
+    match condition.mode.as_deref() {
+        Some("question") => {
+            if condition
+                .trigger_question_id
+                .as_ref()
+                .map(|value| value.is_empty())
+                .unwrap_or(true)
+            {
+                return "missing trigger question".to_string();
+            }
+            if condition.operator.as_deref().unwrap_or("").is_empty() {
+                return "missing condition operator".to_string();
+            }
+            "trigger question is not part of this questionnaire graph".to_string()
+        }
+        Some("parameter") => {
+            let mut missing = Vec::new();
+            if condition.parameter_type.as_deref().unwrap_or("").is_empty() {
+                missing.push("parameterType");
+            }
+            if condition.parameter_values.is_empty() {
+                missing.push("parameterValues");
+            }
+            if condition.operator.as_deref().unwrap_or("").is_empty() {
+                missing.push("condition");
+            }
+            if missing.is_empty() {
+                "invalid parameter condition".to_string()
+            } else {
+                format!("missing {}", missing.join(", "))
+            }
+        }
+        Some(mode) => format!("unsupported condition mode {}", mode),
+        None => "condition mode could not be inferred".to_string(),
+    }
+}
+
+fn accepted_values_detail(values: &[i32]) -> String {
+    let mut values = values.to_vec();
+    values.sort();
+    values
+        .iter()
+        .map(i32::to_string)
+        .collect::<Vec<_>>()
+        .join(",")
 }
 
 fn build_option_value_map(
@@ -180,7 +396,11 @@ fn build_condition_action_map(
             continue;
         }
         for record in &set.records {
-            let Some(condition_id) = guid_value(record, "nrq_questionconditionid") else {
+            if is_inactive(record) {
+                continue;
+            }
+
+            let Some(condition_id) = lookup_guid_value(record, "nrq_questionconditionid") else {
                 continue;
             };
             let action = ConditionActionValidation {
@@ -199,6 +419,10 @@ fn build_condition_action_map(
         }
     }
     map
+}
+
+fn is_inactive(record: &Record) -> bool {
+    option_value(record, "statecode") == Some(1)
 }
 
 fn build_condition_validation(

@@ -4,7 +4,9 @@ use rafter::widgets::TreeNode;
 use tuidom::Color;
 use tuidom::Element;
 
-use super::types::{QuestionnaireSummary, ValidationReport};
+use super::types::{
+    BulkValidationResult, QuestionnaireSummary, ValidationFindingRow, ValidationReport,
+};
 use super::util::short_id;
 
 impl TreeItem for QuestionnaireSummary {
@@ -534,4 +536,135 @@ pub(super) fn validation_color(finding_count: usize) -> &'static str {
     } else {
         "error"
     }
+}
+
+#[derive(Clone, Debug)]
+pub(super) enum BulkValidationTreeNode {
+    Root {
+        questionnaire_count: usize,
+        failed_questionnaire_count: usize,
+        finding_count: usize,
+    },
+    Questionnaire {
+        id: String,
+        name: String,
+        code: String,
+        state: String,
+        finding_count: usize,
+    },
+    Finding {
+        questionnaire_id: String,
+        row: ValidationFindingRow,
+    },
+}
+
+impl TreeItem for BulkValidationTreeNode {
+    type Key = String;
+
+    fn key(&self) -> String {
+        match self {
+            Self::Root { .. } => "bulk-root".to_string(),
+            Self::Questionnaire { id, .. } => format!("bulk-questionnaire-{}", id),
+            Self::Finding {
+                questionnaire_id,
+                row,
+            } => format!(
+                "bulk-finding-{}-{}-{}-{}-{}",
+                questionnaire_id, row.entity, row.record_id, row.category, row.item
+            ),
+        }
+    }
+
+    fn render(&self) -> Element {
+        match self {
+            Self::Root {
+                questionnaire_count,
+                failed_questionnaire_count,
+                finding_count,
+            } => {
+                element! {
+                    row (gap: 1) {
+                        text (content: "Bulk validation failures") style (bold, fg: interact)
+                        text (content: {format!("{} findings", finding_count)}) style (fg: error)
+                        text (content: {format!("{} failed / {} total", failed_questionnaire_count, questionnaire_count)}) style (fg: muted)
+                    }
+                }
+            }
+            Self::Questionnaire {
+                id,
+                name,
+                code,
+                state,
+                finding_count,
+            } => {
+                element! {
+                    row (gap: 1) {
+                        text (content: {name.clone()}) style (fg: primary)
+                        text (content: {format!("{} findings", finding_count)}) style (fg: error)
+                        text (content: {state.clone()}) style (fg: muted)
+                        text (content: {code.clone()}) style (fg: muted)
+                        text (content: {short_id(id)}) style (fg: muted)
+                    }
+                }
+            }
+            Self::Finding { row, .. } => {
+                element! {
+                    row (gap: 1) {
+                        text (content: {row.entity.clone()}) style (fg: primary)
+                        text (content: {row.record_name.clone()}) style (fg: primary)
+                        text (content: {short_id(&row.record_id)}) style (fg: muted)
+                        text (content: {row.category.clone()}) style (fg: muted)
+                        text (content: {row.item.clone()}) style (fg: muted)
+                        text (content: {row.value.clone()}) style (fg: muted)
+                        text (content: {row.detail.clone()}) style (fg: error)
+                    }
+                }
+            }
+        }
+    }
+}
+
+pub(super) fn build_bulk_validation_tree(
+    result: &BulkValidationResult,
+) -> Vec<TreeNode<BulkValidationTreeNode>> {
+    let questionnaire_nodes = result
+        .failures
+        .iter()
+        .map(|failure| {
+            let finding_nodes = failure
+                .rows
+                .iter()
+                .cloned()
+                .map(|row| {
+                    TreeNode::leaf(BulkValidationTreeNode::Finding {
+                        questionnaire_id: failure.questionnaire.id.clone(),
+                        row,
+                    })
+                })
+                .collect::<Vec<_>>();
+            TreeNode::branch(
+                BulkValidationTreeNode::Questionnaire {
+                    id: failure.questionnaire.id.clone(),
+                    name: failure.questionnaire.name.clone(),
+                    code: failure
+                        .questionnaire
+                        .code
+                        .clone()
+                        .unwrap_or_else(|| "no code".to_string()),
+                    state: failure.questionnaire.state_label().to_string(),
+                    finding_count: failure.finding_count,
+                },
+                finding_nodes,
+            )
+        })
+        .collect::<Vec<_>>();
+
+    vec![TreeNode::branch(
+        BulkValidationTreeNode::Root {
+            questionnaire_count: result.questionnaire_count,
+            failed_questionnaire_count: result.failed_questionnaire_count,
+            finding_count: result.finding_count,
+        },
+        questionnaire_nodes,
+    )]
 }

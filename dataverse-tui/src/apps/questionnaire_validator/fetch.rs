@@ -12,15 +12,15 @@ use crate::apps::questionnaire_sync::scope::{
     QUESTIONNAIRE_ENTITIES, QUESTIONNAIRE_RELATIONS, QuestionnaireEntitySpec,
     QuestionnaireFieldKind,
 };
-use crate::modals::LoadingModal;
 use crate::modals::odata_fetch::{ODataFetchError, ODataFetchModal, ODataFetchTask};
+use crate::modals::{LoadingModal, LoadingUpdater};
 use crate::systems::client_management::ActiveClientInfo;
 
 use super::QuestionnaireValidator;
-use super::tree::build_validation_tree;
+use super::tree::{build_bulk_validation_tree, build_validation_tree};
 use super::types::{EntityRecordSet, QuestionnaireGraph, QuestionnaireSummary, ValidatorView};
-use super::util::{entity_spec, guid_value, record_name};
-use super::validation::build_validation_report;
+use super::util::{entity_spec, guid_value, lookup_guid_value, record_name};
+use super::validation::{build_bulk_validation_result, build_validation_report};
 
 const FILTER_CHUNK_SIZE: usize = 20;
 const MAX_FETCH_PASSES: usize = 10;
@@ -316,6 +316,59 @@ impl QuestionnaireValidator {
             records_by_entity: sets,
         })
     }
+
+    pub(super) async fn run_bulk_validation(&self, gx: &GlobalContext) {
+        let Some(client_info) = self.client_info.get() else {
+            gx.toast(Toast::error("No active client"));
+            return;
+        };
+
+        self.view.set(ValidatorView::Bulk);
+        self.bulk_result.set(None);
+        self.bulk_tree.update(|tree| tree.set_roots(Vec::new()));
+
+        let metadata = match fetch_metadata(gx, &client_info).await {
+            Some(metadata) => metadata,
+            None => return,
+        };
+        let scope = match fetch_full_scope(gx, &client_info).await {
+            Some(scope) => scope,
+            None => return,
+        };
+
+        let report_result = gx
+            .modal(LoadingModal::run_with_default_updates(
+                "Preparing bulk validation...",
+                || Err(DataverseError::Cancelled),
+                |updater| async move {
+                    let reports = build_bulk_reports(scope, metadata, updater).await;
+                    Ok::<_, DataverseError>(reports)
+                },
+            ))
+            .await;
+
+        let reports = match report_result {
+            Ok(reports) => reports,
+            Err(e) if e.is_cancelled() => return,
+            Err(e) => {
+                gx.toast(Toast::error(format!("Bulk validation failed: {}", e)));
+                return;
+            }
+        };
+        let result = build_bulk_validation_result(reports);
+        let roots = build_bulk_validation_tree(&result);
+        self.bulk_tree.update(|tree| {
+            tree.set_roots(roots);
+            tree.expanded.clear();
+            tree.expanded.insert("bulk-root".to_string());
+        });
+        self.bulk_result.set(Some(result.clone()));
+        self.fetch_error.set(None);
+        gx.toast(Toast::success(format!(
+            "Bulk validation complete: {} findings in {} questionnaires",
+            result.finding_count, result.failed_questionnaire_count
+        )));
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -469,7 +522,7 @@ fn ingest_lookup_ids(
         let QuestionnaireFieldKind::Lookup { target_entity } = field.kind else {
             continue;
         };
-        if let Some(id) = guid_value(record, field.source_name) {
+        if let Some(id) = lookup_guid_value(record, field.source_name) {
             add_known_id(known_ids, target_entity, id);
         }
     }
@@ -525,5 +578,494 @@ fn id_filter(field: &str, ids: &[Uuid]) -> Filter {
         Filter::eq(field, ids[0])
     } else {
         Filter::or(ids.iter().map(|id| Filter::eq(field, *id)))
+    }
+}
+
+#[derive(Clone, Debug)]
+struct FullScopeFetch {
+    records_by_entity: HashMap<String, Vec<Record>>,
+    relations: Vec<RelationMembershipSet>,
+}
+
+#[derive(Clone, Debug)]
+struct RelationMembershipSet {
+    parent_entity: String,
+    related_entity: String,
+    memberships: Vec<RelationMembership>,
+}
+
+#[derive(Clone, Debug)]
+struct RelationMembership {
+    parent_id: Uuid,
+    related_id: Uuid,
+}
+
+#[derive(Clone, Debug)]
+struct BulkFetchSpec {
+    kind: BulkFetchSpecKind,
+}
+
+#[derive(Clone, Debug)]
+enum BulkFetchSpecKind {
+    Entity(&'static QuestionnaireEntitySpec),
+    Relation(&'static crate::apps::questionnaire_sync::scope::QuestionnaireRelationSpec),
+}
+
+impl BulkFetchSpec {
+    fn entity(entity: &'static QuestionnaireEntitySpec) -> Self {
+        Self {
+            kind: BulkFetchSpecKind::Entity(entity),
+        }
+    }
+
+    fn relation(
+        relation: &'static crate::apps::questionnaire_sync::scope::QuestionnaireRelationSpec,
+    ) -> Self {
+        Self {
+            kind: BulkFetchSpecKind::Relation(relation),
+        }
+    }
+
+    fn label(&self) -> String {
+        match self.kind {
+            BulkFetchSpecKind::Entity(entity) => entity.logical_name.to_string(),
+            BulkFetchSpecKind::Relation(relation) => relation.relationship_name.to_string(),
+        }
+    }
+}
+
+async fn fetch_full_scope(
+    gx: &GlobalContext,
+    client_info: &ActiveClientInfo,
+) -> Option<FullScopeFetch> {
+    let client = client_info.client.clone();
+    let mut specs = Vec::new();
+    for entity in QUESTIONNAIRE_ENTITIES {
+        specs.push(BulkFetchSpec::entity(entity));
+    }
+    for relation in QUESTIONNAIRE_RELATIONS {
+        specs.push(BulkFetchSpec::relation(relation));
+    }
+
+    let tasks = specs
+        .iter()
+        .map(|spec| {
+            let query = match spec.kind {
+                BulkFetchSpecKind::Entity(entity) => client
+                    .query(Entity::logical(entity.logical_name))
+                    .page_size(1000),
+                BulkFetchSpecKind::Relation(relation) => {
+                    let parent = entity_spec(relation.parent_entity).unwrap_or_else(|| {
+                        panic!("missing entity spec: {}", relation.parent_entity)
+                    });
+                    let related = entity_spec(relation.related_entity).unwrap_or_else(|| {
+                        panic!("missing entity spec: {}", relation.related_entity)
+                    });
+                    client
+                        .query(Entity::logical(relation.parent_entity))
+                        .select(&[parent.primary_key])
+                        .expand(relation.relationship_name, |expand| {
+                            expand.select(&[related.primary_key])
+                        })
+                        .page_size(1000)
+                }
+            };
+            ODataFetchTask::new(spec.label(), client.clone(), query)
+        })
+        .collect::<Vec<_>>();
+
+    let results = match gx.modal(ODataFetchModal::create(tasks)).await {
+        Ok(results) => results,
+        Err(ODataFetchError::TaskFailed { label, error }) => {
+            gx.toast(Toast::error(format!(
+                "Fetch failed for {}: {}",
+                label, error
+            )));
+            return None;
+        }
+        Err(ODataFetchError::Cancelled) => return None,
+    };
+
+    let mut records_by_entity = HashMap::new();
+    let mut relations = Vec::new();
+    for (spec, records) in specs.into_iter().zip(results.into_iter()) {
+        match spec.kind {
+            BulkFetchSpecKind::Entity(entity) => {
+                log::debug!(
+                    "Bulk questionnaire fetch {} records: {}",
+                    entity.logical_name,
+                    records.len()
+                );
+                records_by_entity.insert(entity.logical_name.to_string(), records);
+            }
+            BulkFetchSpecKind::Relation(relation) => {
+                log::debug!(
+                    "Bulk questionnaire relation fetch {} parent records: {}",
+                    relation.relationship_name,
+                    records.len()
+                );
+                relations.push(relation_membership_set(relation, records));
+            }
+        }
+    }
+
+    Some(FullScopeFetch {
+        records_by_entity,
+        relations,
+    })
+}
+
+fn relation_membership_set(
+    relation: &crate::apps::questionnaire_sync::scope::QuestionnaireRelationSpec,
+    records: Vec<Record>,
+) -> RelationMembershipSet {
+    let Some(parent) = entity_spec(relation.parent_entity) else {
+        return RelationMembershipSet {
+            parent_entity: relation.parent_entity.to_string(),
+            related_entity: relation.related_entity.to_string(),
+            memberships: Vec::new(),
+        };
+    };
+    let Some(related) = entity_spec(relation.related_entity) else {
+        return RelationMembershipSet {
+            parent_entity: relation.parent_entity.to_string(),
+            related_entity: relation.related_entity.to_string(),
+            memberships: Vec::new(),
+        };
+    };
+    let mut memberships = Vec::new();
+    for record in records {
+        let Some(parent_id) = guid_value(&record, parent.primary_key) else {
+            continue;
+        };
+        let Some(Value::Records(related_records)) = record.get(relation.relationship_name) else {
+            continue;
+        };
+        for related_record in related_records {
+            if let Some(related_id) = guid_value(related_record, related.primary_key) {
+                memberships.push(RelationMembership {
+                    parent_id,
+                    related_id,
+                });
+            }
+        }
+    }
+    RelationMembershipSet {
+        parent_entity: relation.parent_entity.to_string(),
+        related_entity: relation.related_entity.to_string(),
+        memberships,
+    }
+}
+
+async fn build_bulk_reports(
+    scope: FullScopeFetch,
+    metadata: HashMap<String, EntityMetadata>,
+    updater: LoadingUpdater,
+) -> Vec<super::types::ValidationReport> {
+    let questionnaires = scope
+        .records_by_entity
+        .get("nrq_questionnaire")
+        .cloned()
+        .unwrap_or_default();
+    let questionnaire_count = questionnaires.len();
+    let mut reports = Vec::new();
+
+    updater.update(format!(
+        "Bulk validation: preparing {} questionnaires",
+        questionnaire_count
+    ));
+    tokio::task::yield_now().await;
+
+    for (index, questionnaire_record) in questionnaires.into_iter().enumerate() {
+        let questionnaire = QuestionnaireSummary::from_record(&questionnaire_record);
+        updater.update(format!(
+            "Bulk validation {}/{} — {}",
+            index + 1,
+            questionnaire_count,
+            questionnaire.name
+        ));
+
+        let Some(questionnaire_id) = questionnaire.id_uuid() else {
+            continue;
+        };
+        let graph = graph_for_questionnaire(&scope, questionnaire_id);
+        reports.push(build_validation_report(
+            questionnaire,
+            graph,
+            metadata.clone(),
+        ));
+
+        if index % 5 == 0 {
+            tokio::task::yield_now().await;
+        }
+    }
+
+    updater.update("Bulk validation: building failure summary");
+    tokio::task::yield_now().await;
+
+    reports
+}
+
+fn graph_for_questionnaire(scope: &FullScopeFetch, questionnaire_id: Uuid) -> QuestionnaireGraph {
+    let mut structural_ids: HashMap<String, HashSet<Uuid>> = HashMap::new();
+    add_known_id(&mut structural_ids, "nrq_questionnaire", questionnaire_id);
+
+    loop {
+        let before = total_known_ids(&structural_ids);
+
+        add_records_by_lookup(
+            scope,
+            &mut structural_ids,
+            "nrq_questionnairepage",
+            "nrq_relatedquestionnaire",
+            "nrq_questionnaire",
+        );
+        add_records_by_lookup(
+            scope,
+            &mut structural_ids,
+            "nrq_questionnairepageline",
+            "nrq_questionnaireid",
+            "nrq_questionnaire",
+        );
+        add_records_by_lookup(
+            scope,
+            &mut structural_ids,
+            "nrq_questionnairepageline",
+            "nrq_questionnairepageid",
+            "nrq_questionnairepage",
+        );
+        add_records_by_lookup(
+            scope,
+            &mut structural_ids,
+            "nrq_questiongroupline",
+            "nrq_questionnairepageid",
+            "nrq_questionnairepage",
+        );
+        add_referenced_records(
+            scope,
+            &mut structural_ids,
+            "nrq_questiongroupline",
+            "nrq_questiongroupid",
+            "nrq_questiongroup",
+        );
+        add_records_by_lookup(
+            scope,
+            &mut structural_ids,
+            "nrq_question",
+            "nrq_questionnaireid",
+            "nrq_questionnaire",
+        );
+        add_records_by_lookup(
+            scope,
+            &mut structural_ids,
+            "nrq_question",
+            "nrq_questionpage",
+            "nrq_questionnairepage",
+        );
+        add_records_by_lookup(
+            scope,
+            &mut structural_ids,
+            "nrq_question",
+            "nrq_questiongroupid",
+            "nrq_questiongroup",
+        );
+        add_records_by_lookup(
+            scope,
+            &mut structural_ids,
+            "nrq_questioncondition",
+            "nrq_questionnaireid",
+            "nrq_questionnaire",
+        );
+        add_records_by_lookup(
+            scope,
+            &mut structural_ids,
+            "nrq_questioncondition",
+            "nrq_questionid",
+            "nrq_question",
+        );
+        add_records_by_lookup(
+            scope,
+            &mut structural_ids,
+            "nrq_questionconditionaction",
+            "nrq_questionconditionid",
+            "nrq_questioncondition",
+        );
+        add_records_by_lookup(
+            scope,
+            &mut structural_ids,
+            "nrq_questionconditionaction",
+            "nrq_questionid",
+            "nrq_question",
+        );
+
+        let after = total_known_ids(&structural_ids);
+        if after == before {
+            break;
+        }
+    }
+
+    let mut graph_ids = structural_ids.clone();
+    add_direct_relation_context(scope, &mut graph_ids, questionnaire_id);
+    add_lookup_context(scope, &mut graph_ids, &structural_ids);
+
+    log::debug!(
+        "Bulk questionnaire graph {} counts: {}",
+        questionnaire_id,
+        graph_ids
+            .iter()
+            .map(|(entity, ids)| format!("{}={}", entity, ids.len()))
+            .collect::<Vec<_>>()
+            .join(", ")
+    );
+
+    let mut sets = QUESTIONNAIRE_ENTITIES
+        .iter()
+        .filter_map(|spec| {
+            let ids = graph_ids.get(spec.logical_name)?;
+            let mut records = scope
+                .records_by_entity
+                .get(spec.logical_name)
+                .cloned()
+                .unwrap_or_default()
+                .into_iter()
+                .filter(|record| {
+                    guid_value(record, spec.primary_key)
+                        .map(|id| ids.contains(&id))
+                        .unwrap_or(false)
+                })
+                .collect::<Vec<_>>();
+            if records.is_empty() {
+                return None;
+            }
+            records.sort_by_key(record_name);
+            Some(EntityRecordSet {
+                entity: spec.logical_name.to_string(),
+                records,
+            })
+        })
+        .collect::<Vec<_>>();
+    sets.sort_by(|a, b| a.entity.cmp(&b.entity));
+
+    QuestionnaireGraph {
+        records_by_entity: sets,
+    }
+}
+
+fn add_records_by_lookup(
+    scope: &FullScopeFetch,
+    known_ids: &mut HashMap<String, HashSet<Uuid>>,
+    entity: &str,
+    lookup_field: &str,
+    target_entity: &str,
+) {
+    let Some(target_ids) = known_ids.get(target_entity).cloned() else {
+        return;
+    };
+    if target_ids.is_empty() {
+        return;
+    }
+    let Some(spec) = entity_spec(entity) else {
+        return;
+    };
+    let Some(records) = scope.records_by_entity.get(entity) else {
+        return;
+    };
+    for record in records {
+        let Some(lookup_id) = lookup_guid_value(record, lookup_field) else {
+            continue;
+        };
+        if !target_ids.contains(&lookup_id) {
+            continue;
+        }
+        if let Some(record_id) = guid_value(record, spec.primary_key) {
+            add_known_id(known_ids, entity, record_id);
+        }
+    }
+}
+
+fn add_referenced_records(
+    scope: &FullScopeFetch,
+    known_ids: &mut HashMap<String, HashSet<Uuid>>,
+    source_entity: &str,
+    lookup_field: &str,
+    target_entity: &str,
+) {
+    let Some(source_ids) = known_ids.get(source_entity).cloned() else {
+        return;
+    };
+    if source_ids.is_empty() {
+        return;
+    }
+    let Some(source_spec) = entity_spec(source_entity) else {
+        return;
+    };
+    let Some(source_records) = scope.records_by_entity.get(source_entity) else {
+        return;
+    };
+    for record in source_records {
+        let Some(source_id) = guid_value(record, source_spec.primary_key) else {
+            continue;
+        };
+        if !source_ids.contains(&source_id) {
+            continue;
+        }
+        if let Some(target_id) = lookup_guid_value(record, lookup_field) {
+            add_known_id(known_ids, target_entity, target_id);
+        }
+    }
+}
+
+fn add_direct_relation_context(
+    scope: &FullScopeFetch,
+    graph_ids: &mut HashMap<String, HashSet<Uuid>>,
+    questionnaire_id: Uuid,
+) {
+    for relation in &scope.relations {
+        if relation.parent_entity != "nrq_questionnaire" {
+            continue;
+        }
+        for membership in &relation.memberships {
+            if membership.parent_id == questionnaire_id {
+                add_known_id(graph_ids, &relation.related_entity, membership.related_id);
+            }
+        }
+    }
+}
+
+fn add_lookup_context(
+    scope: &FullScopeFetch,
+    graph_ids: &mut HashMap<String, HashSet<Uuid>>,
+    structural_ids: &HashMap<String, HashSet<Uuid>>,
+) {
+    let mut context_ids: HashMap<String, HashSet<Uuid>> = HashMap::new();
+    for spec in QUESTIONNAIRE_ENTITIES {
+        let Some(source_ids) = structural_ids.get(spec.logical_name) else {
+            continue;
+        };
+        let Some(records) = scope.records_by_entity.get(spec.logical_name) else {
+            continue;
+        };
+        for record in records {
+            let Some(record_id) = guid_value(record, spec.primary_key) else {
+                continue;
+            };
+            if !source_ids.contains(&record_id) {
+                continue;
+            }
+            for field in spec.fields {
+                let QuestionnaireFieldKind::Lookup { target_entity } = field.kind else {
+                    continue;
+                };
+                if let Some(target_id) = lookup_guid_value(record, field.source_name) {
+                    add_known_id(&mut context_ids, target_entity, target_id);
+                }
+            }
+        }
+    }
+
+    for (entity, ids) in context_ids {
+        for id in ids {
+            add_known_id(graph_ids, &entity, id);
+        }
     }
 }
