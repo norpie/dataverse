@@ -12,6 +12,7 @@ use rafter::element;
 use rafter::page;
 use rafter::prelude::*;
 use rafter::widgets::TreeNode;
+use serde_json::Value as JsonValue;
 use tuidom::Color;
 use tuidom::Element;
 use uuid::Uuid;
@@ -145,16 +146,68 @@ struct ValidatedField {
 }
 
 #[derive(Clone, Debug)]
+struct ConditionQuestionValidation {
+    question_id: String,
+    visible: bool,
+    required: bool,
+    valid: bool,
+}
+
+#[derive(Clone, Debug)]
+struct ConditionActionValidation {
+    id: String,
+    name: String,
+    visible: Option<bool>,
+    required: Option<bool>,
+    valid: bool,
+}
+
+#[derive(Clone, Debug)]
+struct ConditionValidation {
+    mode: Option<String>,
+    trigger_question_id: Option<String>,
+    operator: Option<String>,
+    value: Option<String>,
+    parameter_type: Option<String>,
+    parameter_values: Vec<String>,
+    questions: Vec<ConditionQuestionValidation>,
+    actions: Vec<ConditionActionValidation>,
+    valid: bool,
+}
+
+impl ConditionValidation {
+    fn finding_count(&self) -> usize {
+        let mut count = 0;
+        if !self.valid {
+            count += 1;
+        }
+        count += self
+            .questions
+            .iter()
+            .filter(|question| !question.valid)
+            .count();
+        count += self.actions.iter().filter(|action| !action.valid).count();
+        count
+    }
+}
+
+#[derive(Clone, Debug)]
 struct RecordValidation {
     entity: String,
     record_id: String,
     name: String,
     fields: Vec<ValidatedField>,
+    condition: Option<ConditionValidation>,
 }
 
 impl RecordValidation {
     fn finding_count(&self) -> usize {
         self.fields.iter().filter(|field| !field.valid).count()
+            + self
+                .condition
+                .as_ref()
+                .map(ConditionValidation::finding_count)
+                .unwrap_or(0)
     }
 }
 
@@ -200,6 +253,58 @@ enum ValidationTreeNode {
         accepted_values: Vec<i32>,
         valid: bool,
     },
+    FieldValue {
+        entity: String,
+        id: String,
+        field: String,
+        value: Option<i32>,
+    },
+    FieldOptions {
+        entity: String,
+        id: String,
+        field: String,
+    },
+    FieldOption {
+        entity: String,
+        id: String,
+        field: String,
+        value: i32,
+    },
+    ConditionSummary {
+        entity: String,
+        id: String,
+        mode: Option<String>,
+        question_id: Option<String>,
+        operator: Option<String>,
+        value: Option<String>,
+        parameter_type: Option<String>,
+        valid: bool,
+    },
+    ConditionTargets {
+        entity: String,
+        id: String,
+    },
+    ConditionTargetQuestion {
+        entity: String,
+        id: String,
+        question_id: String,
+        visible: bool,
+        required: bool,
+        valid: bool,
+    },
+    ConditionActions {
+        entity: String,
+        id: String,
+    },
+    ConditionAction {
+        entity: String,
+        id: String,
+        action_id: String,
+        name: String,
+        visible: Option<bool>,
+        required: Option<bool>,
+        valid: bool,
+    },
 }
 
 impl TreeItem for ValidationTreeNode {
@@ -225,6 +330,50 @@ impl TreeItem for ValidationTreeNode {
                     .map(|value| value.to_string())
                     .unwrap_or_else(|| "none".to_string())
             ),
+            Self::FieldValue {
+                entity,
+                id,
+                field,
+                value,
+            } => format!(
+                "field-value-{}-{}-{}-{}",
+                entity,
+                id,
+                field,
+                value
+                    .map(|value| value.to_string())
+                    .unwrap_or_else(|| "none".to_string())
+            ),
+            Self::FieldOptions { entity, id, field } => {
+                format!("field-options-{}-{}-{}", entity, id, field)
+            }
+            Self::FieldOption {
+                entity,
+                id,
+                field,
+                value,
+            } => format!("field-option-{}-{}-{}-{}", entity, id, field, value),
+            Self::ConditionSummary { entity, id, .. } => {
+                format!("condition-summary-{}-{}", entity, id)
+            }
+            Self::ConditionTargets { entity, id } => {
+                format!("condition-targets-{}-{}", entity, id)
+            }
+            Self::ConditionTargetQuestion {
+                entity,
+                id,
+                question_id,
+                ..
+            } => format!("condition-target-{}-{}-{}", entity, id, question_id),
+            Self::ConditionActions { entity, id } => {
+                format!("condition-actions-{}-{}", entity, id)
+            }
+            Self::ConditionAction {
+                entity,
+                id,
+                action_id,
+                ..
+            } => format!("condition-action-{}-{}-{}", entity, id, action_id),
         }
     }
 
@@ -279,11 +428,9 @@ impl TreeItem for ValidationTreeNode {
             Self::Field {
                 field,
                 value,
-                accepted_values,
                 valid,
                 ..
             } => {
-                let accepted = format_accepted_values(accepted_values);
                 let has_value = value.is_some();
                 let status = if *valid { "ok" } else { "error" };
                 let color = if *valid { "success" } else { "error" };
@@ -297,9 +444,110 @@ impl TreeItem for ValidationTreeNode {
                         if has_value {
                             text (content: {status}) style (fg: {Color::var(color)})
                         }
-                        if !*valid {
-                            text (content: {accepted}) style (fg: muted)
+                    }
+                }
+            }
+            Self::FieldValue { value, .. } => {
+                let value_text = value
+                    .map(|value| value.to_string())
+                    .unwrap_or_else(|| "not set".to_string());
+                element! {
+                    row (gap: 1) {
+                        text (content: "value") style (fg: muted)
+                        text (content: {value_text}) style (fg: primary)
+                    }
+                }
+            }
+            Self::FieldOptions { .. } => {
+                element! {
+                    row (gap: 1) {
+                        text (content: "options") style (fg: muted)
+                    }
+                }
+            }
+            Self::FieldOption { value, .. } => {
+                element! {
+                    row (gap: 1) {
+                        text (content: "option") style (fg: muted)
+                        text (content: {value.to_string()}) style (fg: primary)
+                    }
+                }
+            }
+            Self::ConditionSummary {
+                mode,
+                question_id,
+                operator,
+                value,
+                parameter_type,
+                valid,
+                ..
+            } => {
+                let status = if *valid { "ok" } else { "error" };
+                let color = if *valid { "success" } else { "error" };
+                element! {
+                    row (gap: 1) {
+                        text (content: "condition") style (fg: muted)
+                        text (content: {mode.clone().unwrap_or_else(|| "?".to_string())}) style (fg: primary)
+                        text (content: {question_id.clone().unwrap_or_else(|| "unknown question".to_string())}) style (fg: muted)
+                        text (content: {operator.clone().unwrap_or_else(|| "?".to_string())}) style (fg: muted)
+                        text (content: {value.clone().unwrap_or_else(|| "not set".to_string())}) style (fg: muted)
+                        if let Some(parameter_type) = parameter_type {
+                            text (content: {format!("parameter {}", parameter_type)}) style (fg: muted)
                         }
+                        text (content: {status}) style (fg: {Color::var(color)})
+                    }
+                }
+            }
+            Self::ConditionTargets { .. } => {
+                element! {
+                    row (gap: 1) {
+                        text (content: "targets") style (fg: muted)
+                    }
+                }
+            }
+            Self::ConditionTargetQuestion {
+                question_id,
+                visible,
+                required,
+                valid,
+                ..
+            } => {
+                let status = if *valid { "ok" } else { "error" };
+                let color = if *valid { "success" } else { "error" };
+                element! {
+                    row (gap: 1) {
+                        text (content: "question") style (fg: muted)
+                        text (content: {question_id.clone()}) style (fg: primary)
+                        text (content: {format!("visible {}", visible)}) style (fg: muted)
+                        text (content: {format!("required {}", required)}) style (fg: muted)
+                        text (content: {status}) style (fg: {Color::var(color)})
+                    }
+                }
+            }
+            Self::ConditionActions { .. } => {
+                element! {
+                    row (gap: 1) {
+                        text (content: "actions") style (fg: muted)
+                    }
+                }
+            }
+            Self::ConditionAction {
+                action_id,
+                name,
+                visible,
+                required,
+                valid,
+                ..
+            } => {
+                let status = if *valid { "ok" } else { "error" };
+                let color = if *valid { "success" } else { "error" };
+                element! {
+                    row (gap: 1) {
+                        text (content: {name.clone()}) style (fg: primary)
+                        text (content: {short_id(action_id)}) style (fg: muted)
+                        text (content: {visible.map(|v| format!("visible {}", v)).unwrap_or_else(|| "visible ?".to_string())}) style (fg: muted)
+                        text (content: {required.map(|v| format!("required {}", v)).unwrap_or_else(|| "required ?".to_string())}) style (fg: muted)
+                        text (content: {status}) style (fg: {Color::var(color)})
                     }
                 }
             }
@@ -986,11 +1234,17 @@ fn build_validation_report(
     metadata: HashMap<String, EntityMetadata>,
 ) -> ValidationReport {
     let option_values = build_option_value_map(&metadata);
+    let question_ids = collect_question_ids(&graph.records_by_entity);
+    let condition_actions = build_condition_action_map(&graph.records_by_entity);
     let mut entities = Vec::new();
     let mut record_count = 0;
     let mut finding_count = 0;
 
     for set in graph.records_by_entity {
+        if set.entity == "nrq_questionconditionaction" {
+            continue;
+        }
+
         let mut records = Vec::new();
         let Some(spec) = entity_spec(&set.entity) else {
             continue;
@@ -1003,13 +1257,30 @@ fn build_validation_report(
                 .unwrap_or_else(|| "unknown-id".to_string());
             let name = record_name(record);
             let fields = validate_record_options(&set.entity, record, &option_values);
-            let record_findings = fields.iter().filter(|field| !field.valid).count();
+            let condition = if set.entity == "nrq_questioncondition" {
+                Some(build_condition_validation(
+                    record,
+                    &question_ids,
+                    condition_actions
+                        .get(&record_id)
+                        .map(|actions| actions.as_slice())
+                        .unwrap_or(&[]),
+                ))
+            } else {
+                None
+            };
+            let record_findings = fields.iter().filter(|field| !field.valid).count()
+                + condition
+                    .as_ref()
+                    .map(ConditionValidation::finding_count)
+                    .unwrap_or(0);
             finding_count += record_findings;
             records.push(RecordValidation {
                 entity: set.entity.clone(),
                 record_id,
                 name,
                 fields,
+                condition,
             });
         }
 
@@ -1039,22 +1310,110 @@ fn build_validation_tree(report: &ValidationReport) -> Vec<TreeNode<ValidationTr
                 .records
                 .iter()
                 .map(|record| {
-                    let fields = record
+                    let mut children = record
                         .fields
                         .iter()
                         .map(|field| {
-                            TreeNode::leaf(ValidationTreeNode::Field {
-                                entity: record.entity.clone(),
-                                id: record.record_id.clone(),
-                                field: field.field.clone(),
-                                value: field.value,
-                                accepted_values: field.accepted_values.clone(),
-                                valid: field.valid,
-                            })
+                            TreeNode::branch(
+                                ValidationTreeNode::Field {
+                                    entity: record.entity.clone(),
+                                    id: record.record_id.clone(),
+                                    field: field.field.clone(),
+                                    value: field.value,
+                                    accepted_values: field.accepted_values.clone(),
+                                    valid: field.valid,
+                                },
+                                vec![
+                                    TreeNode::leaf(ValidationTreeNode::FieldValue {
+                                        entity: record.entity.clone(),
+                                        id: record.record_id.clone(),
+                                        field: field.field.clone(),
+                                        value: field.value,
+                                    }),
+                                    TreeNode::branch(
+                                        ValidationTreeNode::FieldOptions {
+                                            entity: record.entity.clone(),
+                                            id: record.record_id.clone(),
+                                            field: field.field.clone(),
+                                        },
+                                        field
+                                            .accepted_values
+                                            .iter()
+                                            .map(|value| {
+                                                TreeNode::leaf(ValidationTreeNode::FieldOption {
+                                                    entity: record.entity.clone(),
+                                                    id: record.record_id.clone(),
+                                                    field: field.field.clone(),
+                                                    value: *value,
+                                                })
+                                            })
+                                            .collect::<Vec<_>>(),
+                                    ),
+                                ],
+                            )
                         })
                         .collect::<Vec<_>>();
+                    if let Some(condition) = &record.condition {
+                        children.push(TreeNode::branch(
+                            ValidationTreeNode::ConditionSummary {
+                                entity: record.entity.clone(),
+                                id: record.record_id.clone(),
+                                mode: condition.mode.clone(),
+                                question_id: condition.trigger_question_id.clone(),
+                                operator: condition.operator.clone(),
+                                value: condition.value.clone(),
+                                parameter_type: condition.parameter_type.clone(),
+                                valid: condition.valid,
+                            },
+                            vec![
+                                TreeNode::branch(
+                                    ValidationTreeNode::ConditionTargets {
+                                        entity: record.entity.clone(),
+                                        id: record.record_id.clone(),
+                                    },
+                                    condition
+                                        .questions
+                                        .iter()
+                                        .map(|question| {
+                                            TreeNode::leaf(
+                                                ValidationTreeNode::ConditionTargetQuestion {
+                                                    entity: record.entity.clone(),
+                                                    id: record.record_id.clone(),
+                                                    question_id: question.question_id.clone(),
+                                                    visible: question.visible,
+                                                    required: question.required,
+                                                    valid: question.valid,
+                                                },
+                                            )
+                                        })
+                                        .collect::<Vec<_>>(),
+                                ),
+                                TreeNode::branch(
+                                    ValidationTreeNode::ConditionActions {
+                                        entity: record.entity.clone(),
+                                        id: record.record_id.clone(),
+                                    },
+                                    condition
+                                        .actions
+                                        .iter()
+                                        .map(|action| {
+                                            TreeNode::leaf(ValidationTreeNode::ConditionAction {
+                                                entity: record.entity.clone(),
+                                                id: record.record_id.clone(),
+                                                action_id: action.id.clone(),
+                                                name: action.name.clone(),
+                                                visible: action.visible,
+                                                required: action.required,
+                                                valid: action.valid,
+                                            })
+                                        })
+                                        .collect::<Vec<_>>(),
+                                ),
+                            ],
+                        ));
+                    }
                     let finding_count = record.finding_count();
-                    if fields.is_empty() {
+                    if children.is_empty() {
                         TreeNode::leaf(ValidationTreeNode::Record {
                             entity: record.entity.clone(),
                             id: record.record_id.clone(),
@@ -1069,7 +1428,7 @@ fn build_validation_tree(report: &ValidationReport) -> Vec<TreeNode<ValidationTr
                                 name: record.name.clone(),
                                 finding_count,
                             },
-                            fields,
+                            children,
                         )
                     }
                 })
@@ -1162,6 +1521,199 @@ fn build_option_value_map(
         map.len()
     );
     map
+}
+
+fn collect_question_ids(records_by_entity: &[EntityRecordSet]) -> HashSet<String> {
+    let mut ids = HashSet::new();
+    for set in records_by_entity {
+        if set.entity != "nrq_question" {
+            continue;
+        }
+        for record in &set.records {
+            if let Some(id) = guid_value(record, "nrq_questionid") {
+                ids.insert(id.to_string());
+            }
+        }
+    }
+    ids
+}
+
+fn build_condition_action_map(
+    records_by_entity: &[EntityRecordSet],
+) -> HashMap<String, Vec<ConditionActionValidation>> {
+    let mut map: HashMap<String, Vec<ConditionActionValidation>> = HashMap::new();
+    for set in records_by_entity {
+        if set.entity != "nrq_questionconditionaction" {
+            continue;
+        }
+        for record in &set.records {
+            let Some(condition_id) = guid_value(record, "nrq_questionconditionid") else {
+                continue;
+            };
+            let action = ConditionActionValidation {
+                id: guid_value(record, "nrq_questionconditionactionid")
+                    .map(|id| id.to_string())
+                    .unwrap_or_else(|| "unknown-id".to_string()),
+                name: record_name(record),
+                visible: bool_value(record, "nrq_visible"),
+                required: bool_value(record, "nrq_required"),
+                valid: bool_value(record, "nrq_visible").is_some()
+                    && bool_value(record, "nrq_required").is_some(),
+            };
+            map.entry(condition_id.to_string())
+                .or_default()
+                .push(action);
+        }
+    }
+    map
+}
+
+fn build_condition_validation(
+    record: &Record,
+    question_ids: &HashSet<String>,
+    actions: &[ConditionActionValidation],
+) -> ConditionValidation {
+    let raw_json = string_value(record, "nrq_conditionjson");
+    let mut valid = true;
+    let mut mode = None;
+    let mut trigger_question_id = None;
+    let mut operator = None;
+    let mut value = None;
+    let mut parameter_type = None;
+    let mut parameter_values = Vec::new();
+    let mut questions = Vec::new();
+
+    let Some(raw_json_str) = raw_json.as_deref() else {
+        return ConditionValidation {
+            mode,
+            trigger_question_id,
+            operator,
+            value,
+            parameter_type,
+            parameter_values,
+            questions,
+            actions: actions.to_vec(),
+            valid: false,
+        };
+    };
+
+    let Ok(json) = serde_json::from_str::<JsonValue>(raw_json_str) else {
+        return ConditionValidation {
+            mode,
+            trigger_question_id,
+            operator,
+            value,
+            parameter_type,
+            parameter_values,
+            questions,
+            actions: actions.to_vec(),
+            valid: false,
+        };
+    };
+
+    mode = json
+        .get("type")
+        .and_then(|value| value.as_str())
+        .map(|value| value.to_string());
+    trigger_question_id = json
+        .get("questionId")
+        .and_then(|value| value.as_str())
+        .map(|value| value.to_string());
+    operator = json
+        .get("condition")
+        .and_then(|value| value.as_str())
+        .map(|value| value.to_string());
+    value = json.get("value").map(json_value_to_string);
+    parameter_type = json
+        .get("parameterType")
+        .and_then(|value| value.as_str())
+        .map(|value| value.to_string());
+    parameter_values = json
+        .get("parameterValues")
+        .and_then(|value| value.as_array())
+        .map(|values| values.iter().map(json_value_to_string).collect())
+        .unwrap_or_default();
+
+    if mode.is_none() {
+        mode = if parameter_type.is_some() || !parameter_values.is_empty() {
+            Some("parameter".to_string())
+        } else if trigger_question_id.is_some() {
+            Some("question".to_string())
+        } else {
+            None
+        };
+    }
+
+    match mode.as_deref() {
+        Some("question") => {
+            if trigger_question_id
+                .as_ref()
+                .map(|id| question_ids.contains(id))
+                .unwrap_or(false)
+            {
+                // ok
+            } else {
+                valid = false;
+            }
+        }
+        Some("parameter") => {
+            if parameter_type.as_deref().unwrap_or("").is_empty() {
+                valid = false;
+            }
+            if parameter_values.is_empty() {
+                valid = false;
+            }
+        }
+        Some(_) | None => {
+            valid = false;
+        }
+    }
+
+    if operator.as_deref().unwrap_or("").is_empty() {
+        valid = false;
+    }
+
+    if let Some(items) = json.get("questions").and_then(|value| value.as_array()) {
+        for item in items {
+            let question_id = item
+                .get("questionId")
+                .and_then(|value| value.as_str())
+                .unwrap_or("unknown")
+                .to_string();
+            let visible = item
+                .get("visible")
+                .and_then(|value| value.as_bool())
+                .unwrap_or(false);
+            let required = item
+                .get("required")
+                .and_then(|value| value.as_bool())
+                .unwrap_or(false);
+            let question_valid = question_ids.contains(&question_id);
+            if !question_valid {
+                valid = false;
+            }
+            questions.push(ConditionQuestionValidation {
+                question_id,
+                visible,
+                required,
+                valid: question_valid,
+            });
+        }
+    } else {
+        valid = false;
+    }
+
+    ConditionValidation {
+        mode,
+        trigger_question_id,
+        operator,
+        value,
+        parameter_type,
+        parameter_values,
+        questions,
+        actions: actions.to_vec(),
+        valid,
+    }
 }
 
 fn validate_record_options(
@@ -1444,5 +1996,22 @@ fn option_value(record: &Record, field: &str) -> Option<i32> {
         Some(Value::OptionSet(value)) => Some(value.value),
         Some(Value::Int(value)) => Some(*value),
         _ => None,
+    }
+}
+
+fn bool_value(record: &Record, field: &str) -> Option<bool> {
+    match record.get(field) {
+        Some(Value::Bool(value)) => Some(*value),
+        _ => None,
+    }
+}
+
+fn json_value_to_string(value: &JsonValue) -> String {
+    match value {
+        JsonValue::String(value) => value.clone(),
+        JsonValue::Bool(value) => value.to_string(),
+        JsonValue::Number(value) => value.to_string(),
+        JsonValue::Null => "null".to_string(),
+        _ => value.to_string(),
     }
 }
