@@ -359,17 +359,34 @@ impl ODataFetchModal {
 
         let header = format!("Fetching data... ({}/{})", completed, total);
 
-        let task_rows: Vec<Element> = infos
-            .iter()
+        const TASKS_PER_COLUMN: usize = 40;
+
+        let task_columns: Vec<Element> = infos
+            .chunks(TASKS_PER_COLUMN)
             .enumerate()
-            .map(|(idx, info)| self.render_task_row(idx, info))
+            .map(|(column_idx, chunk)| {
+                let task_rows: Vec<Element> = chunk
+                    .iter()
+                    .enumerate()
+                    .map(|(row_idx, info)| {
+                        let idx = column_idx * TASKS_PER_COLUMN + row_idx;
+                        self.render_task_row(idx, info)
+                    })
+                    .collect();
+
+                element! {
+                    column (gap: 0, flex_grow: 1) {
+                        ...task_rows
+                    }
+                }
+            })
             .collect();
 
         page! {
             column (padding: (1, 2), gap: 1, width: fill, height: fill) style (bg: surface) {
                 text (content: {header}) style (fg: primary, bold: true)
-                column (gap: 0) {
-                    ...task_rows
+                row (gap: 2, width: fill) {
+                    ...task_columns
                 }
             }
         }
