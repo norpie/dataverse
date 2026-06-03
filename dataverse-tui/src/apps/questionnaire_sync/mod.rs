@@ -3,6 +3,7 @@
 pub mod comparison;
 pub mod modals;
 pub mod scope;
+pub mod tree;
 pub mod types;
 
 use std::collections::HashMap;
@@ -10,7 +11,6 @@ use std::collections::HashMap;
 use dataverse_lib::model::Entity;
 use dataverse_lib::model::Record;
 use dataverse_lib::DataverseClient;
-use rafter::element;
 use rafter::page;
 use rafter::prelude::*;
 use tuidom::Element;
@@ -24,6 +24,7 @@ use crate::systems::client_management::ClientManagement;
 use crate::systems::client_management::GetAnyClient;
 use crate::apps::questionnaire_sync::comparison::{compare_questionnaire, QuestionnaireComparison};
 use crate::apps::questionnaire_sync::scope::QUESTIONNAIRE_ENTITIES;
+use crate::apps::questionnaire_sync::tree::{build_tree_nodes, QuestionnaireTreeNode, QuestionnaireTreeSide};
 use crate::apps::questionnaire_sync::types::{
     QuestionnaireEnvironmentSnapshot,
     QuestionnaireEntitySnapshot,
@@ -69,6 +70,9 @@ pub struct QuestionnaireSync {
     source_snapshot: Option<QuestionnaireEnvironmentSnapshot>,
     target_snapshot: Option<QuestionnaireEnvironmentSnapshot>,
     comparison: Option<QuestionnaireComparison>,
+    current_entity_index: usize,
+    source_tree_state: TreeState<QuestionnaireTreeNode>,
+    target_tree_state: TreeState<QuestionnaireTreeNode>,
     fetch_error: Option<String>,
 }
 
@@ -85,6 +89,9 @@ impl QuestionnaireSync {
             None,
             None,
             None,
+            0,
+            TreeState::default(),
+            TreeState::default(),
             None,
         )
     }
@@ -114,6 +121,8 @@ impl QuestionnaireSync {
     #[keybinds]
     fn keybinds() {
         bind("escape", close_app);
+        bind("left", previous_entity);
+        bind("right", next_entity);
         bind("q", queue);
     }
 
@@ -124,12 +133,58 @@ impl QuestionnaireSync {
 
     #[handler]
     async fn queue(&self, gx: &GlobalContext) {
-        if self.source_snapshot.get().is_none() || self.target_snapshot.get().is_none() {
+        if self.comparison.get().is_none() {
             gx.toast(Toast::error("Fetch the environments first"));
             return;
         }
 
         gx.toast(Toast::info("Queue phase coming soon"));
+    }
+
+    #[handler]
+    async fn previous_entity(&self) {
+        self.shift_entity(-1);
+    }
+
+    #[handler]
+    async fn next_entity(&self) {
+        self.shift_entity(1);
+    }
+
+    fn rebuild_trees(&self, comparison: &QuestionnaireComparison) {
+        let source_nodes = build_tree_nodes(
+            comparison,
+            QuestionnaireTreeSide::Source,
+            self.current_entity_index.get(),
+        );
+        let target_nodes = build_tree_nodes(
+            comparison,
+            QuestionnaireTreeSide::Target,
+            self.current_entity_index.get(),
+        );
+
+        self.source_tree_state.update(|state| {
+            state.set_roots(source_nodes);
+        });
+        self.target_tree_state.update(|state| {
+            state.set_roots(target_nodes);
+        });
+    }
+
+    fn shift_entity(&self, delta: i32) {
+        let Some(comparison) = self.comparison.get() else {
+            return;
+        };
+
+        let len = comparison.entities.len();
+        if len == 0 {
+            return;
+        }
+
+        let current = self.current_entity_index.get() as i32;
+        let next = (current + delta).rem_euclid(len as i32) as usize;
+        self.current_entity_index.set(next);
+        self.rebuild_trees(&comparison);
     }
 
     async fn ensure_selection(&self, gx: &GlobalContext) -> bool {
@@ -265,7 +320,9 @@ impl QuestionnaireSync {
 
         self.source_snapshot.set(Some(source_snapshot));
         self.target_snapshot.set(Some(target_snapshot));
-        self.comparison.set(Some(comparison));
+        self.comparison.set(Some(comparison.clone()));
+        self.current_entity_index.set(0);
+        self.rebuild_trees(&comparison);
         self.fetch_error.set(None);
         gx.toast(Toast::success("Questionnaire data fetched"));
     }
@@ -313,7 +370,25 @@ impl QuestionnaireSync {
         }
     }
 
+    #[watch]
+    async fn sync_tree_states(&self) {
+        let source_state = self.source_tree_state.get();
+        self.sync_target_tree_from_source(source_state);
+    }
+
+    fn sync_target_tree_from_source(&self, source_state: rafter::widgets::TreeState<QuestionnaireTreeNode>) {
+        self.target_tree_state.update(|state| {
+            state.expanded = source_state.expanded.clone();
+            state.selection = source_state.selection.clone();
+            state.scroll = source_state.scroll.clone();
+            state.last_activated = source_state.last_activated.clone();
+            state.focused_key = source_state.focused_key.clone();
+            state.set_roots(state.roots.as_ref().clone());
+        });
+    }
+
     fn element(&self) -> Element {
+        let start_time = std::time::Instant::now();
         let source_name = self
             .source_environment_name
             .get()
@@ -327,38 +402,40 @@ impl QuestionnaireSync {
         let env_count = self.env_options.with_ref(|envs| envs.len());
         let has_selection = self.source_environment_id.get().is_some()
             && self.target_environment_id.get().is_some();
-        let source_snapshot = self.source_snapshot.get();
-        let target_snapshot = self.target_snapshot.get();
         let fetch_error = self.fetch_error.get();
-        let source_total = source_snapshot
-            .as_ref()
-            .map(environment_total_records)
-            .unwrap_or(0);
-        let target_total = target_snapshot
-            .as_ref()
-            .map(environment_total_records)
-            .unwrap_or(0);
-        let source_snapshot_view = source_snapshot
-            .as_ref()
-            .map(|snapshot| render_snapshot("Source data", snapshot));
-        let target_snapshot_view = target_snapshot
-            .as_ref()
-            .map(|snapshot| render_snapshot("Target data", snapshot));
+        let current_entity_index = self.current_entity_index.get();
+        let (entity_count, current_entity_name, current_entity_total) = self
+            .comparison
+            .with_ref(|comparison| {
+                let Some(comparison) = comparison.as_ref() else {
+                    return (0, String::from("No entity"), 0);
+                };
 
-        page! {
+                let entity_count = comparison.entities.len();
+                let current_entity = comparison.entities.get(current_entity_index);
+                let current_entity_name = current_entity
+                    .map(|entity| entity.entity.clone())
+                    .unwrap_or_else(|| "No entity".to_string());
+                let current_entity_total = current_entity
+                    .map(|entity: &crate::apps::questionnaire_sync::comparison::QuestionnaireEntityComparison| entity.total_records())
+                    .unwrap_or(0);
+                (entity_count, current_entity_name, current_entity_total)
+            });
+        let current_entity_position = if entity_count == 0 {
+            0
+        } else {
+            current_entity_index + 1
+        };
+        log::debug!("Processed helpers {:?}", start_time.elapsed());
+
+        let page_result = page! {
             column (padding: (1, 2), gap: 1, width: fill, height: fill) style (bg: background) {
                 text (content: "Questionnaire Sync") style (bold, fg: interact)
                 text (content: {format!("Loaded environments: {}", env_count)}) style (fg: muted)
 
-                column (gap: 1, width: fill) {
-                    row (width: fill, justify: between) {
-                        text (content: "Source") style (fg: muted)
-                        text (content: {source_name.clone()}) style (fg: primary)
-                    }
-                    row (width: fill, justify: between) {
-                        text (content: "Target") style (fg: muted)
-                        text (content: {target_name.clone()}) style (fg: primary)
-                    }
+                row (width: fill, justify: between) {
+                    text (content: {format!("Source: {}", source_name)}) style (fg: primary)
+                    text (content: {format!("Target: {}", target_name)}) style (fg: primary)
                 }
 
                 if let Some(err) = fetch_error {
@@ -371,60 +448,37 @@ impl QuestionnaireSync {
                     text (content: "Select a source and target environment to continue.") style (fg: muted)
                 }
 
-                column (gap: 1, width: fill) {
-                    row (width: fill, justify: between) {
-                        text (content: "Source snapshot") style (fg: muted)
-                        text (content: {format!("{} records", source_total)}) style (fg: primary)
+                row (width: fill, justify: between) {
+                    text (content: {format!("Entity {} / {}", current_entity_position, entity_count)}) style (fg: muted)
+                    text (content: {current_entity_name.clone()}) style (fg: primary)
+                    text (content: {format!("{} rows", current_entity_total)}) style (fg: muted)
+                }
+
+                row (width: fill, height: fill) {
+                    column (width: {tuidom::Size::Flex(1)}, height: fill, gap: 1) {
+                        text (content: {format!("Source tree — {}", current_entity_name)}) style (fg: interact)
+                        box_ (id: "questionnaire-sync-source-tree-container", width: fill, height: fill) style (bg: surface) {
+                            tree (state: self.source_tree_state, id: "questionnaire-sync-source-tree", width: fill, height: fill)
+                        }
                     }
-                    row (width: fill, justify: between) {
-                        text (content: "Target snapshot") style (fg: muted)
-                        text (content: {format!("{} records", target_total)}) style (fg: primary)
+
+                    column (width: 1) {}
+
+                    column (width: {tuidom::Size::Flex(1)}, height: fill, gap: 1) {
+                        text (content: {format!("Target tree — {}", current_entity_name)}) style (fg: interact)
+                        box_ (id: "questionnaire-sync-target-tree-container", width: fill, height: fill) style (bg: surface) {
+                            tree (state: self.target_tree_state, id: "questionnaire-sync-target-tree", width: fill, height: fill)
+                        }
                     }
                 }
-
-                if let Some(snapshot_view) = source_snapshot_view {
-                    { snapshot_view }
-                }
-
-                if let Some(snapshot_view) = target_snapshot_view {
-                    { snapshot_view }
-                }
-
-                column (flex_grow: 1) {}
 
                 row (width: fill, justify: between) {
                     button (label: "Close", hint: "esc", id: "questionnaire-sync-close") on_activate: close_app()
                     button (label: "Queue", hint: "q", id: "questionnaire-sync-queue") on_activate: queue()
                 }
             }
-        }
-    }
-}
-
-fn environment_total_records(snapshot: &QuestionnaireEnvironmentSnapshot) -> usize {
-    snapshot.total_records()
-}
-
-fn render_snapshot(title: &str, snapshot: &QuestionnaireEnvironmentSnapshot) -> Element {
-    let entity_rows: Vec<Element> = snapshot
-        .entities
-        .iter()
-        .map(|entity| {
-            element! {
-                row (width: fill, justify: between) {
-                    text (content: {entity.entity.clone()}) style (fg: primary)
-                    text (content: {format!("{}", entity.record_count())}) style (fg: muted)
-                }
-            }
-        })
-        .collect();
-
-    element! {
-        column (gap: 1, width: fill) {
-            text (content: {format!("{} — {} (#{})", title, snapshot.environment_name, snapshot.environment_id)}) style (fg: interact)
-            column (gap: 0, width: fill) {
-                ...entity_rows
-            }
-        }
+        };
+        log::debug!("Built element in {:?}", start_time.elapsed());
+        page_result
     }
 }
