@@ -1,5 +1,6 @@
 //! Questionnaire Sync app.
 
+pub mod comparison;
 pub mod modals;
 pub mod scope;
 pub mod types;
@@ -21,6 +22,7 @@ use crate::modals::odata_fetch::ODataFetchModal;
 use crate::modals::odata_fetch::ODataFetchTask;
 use crate::systems::client_management::ClientManagement;
 use crate::systems::client_management::GetAnyClient;
+use crate::apps::questionnaire_sync::comparison::{compare_questionnaire, QuestionnaireComparison};
 use crate::apps::questionnaire_sync::scope::QUESTIONNAIRE_ENTITIES;
 use crate::apps::questionnaire_sync::types::{
     QuestionnaireEnvironmentSnapshot,
@@ -66,6 +68,7 @@ pub struct QuestionnaireSync {
     target_environment_name: Option<String>,
     source_snapshot: Option<QuestionnaireEnvironmentSnapshot>,
     target_snapshot: Option<QuestionnaireEnvironmentSnapshot>,
+    comparison: Option<QuestionnaireComparison>,
     fetch_error: Option<String>,
 }
 
@@ -75,6 +78,7 @@ impl QuestionnaireSync {
         Self::new(
             HashMap::new(),
             Vec::new(),
+            None,
             None,
             None,
             None,
@@ -247,16 +251,21 @@ impl QuestionnaireSync {
             }
         }
 
-        self.source_snapshot.set(Some(QuestionnaireEnvironmentSnapshot {
+        let source_snapshot = QuestionnaireEnvironmentSnapshot {
             environment_id: source_env_id,
             environment_name: source_env_name,
             entities: source_entities,
-        }));
-        self.target_snapshot.set(Some(QuestionnaireEnvironmentSnapshot {
+        };
+        let target_snapshot = QuestionnaireEnvironmentSnapshot {
             environment_id: target_env_id,
             environment_name: target_env_name,
             entities: target_entities,
-        }));
+        };
+        let comparison = compare_questionnaire(&source_snapshot, &target_snapshot);
+
+        self.source_snapshot.set(Some(source_snapshot));
+        self.target_snapshot.set(Some(target_snapshot));
+        self.comparison.set(Some(comparison));
         self.fetch_error.set(None);
         gx.toast(Toast::success("Questionnaire data fetched"));
     }

@@ -2,10 +2,9 @@ use std::collections::HashMap;
 
 use dataverse_lib::model::Record;
 
-use crate::apps::migration::comparison::MappingComparison;
 use crate::apps::migration::execution::{EntityBatches, SubPhase};
 
-#[derive(Clone, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct QuestionnaireEntitySnapshot {
     pub entity: String,
     pub records: Vec<Record>,
@@ -17,7 +16,7 @@ impl QuestionnaireEntitySnapshot {
     }
 }
 
-#[derive(Clone, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct QuestionnaireEnvironmentSnapshot {
     pub environment_id: i64,
     pub environment_name: String,
@@ -31,27 +30,6 @@ impl QuestionnaireEnvironmentSnapshot {
 
     pub fn entity(&self, logical_name: &str) -> Option<&QuestionnaireEntitySnapshot> {
         self.entities.iter().find(|entity| entity.entity == logical_name)
-    }
-}
-
-/// Comparison output for the questionnaire sync scope.
-///
-/// This intentionally mirrors the migration app's compare → phase plan shape:
-/// we keep the per-entity `MappingComparison`s, then group execution into a
-/// fixed set of sub-phases.
-#[derive(Clone, Default)]
-pub struct QuestionnaireComparison {
-    pub source: QuestionnaireEnvironmentSnapshot,
-    pub target: QuestionnaireEnvironmentSnapshot,
-    pub mappings: Vec<MappingComparison>,
-}
-
-impl QuestionnaireComparison {
-    pub fn total_records(&self) -> usize {
-        self.mappings
-            .iter()
-            .map(|mapping| mapping.records.len() + mapping.orphans.len())
-            .sum()
     }
 }
 
