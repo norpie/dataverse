@@ -264,7 +264,7 @@ pub const QUESTIONNAIRE_ENTITIES: &[QuestionnaireEntitySpec] = &[
         fields: &[
             value_field!("nrq_name"),
             value_field!("nrq_contracttext"),
-            value_field!("nrq_damfolder"),
+            lookup_field!("nrq_damfolder", "nrq_damfolder", "nrq_damfolder"),
             value_field!("nrq_deliverablenamebackendview"),
             value_field!("nrq_deliverableteam"),
             value_field!("nrq_isdeliverable"),
