@@ -87,6 +87,8 @@ pub struct Queue {
     prev_source_selection: HashSet<String>,
     /// Search text for filtering by description.
     search_text: String,
+    /// Cached environment names for preview rendering.
+    env_names: HashMap<i64, String>,
     /// Lock to serialize item-completion handling (prevents race in failure counting).
     #[state(skip)]
     completion_lock: Arc<TokioMutex<()>>,
@@ -164,6 +166,19 @@ impl Queue {
             self.source_filter.get().selection.selected.clone();
         self.prev_source_selection.set(initial_selection);
         self.search_text.set(search_text);
+
+        match gx.data::<CredentialsProvider>().list_environments().await {
+            Ok(envs) => {
+                self.env_names.set(
+                    envs.into_iter()
+                        .map(|env| (env.id, env.display_name))
+                        .collect(),
+                );
+            }
+            Err(e) => {
+                log::error!("Failed to load environments for queue preview: {}", e);
+            }
+        }
 
         self.repository.set(Some(repo));
 
@@ -1062,6 +1077,9 @@ impl Queue {
                         }
                     }
                 });
+                self.env_names.update(|envs| {
+                    envs.insert(event.id, event.display_name.clone());
+                });
                 if self.is_running.get() {
                     self.try_start_next_items(gx).await;
                 }
@@ -1090,6 +1108,9 @@ impl Queue {
                             item.status = ItemStatus::Blocked;
                         }
                     }
+                });
+                self.env_names.update(|envs| {
+                    envs.remove(&event.id);
                 });
             }
             Ok(_) => {}

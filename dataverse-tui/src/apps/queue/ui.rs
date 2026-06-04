@@ -114,6 +114,10 @@ impl Queue {
         let created = item.created_at.format("%Y-%m-%d %H:%M").to_string();
         let priority_text = item.priority.to_string();
         let ops_text = format!("{} operation(s)", item.payload.operation_count());
+        let environment_text = self
+            .env_names
+            .with_ref(|envs| envs.get(&item.env_id).cloned())
+            .unwrap_or_else(|| format!("Environment #{}", item.env_id));
 
         // Build operation list for batch items
         let mut op_elements = vec![];
@@ -152,6 +156,10 @@ impl Queue {
                 row (gap: 1) {
                     text (content: "●") style (fg: {status_color})
                     text (content: {status_text})
+                }
+                row (gap: 1) {
+                    text (content: "environment") style (fg: muted)
+                    text (content: {environment_text})
                 }
                 row (gap: 1) {
                     text (content: "source") style (fg: muted)
