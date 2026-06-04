@@ -63,6 +63,7 @@ impl FileBrowserModal {
                     "xlsx" => "Excel (.xlsx)",
                     "json" => "JSON (.json)",
                     "xml" => "XML (.xml)",
+                    "txt" => "Text (.txt)",
                     _ => ft.as_str(),
                 };
                 (ft.clone(), label)
