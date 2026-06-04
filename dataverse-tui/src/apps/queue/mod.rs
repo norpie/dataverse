@@ -680,6 +680,7 @@ impl Queue {
             && let Some(error) = &exec.error
         {
             gx.modal(crate::apps::queue::modals::ErrorDetailsModal::with_error(
+                item_id,
                 error.clone(),
             ))
             .await;
