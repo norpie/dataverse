@@ -51,12 +51,22 @@ impl FileIoError {
     }
 }
 
-/// A parsed row from a file (all string values).
+/// A parsed cell from a file.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CellValue {
+    /// Blank/missing cell — leave unchanged.
+    Empty,
+    /// Explicit `null` marker — clear or empty the field.
+    Null,
+    /// Text cell value.
+    Text(String),
+}
+
+/// A parsed row from a file.
 #[derive(Debug, Clone)]
 pub struct FileRow {
     /// Column values in order (parallel to columns vec).
-    /// None = empty cell.
-    pub values: Vec<Option<String>>,
+    pub values: Vec<CellValue>,
 }
 
 /// Result of parsing a tabular file.

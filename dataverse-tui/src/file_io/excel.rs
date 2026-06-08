@@ -5,7 +5,7 @@ use std::path::Path;
 use calamine::{Data, Reader, Xlsx, open_workbook};
 use rust_xlsxwriter::{Format, Workbook};
 
-use super::{FileIoError, FileRow, ParsedFile};
+use super::{CellValue, FileIoError, FileRow, ParsedFile};
 
 /// Maximum length for Excel sheet names.
 const MAX_SHEET_NAME_LENGTH: usize = 31;
@@ -149,7 +149,8 @@ pub fn list_sheets(path: &Path) -> Result<Vec<String>, FileIoError> {
 ///
 /// - If sheet_name is None, uses the first sheet
 /// - First row treated as headers
-/// - Empty cells become None
+/// - Blank cells become `CellValue::Empty`
+/// - Literal `null` becomes `CellValue::Null`
 ///
 /// This is a blocking operation - caller should use spawn_blocking.
 pub fn read_excel(path: &Path, sheet_name: Option<&str>) -> Result<ParsedFile, FileIoError> {
@@ -187,17 +188,23 @@ pub fn read_excel(path: &Path, sheet_name: Option<&str>) -> Result<ParsedFile, F
     // Data rows
     let mut rows = Vec::new();
     for row in row_iter {
-        let values: Vec<Option<String>> = row
+        let values: Vec<CellValue> = row
             .iter()
             .map(|cell| {
                 let s = cell_to_string(cell);
-                if s.is_empty() { None } else { Some(s) }
+                if s.is_empty() {
+                    CellValue::Empty
+                } else if s == "null" {
+                    CellValue::Null
+                } else {
+                    CellValue::Text(s)
+                }
             })
             .collect();
 
         // Pad to match column count
         let mut values = values;
-        values.resize(columns.len(), None);
+        values.resize(columns.len(), CellValue::Empty);
 
         rows.push(FileRow { values });
     }

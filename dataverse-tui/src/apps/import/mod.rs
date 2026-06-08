@@ -12,7 +12,7 @@ use rafter::prelude::*;
 use rafter::widgets::{Button, Column, SelectionMode, Table, TableState, Text};
 
 use crate::apps::record_explorer::RecordRow;
-use crate::file_io::{FileIoError, ParsedFile, list_sheets, read_csv, read_excel};
+use crate::file_io::{CellValue, FileIoError, ParsedFile, list_sheets, read_csv, read_excel};
 use crate::formatting::FormattedValue;
 use crate::modals::{FileBrowserModal, LoadingModal, SheetSelectorModal};
 use crate::paths;
@@ -135,7 +135,11 @@ impl Import {
                 let mut record_row = RecordRow::new(idx.to_string(), advanced_mode.clone());
                 for (col_idx, value) in row.values.iter().enumerate() {
                     let column_name = parsed.columns.get(col_idx).cloned().unwrap_or_default();
-                    let val_str = value.clone().unwrap_or_default();
+                    let val_str = match value {
+                        CellValue::Empty => String::new(),
+                        CellValue::Null => "null".to_string(),
+                        CellValue::Text(v) => v.clone(),
+                    };
                     let formatted = FormattedValue::new(val_str.clone(), val_str);
                     record_row.set_cell(column_name, formatted);
                 }

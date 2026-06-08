@@ -2,7 +2,7 @@
 
 use std::path::Path;
 
-use super::{FileIoError, FileRow, ParsedFile};
+use super::{CellValue, FileIoError, FileRow, ParsedFile};
 
 /// Write rows to CSV file.
 ///
@@ -26,7 +26,8 @@ pub fn write_csv(path: &Path, headers: &[String], rows: &[Vec<String>]) -> Resul
 /// Parse CSV file into columns and string rows.
 ///
 /// - First row treated as headers
-/// - Empty cells become None
+/// - Blank cells become `CellValue::Empty`
+/// - Literal `null` becomes `CellValue::Null`
 ///
 /// This is a blocking operation - caller should use spawn_blocking.
 pub fn read_csv(path: &Path) -> Result<ParsedFile, FileIoError> {
@@ -45,20 +46,22 @@ pub fn read_csv(path: &Path) -> Result<ParsedFile, FileIoError> {
     let column_count = columns.len();
     for result in reader.records() {
         let record = result?;
-        let mut values: Vec<Option<String>> = record
+        let mut values: Vec<CellValue> = record
             .iter()
             .map(|s| {
                 let trimmed = s.trim();
                 if trimmed.is_empty() {
-                    None
+                    CellValue::Empty
+                } else if trimmed == "null" {
+                    CellValue::Null
                 } else {
-                    Some(trimmed.to_string())
+                    CellValue::Text(trimmed.to_string())
                 }
             })
             .collect();
 
         // Pad to match column count
-        values.resize(column_count, None);
+        values.resize(column_count, CellValue::Empty);
 
         rows.push(FileRow { values });
     }
