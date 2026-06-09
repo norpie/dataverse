@@ -77,7 +77,7 @@ pub struct Queue {
     max_failures: usize,
     /// Tree state for the queue items.
     tree_state: TreeState<QueueTreeNode>,
-    /// Last 7 execution durations for ETA calculation.
+    /// Last 15 execution durations for ETA calculation.
     recent_durations: VecDeque<i64>,
     /// Active status filter.
     status_filter: StatusFilter,
@@ -1166,7 +1166,7 @@ impl Queue {
         {
             self.recent_durations.update(|d| {
                 d.push_back(duration_ms);
-                if d.len() > 7 {
+                if d.len() > 15 {
                     d.pop_front();
                 }
             });

@@ -191,13 +191,15 @@ pub fn format_eta(durations: &VecDeque<i64>, counts: &StatusCounts) -> String {
         return String::new();
     }
 
-    let remaining = counts.ready + counts.paused;
+    let remaining = counts.ready + counts.paused + counts.running;
     if remaining == 0 {
         return String::new();
     }
 
     let avg_ms: i64 = durations.iter().sum::<i64>() / durations.len() as i64;
-    let total_ms = avg_ms * remaining as i64;
+    let parallelism = counts.running.max(1);
+    let batches = (remaining + parallelism - 1) / parallelism;
+    let total_ms = avg_ms * batches as i64;
     let total_secs = total_ms / 1000;
 
     if total_secs < 60 {
