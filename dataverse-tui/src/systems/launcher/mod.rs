@@ -3,7 +3,8 @@
 use rafter::prelude::*;
 
 use crate::apps::{
-    EntityExplorer, Import, MigrationList, QueryBuilder, QuestionnaireSync, QuestionnaireValidator,
+    DeadlineImport, EntityExplorer, Import, MigrationList, QueryBuilder, QuestionnaireSync,
+    QuestionnaireValidator,
 };
 use crate::modals::{ListEntry, SearchableListModal};
 use crate::systems::client_management::{ClientManagement, GetActiveClient};
@@ -36,6 +37,7 @@ impl Launcher {
             ListEntry::with_category("query-builder", "Query Builder", "Tools"),
             ListEntry::with_category("import", "Import", "Tools"),
             ListEntry::with_category("migrations", "Migrations", "Data"),
+            ListEntry::with_category("deadline-import", "VAF - Deadline Import", "Data"),
             ListEntry::with_category("questionnaire-sync", "VAF - Questionnaire Sync", "Data"),
             ListEntry::with_category(
                 "questionnaire-validator",
@@ -82,6 +84,9 @@ impl Launcher {
                         }
                         "query-builder" => {
                             let _ = gx.spawn_and_focus(QueryBuilder::with_client(client_info));
+                        }
+                        "deadline-import" => {
+                            let _ = gx.spawn_and_focus(DeadlineImport::with_client(client_info));
                         }
                         "questionnaire-sync" => {
                             let _ = gx.spawn_and_focus(QuestionnaireSync::create());
