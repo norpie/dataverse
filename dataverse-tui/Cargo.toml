@@ -20,6 +20,7 @@ async-trait = "0.1"
 thiserror = "2"
 directories = "5"
 chrono = "0.4"
+chrono-tz = "0.10"
 dataverse-lib = { path = "../dataverse-lib" }
 open = "5"
 tokio-util = "0.7"
