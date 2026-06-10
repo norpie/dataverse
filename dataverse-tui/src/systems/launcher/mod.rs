@@ -33,6 +33,8 @@ impl Launcher {
 
         let items = vec![
             ListEntry::with_category("entity-explorer", "Entity Explorer", "Data"),
+            ListEntry::with_category("query-builder", "Query Builder", "Tools"),
+            ListEntry::with_category("import", "Import", "Tools"),
             ListEntry::with_category("migrations", "Migrations", "Data"),
             ListEntry::with_category("questionnaire-sync", "VAF - Questionnaire Sync", "Data"),
             ListEntry::with_category(
@@ -40,8 +42,6 @@ impl Launcher {
                 "VAF - Questionnaire Validator",
                 "Data",
             ),
-            ListEntry::with_category("query-builder", "Query Builder", "Tools"),
-            ListEntry::with_category("import", "Import", "Tools"),
         ];
 
         let result = gx
