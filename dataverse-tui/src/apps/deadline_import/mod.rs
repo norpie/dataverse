@@ -363,6 +363,7 @@ fn build_table(records: &[DeadlineRecord]) -> TableState<DeadlineTableRow> {
             key: idx,
             row: record.source_row,
             mode: record.action_label().to_string(),
+            color: mode_color(&record.mode),
             id: record.id.to_string(),
             name: record.name().to_string(),
             warnings: record.warnings.len(),
@@ -371,6 +372,15 @@ fn build_table(records: &[DeadlineRecord]) -> TableState<DeadlineTableRow> {
     TableState::new(rows, columns)
         .with_selection(SelectionMode::Single)
         .with_frozen(&["row", "mode"])
+}
+
+fn mode_color(mode: &DeadlineMode) -> &'static str {
+    match mode {
+        DeadlineMode::Create => "success",
+        DeadlineMode::Update => "warning",
+        DeadlineMode::Unchanged => "muted",
+        DeadlineMode::Error(_) => "error",
+    }
 }
 
 fn selected_record<'a>(

@@ -5,7 +5,7 @@ use chrono::{NaiveDate, NaiveTime};
 use dataverse_lib::model::Record;
 use dataverse_lib::model::Value;
 use rafter::widgets::TableRow;
-use tuidom::Element;
+use tuidom::{Color, Element, Style};
 use uuid::Uuid;
 
 #[derive(Clone, Debug, Default)]
@@ -163,6 +163,7 @@ pub struct DeadlineTableRow {
     pub key: usize,
     pub row: usize,
     pub mode: String,
+    pub color: &'static str,
     pub id: String,
     pub name: String,
     pub warnings: usize,
@@ -191,5 +192,7 @@ impl TableRow for DeadlineTableRow {
             _ => String::new(),
         };
         Element::text(text)
+            .style(Style::new().foreground(Color::var(self.color)))
+            .style_focused(Style::new().foreground(Color::var("text.inverted")))
     }
 }
