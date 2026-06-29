@@ -25,6 +25,104 @@ use super::validation::{build_bulk_validation_result, build_validation_report};
 const FILTER_CHUNK_SIZE: usize = 20;
 const MAX_FETCH_PASSES: usize = 10;
 
+#[derive(Clone, Copy, Debug)]
+struct QuestionnaireLookupEdge {
+    entity: &'static str,
+    field: &'static str,
+    target_entity: &'static str,
+}
+
+const STRUCTURAL_LOOKUP_EDGES: &[QuestionnaireLookupEdge] = &[
+    QuestionnaireLookupEdge {
+        entity: "nrq_questionnairepage",
+        field: "nrq_relatedquestionnaire",
+        target_entity: "nrq_questionnaire",
+    },
+    QuestionnaireLookupEdge {
+        entity: "nrq_questionnairepageline",
+        field: "nrq_questionnaireid",
+        target_entity: "nrq_questionnaire",
+    },
+    QuestionnaireLookupEdge {
+        entity: "nrq_questionnairepageline",
+        field: "nrq_questionnairepageid",
+        target_entity: "nrq_questionnairepage",
+    },
+    QuestionnaireLookupEdge {
+        entity: "nrq_questiongroupline",
+        field: "nrq_questionnairepageid",
+        target_entity: "nrq_questionnairepage",
+    },
+    QuestionnaireLookupEdge {
+        entity: "nrq_question",
+        field: "nrq_questionnaireid",
+        target_entity: "nrq_questionnaire",
+    },
+    QuestionnaireLookupEdge {
+        entity: "nrq_question",
+        field: "nrq_questionpage",
+        target_entity: "nrq_questionnairepage",
+    },
+    QuestionnaireLookupEdge {
+        entity: "nrq_question",
+        field: "nrq_questiongroupid",
+        target_entity: "nrq_questiongroup",
+    },
+    QuestionnaireLookupEdge {
+        entity: "nrq_questioncondition",
+        field: "nrq_questionnaireid",
+        target_entity: "nrq_questionnaire",
+    },
+    QuestionnaireLookupEdge {
+        entity: "nrq_questioncondition",
+        field: "nrq_questionid",
+        target_entity: "nrq_question",
+    },
+    QuestionnaireLookupEdge {
+        entity: "nrq_questionconditionaction",
+        field: "nrq_questionconditionid",
+        target_entity: "nrq_questioncondition",
+    },
+    QuestionnaireLookupEdge {
+        entity: "nrq_questionconditionaction",
+        field: "nrq_questionid",
+        target_entity: "nrq_question",
+    },
+];
+
+const LOOKUP_CONTEXT_EDGES: &[QuestionnaireLookupEdge] = &[
+    QuestionnaireLookupEdge {
+        entity: "nrq_questionnaire",
+        field: "nrq_domain",
+        target_entity: "nrq_domain",
+    },
+    QuestionnaireLookupEdge {
+        entity: "nrq_questiongroupline",
+        field: "nrq_questiongroupid",
+        target_entity: "nrq_questiongroup",
+    },
+    QuestionnaireLookupEdge {
+        entity: "nrq_question",
+        field: "nrq_questiongroupid",
+        target_entity: "nrq_questiongroup",
+    },
+    QuestionnaireLookupEdge {
+        entity: "nrq_question",
+        field: "nrq_questiontagid",
+        target_entity: "nrq_questiontag",
+    },
+    QuestionnaireLookupEdge {
+        entity: "nrq_question",
+        field: "nrq_questiontemplateid",
+        target_entity: "nrq_questiontemplate",
+    },
+    QuestionnaireLookupEdge {
+        entity: "nrq_question",
+        field: "nrq_contactrole",
+        target_entity: "nrq_role",
+    },
+];
+
 impl QuestionnaireValidator {
     pub(super) async fn fetch_questionnaires(&self, gx: &GlobalContext) {
         let Some(client_info) = self.client_info.get() else {
@@ -141,6 +239,7 @@ impl QuestionnaireValidator {
         let mut records_by_entity: HashMap<String, Vec<Record>> = HashMap::new();
         let mut known_ids: HashMap<String, HashSet<Uuid>> = HashMap::new();
         let mut fetched_ids: HashMap<String, HashSet<Uuid>> = HashMap::new();
+        let mut queried_lookup_ids: HashMap<(String, String), HashSet<Uuid>> = HashMap::new();
 
         add_known_id(&mut known_ids, "nrq_questionnaire", questionnaire_id);
 
@@ -215,29 +314,35 @@ impl QuestionnaireValidator {
                     });
                 }
 
-                for field in spec.fields {
-                    let QuestionnaireFieldKind::Lookup { target_entity } = field.kind else {
-                        continue;
-                    };
-                    if !metadata_has_field(metadata, spec.logical_name, field.source_name) {
+                for edge in STRUCTURAL_LOOKUP_EDGES
+                    .iter()
+                    .filter(|edge| edge.entity == spec.logical_name)
+                {
+                    if !metadata_has_field(metadata, edge.entity, edge.field) {
                         log::warn!(
                             "Skipping questionnaire validator lookup fetch: {}.{} is not present in metadata",
-                            spec.logical_name,
-                            field.source_name
+                            edge.entity,
+                            edge.field
                         );
                         continue;
                     }
-                    let Some(ids) = known_ids.get(target_entity) else {
+                    let Some(ids) = known_ids.get(edge.target_entity) else {
                         continue;
                     };
                     if ids.is_empty() {
                         continue;
                     }
-                    let ids = ids.iter().copied().collect::<Vec<_>>();
+                    let query_key = (edge.entity.to_string(), edge.field.to_string());
+                    let queried = queried_lookup_ids.get(&query_key);
+                    let ids = ids
+                        .iter()
+                        .filter(|id| queried.is_none_or(|queried| !queried.contains(id)))
+                        .copied()
+                        .collect::<Vec<_>>();
                     for chunk in ids.chunks(FILTER_CHUNK_SIZE) {
                         task_specs.push(GraphFetchTaskSpec::Lookup {
-                            entity: spec.logical_name.to_string(),
-                            field: field.source_name.to_string(),
+                            entity: edge.entity.to_string(),
+                            field: edge.field.to_string(),
                             ids: chunk.to_vec(),
                         });
                     }
@@ -280,6 +385,12 @@ impl QuestionnaireValidator {
 
             let before = total_known_ids(&known_ids);
             for (task, records) in task_specs.into_iter().zip(results.into_iter()) {
+                if let GraphFetchTaskSpec::Lookup { entity, field, ids } = &task {
+                    queried_lookup_ids
+                        .entry((entity.clone(), field.clone()))
+                        .or_default()
+                        .extend(ids.iter().copied());
+                }
                 ingest_records(
                     &mut records_by_entity,
                     &mut known_ids,
@@ -518,12 +629,12 @@ fn ingest_lookup_ids(
     spec: &QuestionnaireEntitySpec,
     record: &Record,
 ) {
-    for field in spec.fields {
-        let QuestionnaireFieldKind::Lookup { target_entity } = field.kind else {
-            continue;
-        };
-        if let Some(id) = lookup_guid_value(record, field.source_name) {
-            add_known_id(known_ids, target_entity, id);
+    for edge in LOOKUP_CONTEXT_EDGES
+        .iter()
+        .filter(|edge| edge.entity == spec.logical_name)
+    {
+        if let Some(id) = lookup_guid_value(record, edge.field) {
+            add_known_id(known_ids, edge.target_entity, id);
         }
     }
 }
