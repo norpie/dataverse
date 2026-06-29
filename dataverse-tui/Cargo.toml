@@ -3,6 +3,13 @@ name = "dataverse-tui"
 version = "0.2.0"
 edition = "2024"
 repository = "https://github.com/norpie/dataverse"
+authors = ["Konsta Kuosmanen <konsta@kuosmanen.dev>"]
+
+[package.metadata.wix]
+upgrade-guid = "7DBFB9D9-227D-44AD-AACA-F9626DB57770"
+path-guid = "C691FA0C-5DCE-4215-AFBB-02E6C66498D9"
+license = false
+eula = false
 
 [dependencies]
 rafter = { path = "../rafter" }

@@ -3,5 +3,12 @@ name = "dataverse-cli"
 version = "0.1.0"
 edition = "2024"
 repository = "https://github.com/norpie/dataverse"
+authors = ["Konsta Kuosmanen <konsta@kuosmanen.dev>"]
+
+[package.metadata.wix]
+upgrade-guid = "CB494D82-01B5-42EA-ADB4-913D24FDC2BA"
+path-guid = "3B0D195F-8786-467C-9B8C-5379CE1E02BE"
+license = false
+eula = false
 
 [dependencies]
