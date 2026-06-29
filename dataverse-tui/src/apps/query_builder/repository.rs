@@ -70,7 +70,7 @@ impl QueryRepository {
         data: &QueryData,
     ) -> Result<i64, RepositoryError> {
         let data_bytes = bincode::serde::encode_to_vec(data, bincode::config::standard())?;
-        let entity = data.entity.clone();
+        let entity = data.entity.as_ref().map(|entity| entity.name().to_string());
         let now = Utc::now().to_rfc3339();
 
         match id {

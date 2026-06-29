@@ -1,4 +1,5 @@
 use dataverse_lib::api::query::Direction;
+use dataverse_lib::model::Entity;
 use serde::{Deserialize, Serialize};
 
 // Re-export filter types from the shared module
@@ -7,8 +8,8 @@ pub use crate::widgets::filter_builder::FilterNode;
 /// The complete query being built.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct QueryData {
-    /// Entity set name (e.g., "accounts").
-    pub entity: Option<String>,
+    /// Selected entity for the query.
+    pub entity: Option<Entity>,
     pub select: Vec<String>,
     pub filter: FilterNode,
     pub order_by: Vec<SortField>,

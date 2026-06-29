@@ -1,10 +1,11 @@
 //! Entity picker modal for selecting a Dataverse entity.
 
+use dataverse_lib::model::Entity;
 use rafter::page;
 use rafter::prelude::*;
 use rafter::widgets::{Autocomplete, AutocompleteState, Button, Text};
 
-/// Modal for selecting an entity set name.
+/// Modal for selecting an entity.
 #[modal(default, size = Md)]
 pub struct EntityPickerModal {
     #[state(skip)]
@@ -25,12 +26,12 @@ impl EntityPickerModal {
 
 #[modal_impl]
 impl EntityPickerModal {
-    fn default_result(&self) -> Option<String> {
+    fn default_result(&self) -> Option<Entity> {
         None
     }
 
     #[on_start]
-    async fn on_start(&self, mx: &ModalContext<Option<String>>) {
+    async fn on_start(&self, mx: &ModalContext<Option<Entity>>) {
         self.entities
             .set(AutocompleteState::new(self.options.clone()));
         mx.focus("entity-autocomplete");
@@ -42,15 +43,15 @@ impl EntityPickerModal {
     }
 
     #[handler]
-    async fn cancel(&self, mx: &ModalContext<Option<String>>) {
+    async fn cancel(&self, mx: &ModalContext<Option<Entity>>) {
         mx.close(None);
     }
 
     #[handler]
-    async fn on_select(&self, mx: &ModalContext<Option<String>>) {
+    async fn on_select(&self, mx: &ModalContext<Option<Entity>>) {
         let selected = self.entities.with_ref(|s| s.value().cloned());
-        if selected.is_some() {
-            mx.close(selected);
+        if let Some(entity_set_name) = selected {
+            mx.close(Some(Entity::set(entity_set_name)));
         }
     }
 

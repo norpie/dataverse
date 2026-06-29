@@ -9,7 +9,6 @@ mod tree;
 
 use dataverse_lib::DataverseClient;
 use dataverse_lib::error::Error as DataverseError;
-use dataverse_lib::model::Entity;
 use rafter::page;
 use rafter::prelude::*;
 use rafter::widgets::{Text, Tree, TreeNode, TreeState};
@@ -83,7 +82,7 @@ impl QueryBuilder {
 
     fn title(&self) -> String {
         self.query.with_ref(|q| match &q.entity {
-            Some(entity) => format!("Query Builder ({})", entity),
+            Some(entity) => format!("Query Builder ({})", entity.name()),
             None => "Query Builder".to_string(),
         })
     }
@@ -756,12 +755,7 @@ impl QueryBuilder {
             .modal(LoadingModal::run_with_default(
                 "Loading attributes",
                 || Err(DataverseError::Cancelled),
-                async move {
-                    client
-                        .metadata()
-                        .attributes(Entity::set(&entity_clone))
-                        .await
-                },
+                async move { client.metadata().attributes(entity_clone).await },
             ))
             .await
         {
@@ -889,12 +883,7 @@ impl QueryBuilder {
             .modal(LoadingModal::run_with_default(
                 "Loading attributes",
                 || Err(DataverseError::Cancelled),
-                async move {
-                    client
-                        .metadata()
-                        .attributes(Entity::set(&entity_clone))
-                        .await
-                },
+                async move { client.metadata().attributes(entity_clone).await },
             ))
             .await
         {

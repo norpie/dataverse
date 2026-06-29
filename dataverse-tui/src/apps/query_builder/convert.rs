@@ -2,7 +2,6 @@
 
 use dataverse_lib::api::query::odata::QueryBuilder as ODataQueryBuilder;
 use dataverse_lib::api::query::{Direction, OrderBy};
-use dataverse_lib::model::Entity;
 
 use crate::widgets::filter_builder::{ConvertError as FilterConvertError, convert_filter};
 
@@ -20,7 +19,7 @@ pub enum ConvertError {
 /// Build an OData `QueryBuilder` from the user's `QueryData`.
 pub fn build_query(data: &QueryData) -> Result<ODataQueryBuilder, ConvertError> {
     let entity = data.entity.as_ref().ok_or(ConvertError::NoEntity)?;
-    let mut qb = ODataQueryBuilder::new(Entity::set(entity));
+    let mut qb = ODataQueryBuilder::new(entity.clone());
 
     // Select
     if !data.select.is_empty() {

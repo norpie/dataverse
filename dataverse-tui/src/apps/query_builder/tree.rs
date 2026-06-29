@@ -233,7 +233,9 @@ pub fn build_tree(query: &QueryData) -> Vec<TreeNode<QueryTreeNode>> {
 
     // Entity section
     let entity_children = match &query.entity {
-        Some(name) => vec![TreeNode::leaf(QueryTreeNode::EntityValue(name.clone()))],
+        Some(entity) => vec![TreeNode::leaf(QueryTreeNode::EntityValue(
+            entity.name().to_string(),
+        ))],
         None => vec![],
     };
     roots.push(TreeNode::branch(
