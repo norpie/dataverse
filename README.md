@@ -14,7 +14,7 @@ Command-line interface for Dataverse operations. Built on top of dataverse-lib f
 
 ### dataverse-tui
 
-Terminal user interface for interactive Dataverse management. Provides a visual, keyboard-driven experience for working with Dataverse data.
+Terminal user interface for interactive Dataverse management. This is the main distributable binary.
 
 ### rafter
 
@@ -31,3 +31,19 @@ Designed to be general-purpose and applicable beyond Dataverse use cases.
 - Enable automation through CLI tooling
 - Offer an interactive terminal experience for data management
 - Create a reusable TUI framework for the broader Rust ecosystem
+
+## Installation
+
+From source:
+
+```bash
+cargo install --path dataverse-tui
+```
+
+Run directly:
+
+```bash
+cargo run -p dataverse-tui
+```
+
+Release builds are published from `vX.Y.Z` tags on GitHub Releases.
