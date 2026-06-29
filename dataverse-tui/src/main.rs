@@ -77,7 +77,7 @@ fn init_logging() -> Result<(), Box<dyn std::error::Error>> {
     paths::rotate_logs();
     let log_path = paths::log_file().unwrap_or_else(|| "latest.log".into());
     let log_file = File::create(&log_path)?;
-    WriteLogger::init(LevelFilter::Debug, Config::default(), log_file)?;
+    WriteLogger::init(LevelFilter::Warn, Config::default(), log_file)?;
     Ok(())
 }
 
