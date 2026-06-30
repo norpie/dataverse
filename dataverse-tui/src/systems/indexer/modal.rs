@@ -114,6 +114,19 @@ fn to_list_item(status: &EnvSyncStatus) -> EnvListItem {
     }
 }
 
+/// Create an integer hour input for cache TTL settings.
+fn ttl_hours_input(hours: u64) -> NumberInputState {
+    NumberInputState::new(hours.max(1) as f64)
+        .with_min(1.0)
+        .with_max(8760.0)
+        .integer()
+}
+
+/// Read a cache TTL input as a bounded integer hour value.
+fn ttl_hours_value(state: &NumberInputState) -> u64 {
+    state.value().clamp(1.0, 8760.0) as u64
+}
+
 /// Get display info for a status indicator.
 fn status_indicator_display(status: &StatusIndicator) -> (&'static str, &'static str) {
     match status {
@@ -138,6 +151,12 @@ pub struct IndexerDashboardModal {
     // Settings state
     check_interval: NumberInputState,
     refresh_threshold: NumberInputState,
+    cache_entity_list_ttl: NumberInputState,
+    cache_entity_metadata_ttl: NumberInputState,
+    cache_attribute_metadata_ttl: NumberInputState,
+    cache_global_optionset_ttl: NumberInputState,
+    cache_relationship_ttl: NumberInputState,
+    cache_query_ttl: NumberInputState,
     settings_dirty: bool,
 
     // Cache state
@@ -168,6 +187,22 @@ impl IndexerDashboardModal {
                     .with_max(100.0)
                     .integer(),
             ),
+            cache_entity_list_ttl: State::new(ttl_hours_input(
+                settings.cache_entity_list_ttl_hours,
+            )),
+            cache_entity_metadata_ttl: State::new(ttl_hours_input(
+                settings.cache_entity_metadata_ttl_hours,
+            )),
+            cache_attribute_metadata_ttl: State::new(ttl_hours_input(
+                settings.cache_attribute_metadata_ttl_hours,
+            )),
+            cache_global_optionset_ttl: State::new(ttl_hours_input(
+                settings.cache_global_optionset_ttl_hours,
+            )),
+            cache_relationship_ttl: State::new(ttl_hours_input(
+                settings.cache_relationship_ttl_hours,
+            )),
+            cache_query_ttl: State::new(ttl_hours_input(settings.cache_query_ttl_hours)),
             settings_dirty: State::new(false),
             active_env_name: State::new(active_env_name),
             __page: State::new(Page::default()),
@@ -294,15 +329,35 @@ impl IndexerDashboardModal {
     }
 
     #[handler]
+    async fn on_cache_ttl_change(&self) {
+        self.settings_dirty.set(true);
+    }
+
+    #[handler]
     async fn save_settings(&self, gx: &GlobalContext) {
         let interval = self.check_interval.with_ref(|s| s.value().max(1.0) as u64);
         let threshold = self
             .refresh_threshold
             .with_ref(|s| s.value().clamp(1.0, 100.0) as u64);
+        let cache_entity_list_ttl_hours = self.cache_entity_list_ttl.with_ref(ttl_hours_value);
+        let cache_entity_metadata_ttl_hours =
+            self.cache_entity_metadata_ttl.with_ref(ttl_hours_value);
+        let cache_attribute_metadata_ttl_hours =
+            self.cache_attribute_metadata_ttl.with_ref(ttl_hours_value);
+        let cache_global_optionset_ttl_hours =
+            self.cache_global_optionset_ttl.with_ref(ttl_hours_value);
+        let cache_relationship_ttl_hours = self.cache_relationship_ttl.with_ref(ttl_hours_value);
+        let cache_query_ttl_hours = self.cache_query_ttl.with_ref(ttl_hours_value);
 
         gx.publish(UpdateIndexerSettingsEvent {
             check_interval_secs: interval,
             refresh_threshold_pct: threshold,
+            cache_entity_list_ttl_hours,
+            cache_entity_metadata_ttl_hours,
+            cache_attribute_metadata_ttl_hours,
+            cache_global_optionset_ttl_hours,
+            cache_relationship_ttl_hours,
+            cache_query_ttl_hours,
         });
 
         self.settings_dirty.set(false);
@@ -452,6 +507,21 @@ impl IndexerDashboardModal {
                     .with_max(100.0)
                     .integer(),
             );
+            self.cache_entity_list_ttl
+                .set(ttl_hours_input(event.settings.cache_entity_list_ttl_hours));
+            self.cache_entity_metadata_ttl.set(ttl_hours_input(
+                event.settings.cache_entity_metadata_ttl_hours,
+            ));
+            self.cache_attribute_metadata_ttl.set(ttl_hours_input(
+                event.settings.cache_attribute_metadata_ttl_hours,
+            ));
+            self.cache_global_optionset_ttl.set(ttl_hours_input(
+                event.settings.cache_global_optionset_ttl_hours,
+            ));
+            self.cache_relationship_ttl
+                .set(ttl_hours_input(event.settings.cache_relationship_ttl_hours));
+            self.cache_query_ttl
+                .set(ttl_hours_input(event.settings.cache_query_ttl_hours));
         }
     }
 
@@ -534,22 +604,71 @@ impl IndexerDashboardModal {
         page! {
             column (gap: 1, width: fill, height: fill, justify: between) {
                 column (gap: 1, width: fill) {
-                    number_input (
-                        state: self.check_interval,
-                        id: "check-interval",
-                        label: "Check Interval (seconds)"
-                    ) on_change: on_interval_change()
+                    text (content: "Indexer") style (fg: muted)
 
-                    number_input (
-                        state: self.refresh_threshold,
-                        id: "refresh-threshold",
-                        label: "Refresh Threshold (%)"
-                    ) on_change: on_threshold_change()
+                    row (gap: 1, width: fill) {
+                        number_input (
+                            state: self.check_interval,
+                            id: "check-interval",
+                            label: "Check Interval (seconds)"
+                        ) on_change: on_interval_change()
+
+                        number_input (
+                            state: self.refresh_threshold,
+                            id: "refresh-threshold",
+                            label: "Refresh Threshold (%)"
+                        ) on_change: on_threshold_change()
+                    }
+
+                    text (content: "Cache TTLs (hours)") style (fg: muted)
+
+                    row (gap: 1, width: fill) {
+                        column (gap: 1, width: fill) {
+                            number_input (
+                                state: self.cache_entity_list_ttl,
+                                id: "cache-entity-list-ttl",
+                                label: "Entity List"
+                            ) on_change: on_cache_ttl_change()
+
+                            number_input (
+                                state: self.cache_entity_metadata_ttl,
+                                id: "cache-entity-metadata-ttl",
+                                label: "Entity Metadata"
+                            ) on_change: on_cache_ttl_change()
+
+                            number_input (
+                                state: self.cache_attribute_metadata_ttl,
+                                id: "cache-attribute-metadata-ttl",
+                                label: "Attribute Metadata"
+                            ) on_change: on_cache_ttl_change()
+                        }
+
+                        column (gap: 1, width: fill) {
+                            number_input (
+                                state: self.cache_global_optionset_ttl,
+                                id: "cache-global-optionset-ttl",
+                                label: "Global Option Sets"
+                            ) on_change: on_cache_ttl_change()
+
+                            number_input (
+                                state: self.cache_relationship_ttl,
+                                id: "cache-relationship-ttl",
+                                label: "Relationships"
+                            ) on_change: on_cache_ttl_change()
+
+                            number_input (
+                                state: self.cache_query_ttl,
+                                id: "cache-query-ttl",
+                                label: "Queries"
+                            ) on_change: on_cache_ttl_change()
+                        }
+                    }
 
                     // Help text
                     column (gap: 0) style (fg: muted) {
                         text (content: "Check interval: how often to check for stale cache")
                         text (content: "Refresh threshold: % of TTL elapsed before refresh")
+                        text (content: "Cache TTLs apply when new Dataverse clients are created")
                     }
                 }
 

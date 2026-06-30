@@ -30,6 +30,24 @@ pub struct IndexerSettings {
     /// When to refresh metadata (percentage of TTL).
     pub refresh_threshold_pct: Setting<u64>,
 
+    /// Entity list cache TTL in hours.
+    pub cache_entity_list_ttl_hours: Setting<u64>,
+
+    /// Entity metadata cache TTL in hours.
+    pub cache_entity_metadata_ttl_hours: Setting<u64>,
+
+    /// Attribute metadata cache TTL in hours.
+    pub cache_attribute_metadata_ttl_hours: Setting<u64>,
+
+    /// Global option set cache TTL in hours.
+    pub cache_global_optionset_ttl_hours: Setting<u64>,
+
+    /// Relationship cache TTL in hours.
+    pub cache_relationship_ttl_hours: Setting<u64>,
+
+    /// Query result cache TTL in hours.
+    pub cache_query_ttl_hours: Setting<u64>,
+
     /// Whether the indexer is currently paused.
     pub is_paused: Setting<bool>,
 }
@@ -47,6 +65,42 @@ impl IndexerSettings {
                 backend.clone(),
                 "Settings.Indexer.RefreshThresholdPct",
                 80,
+            )
+            .await?,
+            cache_entity_list_ttl_hours: Setting::load(
+                backend.clone(),
+                "Settings.Indexer.Cache.EntityListTtlHours",
+                24,
+            )
+            .await?,
+            cache_entity_metadata_ttl_hours: Setting::load(
+                backend.clone(),
+                "Settings.Indexer.Cache.EntityMetadataTtlHours",
+                6,
+            )
+            .await?,
+            cache_attribute_metadata_ttl_hours: Setting::load(
+                backend.clone(),
+                "Settings.Indexer.Cache.AttributeMetadataTtlHours",
+                6,
+            )
+            .await?,
+            cache_global_optionset_ttl_hours: Setting::load(
+                backend.clone(),
+                "Settings.Indexer.Cache.GlobalOptionSetTtlHours",
+                12,
+            )
+            .await?,
+            cache_relationship_ttl_hours: Setting::load(
+                backend.clone(),
+                "Settings.Indexer.Cache.RelationshipTtlHours",
+                12,
+            )
+            .await?,
+            cache_query_ttl_hours: Setting::load(
+                backend.clone(),
+                "Settings.Indexer.Cache.QueryTtlHours",
+                1,
             )
             .await?,
             is_paused: Setting::load(backend.clone(), "Settings.Indexer.IsPaused", false).await?,

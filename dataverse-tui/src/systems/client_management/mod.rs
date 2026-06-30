@@ -6,7 +6,9 @@ mod requests;
 pub use requests::*;
 
 use std::sync::Arc;
+use std::time::Duration;
 
+use dataverse_lib::cache::CacheConfig;
 use dataverse_lib::cache::SqliteCache;
 use modal::ClientManagementModal;
 use rafter::prelude::*;
@@ -14,6 +16,7 @@ use rafter::prelude::*;
 use crate::client_manager::{ClientManager, ClientManagerError};
 use crate::credentials::CredentialsProvider;
 use crate::paths;
+use crate::settings::Settings;
 
 /// System for managing Dataverse client connections.
 #[system]
@@ -129,7 +132,10 @@ impl ClientManagement {
         );
 
         // Get or create client
-        let client = manager.get_client(account_id, env_id, cache).await?;
+        let cache_config = Self::cache_config(gx);
+        let client = manager
+            .get_client(account_id, env_id, cache, cache_config)
+            .await?;
         log::debug!("get_client returned client");
 
         Ok(ActiveClientInfo {
@@ -178,8 +184,9 @@ impl ClientManagement {
         let cache = self.open_cache(&environment.url, gx).await;
 
         // Get or create client
+        let cache_config = Self::cache_config(gx);
         let client = manager
-            .get_client(request.account_id, request.env_id, cache)
+            .get_client(request.account_id, request.env_id, cache, cache_config)
             .await?;
 
         Ok(ActiveClientInfo {
@@ -299,6 +306,20 @@ impl ClientManagement {
         }
     }
 
+    #[event_handler]
+    async fn on_indexer_settings_changed(
+        &self,
+        _event: crate::systems::indexer::IndexerSettingsChanged,
+        _gx: &GlobalContext,
+    ) {
+        if let Some(manager) = self.manager.get().as_ref() {
+            manager.invalidate_all();
+            log::debug!(
+                "[ClientManagement] Invalidated cached clients after indexer settings changed"
+            );
+        }
+    }
+
     #[request_handler]
     async fn handle_get_active_session(
         &self,
@@ -323,6 +344,32 @@ impl ClientManagement {
             environment_name: environment.display_name,
             environment_url: environment.url,
         })
+    }
+
+    /// Build the cache TTL configuration from settings.
+    fn cache_config(gx: &GlobalContext) -> CacheConfig {
+        let settings = gx.data::<Settings>();
+        let to_secs = |hours: u64| hours.max(1).saturating_mul(3600);
+
+        CacheConfig::default()
+            .with_entity_list_ttl(Duration::from_secs(to_secs(
+                settings.indexer.cache_entity_list_ttl_hours.get(),
+            )))
+            .with_entity_metadata_ttl(Duration::from_secs(to_secs(
+                settings.indexer.cache_entity_metadata_ttl_hours.get(),
+            )))
+            .with_attribute_metadata_ttl(Duration::from_secs(to_secs(
+                settings.indexer.cache_attribute_metadata_ttl_hours.get(),
+            )))
+            .with_global_optionset_ttl(Duration::from_secs(to_secs(
+                settings.indexer.cache_global_optionset_ttl_hours.get(),
+            )))
+            .with_relationship_ttl(Duration::from_secs(to_secs(
+                settings.indexer.cache_relationship_ttl_hours.get(),
+            )))
+            .with_query_ttl(Duration::from_secs(to_secs(
+                settings.indexer.cache_query_ttl_hours.get(),
+            )))
     }
 
     /// Try to open a persistent SQLite cache for the given environment URL.

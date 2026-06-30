@@ -73,6 +73,18 @@ pub struct UpdateIndexerSettings {
     pub check_interval_secs: u64,
     /// Refresh threshold as percentage of TTL (0-100).
     pub refresh_threshold_pct: u64,
+    /// Entity list cache TTL in hours.
+    pub cache_entity_list_ttl_hours: u64,
+    /// Entity metadata cache TTL in hours.
+    pub cache_entity_metadata_ttl_hours: u64,
+    /// Attribute metadata cache TTL in hours.
+    pub cache_attribute_metadata_ttl_hours: u64,
+    /// Global option set cache TTL in hours.
+    pub cache_global_optionset_ttl_hours: u64,
+    /// Relationship cache TTL in hours.
+    pub cache_relationship_ttl_hours: u64,
+    /// Query result cache TTL in hours.
+    pub cache_query_ttl_hours: u64,
 }
 
 // =============================================================================
@@ -127,6 +139,18 @@ pub struct SyncSettings {
     pub check_interval_secs: u64,
     /// Percentage of TTL elapsed before triggering a refresh (0-100).
     pub refresh_threshold_pct: u64,
+    /// Entity list cache TTL in hours.
+    pub cache_entity_list_ttl_hours: u64,
+    /// Entity metadata cache TTL in hours.
+    pub cache_entity_metadata_ttl_hours: u64,
+    /// Attribute metadata cache TTL in hours.
+    pub cache_attribute_metadata_ttl_hours: u64,
+    /// Global option set cache TTL in hours.
+    pub cache_global_optionset_ttl_hours: u64,
+    /// Relationship cache TTL in hours.
+    pub cache_relationship_ttl_hours: u64,
+    /// Query result cache TTL in hours.
+    pub cache_query_ttl_hours: u64,
 }
 
 // =============================================================================
@@ -186,6 +210,18 @@ pub struct UpdateIndexerSettingsEvent {
     pub check_interval_secs: u64,
     /// Refresh threshold as percentage of TTL (0-100).
     pub refresh_threshold_pct: u64,
+    /// Entity list cache TTL in hours.
+    pub cache_entity_list_ttl_hours: u64,
+    /// Entity metadata cache TTL in hours.
+    pub cache_entity_metadata_ttl_hours: u64,
+    /// Attribute metadata cache TTL in hours.
+    pub cache_attribute_metadata_ttl_hours: u64,
+    /// Global option set cache TTL in hours.
+    pub cache_global_optionset_ttl_hours: u64,
+    /// Relationship cache TTL in hours.
+    pub cache_relationship_ttl_hours: u64,
+    /// Query result cache TTL in hours.
+    pub cache_query_ttl_hours: u64,
 }
 
 /// Event to open the indexer dashboard modal.

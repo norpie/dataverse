@@ -56,6 +56,24 @@ pub struct IndexerSystem {
 
     /// Percentage of TTL elapsed before triggering a refresh (0-100).
     refresh_threshold_pct: u64,
+
+    /// Entity list cache TTL in hours.
+    cache_entity_list_ttl_hours: u64,
+
+    /// Entity metadata cache TTL in hours.
+    cache_entity_metadata_ttl_hours: u64,
+
+    /// Attribute metadata cache TTL in hours.
+    cache_attribute_metadata_ttl_hours: u64,
+
+    /// Global option set cache TTL in hours.
+    cache_global_optionset_ttl_hours: u64,
+
+    /// Relationship cache TTL in hours.
+    cache_relationship_ttl_hours: u64,
+
+    /// Query result cache TTL in hours.
+    cache_query_ttl_hours: u64,
 }
 
 #[system_impl]
@@ -80,10 +98,32 @@ impl IndexerSystem {
                 let settings = gx.data::<Settings>();
                 let check_interval = settings.indexer.check_interval_secs.get();
                 let refresh_threshold = settings.indexer.refresh_threshold_pct.get();
+                let cache_entity_list_ttl_hours =
+                    settings.indexer.cache_entity_list_ttl_hours.get();
+                let cache_entity_metadata_ttl_hours =
+                    settings.indexer.cache_entity_metadata_ttl_hours.get();
+                let cache_attribute_metadata_ttl_hours =
+                    settings.indexer.cache_attribute_metadata_ttl_hours.get();
+                let cache_global_optionset_ttl_hours =
+                    settings.indexer.cache_global_optionset_ttl_hours.get();
+                let cache_relationship_ttl_hours =
+                    settings.indexer.cache_relationship_ttl_hours.get();
+                let cache_query_ttl_hours = settings.indexer.cache_query_ttl_hours.get();
                 let is_paused = settings.indexer.is_paused.get();
 
                 self.check_interval_secs.set(check_interval);
                 self.refresh_threshold_pct.set(refresh_threshold);
+                self.cache_entity_list_ttl_hours
+                    .set(cache_entity_list_ttl_hours);
+                self.cache_entity_metadata_ttl_hours
+                    .set(cache_entity_metadata_ttl_hours);
+                self.cache_attribute_metadata_ttl_hours
+                    .set(cache_attribute_metadata_ttl_hours);
+                self.cache_global_optionset_ttl_hours
+                    .set(cache_global_optionset_ttl_hours);
+                self.cache_relationship_ttl_hours
+                    .set(cache_relationship_ttl_hours);
+                self.cache_query_ttl_hours.set(cache_query_ttl_hours);
                 self.is_paused.set(is_paused);
                 self.repository.set(Some(repo));
 
@@ -418,43 +458,31 @@ impl IndexerSystem {
         _: GetIndexerSettings,
         _gx: &GlobalContext,
     ) -> SyncSettings {
-        SyncSettings {
-            check_interval_secs: self.check_interval_secs.get(),
-            refresh_threshold_pct: self.refresh_threshold_pct.get(),
-        }
+        self.get_current_settings()
     }
 
     #[request_handler]
     async fn handle_update_settings(&self, req: UpdateIndexerSettings, gx: &GlobalContext) {
+        let settings = SyncSettings {
+            check_interval_secs: req.check_interval_secs,
+            refresh_threshold_pct: req.refresh_threshold_pct,
+            cache_entity_list_ttl_hours: req.cache_entity_list_ttl_hours,
+            cache_entity_metadata_ttl_hours: req.cache_entity_metadata_ttl_hours,
+            cache_attribute_metadata_ttl_hours: req.cache_attribute_metadata_ttl_hours,
+            cache_global_optionset_ttl_hours: req.cache_global_optionset_ttl_hours,
+            cache_relationship_ttl_hours: req.cache_relationship_ttl_hours,
+            cache_query_ttl_hours: req.cache_query_ttl_hours,
+        };
+
         log::info!(
             "[Indexer] Updating settings: check_interval={}s, refresh_threshold={}%",
-            req.check_interval_secs,
-            req.refresh_threshold_pct
+            settings.check_interval_secs,
+            settings.refresh_threshold_pct
         );
 
-        self.check_interval_secs.set(req.check_interval_secs);
-        self.refresh_threshold_pct.set(req.refresh_threshold_pct);
-
-        // Persist to global settings
-        let settings = gx.data::<Settings>();
-        if let Err(e) = settings
-            .indexer
-            .check_interval_secs
-            .set(req.check_interval_secs)
-            .await
-        {
-            log::error!("[Indexer] Failed to persist check_interval: {}", e);
-        }
-        if let Err(e) = settings
-            .indexer
-            .refresh_threshold_pct
-            .set(req.refresh_threshold_pct)
-            .await
-        {
-            log::error!("[Indexer] Failed to persist refresh_threshold: {}", e);
-        }
-
-        self.publish_status(gx).await;
+        self.apply_sync_settings(&settings);
+        self.persist_sync_settings(&settings, gx).await;
+        self.publish_settings(gx);
     }
 
     // =========================================================================
@@ -600,44 +628,32 @@ impl IndexerSystem {
         event: UpdateIndexerSettingsEvent,
         gx: &GlobalContext,
     ) {
+        let settings = SyncSettings {
+            check_interval_secs: event.check_interval_secs,
+            refresh_threshold_pct: event.refresh_threshold_pct,
+            cache_entity_list_ttl_hours: event.cache_entity_list_ttl_hours,
+            cache_entity_metadata_ttl_hours: event.cache_entity_metadata_ttl_hours,
+            cache_attribute_metadata_ttl_hours: event.cache_attribute_metadata_ttl_hours,
+            cache_global_optionset_ttl_hours: event.cache_global_optionset_ttl_hours,
+            cache_relationship_ttl_hours: event.cache_relationship_ttl_hours,
+            cache_query_ttl_hours: event.cache_query_ttl_hours,
+        };
+
         log::info!(
             "[Indexer] Updating settings (via event): check_interval={}s, refresh_threshold={}%",
-            event.check_interval_secs,
-            event.refresh_threshold_pct
+            settings.check_interval_secs,
+            settings.refresh_threshold_pct
         );
 
-        self.check_interval_secs.set(event.check_interval_secs);
-        self.refresh_threshold_pct.set(event.refresh_threshold_pct);
-
-        // Persist to global settings
-        let settings = gx.data::<Settings>();
-        if let Err(e) = settings
-            .indexer
-            .check_interval_secs
-            .set(event.check_interval_secs)
-            .await
-        {
-            log::error!("[Indexer] Failed to persist check_interval: {}", e);
-        }
-        if let Err(e) = settings
-            .indexer
-            .refresh_threshold_pct
-            .set(event.refresh_threshold_pct)
-            .await
-        {
-            log::error!("[Indexer] Failed to persist refresh_threshold: {}", e);
-        }
-
+        self.apply_sync_settings(&settings);
+        self.persist_sync_settings(&settings, gx).await;
         self.publish_settings(gx);
     }
 
     #[event_handler]
     async fn on_open_dashboard(&self, _: OpenIndexerDashboard, gx: &GlobalContext) {
         let status = self.get_current_status(gx).await;
-        let settings = SyncSettings {
-            check_interval_secs: self.check_interval_secs.get(),
-            refresh_threshold_pct: self.refresh_threshold_pct.get(),
-        };
+        let settings = self.get_current_settings();
         let env_name = self.get_active_env_name(gx).await;
         let _ = gx
             .modal(IndexerDashboardModal::with_status(
@@ -989,13 +1005,108 @@ impl IndexerSystem {
         });
     }
 
+    /// Apply settings to the in-memory system state.
+    fn apply_sync_settings(&self, settings: &SyncSettings) {
+        self.check_interval_secs.set(settings.check_interval_secs);
+        self.refresh_threshold_pct
+            .set(settings.refresh_threshold_pct);
+        self.cache_entity_list_ttl_hours
+            .set(settings.cache_entity_list_ttl_hours);
+        self.cache_entity_metadata_ttl_hours
+            .set(settings.cache_entity_metadata_ttl_hours);
+        self.cache_attribute_metadata_ttl_hours
+            .set(settings.cache_attribute_metadata_ttl_hours);
+        self.cache_global_optionset_ttl_hours
+            .set(settings.cache_global_optionset_ttl_hours);
+        self.cache_relationship_ttl_hours
+            .set(settings.cache_relationship_ttl_hours);
+        self.cache_query_ttl_hours
+            .set(settings.cache_query_ttl_hours);
+    }
+
+    /// Persist settings to the global settings store.
+    async fn persist_sync_settings(&self, settings: &SyncSettings, gx: &GlobalContext) {
+        let global_settings = gx.data::<Settings>();
+
+        if let Err(e) = global_settings
+            .indexer
+            .check_interval_secs
+            .set(settings.check_interval_secs)
+            .await
+        {
+            log::error!("[Indexer] Failed to persist check_interval: {}", e);
+        }
+        if let Err(e) = global_settings
+            .indexer
+            .refresh_threshold_pct
+            .set(settings.refresh_threshold_pct)
+            .await
+        {
+            log::error!("[Indexer] Failed to persist refresh_threshold: {}", e);
+        }
+        if let Err(e) = global_settings
+            .indexer
+            .cache_entity_list_ttl_hours
+            .set(settings.cache_entity_list_ttl_hours)
+            .await
+        {
+            log::error!("[Indexer] Failed to persist entity list cache TTL: {}", e);
+        }
+        if let Err(e) = global_settings
+            .indexer
+            .cache_entity_metadata_ttl_hours
+            .set(settings.cache_entity_metadata_ttl_hours)
+            .await
+        {
+            log::error!(
+                "[Indexer] Failed to persist entity metadata cache TTL: {}",
+                e
+            );
+        }
+        if let Err(e) = global_settings
+            .indexer
+            .cache_attribute_metadata_ttl_hours
+            .set(settings.cache_attribute_metadata_ttl_hours)
+            .await
+        {
+            log::error!(
+                "[Indexer] Failed to persist attribute metadata cache TTL: {}",
+                e
+            );
+        }
+        if let Err(e) = global_settings
+            .indexer
+            .cache_global_optionset_ttl_hours
+            .set(settings.cache_global_optionset_ttl_hours)
+            .await
+        {
+            log::error!(
+                "[Indexer] Failed to persist global option set cache TTL: {}",
+                e
+            );
+        }
+        if let Err(e) = global_settings
+            .indexer
+            .cache_relationship_ttl_hours
+            .set(settings.cache_relationship_ttl_hours)
+            .await
+        {
+            log::error!("[Indexer] Failed to persist relationship cache TTL: {}", e);
+        }
+        if let Err(e) = global_settings
+            .indexer
+            .cache_query_ttl_hours
+            .set(settings.cache_query_ttl_hours)
+            .await
+        {
+            log::error!("[Indexer] Failed to persist query cache TTL: {}", e);
+        }
+    }
+
     /// Publish settings changed event.
     fn publish_settings(&self, gx: &GlobalContext) {
         gx.publish(IndexerSettingsChanged {
-            settings: SyncSettings {
-                check_interval_secs: self.check_interval_secs.get(),
-                refresh_threshold_pct: self.refresh_threshold_pct.get(),
-            },
+            settings: self.get_current_settings(),
         });
     }
 
@@ -1013,6 +1124,13 @@ impl IndexerSystem {
     fn get_current_settings(&self) -> SyncSettings {
         let interval = self.check_interval_secs.get();
         let threshold = self.refresh_threshold_pct.get();
+        let entity_list_ttl = self.cache_entity_list_ttl_hours.get();
+        let entity_metadata_ttl = self.cache_entity_metadata_ttl_hours.get();
+        let attribute_metadata_ttl = self.cache_attribute_metadata_ttl_hours.get();
+        let global_optionset_ttl = self.cache_global_optionset_ttl_hours.get();
+        let relationship_ttl = self.cache_relationship_ttl_hours.get();
+        let query_ttl = self.cache_query_ttl_hours.get();
+
         SyncSettings {
             check_interval_secs: if interval == 0 {
                 DEFAULT_CHECK_INTERVAL_SECS
@@ -1024,6 +1142,32 @@ impl IndexerSystem {
             } else {
                 threshold
             },
+            cache_entity_list_ttl_hours: if entity_list_ttl == 0 {
+                24
+            } else {
+                entity_list_ttl
+            },
+            cache_entity_metadata_ttl_hours: if entity_metadata_ttl == 0 {
+                6
+            } else {
+                entity_metadata_ttl
+            },
+            cache_attribute_metadata_ttl_hours: if attribute_metadata_ttl == 0 {
+                6
+            } else {
+                attribute_metadata_ttl
+            },
+            cache_global_optionset_ttl_hours: if global_optionset_ttl == 0 {
+                12
+            } else {
+                global_optionset_ttl
+            },
+            cache_relationship_ttl_hours: if relationship_ttl == 0 {
+                12
+            } else {
+                relationship_ttl
+            },
+            cache_query_ttl_hours: if query_ttl == 0 { 1 } else { query_ttl },
         }
     }
 }

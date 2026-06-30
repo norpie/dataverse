@@ -4,6 +4,7 @@
 
 use dashmap::DashMap;
 use dataverse_lib::DataverseClient;
+use dataverse_lib::cache::CacheConfig;
 use dataverse_lib::cache::CacheProvider;
 use dataverse_lib::rate_limit::RateLimiter;
 use thiserror::Error;
@@ -80,6 +81,7 @@ impl ClientManager {
     pub async fn get_active_client(
         &self,
         cache: Option<impl CacheProvider + 'static>,
+        cache_config: CacheConfig,
     ) -> Result<Option<DataverseClient>, ClientManagerError> {
         let session = self.credentials.get_active_session().await?;
 
@@ -88,7 +90,9 @@ impl ClientManager {
             _ => return Ok(None),
         };
 
-        let client = self.get_client(account_id, env_id, cache).await?;
+        let client = self
+            .get_client(account_id, env_id, cache, cache_config)
+            .await?;
         Ok(Some(client))
     }
 
@@ -101,6 +105,7 @@ impl ClientManager {
         account_id: i64,
         env_id: i64,
         cache: Option<impl CacheProvider + 'static>,
+        cache_config: CacheConfig,
     ) -> Result<DataverseClient, ClientManagerError> {
         let key = (account_id, env_id);
 
@@ -135,7 +140,9 @@ impl ClientManager {
         )?;
 
         // Create client
-        let client = self.create_client(account, environment, cache).await?;
+        let client = self
+            .create_client(account, environment, cache, cache_config)
+            .await?;
 
         // Cache and return
         self.clients.insert(key, client.clone());
@@ -172,6 +179,7 @@ impl ClientManager {
         account: Account,
         environment: Environment,
         cache: Option<impl CacheProvider + 'static>,
+        cache_config: CacheConfig,
     ) -> Result<DataverseClient, ClientManagerError> {
         let token_provider =
             StoredTokenProvider::new(self.credentials.clone(), account, environment.clone());
@@ -179,6 +187,7 @@ impl ClientManager {
         let mut builder = DataverseClient::builder()
             .url(&environment.url)
             .token_provider(token_provider)
+            .cache_config(cache_config)
             .shared_rate_limiter(self.rate_limiter.clone());
 
         if let Some(cache) = cache {
