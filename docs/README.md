@@ -12,7 +12,7 @@ High-level documentation for the terminal user interface in this repository.
 - **Import** — Load CSV or Excel files, preview rows, configure import behavior, and queue Dataverse operations.
 - **Export** — Run a query and export the returned records to CSV or Excel.
 - **Queue** — Persistent operation queue for Dataverse writes, with execution controls, filtering, retries, and result inspection.
-- **Migrations** — Define and run structured data migrations between Dataverse environments.
+- **[Migrations](migration/README.md)** — Define and run structured data migrations between Dataverse environments.
 - **[VAF - Deadline Import](deadline-importer.md)** — Import VAF deadline workbook data, compare it with Dataverse state, and queue create/update operations.
 - **VAF - Questionnaire Sync** — Compare questionnaire data between environments and queue synchronization operations.
 - **VAF - Questionnaire Validator** — Validate questionnaire configuration and export validation results.
