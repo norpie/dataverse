@@ -3,8 +3,8 @@
 use rafter::prelude::*;
 
 use crate::apps::{
-    DeadlineImport, EntityExplorer, Import, MigrationList, QueryBuilder, QuestionnaireSync,
-    QuestionnaireValidator,
+    AuditLog, DeadlineImport, EntityExplorer, Import, MigrationList, QueryBuilder,
+    QuestionnaireSync, QuestionnaireValidator,
 };
 use crate::modals::{ListEntry, SearchableListModal};
 use crate::systems::client_management::{ClientManagement, GetActiveClient};
@@ -34,6 +34,7 @@ impl Launcher {
 
         let items = vec![
             ListEntry::with_category("entity-explorer", "Entity Explorer", "Data"),
+            ListEntry::with_category("audit-log", "Audit Log", "Data"),
             ListEntry::with_category("query-builder", "Query Builder", "Tools"),
             ListEntry::with_category("import", "Import", "Tools"),
             ListEntry::with_category("migrations", "Migrations", "Data"),
@@ -81,6 +82,9 @@ impl Launcher {
                     match app {
                         "entity-explorer" => {
                             let _ = gx.spawn_and_focus(EntityExplorer::with_client(client_info));
+                        }
+                        "audit-log" => {
+                            let _ = gx.spawn_and_focus(AuditLog::with_client(client_info));
                         }
                         "query-builder" => {
                             let _ = gx.spawn_and_focus(QueryBuilder::with_client(client_info));

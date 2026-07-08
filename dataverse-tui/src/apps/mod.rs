@@ -1,5 +1,6 @@
 //! Applications for the Dataverse TUI.
 
+mod audit_log;
 mod deadline_import;
 mod entity_explorer;
 mod export;
@@ -12,6 +13,7 @@ pub mod queue;
 mod record_explorer;
 mod welcome;
 
+pub use audit_log::AuditLog;
 pub use deadline_import::DeadlineImport;
 pub use entity_explorer::EntityExplorer;
 pub use export::Export;
