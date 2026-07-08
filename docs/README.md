@@ -24,4 +24,4 @@ High-level documentation for the terminal user interface in this repository.
 
 ## Indexer
 
-- **Metadata Indexer** — Background system that keeps Dataverse metadata caches warm, tracks sync status per environment, and exposes dashboard controls for pause/resume, manual sync, settings, and cache clearing.
+- **[Metadata Indexer](indexer-cache.md)** — Background system that keeps Dataverse metadata caches warm, tracks sync status per environment, and exposes dashboard controls for pause/resume, manual sync, settings, and cache clearing.
