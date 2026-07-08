@@ -1,6 +1,8 @@
 //! Migration list app for viewing and managing migrations.
 
 use std::collections::HashMap;
+use std::path::Path;
+use std::path::PathBuf;
 
 use chrono::DateTime;
 use chrono::Utc;
@@ -15,11 +17,17 @@ use rafter::widgets::Text;
 use tuidom::Element;
 
 use crate::credentials::CredentialsProvider;
+use crate::credentials::Environment;
+use crate::modals::FileBrowserModal;
+use crate::modals::LoadingModal;
+use crate::paths;
 use crate::systems::client_management::ClientManagement;
 use crate::systems::client_management::GetAnyClient;
 
 use super::editor::MigrationEditor;
+use super::modals::ImportMigrationModal;
 use super::modals::NewMigrationModal;
+use super::repository::MigrationExportBundle;
 use super::repository::MigrationRepository;
 use super::repository::NewMigration;
 use super::types::MigrationSummary;
@@ -130,6 +138,8 @@ impl MigrationList {
         bind("escape", close_app);
         bind("n", new_migration);
         bind("d", delete_migration);
+        bind("e", export_migration);
+        bind("i", import_migration);
     }
 
     #[handler]
@@ -198,6 +208,139 @@ impl MigrationList {
                 log::error!("Failed to delete migration: {}", e);
                 gx.toast(Toast::error("Failed to delete migration"));
             }
+        }
+    }
+
+    #[handler]
+    async fn export_migration(&self, gx: &GlobalContext) {
+        let Some(id) = self.list_state.with_ref(|s| s.focused_key) else {
+            return;
+        };
+
+        let repo = gx.data::<MigrationRepository>().clone();
+        let environments = match self.load_environment_rows(gx).await {
+            Some(environments) => environments,
+            None => return,
+        };
+
+        let export_result = gx
+            .modal(LoadingModal::run_with_default(
+                "Exporting migration...",
+                || Err("Export cancelled".to_string()),
+                async move {
+                    repo.export_migration(id, &environments)
+                        .await
+                        .map_err(|e| e.to_string())
+                },
+            ))
+            .await;
+
+        let bundle = match export_result {
+            Ok(bundle) => bundle,
+            Err(e) => {
+                gx.toast(Toast::error(format!("Export failed: {}", e)));
+                return;
+            }
+        };
+
+        let default_filename = format!("{}.migration", sanitize_filename(&bundle.migration.name));
+        let start_dir = paths::downloads_dir().unwrap_or_else(|| PathBuf::from("."));
+        let Some(file_result) = gx
+            .modal(
+                FileBrowserModal::browse(&start_dir, vec!["json".to_string()])
+                    .with_filename(default_filename),
+            )
+            .await
+        else {
+            return;
+        };
+
+        let path = next_available_export_path(&normalize_migration_export_path(&file_result.path));
+        let write_result = gx
+            .modal(LoadingModal::run_with_default(
+                "Writing export file...",
+                || Err("Export cancelled".to_string()),
+                async move { write_export_bundle(path, bundle).await },
+            ))
+            .await;
+
+        match write_result {
+            Ok(path) => gx.toast(Toast::success(format!(
+                "Migration exported to {}",
+                path.display()
+            ))),
+            Err(e) => gx.toast(Toast::error(format!("Export failed: {}", e))),
+        }
+    }
+
+    #[handler]
+    async fn import_migration(&self, gx: &GlobalContext) {
+        let start_dir = paths::downloads_dir().unwrap_or_else(|| PathBuf::from("."));
+        let Some(file_result) = gx
+            .modal(
+                FileBrowserModal::browse(&start_dir, vec!["json".to_string()]).require_existing(),
+            )
+            .await
+        else {
+            return;
+        };
+
+        let path = file_result.path;
+        let read_result = gx
+            .modal(LoadingModal::run_with_default(
+                "Reading migration export...",
+                || Err("Import cancelled".to_string()),
+                async move { read_export_bundle(path).await },
+            ))
+            .await;
+
+        let bundle = match read_result {
+            Ok(bundle) => bundle,
+            Err(e) => {
+                gx.toast(Toast::error(format!("Import failed: {}", e)));
+                return;
+            }
+        };
+
+        let environments = match self.load_environment_rows(gx).await {
+            Some(environments) => environments,
+            None => return,
+        };
+
+        let Some(result) = gx
+            .modal(ImportMigrationModal::with_bundle(
+                bundle.clone(),
+                environments,
+            ))
+            .await
+        else {
+            return;
+        };
+
+        let repo = gx.data::<MigrationRepository>().clone();
+        let import_result = gx
+            .modal(LoadingModal::run_with_default(
+                "Importing migration...",
+                || Err("Import cancelled".to_string()),
+                async move {
+                    repo.import_migration(
+                        bundle,
+                        result.source_environment_id,
+                        result.target_environment_id,
+                        result.name,
+                    )
+                    .await
+                    .map_err(|e| e.to_string())
+                },
+            ))
+            .await;
+
+        match import_result {
+            Ok(_) => {
+                gx.toast(Toast::success("Migration imported"));
+                self.refresh_list(gx).await;
+            }
+            Err(e) => gx.toast(Toast::error(format!("Import failed: {}", e))),
         }
     }
 
@@ -289,6 +432,18 @@ impl MigrationList {
         }
     }
 
+    async fn load_environment_rows(&self, gx: &GlobalContext) -> Option<Vec<Environment>> {
+        let credentials = gx.data::<CredentialsProvider>();
+        match credentials.list_environments().await {
+            Ok(environments) => Some(environments),
+            Err(e) => {
+                log::error!("Failed to load environments: {}", e);
+                gx.toast(Toast::error("Failed to load environments"));
+                None
+            }
+        }
+    }
+
     async fn refresh_list(&self, gx: &GlobalContext) {
         let repo = gx.data::<MigrationRepository>();
         let env_names = self.env_names.get();
@@ -339,8 +494,12 @@ impl MigrationList {
                     button (label: "Close", hint: "esc", id: "close-btn") on_activate: close_app()
                     row (gap: 1) {
                         button (label: "New", hint: "n", id: "new-btn") on_activate: new_migration()
+                        button (label: "Import", hint: "i", id: "import-btn") on_activate: import_migration()
                         if has_selection {
                             button (label: "Open", hint: "enter", id: "open-btn") on_activate: open_migration()
+                        }
+                        if has_selection {
+                            button (label: "Export", hint: "e", id: "export-btn") on_activate: export_migration()
                         }
                         if has_selection {
                             button (label: "Delete", hint: "d", id: "delete-btn") on_activate: delete_migration()
@@ -350,4 +509,90 @@ impl MigrationList {
             }
         }
     }
+}
+
+async fn write_export_bundle(
+    path: PathBuf,
+    bundle: MigrationExportBundle,
+) -> Result<PathBuf, String> {
+    tokio::task::spawn_blocking(move || {
+        let json = serde_json::to_string_pretty(&bundle).map_err(|e| e.to_string())?;
+        std::fs::write(&path, json).map_err(|e| e.to_string())?;
+        Ok(path)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+async fn read_export_bundle(path: PathBuf) -> Result<MigrationExportBundle, String> {
+    tokio::task::spawn_blocking(move || {
+        let json = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
+        serde_json::from_str(&json).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+fn sanitize_filename(name: &str) -> String {
+    let sanitized: String = name
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() || ch == '-' || ch == '_' {
+                ch.to_ascii_lowercase()
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    let trimmed = sanitized.trim_matches('_').to_string();
+    if trimmed.is_empty() {
+        "migration".to_string()
+    } else {
+        trimmed
+    }
+}
+
+fn normalize_migration_export_path(path: &Path) -> PathBuf {
+    let path_str = path.to_string_lossy();
+    let lower_path = path_str.to_lowercase();
+    if lower_path.ends_with(".migration.json") {
+        return path.to_path_buf();
+    }
+    if lower_path.ends_with(".migration") {
+        return PathBuf::from(format!("{}.json", path.display()));
+    }
+
+    if path.extension().and_then(|ext| ext.to_str()) == Some("json") {
+        let stem = path
+            .file_stem()
+            .and_then(|stem| stem.to_str())
+            .unwrap_or("migration");
+        return path.with_file_name(format!("{}.migration.json", stem));
+    }
+
+    PathBuf::from(format!("{}.migration.json", path.display()))
+}
+
+fn next_available_export_path(path: &Path) -> PathBuf {
+    if !path.exists() {
+        return path.to_path_buf();
+    }
+
+    let parent = path.parent().map(Path::to_path_buf).unwrap_or_default();
+    let file_name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("migration.migration.json");
+    let stem = file_name
+        .strip_suffix(".migration.json")
+        .unwrap_or("migration");
+
+    for index in 1.. {
+        let candidate = parent.join(format!("{}-{}.migration.json", stem, index));
+        if !candidate.exists() {
+            return candidate;
+        }
+    }
+
+    unreachable!()
 }
